@@ -1,0 +1,187 @@
+// news_test.nv - task 113: what the versions 2.9, 2.10 and 2.11 of Portolan add to the reading: the heading of a state with the optional JSON name, `Вход: нет`/`Input: none`, a paragraph pressed
+// against a table, a declaration outside a block of code, the expansion section of a fragment named after an included fragment, the files of definitions in both languages with their hashes.
+module alula.machine_text_lang
+
+import std.text
+import alula.machine_text.{translate_report, translate_definitions, definitions_hash, defs_file_text, TranslateReport}
+
+fn v211_ru() -> str => ru_with("- format: 2.12\n", "- format: 2.12\n")
+
+fn v211_en() -> str => en_with("- format: 2.12\n", "- format: 2.12\n")
+
+test "nw versions read" {
+    // the only version that is read is 2.12 (task 125: no transition period); the older ones are refused
+    for v in ["2.12"] {
+        ro text = ru_with("- format: 2.12\n", "- format: ${v}\n")
+        assert(is_clean(text))
+        assert(json_of(text).starts_with("{\"format\":\"machine/2\",\"portolan_version\":\"${v}\",\"machine\":\"Tiny\""))
+        ro en = en_with("- format: 2.12\n", "- format: ${v}\n")
+        assert(is_clean(en))
+        assert(no_title(json_of(en)) == no_title(json_of(text)))
+    }
+    assert(note_says(ru_with("- format: 2.12\n", "- format: 2.13\n"), "читает формат 2.12"))
+}
+
+test "nw state heading" {
+    // the name of the JSON in the brackets is not written when the heading is that name (Я-5)
+    ro plain = json_of(tiny_ru())
+    ro latin = ru_with("### ЖДАТЬ — обращение (Wait)", "### Wait — обращение").replace("Начальное состояние: ЖДАТЬ", "Начальное состояние: Wait").replace("| ЖДАТЬ |", "| Wait |")
+    assert(is_clean(latin))
+    assert(json_of(latin) == plain)
+    ro repeated = ru_with("### РЕШИТЬ — развилка (Decide)", "### Decide — развилка (Decide)").replace("| РЕШИТЬ |", "| Decide |")
+    assert(is_clean(repeated))
+    assert(json_of(repeated) == plain)
+    ro other = en_with("### Decide — fork", "### Decide — fork (Check)").replace("| Decide |", "| Decide |")
+    assert(json_of(other).contains("\"name\":\"Check\""))
+    assert(json_of(tiny_en()) == json_of(tiny_en().replace("### Wait — appeal", "### Wait — appeal (Wait)")))
+}
+
+test "nw russian name needs json name" {
+    ro text = ru_with("### РЕШИТЬ — развилка (Decide)", "### РЕШИТЬ — развилка")
+    assert(note_says(text, "нет имени JSON"))
+    assert(has_note_at(text, line_of(text, "### РЕШИТЬ"), 5, "syntax"))
+}
+
+test "nw input none" {
+    ro ru = translate_report(ru_with("Вход: число_ходов\n\n### СТОП", "Вход: нет\n\n### СТОП")).json
+    ro ru_dash = translate_report(ru_with("Вход: число_ходов\n\n### СТОП", "Вход: —\n\n### СТОП")).json
+    ro en = translate_report(en_with("Input: turn_count\n\n### Stopped", "Input: none\n\n### Stopped")).json
+    assert(no_title(ru) == no_title(en))
+    assert(ru == ru_dash)
+    assert(ru.contains("\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[]"))
+    assert(note_says(en_with("Input: turn_count\n\n### Stopped", "Input: нет\n\n### Stopped"), "language"))
+}
+
+test "nw paragraph pressed" {
+    ro pressed = v211_ru().replace("## Данные\n\n| имя", "## Данные\n\nПояснение к таблице\n| имя")
+    ro report = translate_report(pressed)
+    assert(report.warnings.len() == 1)
+    assert(report.warnings[0].line == line_of(pressed, "Пояснение"))
+    assert(report.warnings[0].message.contains("вплотную к таблице"))
+    assert(note_says(pressed, "лишняя строка"))
+    // a paragraph with empty lines round it is a comment in every version
+    ro apart = v211_ru().replace("## Данные\n\n| имя", "## Данные\n\nПояснение к таблице\n\n| имя")
+    assert(is_clean(apart))
+    assert(translate_report(apart).warnings.len() == 0)
+    assert(json_of(apart) == json_of(v211_ru()))
+}
+
+test "nw paragraph pressed en" {
+    ro pressed = v211_en().replace("## Data\n\n| name", "## Data\n\nA comment on the table\n| name")
+    ro report = translate_report(pressed)
+    assert(report.warnings.len() == 1)
+    assert(report.warnings[0].message.contains("вплотную к таблице"))
+    assert(note_says(pressed, "лишняя строка"))
+    ro heading = v211_en().replace("## Parties\n", "A line against a heading\n## Parties\n")
+    assert(translate_report(heading).warnings.len() == 1)
+}
+
+test "nw declaration outside" {
+    ro outside = v211_ru().replace("## Данные", "## Типы\n\nтип Pair { first число }\n\n## Данные")
+    ro report = translate_report(outside)
+    assert(report.warnings.len() == 1)
+    assert(report.warnings[0].line == line_of(outside, "тип Pair"))
+    assert(report.warnings[0].message.contains("объявление вне блока кода"))
+    assert(!report.json.contains("\"types\""))
+    assert(is_clean(outside))
+    ro fenced = v211_ru().replace("## Данные", "## Типы\n\n```\nтип Pair { first число }\n```\n\n## Данные")
+    assert(translate_report(fenced).warnings.len() == 0)
+    assert(json_of(fenced).contains("\"types\":{\"records\":[{\"name\":\"Pair\""))
+}
+
+test "nw declaration en" {
+    ro outside = v211_en().replace("## Data", "## Types\n\ntype Pair { first int }\n\n## Data")
+    ro report = translate_report(outside)
+    assert(report.warnings.len() == 1)
+    assert(report.warnings[0].message.contains("объявление вне блока кода"))
+    assert(!report.json.contains("\"types\""))
+}
+
+test "nw expansion name" {
+    ro ru = translate_report("${v211_ru()}\n## Раскрытие фрагмента «Пауза»\n\nтекст\n")
+    assert(ru.warnings.len() == 1)
+    assert(ru.warnings[0].message.contains("не совпадает с именем подключённого фрагмента"))
+    assert(ru.warnings[0].message.contains("фрагменты не подключены"))
+    ro en = translate_report("${v211_en()}\n## Fragment expansion \"Pause\"\n\ntext\n")
+    assert(en.warnings.len() == 1)
+    assert(en.errors.len() == 0)
+    assert(json_of("${v211_en()}\n## Fragment expansion \"Pause\"\n\ntext\n") == json_of(v211_en()))
+}
+
+test "nw to is no key" {
+    // `Куда` is a column, not a key line (Я-14): a paragraph that starts with it gives no warning
+    ro text = v211_ru().replace("## Данные\n", "## Данные\n\nКуда ведёт строка\n")
+    assert(translate_report(text).warnings.len() == 0)
+    ro key = v211_ru().replace("## Данные\n", "## Данные\n\nВход без пояснений\n")
+    assert(translate_report(key).warnings.len() == 1)
+    ro en = v211_en().replace("## Data\n", "## Data\n\nInput without a colon\n")
+    assert(translate_report(en).warnings.len() == 1)
+}
+
+// ---- the files of definitions in both languages ----------------------------------------------------------------------------
+
+test "nw defs en equals ru" {
+    ro ru = translate_definitions(defs_file_text("арифметика_цикла")).json
+    ro en = translate_definitions(defs_file_text("cycle_arithmetic")).json
+    assert(ru.contains("\"name\":\"ceiling_reached\""))
+    assert(en.contains("\"name\":\"ceiling_reached\""))
+    assert(en.contains("\"result\":\"bool\"") && ru.contains("\"result\":\"bool\""))
+    assert(en.contains("\"params\":[{\"name\":\"pass_number\",\"type\":\"int>=1\"}"))
+}
+
+test "nw defs language header" {
+    ro en = defs_file_text("cycle_arithmetic")
+    ro undeclared = en.replace("- language: en\n", "")
+    ro report = translate_definitions(undeclared)
+    assert(report.errors.len() > 0)
+    assert(report.errors[0].kind == "language")
+    assert(report.errors[0].message.contains("язык шапки английский, а language не объявлен"))
+}
+
+fn en_with_include(hash str) -> str {
+    v211_en().replace("## States\n", "## Includes\n\ndefinitions: cycle_arithmetic version 1 hash ${hash}\n\n## States\n").replace("turn_count >= 2", "ceiling_reached(turn_count + 1, 1, 2)")
+}
+
+fn ru_with_include(hash str) -> str {
+    v211_ru().replace("## Состояния\n", "## Подключения\n\nопределения: арифметика_цикла версия 1 хеш ${hash}\n\n## Состояния\n").replace("число_ходов >= 2", "потолок_исчерпан(число_ходов + 1, 1, 2)")
+}
+
+test "nw include en" {
+    ro good = checked(en_with_include("eee8c3a13a08"))
+    if good.errors.len() > 0 { panic("${good.errors[0].line}: ${good.errors[0].message}") }
+    assert(good.errors.len() == 0)
+    assert(good.json.contains("\"includes\":[{\"name\":\"cycle_arithmetic\",\"version\":\"1\",\"hash\":\"eee8c3a13a08\"}]"))
+    assert(good.json.contains("\"definitions\":[{\"name\":\"ceiling_reached\""))
+    assert(note_says(en_with_include("afe05e9a1e4c"), "хеш файла cycle_arithmetic — eee8c3a13a08, а в подключении afe05e9a1e4c"))
+    assert(note_says(en_with_include("51e15e557120"), "хеш файла cycle_arithmetic"))
+}
+
+test "nw include ru" {
+    ro good = checked(ru_with_include("51e15e557120"))
+    if good.errors.len() > 0 { panic("${good.errors[0].line}: ${good.errors[0].message}") }
+    assert(good.errors.len() == 0)
+    assert(good.json.contains("\"includes\":[{\"name\":\"арифметика_цикла\",\"version\":\"1\",\"hash\":\"51e15e557120\"}]"))
+    assert(note_says(ru_with_include("4de98da759eb"), "хеш файла арифметика_цикла — 51e15e557120, а в подключении 4de98da759eb"))
+}
+
+test "nw include words" {
+    // the words of the include line are of the language of the file
+    ro foreign = ru_with_include("51e15e557120").replace("версия 1 хеш", "version 1 hash")
+    assert(!is_clean(foreign))
+    ro bad_en = en_with_include("eee8c3a13a08").replace("version 1", "версия 1")
+    assert(!is_clean(bad_en))
+    assert(note_says(en_with_include("eee8c3a13a08").replace("hash eee8c3a13a08", "hash zz"), "12 шестнадцатеричных знаков"))
+}
+
+// The canonical file writes the section `Input` always, an empty one as a dash: a section that holds only a dash declares no input.
+test "nw empty input section" {
+    ro with_dash = v211_ru().replace("## Данные", "## Вход\n—\n\n## Данные")
+    assert(is_clean(with_dash))
+    assert(json_of(with_dash) == json_of(v211_ru()))
+    assert(!json_of(with_dash).contains("\"input\""))
+    ro en = v211_en().replace("## Data", "## Input\n—\n\n## Data")
+    assert(is_clean(en))
+    assert(json_of(en) == json_of(v211_en()))
+    ro declared = v211_ru().replace("## Данные", "## Вход\n\n| имя | тип | примечание |\n|---|---|---|\n| start | число≥0 | — |\n\n## Данные")
+    assert(json_of(declared).contains("\"input\":{\"fields\":[{\"name\":\"start\""))
+}

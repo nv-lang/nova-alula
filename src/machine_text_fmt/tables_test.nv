@@ -1,0 +1,86 @@
+// tables_test.nv - P-6 of format 2.7: the separator row of a table (a line of `-`, `:`, spaces and `|`) is skipped; a bar inside a cell is written `\|` and the translator takes the
+// escape off.
+module alula.machine_text_fmt
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+
+fn const_head() -> str => "| имя | тип | значение |\n|---|---|---|\n"
+
+fn with_separator(sep str) -> str => replaced(base_text(), const_head(), "| имя | тип | значение |\n${sep}\n")
+
+test "tb separators" {
+    ro plain = base_json()
+    ro seps = [
+        "|--- |--- |--- |", "|:---|---:|:---:|", "| --- | --- | --- |", "|-|-|-|", "| :-: | :-: | :-: |", "|----------|---|---|",
+        "| - | - | - |", "|:-|-:|:-:|", "|  ---  |  ---  |  ---  |", "|---|---|---|   "
+    ]
+    for sep in seps { assert(same_json(with_separator(sep), plain)) }
+}
+
+fn without_separators(text str) -> str {
+    mut kept = []str.new()
+    for line in text.split("\n") {
+        mut only_marks = line.starts_with("|") && line.byte_len() > 1
+        for c in line.chars() {
+            ro one = "${c}"
+            if one != "|" && one != "-" && one != ":" && one != " " { only_marks = false }
+        }
+        if !only_marks { kept.push(line) }
+    }
+    kept.join("\n")
+}
+
+test "tb no separator" {
+    ro plain = base_json()
+    assert(same_json(replaced(base_text(), const_head(), "| имя | тип | значение |\n"), plain))
+    ro every = without_separators(base_text())
+    assert(!every.contains("|---|"))
+    assert(same_json(every, plain))
+}
+
+test "tb separator in a state" {
+    ro plain = base_json()
+    ro dashed = replaced(base_text(), "| № | Условие | Действия | Куда |\n|---|---|---|---|\n", "| № | Условие | Действия | Куда |\n|:--:|:---|---:|---|\n")
+    assert(same_json(dashed, plain))
+    ro ends = replaced(base_text(), "| конец | № | когда | ответ |\n|---|---|---|---|\n", "| конец | № | когда | ответ |\n| ---- | -- | ---- | ---- |\n")
+    assert(same_json(ends, plain))
+}
+
+test "tb not a separator" {
+    assert(!is_clean(with_separator("|-a-|---|---|")))
+    assert(!is_clean(with_separator("|---||---|")))
+}
+
+test "tb escaped bar" {
+    ro text = base_text()
+    assert(text.contains("\"\" \\| \"a\" \\| \"b\""))
+    ro report = checked(text)
+    assert(report.errors.len() == 0)
+    assert(report.json.contains("\\\"\\\" | \\\"a\\\" | \\\"b\\\""))
+}
+
+test "tb bar not escaped" {
+    ro open = replaced(base_text(), "\"\" \\| \"a\" \\| \"b\"", "\"\" | \"a\" | \"b\"")
+    assert(errors_say(open, "ячеек"))
+}
+
+test "tb bar in a string" {
+    ro escaped = checked(with_data_row("| свод | текст | \"x\\|y\" | — | строки |"))
+    if escaped.errors.len() > 0 { panic(first_error_of(escaped)) }
+    assert(escaped.json.contains("\"value\":\"x|y\""))
+    assert(same_json(with_data_row("| свод | текст | \"x|y\" | — | строки |"), escaped.json))
+}
+
+test "tb bar in a match" {
+    ro cond = checked(replaced(base_text(), "| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | выбор число_ходов { 2 \\| 3 → истина; иначе → ложь } | — | КОНЕЦ |"))
+    if cond.errors.len() > 0 { panic(first_error_of(cond)) }
+    assert(cond.json.contains("\"patterns\":[{\"kind\":\"lit\",\"value\":2},{\"kind\":\"lit\",\"value\":3}]"))
+}
+
+test "tb cells counted" {
+    ro short = replaced(base_text(), "| ЧИСЛО_ПОВТОРОВ | число≥0 | 3 |", "| ЧИСЛО_ПОВТОРОВ | число≥0 |")
+    assert(errors_say(short, "в строке 2 ячеек, а в таблице их 3"))
+    ro long = replaced(base_text(), "| ЧИСЛО_ПОВТОРОВ | число≥0 | 3 |", "| ЧИСЛО_ПОВТОРОВ | число≥0 | 3 | лишняя |")
+    assert(errors_say(long, "в строке 4 ячеек, а в таблице их 3"))
+}

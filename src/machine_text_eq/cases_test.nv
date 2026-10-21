@@ -1,0 +1,227 @@
+// cases_test.nv - the cases of the task: the pilot "Agent step" brought to format 2.5, the examples of the format, the
+// definitions of the meeting with the file of the cycle arithmetic (the hash of the format), the fragment "Pause".
+module alula.machine_text_eq
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine.{standard_registry, Registry, Primitive, ParamSpec, TextType, ListType, Reading, register, NamedText, find_primitive}
+import alula.machine_table.{parse_machine, load_machine}
+import alula.machine_run.{load_portolan_machine}
+import alula.machine_text.{translate_report, translate_checked, translate_checked_with, TranslateReport, TranslateError, translate_definitions, DefsReport, definitions_hash, normalize_definitions, render_summary, error_text}
+
+// The registry of the examples: the standard one and the two primitives of the meeting that it lacks.
+fn examples_registry() -> Registry {
+    mut reg = standard_registry()
+    ro fingerprint = Primitive { name: "proposal_fingerprint", params: []ParamSpec.new(), result: TextType, class: Reading, reads: []str.new(), writes: []str.new() }
+    ro none = register(reg, fingerprint)
+    ro without = Primitive { name: "lenses_without_critical", params: []ParamSpec.new(), result: ListType(TextType), class: Reading, reads: ["lens_order", "lens_findings", "number"], writes: []str.new() }
+    ro again = register(reg, without)
+    reg
+}
+
+fn kinds_of(report TranslateReport) -> []str {
+    mut out = []str.new()
+    for e in report.errors { out.push(e.kind) }
+    out
+}
+
+fn count_of(report TranslateReport, kind str) -> int {
+    mut n = 0
+    for e in report.errors {
+        if e.kind == kind { n += 1 }
+    }
+    n
+}
+
+fn lines_of_errors(report TranslateReport, file str) -> str {
+    mut parts = []str.new()
+    for e in report.errors { parts.push(error_text(e, file)) }
+    parts.join(" ## ")
+}
+
+fn has_message(report TranslateReport, needle str) -> bool {
+    for e in report.errors {
+        if e.message.contains(needle) { return true }
+    }
+    false
+}
+
+// ---- the files --------------------------------------------------------------------------------------------------------------------
+
+test "cs files" {
+    ro names = case_dir_names()
+    assert(names.len() == case_files().len())
+    for f in case_files() {
+        assert(f.text.byte_len() > 500)
+        assert(names.contains(f.name))
+    }
+    assert(case_text("nothing.md") == "")
+}
+
+test "cs names by the Portolan" {
+    assert(case_files().len() == 4)
+    for f in case_files() { assert(f.name.ends_with(".portolan.md")) }
+}
+
+// ---- the pilot "Agent step" ---------------------------------------------------------------------------------------------------
+
+test "cs pilot" {
+    ro report = translate_checked(case_text("agent-step.portolan.md"), standard_registry())
+    if report.errors.len() > 0 { panic(lines_of_errors(report, "agent-step.portolan.md")) }
+    assert(report.errors.len() == 0)
+    assert(report.rows_noted == 0)
+    assert(report.rows_total == 120)
+    assert(report.json.contains("\"request_limit\":{\"op\":\"lit\",\"value\":1}"))
+}
+
+test "cs pilot loads" {
+    ro report = translate_checked(case_text("agent-step.portolan.md"), standard_registry())
+    match load_machine(report.json, standard_registry()) {
+        Ok(def) => {
+            assert(def.name == "agent_step")
+            assert(def.states.len() == 14)
+            assert(def.common.len() == 6)
+            assert(def.parties.len() == 3)
+            assert(def.data.len() == 21)
+            assert(def.definitions.len() == 16)
+            assert(def.error_end == "Errored")
+            assert(def.end_rows.len() == 13)
+            assert(def.primitives.len() == 3)
+        }
+        Err(issues) => panic("the pilot does not load: ${issues[0].path}: ${issues[0].message}")
+    }
+}
+
+test "cs pilot builds" {
+    ro report = translate_checked(case_text("agent-step.portolan.md"), standard_registry())
+    match load_portolan_machine(report.json, standard_registry()) {
+        Ok(m) => {
+            assert(m.name() == "agent_step")
+            assert(m.state_name(m.initial()) == "Start")
+        }
+        Err(e) => panic("the pilot machine is not made: ${e}")
+    }
+}
+
+test "cs pilot summary" {
+    ro report = translate_checked(case_text("agent-step.portolan.md"), standard_registry())
+    ro text = render_summary(report.json)
+    assert(text.starts_with("machine agent_step (version pilot-2.5): 14 states, 47 rows, "))
+    assert(text.contains("  AgentTurn (appeal): 9 rows, 18 actions"))
+    assert(text.contains("  Pause (appeal): 4 rows, 4 actions"))
+    assert(text.contains("common events: 6 rows, 12 actions"))
+    assert(text.contains("ends: 13 rows"))
+}
+
+test "cs pilot twice" {
+    ro a = translate_report(case_text("agent-step.portolan.md"))
+    ro b = translate_report(case_text("agent-step.portolan.md"))
+    assert(a.json == b.json)
+    assert(a.rows_total == b.rows_total)
+}
+
+test "cs pilot pause" {
+    ro report = translate_checked(case_text("agent-step.portolan.md"), standard_registry())
+    assert(report.json.contains("\"name\":\"human_stop\",\"fields\":[{\"name\":\"human_word\",\"type\":\"text\"}"))
+    assert(report.json.contains("\"to\":\"@previous\""))
+    assert(report.json.contains("{\"name\":\"previous\",\"type\":\"?State\""))
+    assert(report.json.contains("{\"do\":\"cancel_open\"}"))
+    assert(report.json.contains("\"value\":\"pause_halt\""))
+}
+
+// ---- the examples of the format -----------------------------------------------------------------------------------------------
+
+test "cs examples" {
+    ro report = translate_checked(case_text("format-examples.portolan.md"), examples_registry())
+    if report.errors.len() > 0 { panic(lines_of_errors(report, "format-examples.portolan.md")) }
+    assert(report.errors.len() == 0)
+    assert(report.rows_noted == 0)
+    assert(report.rows_total == 70)
+}
+
+test "cs examples shape" {
+    ro report = translate_checked(case_text("format-examples.portolan.md"), examples_registry())
+    ro text = render_summary(report.json)
+    assert(text.contains("  Gate3 (appeal): 2 rows, 4 actions"))
+    assert(text.contains("  Lock (operation): 1 rows, 6 actions"))
+    assert(text.contains("  Comparison (fork): 4 rows, 3 actions"))
+    assert(report.json.contains("{\"do\":\"call\",\"primitive\":\"close_for_writing\",\"args\":[{\"op\":\"lit\",\"value\":\"proposal\"}]}"))
+    assert(report.json.contains("\"op\":\"primitive_call\",\"name\":\"new_id\""))
+    assert(report.json.contains("\"lenses[*].attempt\""))
+}
+
+test "cs examples new id" {
+    ro report = translate_checked(case_text("format-examples.portolan.md"), examples_registry())
+    assert(report.json.contains("\"entry\":[{\"do\":\"bind\",\"name\":\"novaya\",\"value\":{\"op\":\"primitive_call\",\"name\":\"new_id\",\"args\":[]}}]"))
+    ro broken = case_text("format-examples.portolan.md").replace("| 1 | сразу | — | ид_сессии = новая | ХОД_АГЕНТА |", "| 1 | сразу | — | журнал(opened) | ХОД_АГЕНТА |")
+    ro bad = translate_checked(broken, examples_registry())
+    assert(has_message(bad, "of new_id is not written to the data by a row of the state"))
+}
+
+// ---- the definitions of the meeting and the hash of the format ----------------------------------------------------------------------
+
+test "cs cycle hash" {
+    ro cycle = "# Определения: арифметика_цикла\n\ndefinitions_version: 1\nformat: 2.12\n\n## Типы\n—\n\n## Константы\n—\n\n## Определения\n\nопределение потолок_исчерпан(номер число≥1, отсчёт число≥1, предел число≥0) -> да/нет =\n  (номер - 1) - отсчёт + 1 >= предел\n"
+    ro hash = definitions_hash(cycle)
+    assert(hash.byte_len() == 12)
+    assert(definitions_hash(cycle.replace("\n", "\r\n")) == hash)
+    assert(definitions_hash(cycle.replace("\n", "\r")) == hash)
+    assert(definitions_hash(cycle.replace("format: 2.12", "format: 2.12   ")) == hash)
+    assert(definitions_hash(cycle.replace("format: 2.12", "format: 2.4")) != hash)
+}
+
+test "cs normalize" {
+    assert(normalize_definitions("a  \r\nb\t\r\n\r\n\r\n") == "a\nb\n")
+    assert(normalize_definitions("a") == "a\n")
+    assert(normalize_definitions("a\n") == "a\n")
+    assert(normalize_definitions("a\r") == "a\n")
+    assert(normalize_definitions("a\n\n\n") == "a\n")
+    assert(normalize_definitions("a\n\nb") == "a\n\nb\n")
+}
+
+test "cs cycle file" {
+    ro report = translate_definitions("# Определения: арифметика_цикла\n\ndefinitions_version: 1\nformat: 2.12\n\n## Типы\n—\n\n## Константы\n—\n\n## Определения\n\nопределение потолок_исчерпан(номер число≥1, отсчёт число≥1, предел число≥0) -> да/нет =\n  (номер - 1) - отсчёт + 1 >= предел\n")
+    assert(report.errors.len() == 0)
+    assert(report.version == "1")
+    assert(report.hash.byte_len() == 12)
+    assert(report.json.contains("\"name\":\"ceiling_reached\""))
+    assert(report.rows_total == 1)
+}
+
+fn defs_has(d DefsReport, needle str) -> bool {
+    for e in d.errors {
+        if e.message.contains(needle) { return true }
+    }
+    false
+}
+
+test "cs defs file errors" {
+    ro text = "# Определения: арифметика_цикла\n\ndefinitions_version: 1\nformat: 2.4\n\n## Типы\n—\n\n## Определения\n\nопределение потолок_исчерпан(номер число≥1) -> да/нет =\n  вызвать(время) > 1\n"
+    ro report = translate_definitions(text)
+    assert(defs_has(report, "формат файла определений должен быть 2.12"))
+    assert(defs_has(report, "три раздела по порядку"))
+    assert(defs_has(report, "в файле определений нет `вызвать`"))
+}
+
+test "cs cycle hash 26" {
+    ro cycle = `# Определения: арифметика_цикла
+
+- definitions_version: 1
+- format: 2.12
+
+## Типы
+—
+
+## Константы
+—
+
+## Определения
+
+определение потолок_исчерпан(номер число≥1, отсчёт число≥1, предел число≥0) -> да/нет =
+  (номер - 1) - отсчёт + 1 >= предел
+`
+    ro hash = definitions_hash(cycle)
+    assert(hash.byte_len() == 12)
+    assert(definitions_hash(cycle.replace("\n", "\r\n")) == hash)
+    assert(definitions_hash(cycle.replace("- format: 2.12", "format: 2.12").replace("- definitions_version", "definitions_version")) != hash)
+}

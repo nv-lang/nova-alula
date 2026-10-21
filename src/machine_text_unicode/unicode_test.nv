@@ -1,0 +1,232 @@
+// unicode_test.nv - task 117: the names of the author in any alphabet (Greek, German with umlauts, Chinese, four-byte letters) go through the translator and the reverse generator without loss:
+// md -> JSON -> md -> JSON gives the same JSON; the columns of the errors stay the columns in letters.
+module alula.machine_text_unicode
+
+import std.text
+
+// The column (1-based, in letters) of the first `word` in `line`, counted apart from the translator.
+fn col_of(line str, word str) -> int {
+    match line.find(word) {
+        Some(at) => line[..at].chars().count() + 1
+        None => -1
+    }
+}
+
+fn is_error(json str) -> bool => json.starts_with("ERR")
+
+// ---- an expression: a lambda with a parameter of any alphabet ------------------------------------------------------------------------
+
+test "uc lambda greek ru" {
+    ro c = ex_circle("фильтр([1, 2], δ → δ > 1)", [], "ru")
+    assert(!is_error(c[0]))
+    assert(c[0].contains("\"δ\""))
+    assert(c[2] == c[0])
+    assert(c[1].contains("δ"))
+}
+
+test "uc lambda greek en" {
+    ro c = ex_circle("filter([1, 2], δ -> δ > 1)", [], "en")
+    assert(!is_error(c[0]))
+    assert(c[0].contains("\"δ\""))
+    assert(c[2] == c[0])
+}
+
+test "uc lambda german" {
+    ro c = ex_circle("фильтр([1, 2], größe → größe > 1)", [], "ru")
+    assert(!is_error(c[0]))
+    assert(c[0].contains("\"größe\""))
+    assert(c[2] == c[0])
+}
+
+test "uc lambda german upper case parameter is lowered" {
+    ro c = ex_circle("фильтр([1, 2], Größe → Größe > 1)", [], "ru")
+    assert(!is_error(c[0]))
+    assert(c[0].contains("\"größe\""))
+    assert(!c[0].contains("Größe"))
+    assert(c[2] == c[0])
+}
+
+test "uc lambda chinese" {
+    ro c = ex_circle("фильтр([1, 2], 数据 → 数据 > 1)", [], "ru")
+    assert(!is_error(c[0]))
+    assert(c[0].contains("\"数据\""))
+    assert(c[2] == c[0])
+}
+
+test "uc lambda four byte letter" {
+    ro c = ex_circle("фильтр([1, 2], 𝒜 → 𝒜 > 1)", [], "ru")
+    assert(!is_error(c[0]))
+    assert(c[0].contains("\"𝒜\""))
+    assert(c[2] == c[0])
+}
+
+test "uc lambda mixed with digits" {
+    ro c = ex_circle("фильтр([1, 2], δ_1 → δ_1 > 1)", [], "ru")
+    assert(!is_error(c[0]))
+    assert(c[0].contains("\"δ_1\""))
+    assert(c[2] == c[0])
+    ro d = ex_circle("фильтр([1, 2], größe2 → größe2 > 1)", [], "ru")
+    assert(d[0].contains("\"größe2\""))
+    assert(d[2] == d[0])
+}
+
+test "uc lambda cyrillic still transliterated" {
+    ro c = ex_circle("фильтр([1, 2], х → х > 1)", [], "ru")
+    assert(c[0].contains("\"kh\""))
+    assert(c[2] == c[0])
+}
+
+// ---- a datum of the author --------------------------------------------------------------------------------------------------------
+
+test "uc datum greek" {
+    ro c = ex_circle("δείγμα + 1", ["δείγμα"], "ru")
+    assert(!is_error(c[0]))
+    assert(c[0].contains("\"δείγμα\""))
+    assert(c[1] == "δείγμα + 1")
+    assert(c[2] == c[0])
+}
+
+test "uc datum german" {
+    ro c = ex_circle("größe * 2", ["größe"], "ru")
+    assert(!is_error(c[0]))
+    assert(c[0].contains("\"größe\""))
+    assert(c[1] == "größe * 2")
+    assert(c[2] == c[0])
+}
+
+test "uc datum chinese" {
+    ro c = ex_circle("数据 + 数据", ["数据"], "en")
+    assert(!is_error(c[0]))
+    assert(c[0].contains("\"数据\""))
+    assert(c[2] == c[0])
+}
+
+test "uc datum upper case greek is a constant not a type" {
+    // ΔΕΙΓΜΑ has no lower case letter: it is a name, not a type; the datum is found. Its name in the JSON is lower case (the rule of `tx_translit`), so the text written back is not the text read
+    ro c = ex_circle("ΔΕΙΓΜΑ + 1", ["ΔΕΙΓΜΑ"], "ru")
+    assert(!is_error(c[0]))
+    assert(c[0].contains("\"δειγμα\""))
+    assert(c[1] == "δειγμα + 1")
+}
+
+test "uc datum german upper case" {
+    ro c = ex_circle("ÄRGER + 1", ["ÄRGER"], "ru")
+    assert(!is_error(c[0]))
+    assert(c[0].contains("\"ärger\""))
+    assert(c[1] == "ärger + 1")
+}
+
+// ---- actions ------------------------------------------------------------------------------------------------------------------------
+
+test "uc actions let greek" {
+    ro c = ac_circle("пусть δ = 5 в (число_повторов = δ)", ["число_повторов"], "ru")
+    assert(!is_error(c[0]))
+    assert(c[0].contains("\"δ\""))
+    assert(c[2] == c[0])
+}
+
+test "uc actions let german" {
+    ro c = ac_circle("пусть größe = 5; число_повторов = größe", ["число_повторов"], "ru")
+    assert(!is_error(c[0]))
+    assert(c[0].contains("\"größe\""))
+    assert(c[2] == c[0])
+}
+
+test "uc actions let chinese en" {
+    ro c = ac_circle("let 数据 = 5 in (retry_count = 数据)", ["retry_count"], "en")
+    assert(!is_error(c[0]))
+    assert(c[0].contains("\"数据\""))
+    assert(c[2] == c[0])
+}
+
+test "uc actions assign to a datum of the author" {
+    ro c = ac_circle("δείγμα = 1; δείγμα += 2", ["δείγμα"], "ru")
+    assert(!is_error(c[0]))
+    assert(c[0].contains("\"δείγμα\""))
+    assert(c[2] == c[0])
+}
+
+// ---- the states of a machine ----------------------------------------------------------------------------------------------------------
+
+test "uc machine states greek" {
+    ro text = tiny_named("ΑΝΑΜΟΝΗ", "ΑΠΟΦΑΣΗ", "ΤΕΛΟΣ", "ΣΤΟΠ")
+    ro c = machine_circle(text, "ru")
+    assert(c[3] == "")
+    assert(c[4] == "")
+    assert(c[0] == c[1])
+    assert(c[0] == no_title(checked(tiny_ru()).json))
+}
+
+test "uc machine states german" {
+    ro text = tiny_named("WARTEN", "ÄNDERN", "FERTIG", "ÜBERSPRINGEN")
+    ro c = machine_circle(text, "ru")
+    assert(c[3] == "")
+    assert(c[4] == "")
+    assert(c[0] == c[1])
+    assert(c[0] == no_title(checked(tiny_ru()).json))
+}
+
+test "uc machine states chinese" {
+    ro text = tiny_named("等待", "决定", "完成", "停止")
+    ro c = machine_circle(text, "ru")
+    assert(c[3] == "")
+    assert(c[4] == "")
+    assert(c[0] == c[1])
+    assert(c[0] == no_title(checked(tiny_ru()).json))
+}
+
+test "uc machine states mixed and english file" {
+    ro text = tiny_named("ΑΝΑΜΟΝΗ_1", "决定", "FERTIG", "ΣΤΟΠ2")
+    ro c = machine_circle(text, "en")
+    assert(c[3] == "")
+    assert(c[4] == "")
+    assert(c[0] == c[1])
+}
+
+test "uc machine state is found by its name in any alphabet" {
+    // the fork sends to the state by the name that the heading gives; a name of other case is another name
+    ro text = tiny_named("ΑΝΑΜΟΝΗ", "ΑΠΟΦΑΣΗ", "ΤΕΛΟΣ", "ΣΤΟΠ")
+    ro ok = checked(text)
+    assert(ok.errors.len() == 0)
+    ro wrong = checked(text.replace("| 2 | иначе | — | ΑΝΑΜΟΝΗ |", "| 2 | иначе | — | Αναμονη |"))
+    assert(wrong.errors.len() >= 1)
+    assert(place_of(wrong, "name")[0] > 0)
+}
+
+// ---- the columns of the errors ----------------------------------------------------------------------------------------------------
+
+test "uc error column of an unknown state after cyrillic" {
+    ro text = tiny_named("ΑΝΑΜΟΝΗ", "ΑΠΟΦΑΣΗ", "ΤΕΛΟΣ", "ΣΤΟΠ").replace("| число_ходов += 1 | ΑΠΟΦΑΣΗ |", "| число_ходов += 1 | ΧΧΧΧ |")
+    ro place = place_of(checked(text), "name")
+    assert(place[0] > 0)
+    // ORACLE-WORKAROUND(42): the result of `split` cannot be indexed, it is collected into a list first; index it directly when item 42 is fixed
+    ro line = text.split("\n").collect()[place[0] - 1]
+    assert(line.byte_len() > line.chars().count())
+    assert(place[1] == col_of(line, "ΧΧΧΧ"))
+}
+
+test "uc error column of an unknown state after a four byte letter" {
+    ro text = tiny_named("ΑΝΑΜΟΝΗ", "ΑΠΟΦΑΣΗ", "ΤΕΛΟΣ", "ΣΤΟΠ").replace("| число_ходов += 1 | ΑΠΟΦΑΣΗ |", "| число_ходов += 1 // 😀𝒜 | ΧΧΧΧ |")
+    ro report = checked(text)
+    ro place = place_of(report, "name")
+    assert(place[0] > 0)
+    // ORACLE-WORKAROUND(42): the result of `split` cannot be indexed, it is collected into a list first; index it directly when item 42 is fixed
+    ro line = text.split("\n").collect()[place[0] - 1]
+    assert(place[1] == col_of(line, "ΧΧΧΧ"))
+}
+
+test "uc error column in an expression" {
+    assert(ex_json("фильтр([1, \"😀я\"], 𝒜 → #)", [], "ru") == "ERR 1:23: недопустимый знак «#»")
+    assert(ex_json("фильтр([1, 2], δ → ☃)", [], "ru") == "ERR 1:20: недопустимый знак «☃»")
+    assert(ex_json("привет мир ¤", [], "ru") == "ERR 1:12: недопустимый знак «¤»")
+}
+
+test "uc error column of an unknown name after greek" {
+    ro e = ex_json("δ + ξ", [], "ru")
+    assert(is_error(e))
+}
+
+test "uc cyrillic unknown name still an error with a hint" {
+    ro e = ex_json("запрос_агнта", ["запрос_агента"], "ru")
+    assert(is_error(e))
+}

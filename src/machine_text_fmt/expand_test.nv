@@ -1,0 +1,98 @@
+// expand_test.nv - P-2 of format 2.7: the section `## Раскрытие фрагмента «Имя»` is a reference for the reader; the translator skips it whole (headings, tables, prose, lines that
+// would be errors anywhere else). The section `## Подключения` holds the lines of connection only.
+module alula.machine_text_fmt
+
+import std.text
+
+// What the sample of the methodology puts at the end of the file: headings, a table, prose with the signs of a code, a state of the fragment with its key lines.
+fn expansion() -> str => `## Раскрытие фрагмента «Пауза»
+
+Справка читателю; разбор раздел пропускает. Знаки «${bt()}» и «« »» допустимы.
+
+### Параметры подключения
+
+| параметр | вид | значение здесь | что значит |
+|---|---|---|---|
+| слово_остановки | слово | остановить | слово ворот стороны «усиленный» |
+
+### Состояние ПАУЗА
+
+Обращение (${bt()}Pause${bt()}).
+
+- Сторона: усиленный
+- Срок тишины: —
+- Вход:
+
+| поле запроса | выражение | читает |
+|---|---|---|
+| предыдущее | обязательно(предыдущее) | сторона |
+
+| № | Событие | Условие | Действия | Куда |
+|---|---|---|---|---|
+| ПАУЗА 1 | слово(продолжить(автор, источник)) | — | журнал(human_continue) | предыдущее |
+
+- Куда: предыдущее ведёт повторным входом.
+`
+
+fn bt() -> str => "`"
+
+fn with_expansion(text str) -> str => "${text}\n${expansion()}"
+
+test "ex tail skipped" {
+    ro report = checked(with_expansion(base_text()))
+    if report.errors.len() > 0 { panic(first_error_of(report)) }
+    assert(report.errors.len() == 0)
+    assert(report.json == base_json())
+    // format 2.9 (Я-17): the name in the heading is the name of an included fragment, and this machine includes none
+    assert(report.warnings.len() == 1)
+    assert(report.warnings[0].message.contains("не совпадает с именем подключённого фрагмента"))
+}
+
+test "ex in the middle" {
+    ro plain = base_json()
+    ro text = replaced(base_text(), "## Состояния\n", "${expansion()}\n## Состояния\n")
+    assert(same_json(text, plain))
+    ro twice = replaced(text, "## Состояния\n", "## Раскрытие фрагмента «Другой»\n\nЕщё справка.\n\n## Состояния\n")
+    assert(same_json(twice, plain))
+}
+
+test "ex whatever inside" {
+    ro junk = "## Раскрытие фрагмента «Пауза»\n\n@@@ {{{ ???\n| a | b |\n| 1 |\n### ЧТО-ТО — не состояние\nИмя(\n\"не закрыта\n"
+    assert(same_json("${base_text()}\n${junk}", base_json()))
+}
+
+test "ex code in it" {
+    ro with_code = "## Раскрытие фрагмента «Пауза»\n\n${ticks()}\n## Не заголовок\n### Состояние ПАУЗА — обращение (Pause)\n${ticks()}\n\nКонец справки.\n"
+    assert(same_json("${base_text()}\n${with_code}", base_json()))
+}
+
+test "ex heading words" {
+    assert(is_clean("${base_text()}\n## Раскрытие фрагмента\n\nБез имени.\n"))
+    ro other = "${base_text()}\n## Раскрытие\n\nЭто не справка о фрагменте.\n"
+    assert(errors_say(other, "неизвестный раздел `Раскрытие`"))
+    ro low = "${base_text()}\n## раскрытие фрагмента «Пауза»\n\nМалая буква.\n"
+    assert(errors_say(low, "неизвестный раздел"))
+}
+
+test "ex ends at next" {
+    ro text = replaced(base_text(), "## Концы\n", "## Раскрытие фрагмента «Пауза»\n\n@@@ ошибка не видна\n\n## Концы\n")
+    assert(same_json(text, base_json()))
+    ro cut_short = replaced(base_text(), "Ответ(число_ходов)", "Ответ(")
+    assert(!is_clean(cut_short))
+    ro bad_after = replaced(cut_short, "## Концы\n", "## Раскрытие фрагмента «Пауза»\n\nСправка.\n\n## Концы\n")
+    assert(!is_clean(bad_after))
+}
+
+test "ex before sections" {
+    ro head = replaced(base_text(), "## Типы\n", "## Раскрытие фрагмента «Пауза»\n\nСправка в начале.\n\n## Типы\n")
+    assert(same_json(head, base_json()))
+}
+
+test "ex lines of errors" {
+    ro text = with_expansion(replaced(base_text(), "число_ходов >= 2", "число_ходов >= "))
+    ro lines = error_lines(text)
+    assert(lines.len() > 0)
+    ro at = lines[0].find(":") ?? 0
+    assert((lines[0][..at]).to_int() ?? 0 == line_with(text, "| 1 | число_ходов >= "))
+    assert(line_with(text, "## Раскрытие фрагмента") > line_with(text, "| 1 | число_ходов >= "))
+}

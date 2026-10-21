@@ -1,0 +1,24 @@
+// cases.nv - the files of the cases that the tests and the report of the task use, compiled in: the pilot "Agent step" brought to format 2.5, the examples of the format,
+// the definitions of the meeting and the small machine that includes them.
+module alula.machine_text_eq
+
+import alula.machine.{NamedText}
+
+/// The files of `cases/` by name.
+export fn case_files() -> []NamedText => [
+    NamedText { name: "agent-step.portolan.md", text: embed_str("cases/agent-step.portolan.md") },
+    NamedText { name: "format-examples.portolan.md", text: embed_str("cases/format-examples.portolan.md") },
+    NamedText { name: "meeting-definitions.portolan.md", text: embed_str("cases/meeting-definitions.portolan.md") },
+    NamedText { name: "meeting-wrapper.portolan.md", text: embed_str("cases/meeting-wrapper.portolan.md") }
+]
+
+/// The text of the case with the name; the empty text when there is none.
+export fn case_text(name str) -> str {
+    for f in case_files() {
+        if f.name == name { return f.text }
+    }
+    ""
+}
+
+/// The names of the files that the directory holds (read at compile time): a test compares them with the list above.
+export fn case_dir_names() -> []str => embed_dir("cases").paths()

@@ -1,0 +1,236 @@
+// v212_test.nv - task 125: what the version 2.12 of Portolan asks of the reading (the marks Ya-23 ... Ya-33 and Ya-37 of section 0 of the format): the version of the file, `Вход: нет`, the body of
+// `для каждого`, the values of a set of literals, a field that is named as a datum, the files of definitions (the hashes of the sample) in both languages.
+module alula.machine_text_lang
+
+import std.text
+import alula.machine_text.{translate_report, translate_definitions, definitions_hash, defs_file_text, TranslateReport}
+
+fn v212_ru() -> str => tiny_ru().replace("- format: 2.5\n", "- format: 2.12\n")
+
+fn v212_en() -> str => tiny_en().replace("- format: 2.5\n", "- format: 2.12\n")
+
+fn with_format(text str, version str) -> str => text.replace("- format: 2.12\n", "- format: ${version}\n")
+
+fn no_input_ru() -> str => v212_ru().replace("Вход:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| ход | число_ходов | исполнитель |\n", "Вход: нет\n")
+
+fn no_input_en() -> str => v212_en().replace("Input:\n\n| request_field | expression | reads |\n|---|---|---|\n| turn | turn_count | executor |\n", "Input: none\n")
+
+// ---- the version -------------------------------------------------------------------------------------------------------------------------
+
+test "v212 version read" {
+    assert(is_clean(v212_ru()))
+    assert(json_of(v212_ru()).starts_with("{\"format\":\"machine/2\",\"portolan_version\":\"2.12\",\"machine\":\"Tiny\""))
+}
+
+test "v212 version en" {
+    assert(is_clean(v212_en()))
+    assert(no_title(json_of(v212_en())) == no_title(json_of(v212_ru())))
+}
+
+test "v212 version 2.11 refused" {
+    ro text = with_format(v212_ru(), "2.11")
+    assert(!is_clean(text))
+    assert(note_says(text, "2.11"))
+    assert(note_says(text, "format: 2.12"))
+    assert(has_note_at(text, 1, 1, "structure"))
+}
+
+test "v212 older versions refused" {
+    for v in ["2.5", "2.6", "2.7", "2.8", "2.9", "2.10"] {
+        assert(!is_clean(with_format(v212_ru(), v)))
+    }
+}
+
+test "v212 newer version refused" {
+    assert(!is_clean(with_format(v212_ru(), "2.13")))
+    assert(!is_clean(with_format(v212_ru(), "3.0")))
+}
+
+test "v212 version missing" {
+    assert(!is_clean(v212_ru().replace("- format: 2.12\n", "")))
+    assert(note_says(v212_ru().replace("- format: 2.12\n", ""), "не указан"))
+}
+
+test "v212 version 2.11 en refused" {
+    assert(!is_clean(with_format(v212_en(), "2.11")))
+    assert(note_says(with_format(v212_en(), "2.11"), "format: 2.12"))
+}
+
+test "v212 machine version line" {
+    // the machine version is the author's string; the recommended one is `portolan-2.12`
+    ro text = v212_ru().replace("- machine_version: 1\n", "- machine_version: portolan-2.12\n")
+    assert(is_clean(text))
+    assert(json_of(text).contains("\"version\":\"portolan-2.12\""))
+}
+
+// ---- Ya-23: an appeal without the fields of the request ---------------------------------------------------------------------------------
+
+test "v212 input none appeal" {
+    assert(is_clean(no_input_ru()))
+    assert(!json_of(no_input_ru()).contains("\"inputs\""))
+}
+
+test "v212 input none appeal en" {
+    assert(is_clean(no_input_en()))
+    assert(no_title(json_of(no_input_en())) == no_title(json_of(no_input_ru())))
+}
+
+test "v212 input none with a table" {
+    ro text = v212_ru().replace("Вход:\n\n| поле запроса", "Вход: нет\n\n| поле запроса")
+    assert(note_says(text, "нет"))
+    assert(!is_clean(text))
+}
+
+test "v212 input empty" {
+    ro text = v212_ru().replace("Вход:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| ход | число_ходов | исполнитель |\n", "Вход:\n")
+    assert(!is_clean(text))
+    assert(note_says(text, "Вход"))
+}
+
+test "v212 input dash" {
+    ro dash = v212_ru().replace("Вход:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| ход | число_ходов | исполнитель |\n", "Вход: —\n")
+    assert(is_clean(dash))
+    assert(json_of(dash) == json_of(no_input_ru()))
+}
+
+test "v212 input none reads no datum" {
+    // the rows of an appeal without a request read the bindings only: a datum in an action is an error of the check
+    ro text = no_input_ru().replace("| 2 | слово(отказать) | — | остановка = \"a\" | СТОП |", "| 2 | слово(отказать) | — | остановка = текст(число_ходов) | СТОП |")
+    assert(note_says(text, "число_ходов") || note_says(text, "turn_count"))
+}
+
+test "v212 input none writes are allowed" {
+    ro text = no_input_ru().replace("| 1 | слово(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | слово(разрешить) | — | остановка = \"a\" | РЕШИТЬ |")
+    assert(is_clean(text))
+}
+
+// ---- Ya-24: the body of `для каждого` --------------------------------------------------------------------------------------------------------
+
+test "v212 for each one action" {
+    ro text = v212_ru().replace("число_ходов += 1 | РЕШИТЬ", "для каждого k в [1, 2]: число_ходов += k | РЕШИТЬ")
+    ro json = json_of(text)
+    assert(is_clean(text))
+    assert(json.contains("\"do\":\"for_each\""))
+}
+
+test "v212 for each list in brackets" {
+    ro text = v212_ru().replace("число_ходов += 1 | РЕШИТЬ", "для каждого k в [1, 2]: (число_ходов += k; остановка = \"a\") | РЕШИТЬ")
+    ro json = json_of(text)
+    assert(is_clean(text))
+    // both actions are in the body
+    assert(json.contains("\"body\":[{\"do\":\"add\""))
+    assert(json.contains("{\"do\":\"assign\",\"target\":\"stop_reason\""))
+}
+
+test "v212 for each outside the brackets" {
+    // the action after `;` outside the brackets is no part of the body
+    ro one = json_of(v212_ru().replace("число_ходов += 1 | РЕШИТЬ", "для каждого k в [1, 2]: число_ходов += k; остановка = \"a\" | РЕШИТЬ"))
+    ro two = json_of(v212_ru().replace("число_ходов += 1 | РЕШИТЬ", "для каждого k в [1, 2]: (число_ходов += k); остановка = \"a\" | РЕШИТЬ"))
+    ro three = json_of(v212_ru().replace("число_ходов += 1 | РЕШИТЬ", "для каждого k в [1, 2]: (число_ходов += k; остановка = \"a\") | РЕШИТЬ"))
+    assert(one == two)
+    assert(one != three)
+}
+
+test "v212 for each en" {
+    ro ru = json_of(v212_ru().replace("число_ходов += 1 | РЕШИТЬ", "для каждого k в [1, 2]: (число_ходов += k; остановка = \"a\") | РЕШИТЬ"))
+    ro en = json_of(v212_en().replace("turn_count += 1 | Decide", "for each k in [1, 2]: (turn_count += k; stop_reason = \"a\") | Decide"))
+    assert(no_title(ru) == no_title(en))
+}
+
+// ---- Ya-25: the values of a set of literals -------------------------------------------------------------------------------------------------
+
+fn set_text(values str) -> str => v212_ru().replace(`| остановка | "" \| "a" \| "b" |`, `| остановка | ${values} |`)
+
+test "v212 set cyrillic" {
+    ro json = json_of(set_text(`"" \| "наблюдалось" \| "не наблюдалось" \| "вывод"`).replace("остановка = \"a\" | СТОП", "остановка = \"вывод\" | СТОП").replace("остановка == \"a\"", "остановка == \"вывод\"").replace("остановка == \"b\"", "остановка == \"наблюдалось\""))
+    assert(json.contains("наблюдалось"))
+    assert(json.contains("не наблюдалось"))
+}
+
+test "v212 set with a space" {
+    assert(json_of(set_text(`"" \| "a b" \| "b"`).replace("остановка = \"a\" | СТОП", "остановка = \"a b\" | СТОП").replace("остановка == \"a\"", "остановка == \"a b\"")).contains("\"a b\""))
+}
+
+test "v212 set latin and cyrillic mixed" {
+    assert(json_of(set_text(`"" \| "first" \| "второй"`).replace("остановка = \"a\" | СТОП", "остановка = \"first\" | СТОП").replace("остановка == \"a\"", "остановка == \"first\"").replace("остановка == \"b\"", "остановка == \"второй\"")).contains("второй"))
+}
+
+test "v212 set value outside" {
+    assert(note_says(set_text(`"" \| "наблюдалось" \| "b"`), "is not in"))
+}
+
+test "v212 set en" {
+    ro text = v212_en().replace(`| stop_reason | "" \| "a" \| "b" |`, `| stop_reason | "" \| "не наблюдалось" \| "b" |`).replace("stop_reason = \"a\" | Stopped", "stop_reason = \"не наблюдалось\" | Stopped").replace("stop_reason == \"a\"", "stop_reason == \"не наблюдалось\"")
+    assert(is_clean(text))
+    assert(json_of(text).contains("не наблюдалось"))
+}
+
+// ---- Ya-26: the field that is named as a datum -----------------------------------------------------------------------------------------------
+
+fn field_as_datum() -> str => v212_ru().replace("разрешить, отказать", "разрешить(число_ходов число), отказать")
+
+test "v212 field named as datum" {
+    ro text = field_as_datum().replace("слово(разрешить) | —", "слово(разрешить(число_ходов: step)) | —")
+    assert(is_clean(text))
+    assert(json_of(text).contains("\"bind\":{\"turn_count\":\"step\"}"))
+}
+
+test "v212 binding named as datum" {
+    ro text = field_as_datum().replace("слово(разрешить) | —", "слово(разрешить(число_ходов)) | —")
+    assert(!is_clean(text))
+    assert(note_says(text, "no shadowing"))
+}
+
+test "v212 binding named as constant" {
+    ro text = field_as_datum().replace("слово(разрешить) | —", "слово(разрешить(число_ходов: ПОРОГ)) | —").replace("## Данные", "## Константы\n\n| имя | тип | значение |\n|---|---|---|\n| ПОРОГ | число | 2 |\n\n## Данные")
+    assert(note_says(text, "constant") || note_says(text, "ПОРОГ") || note_says(text, "Константы"))
+}
+
+// ---- the files of definitions: the hashes of the sample of 2.12 ---------------------------------------------------------------------------
+
+test "v212 defs hashes" {
+    ro ru = defs_file_text("арифметика_цикла")
+    ro en = defs_file_text("cycle_arithmetic")
+    assert(ru.contains("- format: 2.12"))
+    assert(en.contains("- format: 2.12") && en.contains("- language: en"))
+    assert(definitions_hash(ru) == "51e15e557120")
+    assert(definitions_hash(en) == "eee8c3a13a08")
+    assert(translate_definitions(ru).hash == "51e15e557120")
+    assert(translate_definitions(en).hash == "eee8c3a13a08")
+    assert(translate_definitions(ru).errors.len() == 0)
+    assert(translate_definitions(en).errors.len() == 0)
+}
+
+test "v212 defs 2.11 refused" {
+    ro old = defs_file_text("арифметика_цикла").replace("- format: 2.12", "- format: 2.11")
+    ro report = translate_definitions(old)
+    assert(report.errors.len() > 0)
+    assert(report.errors[0].message.contains("2.12"))
+    assert(definitions_hash(old) == "fad927a77d32")
+}
+
+test "v212 defs 2.11 hash is the old one" {
+    // the method is the old method: for a file with `format: 2.11` the hash is the hash that was written in the format 2.11
+    ro old_en = defs_file_text("cycle_arithmetic").replace("- format: 2.12", "- format: 2.11")
+    assert(definitions_hash(old_en) == "afe05e9a1e4d")
+}
+
+fn ru_include(hash str) -> str {
+    v212_ru().replace("## Состояния\n", "## Подключения\n\nопределения: арифметика_цикла версия 1 хеш ${hash}\n\n## Состояния\n").replace("число_ходов >= 2", "потолок_исчерпан(число_ходов + 1, 1, 2)")
+}
+
+fn en_include(hash str) -> str {
+    v212_en().replace("## States\n", "## Includes\n\ndefinitions: cycle_arithmetic version 1 hash ${hash}\n\n## States\n").replace("turn_count >= 2", "ceiling_reached(turn_count + 1, 1, 2)")
+}
+
+test "v212 include ru" {
+    assert(is_clean(ru_include("51e15e557120")))
+    assert(note_says(ru_include("fad927a77d32"), "хеш файла арифметика_цикла"))
+    assert(json_of(ru_include("51e15e557120")).contains("\"hash\":\"51e15e557120\""))
+}
+
+test "v212 include en" {
+    assert(is_clean(en_include("eee8c3a13a08")))
+    assert(note_says(en_include("afe05e9a1e4d"), "хеш файла cycle_arithmetic"))
+    assert(json_of(en_include("eee8c3a13a08")).contains("\"hash\":\"eee8c3a13a08\""))
+}

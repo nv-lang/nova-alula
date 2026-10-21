@@ -1,0 +1,178 @@
+// support_test.nv - helpers and fixtures of the tests of format 2.7 (task 110): a small machine in Russian in the notation of 2.7 and the way to read what the translator says.
+// A translation costs about 0.15 s (the table of names is read each time), so a test translates a text ONCE and asks the report.
+module alula.machine_text_fmt
+
+import std.text
+import alula.machine.{standard_registry}
+import alula.machine_text.{translate_checked, TranslateReport, TranslateError, error_text}
+
+// Three backticks: a block of code. A raw string cannot hold them, so they are put in.
+// ORACLE-WORKAROUND(43): the helper is `ticks`, not `fence`: a user function `fence` clashes with the C function of the runtime; rename to `fence` when item 43 is fixed
+fn ticks() -> str => "```"
+
+// A small machine of format 2.7: the header, types in a block of code, constants, a parameter, the input, the data, a gate, a fork, two ends. The key lines are list items.
+fn base_text() -> str => `# Машина: Малая
+
+- machine: Tiny
+- machine_version: 1
+- format: 2.12
+
+## Типы
+
+${ticks()}
+перечисление ВидДействия = Чтение "read" | Запись "write"
+${ticks()}
+
+## Константы
+
+| имя | тип | значение |
+|---|---|---|
+| ЧИСЛО_ПОВТОРОВ | число≥0 | 3 |
+
+## Параметры
+
+| имя | тип | по умолчанию | переопределение проектом |
+|---|---|---|---|
+| ПАУЗА_ПОВТОРА | число≥0 | 2000 | проект.пауза |
+
+## Вход
+
+| имя | тип | примечание |
+|---|---|---|
+| ход | текст | первый ход |
+
+## Данные
+
+| имя | тип | начальное | не убывает | пишет |
+|---|---|---|---|---|
+| число_ходов | число≥0 | 0 | да | строки |
+| остановка | "" \| "a" \| "b" | "" | — | строки |
+| попытка_вратаря | число≥0 | 0 | да | механика |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | слова ворот | счётчик |
+|---|---|---|---|---|---|
+| вратарь | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — | разрешить, отказать | попытка_вратаря |
+
+## Определения
+
+${ticks()}
+определение пауза_повтора(п число≥0) -> число =
+  п + 1
+${ticks()}
+
+## Состояния
+
+- Начальное состояние: ЖДАТЬ
+
+### ЖДАТЬ — обращение (Wait)
+- Сторона: вратарь
+- Срок тишины: —
+- Вход:
+
+| поле запроса | выражение | читает |
+|---|---|---|
+| ход | число_ходов | исполнитель |
+
+| № | Событие | Условие | Действия | Куда |
+|---|---|---|---|---|
+| 1 | слово(разрешить) | — | число_ходов += 1 | РЕШИТЬ |
+| 2 | слово(отказать) | — | остановка = "a" | СТОП |
+
+### РЕШИТЬ — развилка (Decide)
+- Вход: число_ходов
+
+| № | Условие | Действия | Куда |
+|---|---|---|---|
+| 1 | число_ходов >= 2 | — | КОНЕЦ |
+| 2 | иначе | — | ЖДАТЬ |
+
+### КОНЕЦ — конец (Finished)
+- Вход: число_ходов
+- При входе: —
+
+### СТОП — конец (Stopped)
+- Вход: остановка
+- Кроме: остановка ∈ {""}
+
+## Концы
+
+- Результат: число
+
+| конец | № | когда | ответ |
+|---|---|---|---|
+| КОНЕЦ | 1 | истина | Ответ(число_ходов) |
+| СТОП | 1 | остановка == "a" | Отказ(КодСбоя.ОстановленоЧеловеком, "stopped") |
+| СТОП | 2 | остановка == "b" | Отказ(КодСбоя.НетРезультата, "b") |
+`
+
+fn checked(text str) -> TranslateReport => translate_checked(text, standard_registry())
+
+// The JSON of the base machine (a test that compares many texts with it translates it once).
+fn base_json() -> str => checked(base_text()).json
+
+fn json_of(text str) -> str => checked(text).json
+
+fn error_lines_of(report TranslateReport) -> []str {
+    mut out = []str.new()
+    for e in report.errors { out.push("${e.line}:${e.col} ${e.kind} ${e.message}") }
+    out
+}
+
+fn error_lines(text str) -> []str => error_lines_of(checked(text))
+
+fn warning_lines(text str) -> []str {
+    mut out = []str.new()
+    for e in checked(text).warnings { out.push("${e.line}:${e.col} ${e.kind} ${e.message}") }
+    out
+}
+
+fn is_clean(text str) -> bool => checked(text).errors.len() == 0
+
+fn report_says(report TranslateReport, needle str) -> bool {
+    for line in error_lines_of(report) {
+        if line.contains(needle) { return true }
+    }
+    false
+}
+
+fn errors_say(text str, needle str) -> bool => report_says(checked(text), needle)
+
+fn first_error_of(report TranslateReport) -> str {
+    ro all = error_lines_of(report)
+    if all.len() == 0 { return "ok" }
+    all[0]
+}
+
+fn first_error(text str) -> str => first_error_of(checked(text))
+
+// Does the text translate without an error to the JSON `plain`? An error stops the test with its place. The text is translated once.
+fn same_json(text str, plain str) -> bool {
+    ro report = checked(text)
+    if report.errors.len() > 0 { panic(first_error_of(report)) }
+    report.json == plain
+}
+
+// The text with a paragraph put after the line `anchor` (an empty line, the paragraph).
+fn after(text str, anchor str, prose str) -> str {
+    ro cut = text.replace(anchor, "${anchor}\n\n${prose}")
+    if cut == text { panic("no anchor: ${anchor}") }
+    cut
+}
+
+fn replaced(text str, old str, new str) -> str {
+    ro cut = text.replace(old, new)
+    if cut == text { panic("no piece to replace: ${old}") }
+    cut
+}
+
+// The number of the first line that holds the piece, or -1.
+fn line_with(text str, piece str) -> int {
+    mut no = 0
+    for line in text.split("\n") {
+        no += 1
+        if line.contains(piece) { return no }
+    }
+    -1
+}

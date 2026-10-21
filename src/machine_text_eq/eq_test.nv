@@ -1,0 +1,227 @@
+// eq_test.nv - the proof of the translator on the chat machine: the table `chat.portolan.md` in Russian, translated to the JSON `machine/2`, runs the 39 scenarios
+// of the chat like the hand-written `chat.portolan.json` - the state, the data, the events of the journal, the lines of the journal with the envelope, the
+// open, sent and cancelled requests, the queue, the acknowledgements, the outcome, the number of the step - at the level of the engine, and the orders, the
+// transition and the state at the level of one step of the machine.
+module alula.machine_text_eq
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine.{scenario_files, standard_registry, chat_machine_text, chat_table_text}
+import alula.engine.{Incoming, Order, StepEnvironment, journal_line}
+import alula.machine_run.{PortolanState, PortolanMachine, Scenario, StepTrace, load_portolan_machine, portolan_step, ScriptedHost, drive_scenario, parse_scenario, scenario_incoming, run_scenario, run_ok, report_text}
+import alula.machine_text.{translate, error_text}
+
+fn translated_json() -> str {
+    match translate(chat_table_text()) {
+        Ok(json) => json
+        Err(problems) => panic("the chat table does not translate: ${problems[0].message}")
+    }
+}
+
+fn machine_from(json str) -> PortolanMachine {
+    match load_portolan_machine(json, standard_registry()) {
+        Ok(m) => m
+        Err(e) => panic("the chat machine does not load: ${e}")
+    }
+}
+
+fn translated_machine() -> PortolanMachine => machine_from(translated_json())
+
+fn written_machine() -> PortolanMachine => machine_from(chat_machine_text())
+
+fn chat_scenarios() -> []Scenario {
+    mut out = []Scenario.new()
+    for f in scenario_files() {
+        match parse_scenario(f.text) {
+            Ok(sc) => {
+                if sc.machine == "ChatSession" { out.push(sc) }
+            }
+            Err(e) => panic("${f.name}: ${e.path}: ${e.message}")
+        }
+    }
+    out
+}
+
+fn entry_lines(t StepTrace) -> []str {
+    mut out = []str.new()
+    for e in t.entries { out.push(journal_line(e)) }
+    out
+}
+
+fn same_list(xs []str, ys []str) -> bool {
+    if xs.len() != ys.len() { return false }
+    mut i = 0
+    while i < xs.len() {
+        if xs[i] != ys[i] { return false }
+        i += 1
+    }
+    true
+}
+
+// The two traces of a step compared; "" when equal, else what differs.
+// ORACLE-WORKAROUND(47): the parameters are `ta`, `tb`, not `a`, `b`: a unit that imports this module gets the prelude `EmbeddedDir.merge` wrong from the names `a`, `b`; rename to `a`, `b` when item 47 is fixed (the same for the locals of `engine_diff`)
+fn trace_diff(ta StepTrace, tb StepTrace) -> str {
+    if ta.state != tb.state { return "state ${ta.state} / ${tb.state}" }
+    if ta.encoded != tb.encoded { return "data ${ta.encoded} / ${tb.encoded}" }
+    if !same_list(ta.journal, tb.journal) { return "journal ${ta.journal.join(";")} / ${tb.journal.join(";")}" }
+    if !same_list(entry_lines(ta), entry_lines(tb)) { return "journal lines ${entry_lines(ta).join(";")} / ${entry_lines(tb).join(";")}" }
+    if !same_list(ta.open, tb.open) { return "open ${ta.open.join(",")} / ${tb.open.join(",")}" }
+    if !same_list(ta.sent, tb.sent) { return "sent ${ta.sent.join(",")} / ${tb.sent.join(",")}" }
+    if !same_list(ta.cancelled, tb.cancelled) { return "cancelled ${ta.cancelled.join(",")} / ${tb.cancelled.join(",")}" }
+    if !same_list(ta.queue, tb.queue) { return "queue ${ta.queue.join(",")} / ${tb.queue.join(",")}" }
+    if !same_list(ta.acked, tb.acked) { return "acked ${ta.acked.join(",")} / ${tb.acked.join(",")}" }
+    if ta.outcome != tb.outcome { return "outcome ${ta.outcome} / ${tb.outcome}" }
+    if ta.number != tb.number { return "step number ${ta.number} / ${tb.number}" }
+    ""
+}
+
+// ORACLE-WORKAROUND(12, 13, 26): the type arguments of `drive_scenario` are written out here and in the tests below; infer them when items 12 and 13 are fixed
+fn engine_diff(sc Scenario, first PortolanMachine, second PortolanMachine) -> str {
+    ro ta = drive_scenario[PortolanState, PortolanMachine](first, sc)
+    ro tb = drive_scenario[PortolanState, PortolanMachine](second, sc)
+    if ta.len() != tb.len() { return "${sc.name}: ${ta.len()} traces / ${tb.len()}" }
+    mut i = 0
+    while i < ta.len() {
+        ro d = trace_diff(ta[i], tb[i])
+        if d != "" { return "${sc.name}, step ${i + 1}: ${d}" }
+        i += 1
+    }
+    ""
+}
+
+test "eq 39 engine" {
+    ro first = translated_machine()
+    ro second = written_machine()
+    ro all = chat_scenarios()
+    assert(all.len() == 39)
+    mut steps = 0
+    for sc in all {
+        ro d = engine_diff(sc, first, second)
+        if d != "" { panic(d) }
+        steps += sc.steps.len()
+    }
+    assert(steps == 126)
+}
+
+test "eq 39 own" {
+    ro first = translated_machine()
+    for sc in chat_scenarios() {
+        ro run = run_scenario(first, sc)
+        if !run_ok(run) { panic(report_text(run)) }
+    }
+}
+
+// ---- one step of the machine ------------------------------------------------------------------------------------------------
+
+fn order_text(orders []Order) -> str {
+    mut parts = []str.new()
+    for o in orders {
+        match o {
+            Send(order) => parts.push("send:${order.party}:${order.input}:${order.idle_term}")
+            Note(event) => {
+                mut ps = []str.new()
+                for p in event.params { ps.push("${p.name}=${p.value}") }
+                parts.push("log:${event.code}(${ps.join(";")})")
+            }
+            Cancel(order) => parts.push("cancel:${order.party}")
+            Save => parts.push("save")
+            Finish(c) => match c.failure {
+                Some(code) => parts.push("finish:refusal:${code.name()}:${c.text}")
+                None => parts.push("finish:answer:${c.text}")
+            }
+        }
+    }
+    parts.join(",")
+}
+
+type StepPair { a_state PortolanState, b_state PortolanState, a_text str, b_text str, a_moved bool, b_moved bool }
+
+fn step_pair(first PortolanMachine, second PortolanMachine, p StepPair, event Incoming) -> StepPair {
+    mut ae = StepEnvironment.new()
+    mut ahost = ScriptedHost { at: event.at, replies: first.replies, ids: 0 }
+    ro at = portolan_step(first, p.a_state, event, ae, ahost)
+    mut be = StepEnvironment.new()
+    mut bhost = ScriptedHost { at: event.at, replies: second.replies, ids: 0 }
+    ro bt = portolan_step(second, p.b_state, event, be, bhost)
+    ro next_a = match at {
+        Go(s) => s
+        Stay => p.a_state
+    }
+    ro next_b = match bt {
+        Go(s) => s
+        Stay => p.b_state
+    }
+    ro a_moved = match at {
+        Go(s) => true
+        Stay => false
+    }
+    ro b_moved = match bt {
+        Go(s) => true
+        Stay => false
+    }
+    StepPair { a_state: next_a, b_state: next_b, a_text: order_text(ae.orders), b_text: order_text(be.orders), a_moved, b_moved }
+}
+
+fn events_of(sc Scenario) -> []Incoming {
+    mut out = []Incoming.new()
+    for s in sc.steps {
+        if s.event.kind != "" { out.push(scenario_incoming(s.event)) }
+    }
+    out
+}
+
+fn machine_diff(sc Scenario, first PortolanMachine, second PortolanMachine) -> str {
+    mut p = StepPair { a_state: first.initial(), b_state: second.initial(), a_text: "", b_text: "", a_moved: false, b_moved: false }
+    mut i = 0
+    for e in events_of(sc) {
+        p = step_pair(first, second, p, e)
+        i += 1
+        if p.a_text != p.b_text { return "${sc.name}, event ${i}: orders ${p.a_text} / ${p.b_text}" }
+        if p.a_moved != p.b_moved { return "${sc.name}, event ${i}: moved" }
+        if first.encode_state(p.a_state) != second.encode_state(p.b_state) { return "${sc.name}, event ${i}: state" }
+    }
+    ""
+}
+
+test "eq 39 machine" {
+    ro first = translated_machine()
+    ro second = written_machine()
+    mut events = 0
+    for sc in chat_scenarios() {
+        ro d = machine_diff(sc, first, second)
+        if d != "" { panic(d) }
+        events += events_of(sc).len()
+    }
+    assert(events == 91)
+}
+
+test "eq the same json" {
+    ro first = translated_machine()
+    assert(first.name() == "ChatSession")
+    assert(first.state_name(first.initial()) == "Idle")
+    assert(first.encode_state(first.initial()) == written_machine().encode_state(written_machine().initial()))
+}
+
+test "eq twice" {
+    ro one = translated_json()
+    ro two = translated_json()
+    assert(one == two)
+}
+
+test "eq red probe" {
+    // a deliberately broken translation is seen by the scenarios
+    ro broken = translated_json().replace("cancelled_while_waiting", "cancelled_before_request")
+    ro first = machine_from(broken)
+    ro second = written_machine()
+    mut found = 0
+    for sc in chat_scenarios() {
+        if engine_diff(sc, first, second) != "" { found += 1 }
+    }
+    assert(found >= 1)
+    ro other = translated_json().replace("30000", "30001")
+    mut found_term = 0
+    for sc in chat_scenarios() {
+        if machine_diff(sc, machine_from(other), second) != "" { found_term += 1 }
+    }
+    assert(found_term >= 3)
+}

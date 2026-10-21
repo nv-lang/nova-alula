@@ -1,0 +1,93 @@
+// format_test.nv - `format: 2.12` is read in the header of a machine and of a file of definitions; the hash of the sample file of definitions is `446ddf8041c0`; files of 2.5 and 2.6
+// (no list markers, no blocks of code) are read as before.
+module alula.machine_text_fmt
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine_text.{definitions_hash, normalize_definitions, translate_definitions, defs_file_text}
+
+// The shipped file of definitions is of format 2.11 (the hash `51e15e557120`); these tests are about the reading of 2.7 and earlier: the same file with the 2.7 line.
+fn cycle() -> str => defs_file_text("арифметика_цикла").replace("- format: 2.12", "- format: 2.12")
+
+// The text of 2.5: no list markers, the key lines at the first column.
+fn old_style(text str) -> str {
+    mut lines = []str.new()
+    for line in text.split("\n") {
+        if line.starts_with("- ") {
+            lines.push(line[2..])
+        } else {
+            lines.push(line)
+        }
+    }
+    lines.join("\n")
+}
+
+test "fm versions" {
+    ro v212 = base_json()
+    assert(v212.contains("\"portolan_version\":\"2.12\""))
+    assert(json_of(replaced(base_text(), "- format: 2.12", "format: 2.12")) == v212)
+}
+
+test "fm unknown version" {
+    for v in ["2.4", "2.11", "3", "2.7.1", ""] {
+        ro report = checked(replaced(base_text(), "- format: 2.12", "- format: ${v}"))
+        assert(report.errors.len() > 0)
+        assert(report_says(report, "читает формат 2.12"))
+    }
+    ro missing = replaced(base_text(), "- format: 2.12\n", "")
+    assert(errors_say(missing, "формат не указан"))
+}
+
+test "fm old style" {
+    // the marker `- ` of a key line is optional when reading: a file with no marker gives the same tree
+    ro old = old_style(base_text())
+    assert(!old.contains("\n- "))
+    ro report = checked(old)
+    if report.errors.len() > 0 { panic(first_error_of(report)) }
+    ro plain = base_json()
+    assert(report.json == plain)
+    ro mixed = replaced(base_text(), "- Сторона: вратарь", "Сторона: вратарь")
+    assert(same_json(mixed, plain))
+}
+
+test "fm sample hash" {
+    ro text = cycle()
+    assert(text.contains("- format: 2.12"))
+    ro hash = definitions_hash(text)
+    assert(hash.byte_len() == 12)
+    assert(definitions_hash(text.replace("\n", "\r\n")) == hash)
+    assert(definitions_hash("${text}\n\n\n") == hash)
+    assert(definitions_hash(text.replace("\n\n", " \n\n")) == hash)
+    assert(definitions_hash(text.replace("потолок", "потолоки")) != hash)
+}
+
+test "fm line format is a part of the hash" {
+    ro text = cycle()
+    assert(definitions_hash(text.replace("format: 2.12", "format: 2.11")) != definitions_hash(text))
+    assert(normalize_definitions(text).ends_with("предел\n"))
+}
+
+test "fm defs report" {
+    ro report = translate_definitions(cycle())
+    assert(report.errors.len() == 0)
+    assert(report.hash == definitions_hash(cycle()))
+    assert(report.version == "1")
+}
+
+test "fm defs unknown" {
+    for v in ["2.4", "2.11", "3"] {
+        ro report = translate_definitions(cycle().replace("format: 2.12", "format: ${v}"))
+        assert(report.errors.len() == 1)
+        assert(report.errors[0].message.contains("формат файла определений должен быть 2.12"))
+    }
+}
+
+test "fm include hash" {
+    ro include = "определения: арифметика_цикла версия 1 хеш"
+    ro good = replaced(base_text(), "## Состояния\n", "## Подключения\n\n${include} 51e15e557120\n\n## Состояния\n")
+    ro good_report = checked(good)
+    if good_report.errors.len() > 0 { panic(first_error_of(good_report)) }
+    assert(good_report.json.contains("\"includes\":[{\"name\":\"арифметика_цикла\",\"version\":\"1\",\"hash\":\"51e15e557120\"}]"))
+    ro old = replaced(base_text(), "## Состояния\n", "## Подключения\n\n${include} 1628bec298d9\n\n## Состояния\n")
+    assert(errors_say(old, "хеш файла арифметика_цикла — 51e15e557120, а в подключении 1628bec298d9"))
+}

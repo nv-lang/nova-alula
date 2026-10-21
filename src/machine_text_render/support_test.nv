@@ -1,0 +1,151 @@
+// support_test.nv - helpers of the tests of the reverse generator (task 113): JSON `machine/2` -> a file of Portolan in Russian or English (section 1b of the specification, the canonical form).
+// The trees are compared as trees (the order of the keys, the spaces and the `title` do not count).
+module alula.machine_text_render
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import std.encoding.json.{Json, JsonValue, JsonObject}
+import alula.machine.{standard_registry, machine_files, text_of_file}
+import alula.machine_text.{translate_checked, translate_report, TranslateReport, render_machine, RenderReport, error_text}
+
+fn machine_json(name str) -> str => text_of_file(machine_files(), name)
+
+fn checked(text str) -> TranslateReport => translate_checked(text, standard_registry())
+
+// The keys that a circle does not keep: the title (the header of the canonical file holds the Latin name of the machine, 1b (а)) and the version of the language of the tree.
+fn dropped_keys() -> []str => ["title", "portolan_version"]
+
+fn kind_of(v JsonValue) -> str {
+    if v.is_null() { return "null" }
+    if v.is_bool() { return "bool" }
+    if v.is_num() { return "num" }
+    if v.is_str() { return "str" }
+    if v.is_array() { return "array" }
+    "object"
+}
+
+// Where two trees differ: the place and the two pieces, or "" when they are equal.
+fn first_difference(left JsonValue, right JsonValue, place str) -> str {
+    if kind_of(left) != kind_of(right) { return "${place}: ${kind_of(left)} / ${kind_of(right)}" }
+    match left.array() {
+        Some(xs) => {
+            ro ys = right.array() ?? []JsonValue.new()
+            if xs.len() != ys.len() { return "${place}: ${xs.len()} items / ${ys.len()} items" }
+            mut i = 0
+            while i < xs.len() {
+                ro d = first_difference(xs[i], ys[i], "${place}[${i}]")
+                if d != "" { return d }
+                i += 1
+            }
+            return ""
+        }
+        None => ()
+    }
+    match left.object() {
+        Some(xo) => {
+            ro yo = right.object() ?? JsonObject.new()
+            for k in xo.keys() {
+                if place == "$" && dropped_keys().contains(k) { continue }
+                match yo.get(k) {
+                    Some(yv) => {
+                        ro d = first_difference(xo.get(k) ?? JsonValue.null(), yv, "${place}.${k}")
+                        if d != "" { return d }
+                    }
+                    None => {
+                        // a datum without `writes` is a datum written by rows, a key with an empty list is no key: the translator writes both always
+                        if !(k == "writes" && sval(xo, k) == "rows") && !is_empty_list(xo.get(k) ?? JsonValue.null()) { return "${place}.${k}: missing in the second tree" }
+                    }
+                }
+            }
+            for k in yo.keys() {
+                if place == "$" && dropped_keys().contains(k) { continue }
+                if !xo.contains(k) && !(k == "writes" && sval(yo, k) == "rows") && !is_empty_list(yo.get(k) ?? JsonValue.null()) { return "${place}.${k}: missing in the first tree" }
+            }
+            return ""
+        }
+        None => ()
+    }
+    if left.to_str() != right.to_str() { return "${place}: ${left.to_str()} / ${right.to_str()}" }
+    ""
+}
+
+// The same for two texts of JSON.
+fn same_tree(first str, second str) -> str {
+    match Json.parse(first) {
+        Ok(left) => match Json.parse(second) {
+            Ok(right) => first_difference(left, right, "$")
+            Err(e) => "the second text is no JSON"
+        }
+        Err(e) => "the first text is no JSON"
+    }
+}
+
+fn is_empty_list(v JsonValue) -> bool {
+    match v.array() {
+        Some(items) => items.len() == 0
+        None => false
+    }
+}
+
+fn sval(o JsonObject, key str) -> str {
+    match o.get(key) {
+        Some(v) => v.str() ?? ""
+        None => ""
+    }
+}
+
+// The JSON of a file of Portolan, or the first error as a text.
+fn json_of(text str) -> str {
+    ro report = checked(text)
+    if report.errors.len() > 0 { return "ERROR ${error_text(report.errors[0], "generated")}" }
+    report.json
+}
+
+// A circle: the tree -> the file in the language -> the tree. "" when the second tree equals the first, else where they differ (or the error of the translation).
+fn circle(json str, lang str) -> str {
+    ro made = render_machine(json, lang)
+    ro back = json_of(made.text)
+    if back.starts_with("ERROR ") { return back }
+    same_tree(json, back)
+}
+
+// The generated file, for a look at it in a failing test: the lines from `from` (1-based), `count` of them.
+fn lines_from(text str, from int, count int) -> str {
+    mut out = []str.new()
+    mut no = 0
+    for line in text.split("\n") {
+        no += 1
+        if no >= from && no < from + count { out.push(line) }
+    }
+    out.join("\n")
+}
+
+fn line_count(text str) -> int {
+    mut n = 0
+    for line in text.split("\n") { n += 1 }
+    n
+}
+
+fn text_has_line(text str, wanted str) -> bool {
+    for line in text.split("\n") {
+        if line == wanted { return true }
+    }
+    false
+}
+
+fn index_of_line(text str, wanted str) -> int {
+    mut no = 0
+    for line in text.split("\n") {
+        no += 1
+        if line == wanted { return no }
+    }
+    -1
+}
+
+// A circle without the checks of the table (for a file that is a piece of a machine).
+fn circle_loose(json str, lang str) -> str {
+    ro made = render_machine(json, lang)
+    ro report = translate_report(made.text)
+    if report.errors.len() > 0 { return "ERROR ${error_text(report.errors[0], "generated")}" }
+    same_tree(json, report.json)
+}

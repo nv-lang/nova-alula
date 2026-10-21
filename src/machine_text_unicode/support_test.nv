@@ -1,0 +1,145 @@
+// support_test.nv - helpers of the tests of the names in any alphabet (task 117): a small machine in Russian whose states can be renamed, and the circles md -> JSON -> md -> JSON of an
+// expression, a list of actions and a machine. Only the exported API of `alula.machine_text` is used.
+module alula.machine_text_unicode
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine.{standard_registry}
+import alula.machine_text.{translate_checked, translate_expression_in, translate_actions_in, render_expression_in, render_actions_in, render_machine, TranslateReport, TranslateError, error_text}
+
+// A small machine: a gate that waits for a word, a fork, two ends (Russian, format 2.5).
+fn tiny_ru() -> str => `# Машина: Малая
+
+- machine: Tiny
+- machine_version: 1
+- format: 2.12
+
+## Данные
+
+| имя | тип | начальное | не убывает | пишет |
+|---|---|---|---|---|
+| число_ходов | число≥0 | 0 | да | строки |
+| остановка | "" \| "a" \| "b" | "" | — | строки |
+| попытка_вратаря | число≥0 | 0 | да | механика |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | слова ворот | счётчик |
+|---|---|---|---|---|---|
+| вратарь | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — | разрешить, отказать | попытка_вратаря |
+
+## Состояния
+
+Начальное состояние: ЖДАТЬ
+
+### ЖДАТЬ — обращение (Wait)
+Сторона: вратарь
+Срок тишины: —
+Вход:
+
+| поле запроса | выражение | читает |
+|---|---|---|
+| ход | число_ходов | исполнитель |
+
+| № | Событие | Условие | Действия | Куда |
+|---|---|---|---|---|
+| 1 | слово(разрешить) | — | число_ходов += 1 | РЕШИТЬ |
+| 2 | слово(отказать) | — | остановка = "a" | СТОП |
+
+### РЕШИТЬ — развилка (Decide)
+Вход: число_ходов
+
+| № | Условие | Действия | Куда |
+|---|---|---|---|
+| 1 | число_ходов >= 2 | — | КОНЕЦ |
+| 2 | иначе | — | ЖДАТЬ |
+
+### КОНЕЦ — конец (Finished)
+Вход: число_ходов
+
+### СТОП — конец (Stopped)
+Вход: остановка
+Кроме: остановка ∈ {""}
+
+## Концы
+
+Результат: число
+
+| конец | № | когда | ответ |
+|---|---|---|---|
+| КОНЕЦ | 1 | истина | Ответ(число_ходов) |
+| СТОП | 1 | остановка == "a" | Отказ(КодСбоя.ОстановленоЧеловеком, "stopped") |
+| СТОП | 2 | остановка == "b" | Отказ(КодСбоя.НетРезультата, "b") |
+`
+
+fn checked(text str) -> TranslateReport => translate_checked(text, standard_registry())
+
+// The machine with its four states renamed: the first waits, the second is the fork, the third and the fourth are the ends.
+fn tiny_named(wait str, decide str, finished str, stopped str) -> str =>
+    tiny_ru().replace("ЖДАТЬ", wait).replace("РЕШИТЬ", decide).replace("КОНЕЦ", finished).replace("СТОП", stopped)
+
+fn problems_text(report TranslateReport) -> str {
+    mut parts = []str.new()
+    for e in report.errors { parts.push(error_text(e, "f.md")) }
+    parts.join("\n")
+}
+
+// The JSON of a machine without its title (the canonical header holds the Latin name of the machine, so a circle does not keep the title).
+fn no_title(json str) -> str {
+    ro key = "\"title\":\""
+    match json.find(key) {
+        Some(at) => {
+            ro rest = json[at + key.byte_len()..]
+            match rest.find("\"") {
+                Some(end) => "${json[..at]}${rest[end + 1..]}"
+                None => json
+            }
+        }
+        None => json
+    }
+}
+
+// A machine, its file written back in the language, and the JSON of that file: the first JSON, the second JSON, the file, the problems of the first, the problems of the second.
+fn machine_circle(text str, lang str) -> []str {
+    ro first = checked(text)
+    ro written = render_machine(first.json, lang)
+    ro second = checked(written.text)
+    [no_title(first.json), no_title(second.json), written.text, problems_text(first), problems_text(second)]
+}
+
+// The JSON of an expression, or `ERR line:col: message`.
+fn ex_json(text str, data []str, lang str) -> str {
+    match translate_expression_in(text, data, lang) {
+        Ok(j) => j
+        Err(problems) => "ERR ${problems[0].line}:${problems[0].col}: ${problems[0].message}"
+    }
+}
+
+// The same for a list of actions.
+fn ac_json(text str, data []str, lang str) -> str {
+    match translate_actions_in(text, data, ["пользователь"], [], lang) {
+        Ok(j) => j
+        Err(problems) => "ERR ${problems[0].line}:${problems[0].col}: ${problems[0].message}"
+    }
+}
+
+// The circle of an expression: the JSON, the text written back, the JSON of that text.
+fn ex_circle(text str, data []str, lang str) -> []str {
+    ro first = ex_json(text, data, lang)
+    ro written = render_expression_in(first, lang, [])
+    [first, written, ex_json(written, data, lang)]
+}
+
+fn ac_circle(text str, data []str, lang str) -> []str {
+    ro first = ac_json(text, data, lang)
+    ro written = render_actions_in(first, lang, [])
+    [first, written, ac_json(written, data, lang)]
+}
+
+// The line and the column of the first error of the kind, or 0 and 0.
+fn place_of(report TranslateReport, kind str) -> []int {
+    for e in report.errors {
+        if e.kind == kind { return [e.line, e.col] }
+    }
+    [0, 0]
+}

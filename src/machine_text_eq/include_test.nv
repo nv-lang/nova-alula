@@ -1,0 +1,159 @@
+// include_test.nv - the section `## Подключения`: the files of definitions (name, version, hash, the copy in the tree) and the fragment "Pause" (the six parameters).
+module alula.machine_text_eq
+
+import std.text
+import alula.machine.{standard_registry, NamedText}
+import alula.machine_table.{load_machine}
+import alula.machine_text.{translate_report, translate_checked_with, translate_checked, TranslateReport, defs_file_text}
+import alula.machine_text.{translate_definitions, DefsReport, definitions_hash}
+
+fn cycle_file() -> NamedText => { name: "арифметика_цикла", text: cycle_text() }
+
+fn cycle_text() -> str => defs_file_text("арифметика_цикла")
+
+fn meeting_file() -> NamedText => { name: "определения_совещания", text: case_text("meeting-definitions.portolan.md") }
+
+fn registry_files() -> []NamedText => [cycle_file(), meeting_file()]
+
+fn wrapper() -> str => case_text("meeting-wrapper.portolan.md")
+
+fn wrapped(text str) -> TranslateReport => translate_checked_with(text, standard_registry(), registry_files())
+
+fn says_any(report TranslateReport, needle str) -> bool {
+    for e in report.errors {
+        if e.message.contains(needle) { return true }
+    }
+    false
+}
+
+// ---- the meeting definitions ------------------------------------------------------------------------------------------------------
+
+test "in meeting defs" {
+    ro d = translate_definitions(case_text("meeting-definitions.portolan.md"))
+    assert(d.errors.len() == 0)
+    assert(d.version == "1")
+    assert(d.rows_total == 15)
+    assert(d.rows_noted == 0)
+    assert(d.hash == "193bf2127cd5")
+    assert(d.json.contains("\"definitions\":[{\"name\":\"has_critical\""))
+}
+
+test "in meeting counts" {
+    ro d = translate_definitions(case_text("meeting-definitions.portolan.md"))
+    assert(d.json.match_indices("\"result\":").len() == 14)
+    assert(d.json.contains("{\"name\":\"lenses_without_critical\""))
+}
+
+test "in wrapper" {
+    ro report = wrapped(wrapper())
+    if report.errors.len() > 0 { panic("${report.errors[0].line}: ${report.errors[0].message}") }
+    assert(report.errors.len() == 0)
+    assert(report.json.contains("\"includes\":[{\"name\":\"арифметика_цикла\",\"version\":\"1\",\"hash\":\"51e15e557120\"},{\"name\":\"определения_совещания\",\"version\":\"1\",\"hash\":\"193bf2127cd5\"}]"))
+    assert(report.json.contains("{\"name\":\"ceiling_reached\",\"params\":"))
+    assert(report.json.contains("{\"name\":\"yes_no_word\",\"params\""))
+}
+
+test "in wrapper loads" {
+    ro report = wrapped(wrapper())
+    match load_machine(report.json, standard_registry()) {
+        Ok(def) => {
+            assert(def.includes.len() == 2)
+            assert(def.definitions.len() == 15)
+            assert(def.constants.len() == 1)
+            assert(def.types.variants.len() == 5)
+        }
+        Err(issues) => panic("${issues[0].path}: ${issues[0].message}")
+    }
+}
+
+test "in hash errors" {
+    assert(says_any(wrapped(wrapper().replace("51e15e557120", "fad927a77d33")), "хеш файла арифметика_цикла — 51e15e557120, а в подключении fad927a77d33"))
+    assert(says_any(wrapped(wrapper().replace("арифметика_цикла версия 1", "арифметика_цикла версия 2")), "версия файла арифметика_цикла — 1, а в подключении 2"))
+    assert(says_any(wrapped(wrapper().replace("определения: арифметика_цикла", "определения: нет_такого_файла")), "файла определений `нет_такого_файла` нет в реестре"))
+    assert(says_any(wrapped(wrapper().replace("определения: определения_совещания версия 1 хеш 193bf2127cd5", "определения: арифметика_цикла версия 1 хеш 51e15e557120")), "подключён дважды"))
+}
+
+test "in line errors" {
+    assert(says_any(wrapped(wrapper().replace("хеш 51e15e557120", "хеш fb15")), "после `хеш` ожидается 12 шестнадцатеричных знаков"))
+    assert(says_any(wrapped(wrapper().replace("хеш 51e15e557120", "хеш 446DDF8041C0")), "после `хеш` ожидается 12 шестнадцатеричных знаков"))
+    assert(says_any(wrapped(wrapper().replace("версия 1 хеш 51e15e557120", "хеш 51e15e557120")), "ожидается `версия`"))
+    assert(says_any(wrapped(wrapper().replace("версия 1 хеш 51e15e557120", "версия один хеш 51e15e557120")), "после `версия` ожидается целое число"))
+}
+
+test "in name clash" {
+    ro text = wrapper().replace("## Состояния", "## Определения\n\n```\nопределение потолок_исчерпан(номер число≥1, отсчёт число≥1, предел число≥0) -> да/нет =\n  истина\n```\n\n## Состояния")
+    assert(says_any(wrapped(text), "определение `потолок_исчерпан` повторено"))
+}
+
+// ---- the file of definitions as the format asks it ------------------------------------------------------------------------------
+
+fn defs_with(old str, new str) -> DefsReport => translate_definitions(cycle_text().replace(old, new))
+
+fn defs_says(report DefsReport, needle str) -> bool {
+    for e in report.errors {
+        if e.message.contains(needle) { return true }
+    }
+    false
+}
+
+test "in defs file" {
+    assert(defs_with("# Определения: арифметика_цикла", "# Что-то: арифметика_цикла").errors.len() >= 1)
+    assert(defs_says(defs_with("definitions_version: 1", "definitions_version: x"), "definitions_version: <целое>"))
+    assert(defs_says(defs_with("format: 2.12", "format: 2.3"), "формат файла определений должен быть 2.12"))
+    assert(defs_says(defs_with("## Константы\n—\n\n", ""), "три раздела по порядку"))
+    assert(defs_says(defs_with("## Типы\n—", "## Типы\n—\n\n## Подключения\n—"), "три раздела по порядку"))
+    assert(defs_says(defs_with("definitions_version: 1", "definitions_version: 1\nлишнее: слово"), "в шапке файла определений"))
+}
+
+test "in defs hash stable" {
+    ro text = cycle_text()
+    assert(definitions_hash(text) == "51e15e557120")
+    assert(definitions_hash("${text}\n\n") == "51e15e557120")
+    assert(definitions_hash(text.replace("пред", "предел")) != "51e15e557120")
+    assert(translate_definitions(text).hash == definitions_hash(text))
+}
+
+// ---- the fragment -------------------------------------------------------------------------------------------------------------------
+
+fn pilot_with(old str, new str) -> TranslateReport => translate_checked(case_text("agent-step.portolan.md").replace(old, new), standard_registry())
+
+test "in pause params" {
+    assert(says_any(pilot_with(",\n      право_записи: \"файлы, которые правит агент; пауза их права не трогает\")", ")"), "не назван параметр `право_записи`"))
+    assert(says_any(pilot_with("слово_остановки: остановить, ", ""), "не назван параметр `слово_остановки`"))
+    assert(says_any(pilot_with("вложенные: [],\n", ""), "не назван параметр `вложенные`"))
+    assert(says_any(pilot_with("код_остановки: \"pause_halt\"", "код_остановки: \"pause_halt\", лишний: \"x\""), "у фрагмента `Пауза` нет параметра `лишний`"))
+}
+
+test "in pause kinds" {
+    assert(says_any(pilot_with("код_остановки: \"pause_halt\"", "код_остановки: pause_halt"), "`код_остановки` — текст в кавычках"))
+    assert(says_any(pilot_with("слово_остановки: остановить", "слово_остановки: \"остановить\""), "`слово_остановки` — слово ворот, без кавычек"))
+    assert(says_any(pilot_with("отмена_запросов: прекратить_ход_транспорта", "отмена_запросов: отменять"), "`отмена_запросов`: механика, без_возврата_в_к_отправке, прекратить_ход_транспорта"))
+    assert(says_any(pilot_with("вход_заново: ничего", "вход_заново: никогда"), "`вход_заново`: ничего, запросы_из_к_отправке"))
+    assert(says_any(pilot_with("вложенные: []", "вложенные: ничего"), "`вложенные` — список машин"))
+    assert(says_any(pilot_with("право_записи: \"файлы, которые правит агент; пауза их права не трогает\"", "право_записи: 5"), "ожидается слово"))
+}
+
+test "in pause unknown" {
+    assert(says_any(pilot_with("Пауза(слово_остановки", "Остановка(слово_остановки"), "фрагмента `Остановка` нет в реестре"))
+    assert(says_any(pilot_with("отмена_запросов: прекратить_ход_транспорта", "отмена_запросов прекратить_ход_транспорта"), "ожидается `:`"))
+}
+
+test "in pause effects" {
+    ro halt = pilot_with("код_остановки: \"pause_halt\"", "код_остановки: \"pause_stop\"")
+    assert(says_any(halt, "\"pause_stop\" is not in"))
+    ro text = case_text("agent-step.portolan.md")
+    ro before = text[..text.find("Пауза(слово_остановки") ?? 0]
+    ro include_line = before.split("\n").count()
+    mut seen = false
+    for e in halt.errors {
+        if e.message.contains("\"pause_stop\" is not in") && e.line == include_line { seen = true }
+    }
+    assert(seen)
+}
+
+test "in pause removed" {
+    ro without = case_text("agent-step.portolan.md").replace("```\nПауза(слово_остановки: остановить, код_остановки: \"pause_halt\", вложенные: [],\n      отмена_запросов: прекратить_ход_транспорта, вход_заново: ничего,\n      право_записи: \"файлы, которые правит агент; пауза их права не трогает\")\n```", "")
+    ro report = translate_checked(without, standard_registry())
+    assert(report.json.contains("\"common_events\"") == false)
+    assert(report.json.contains("\"name\":\"Pause\"") == false)
+}

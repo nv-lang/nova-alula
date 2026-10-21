@@ -1,0 +1,118 @@
+// pilot_run_test.nv - the pilot "Agent step" translated from the table runs on the interpreter: the start, the request to the agent, the answer, the check of the form,
+// the accounting, the end with the answer; and a transient failure that retries. The translation is not only loaded, it works.
+module alula.machine_text_eq
+
+import std.text
+import alula.machine.{standard_registry, enum_value, Value, Null}
+import alula.engine.{Incoming, EventKind, StepEnvironment, Order}
+import alula.machine_run.{PortolanState, PortolanMachine, load_portolan_machine, portolan_step, ScriptedHost, ScriptedReply, with_replies}
+import alula.machine_text.{translate_checked}
+
+fn agent_machine(check Value) -> PortolanMachine {
+    ro report = translate_checked(case_text("agent-step.portolan.md"), standard_registry())
+    match load_portolan_machine(report.json, standard_registry()) {
+        Ok(m) => with_replies(m, [ScriptedReply { name: "reply_validation", value: check }, ScriptedReply { name: "close_agent_turn", value: Null }])
+        Err(e) => panic("the pilot does not build: ${e}")
+    }
+}
+
+fn start_input() -> str {
+    ro profile = "{\"$record\":\"AgentProfile\",\"fields\":{\"family\":\"claude\",\"model\":\"m1\",\"effort\":null}}"
+    ro limits = "{\"$record\":\"AgentLimits\",\"fields\":{\"silence_term\":null,\"token_budget\":null,\"cost_budget\":null,\"turn_limit\":null}}"
+    ro kind = "{\"$variant\":\"CallerKind\",\"name\":\"CycleSession\",\"fields\":{}}"
+    ro request = "{\"$record\":\"AgentRequest\",\"fields\":{\"kind\":${kind},\"profile\":${profile},\"session\":\"s1\",\"dialog_kind\":\"main\",\"context\":\"ctx\",\"limits\":${limits},\"trace\":\"t1\",\"step\":0}}"
+    "{\"agent_request\":${request}}"
+}
+
+fn usage_json() -> str {
+    ro model = "{\"$record\":\"AgentModel\",\"fields\":{\"id\":\"m1\",\"provider\":\"p\",\"variant\":null}}"
+    ro tokens = "{\"$record\":\"TokenUsage\",\"fields\":{\"input\":10,\"output\":5,\"reasoning\":null,\"cache_read\":null,\"cache_write\":null}}"
+    "{\"$record\":\"TransportUsage\",\"fields\":{\"model\":${model},\"tokens\":${tokens},\"cost\":null,\"context_used\":null,\"request_started\":5}}"
+}
+
+fn finished_json() -> str => "{\"$variant\":\"TurnResult\",\"name\":\"Finished\",\"fields\":{\"text\":\"hello\",\"artifact\":null,\"usage\":${usage_json()}}}"
+
+fn transient_json() -> str => "{\"$variant\":\"TurnResult\",\"name\":\"TransientError\",\"fields\":{}}"
+
+fn event_of(kind EventKind, name str, request Option[str], input str, at int) -> Incoming => {
+    id: "e-${at}", trace: "t-1", step: 2, kind, name, request, input, at
+}
+
+type Moved { state PortolanState, orders []Order, moved bool }
+
+fn move_on(m PortolanMachine, st PortolanState, ev Incoming) -> Moved {
+    mut environment = StepEnvironment.new()
+    mut host = ScriptedHost { at: ev.at, replies: m.replies, ids: 0 }
+    ro t = portolan_step(m, st, ev, environment, host)
+    match t {
+        Go(next) => Moved { state: next, orders: environment.orders, moved: true }
+        Stay => Moved { state: st, orders: environment.orders, moved: false }
+    }
+}
+
+fn texts_of(orders []Order) -> str => order_text(orders)
+
+test "pr start" {
+    ro m = agent_machine(enum_value("ReplyCheck", "Valid"))
+    ro first = move_on(m, m.initial(), event_of(EventKind.Input, "start", None, start_input(), 1000))
+    assert(first.moved)
+    assert(first.state.name == "AgentTurn")
+    ro text = texts_of(first.orders)
+    assert(text.contains("send:agent:"))
+    assert(text.contains("s1"))
+}
+
+test "pr answer" {
+    ro m = agent_machine(enum_value("ReplyCheck", "Valid"))
+    ro first = move_on(m, m.initial(), event_of(EventKind.Input, "start", None, start_input(), 1000))
+    ro second = move_on(m, first.state, event_of(EventKind.Answered, "agent_done", Some("agent-1"), finished_json(), 2000))
+    assert(second.moved)
+    assert(second.state.name == "End")
+    ro text = texts_of(second.orders)
+    assert(text.contains("finish:answer:"))
+    assert(text.contains("hello"))
+}
+
+test "pr journal" {
+    ro m = agent_machine(enum_value("ReplyCheck", "Valid"))
+    ro first = move_on(m, m.initial(), event_of(EventKind.Input, "start", None, start_input(), 1000))
+    ro second = move_on(m, first.state, event_of(EventKind.Answered, "agent_done", Some("agent-1"), finished_json(), 2000))
+    ro text = texts_of(second.orders)
+    assert(text.contains("log:agent_usage(session=s1;result=reply;model=m1;input=10;output=5;"))
+}
+
+test "pr form violated" {
+    ro m = agent_machine(enum_value("ReplyCheck", "Violated"))
+    ro first = move_on(m, m.initial(), event_of(EventKind.Input, "start", None, start_input(), 1000))
+    ro second = move_on(m, first.state, event_of(EventKind.Answered, "agent_done", Some("agent-1"), finished_json(), 2000))
+    assert(second.state.name == "AgentTurn")
+    assert(texts_of(second.orders).contains("log:reply_form_violated"))
+}
+
+test "pr transient retry" {
+    ro m = agent_machine(enum_value("ReplyCheck", "Valid"))
+    ro first = move_on(m, m.initial(), event_of(EventKind.Input, "start", None, start_input(), 1000))
+    ro second = move_on(m, first.state, event_of(EventKind.Answered, "agent_done", Some("agent-1"), transient_json(), 2000))
+    assert(second.state.name == "AgentTurn")
+    assert(texts_of(second.orders).contains("log:agent_transient_error(retry=1)"))
+}
+
+test "pr failure" {
+    ro m = agent_machine(enum_value("ReplyCheck", "Valid"))
+    ro first = move_on(m, m.initial(), event_of(EventKind.Input, "start", None, start_input(), 1000))
+    ro second = move_on(m, first.state, event_of(EventKind.Refused, "agent_refused", Some("agent-1"), "Timeout", 2000))
+    ro text = texts_of(second.orders)
+    assert(second.state.name == "Halted")
+    assert(text.contains("log:turn_failed(reason=timeout)"))
+    assert(text.contains("finish:refusal:Timeout"))
+}
+
+test "pr pause" {
+    ro m = agent_machine(enum_value("ReplyCheck", "Valid"))
+    ro first = move_on(m, m.initial(), event_of(EventKind.Input, "start", None, start_input(), 1000))
+    ro stop = event_of(EventKind.Input, "human_stop", None, "{\"human_word\":\"w\",\"author\":\"a\",\"source\":\"s\"}", 1500)
+    ro paused = move_on(m, first.state, stop)
+    assert(paused.state.name == "Pause")
+    ro back = move_on(m, paused.state, event_of(EventKind.Input, "continue", None, "{\"human_word\":\"w\",\"author\":\"a\",\"source\":\"s\"}", 1600))
+    assert(back.state.name == "AgentTurn")
+}

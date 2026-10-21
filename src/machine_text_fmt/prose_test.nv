@@ -1,0 +1,181 @@
+// prose_test.nv - P-1 of format 2.7: a paragraph outside the tables, the blocks of code and the key lines is a comment for the reader; the translator skips it. A line of a
+// paragraph that starts with the word of a key gives a warning (not an error), in a list of its own with the line and the column.
+module alula.machine_text_fmt
+
+import std.text
+
+fn prose() -> str => "Это абзац: «кавычки», `код`, | черта и (скобки)."
+
+// The text with a paragraph put at the end of the part that stands before the heading `head`.
+fn before_head(text str, head str, para str) -> str => replaced(text, "\n${head}\n", "\n${para}\n\n${head}\n")
+
+fn heads() -> []str => [
+    "## Типы", "## Константы", "## Параметры", "## Вход", "## Данные", "## Стороны", "## Определения", "## Состояния",
+    "### РЕШИТЬ — развилка (Decide)", "### КОНЕЦ — конец (Finished)", "### СТОП — конец (Stopped)", "## Концы"
+]
+
+fn line_of(text str, start str) -> int {
+    mut no = 0
+    for line in text.split("\n") {
+        no += 1
+        if line.starts_with(start) { return no }
+    }
+    -1
+}
+
+test "pr base clean" {
+    ro report = checked(base_text())
+    if report.errors.len() > 0 { panic(first_error_of(report)) }
+    assert(report.errors.len() == 0)
+    assert(report.warnings.len() == 0)
+    assert(report.json.starts_with("{\"format\":\"machine/2\",\"portolan_version\":\"2.12\",\"machine\":\"Tiny\""))
+    assert(report.rows_total > 8)
+}
+
+test "pr every part" {
+    ro plain = base_json()
+    for h in heads() {
+        ro text = before_head(base_text(), h, prose())
+        assert(same_json(text, plain))
+    }
+}
+
+test "pr header and end" {
+    ro plain = base_json()
+    ro with_head = checked(after(base_text(), "- format: 2.12", prose()))
+    assert(with_head.errors.len() == 0)
+    assert(with_head.json == plain)
+    ro with_tail = checked("${base_text()}\n${prose()}\n")
+    assert(with_tail.errors.len() == 0)
+    assert(with_tail.json == plain)
+    assert(with_tail.warnings.len() == 0)
+}
+
+test "pr many lines" {
+    ro plain = base_json()
+    ro text = before_head(base_text(), "## Данные", "Первая строка абзаца\nвторая со знаком `\nтретья «х» и | и \\ и ${ticks()}")
+    assert(same_json(text, plain))
+    ro two = before_head(before_head(base_text(), "## Данные", "Один."), "## Стороны", "Другой.\nДва ряда.")
+    assert(same_json(two, plain))
+}
+
+test "pr list prose" {
+    ro text = before_head(base_text(), "## Данные", "- пункт один\n- пункт два: с двоеточием\n- пункт три")
+    assert(same_json(text, base_json()))
+}
+
+test "pr needs blank" {
+    ro glued = replaced(base_text(), "| ЧИСЛО_ПОВТОРОВ | число≥0 | 3 |\n", "| ЧИСЛО_ПОВТОРОВ | число≥0 | 3 |\nПроза без пустой строки\n")
+    assert(errors_say(glued, "structure лишняя строка в разделе `Константы`"))
+    ro under_head = replaced(base_text(), "## Константы\n", "## Константы\nПроза сразу под заголовком\n")
+    assert(errors_say(under_head, "лишняя строка"))
+}
+
+test "pr code is code" {
+    ro inside = replaced(base_text(), "Запись \"write\"\n", "Запись \"write\"\n\nТекст внутри блока кода\n")
+    assert(errors_say(inside, "ожидается `перечисление`, `тип` или `вариант`"))
+    ro blank_ok = checked(replaced(base_text(), "Запись \"write\"\n", "Запись \"write\"\n\nтип Токены { вход ?число, выход ?число }\n"))
+    assert(blank_ok.errors.len() == 0)
+    assert(blank_ok.json.contains("\"records\":[{\"name\":\"TokenUsage\""))
+}
+
+test "pr connection lines" {
+    ro include = "определения: арифметика_цикла версия 1 хеш 51e15e557120"
+    ro good = replaced(base_text(), "## Состояния\n", "## Подключения\n\n${ticks()}\n${include}\n${ticks()}\n\n## Состояния\n")
+    ro good_report = checked(good)
+    if good_report.errors.len() > 0 { panic(first_error_of(good_report)) }
+    assert(good_report.errors.len() == 0)
+    ro with_prose = replaced(base_text(), "## Состояния\n", "## Подключения\n\n${ticks()}\n${include}\n${ticks()}\n\nПроза в подключениях.\n\n## Состояния\n")
+    assert(errors_say(with_prose, "только строки подключения"))
+    ro with_list = replaced(base_text(), "## Состояния\n", "## Подключения\n\n${include}\n\n- пункт списка\n\n## Состояния\n")
+    assert(errors_say(with_list, "только строки подключения"))
+    ro lone = replaced(base_text(), "## Состояния\n", "## Подключения\n\nПроза и больше ничего.\n\n## Состояния\n")
+    ro lone_report = checked(lone)
+    assert(report_says(lone_report, "только строки подключения"))
+    assert(first_error_of(lone_report).starts_with("${line_of(lone, "Проза и больше")}:1 "))
+}
+
+fn keys() -> []str => [
+    "Сторона", "Срок тишины", "Вход", "Правит", "Возвратов формы", "При входе", "При приёме", "Результат", "Кроме", "Предел запросов"
+]
+
+test "pr warn each key" {
+    for k in keys() {
+        ro text = before_head(base_text(), "## Данные", "${k} без пояснений")
+        ro report = checked(text)
+        assert(report.errors.len() == 0)
+        assert(report.warnings.len() == 1)
+        assert(report.warnings[0].kind == "warning")
+        assert(report.warnings[0].line == line_of(text, k))
+        assert(report.warnings[0].col == 1)
+        assert(report.warnings[0].message.contains("«${k}»"))
+    }
+}
+
+test "pr warn typos" {
+    ro marks = ["-Сторона: агент", "– Вход: нет", "— Правит: предложение", "•Кроме: х", "* Результат: число", "–Срок тишины 0"]
+    for m in marks {
+        ro text = before_head(base_text(), "## Данные", m)
+        ro report = checked(text)
+        assert(report.errors.len() == 0)
+        assert(report.warnings.len() == 1)
+        assert(report.warnings[0].line == line_of(text, m))
+    }
+}
+
+test "pr warn none" {
+    ro texts = [
+        "Входные данные описаны ниже.", "Стороны машины две.", "Результативность не измерялась.", "Начальное состояние первое в разделе.",
+        "Срок действия не ограничен.", "Правила записи — в формате.", "Куда-то идёт", prose()
+    ]
+    for t in texts {
+        ro report = checked(before_head(base_text(), "## Данные", t))
+        assert(report.errors.len() == 0)
+        assert(report.warnings.len() == 0)
+    }
+    assert(checked(base_text()).warnings.len() == 0)
+}
+
+test "pr warn lines" {
+    ro text = before_head(base_text(), "## Данные", "Обычная строка\nа вот Срок тишины не задан\nСрок тишины не задан\nВход нет")
+    ro report = checked(text)
+    assert(report.errors.len() == 0)
+    assert(report.warnings.len() == 2)
+    assert(report.warnings[0].line == line_of(text, "Срок тишины не задан"))
+    assert(report.warnings[1].line == line_of(text, "Вход нет"))
+    ro two = before_head(before_head(base_text(), "## Стороны", "Результат один"), "## Данные", "Кроме двух")
+    ro w = checked(two).warnings
+    assert(w.len() == 2)
+    assert(w[0].line < w[1].line)
+    assert(w[0].message.contains("«Кроме»"))
+    assert(w[1].message.contains("«Результат»"))
+}
+
+test "pr warn apart" {
+    ro report = checked(before_head(base_text(), "## Данные", "Вход нет"))
+    assert(report.json == base_json())
+    assert(report.errors.len() == 0)
+    assert(report.warnings.len() == 1)
+    assert(report.warnings[0].quote == "Вход нет")
+    assert(report.warnings[0].message.contains("- Вход:"))
+    ro broken = checked(before_head(replaced(base_text(), "число_ходов >= 2", "число_ходов >= "), "## Данные", "Вход нет"))
+    assert(broken.errors.len() > 0)
+    assert(broken.warnings.len() == 1)
+}
+
+test "pr warn lists" {
+    ro text = before_head(base_text(), "## Данные", "Правит ведёт строка")
+    ro list = warning_lines(text)
+    assert(list.len() == 1)
+    assert(list[0].contains("warning"))
+    assert(list[0].starts_with("${line_of(text, "Правит")}:1 warning "))
+}
+
+// Format 2.9 (Я-14): `Куда` is a column of a table, not a key line, so a paragraph that starts with it is no warning.
+test "pr to is no key" {
+    ro text = before_head(base_text(), "## Данные", "Куда ведёт строка")
+    ro report = checked(text)
+    assert(report.errors.len() == 0)
+    assert(report.warnings.len() == 0)
+    assert(report.json == base_json())
+}

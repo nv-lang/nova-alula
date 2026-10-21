@@ -1,0 +1,119 @@
+// words_test.nv - P-7 of format 2.7 in the translator: an enum with words (`Чтение "read"`) gets the key `words` in the JSON, a list of the pairs ["Name", "word"] in the order of the
+// declaration; an enum without words has no such key; the built-in `КодСбоя` keeps the words of the engine.
+module alula.machine_text_fmt
+
+import std.text
+import alula.machine_text.{translate_types, TranslateReport}
+
+fn enum_line() -> str => "перечисление ВидДействия = Чтение \"read\" | Запись \"write\"\n"
+
+// The part of the JSON with the types (up to the constants): the keys `words` of the parties are not among them.
+fn types_part(json str) -> str {
+    ro from = json.find("\"types\":") ?? -1
+    if from < 0 { return "" }
+    ro tail = json[from..]
+    ro to = tail.find(",\"constants\":") ?? tail.byte_len()
+    tail[..to]
+}
+
+fn with_enum(line str) -> str => replaced(base_text(), enum_line(), "${line}\n")
+
+// The report of a text with the enum line, an error stops the test unless `must_be_clean` is false.
+fn enum_report(line str) -> TranslateReport => checked(with_enum(line))
+
+fn fail_words() -> str => "перечисление КодСбоя = НетРезультата \"no_result\" | ОтказМодели \"model_refused\" | СоединениеОборвалось \"connection_lost\"\n  | ФормаНеИсправлена \"form_not_fixed\" | НетОтветаВСрок \"timeout\" | ОстановленоЧеловеком \"stopped_by_human\"\n  | ПотолокЗаходов \"ceiling_reached\" | ОтмененоРодителем \"cancelled\" | ПредельТокенов \"max_tokens\"\n  | ПредельЗапросовХода \"max_turn_requests\"\n"
+
+test "wd words key" {
+    ro report = checked(base_text())
+    if report.errors.len() > 0 { panic(first_error_of(report)) }
+    assert(report.json.contains("\"words\":[[\"Read\",\"read\"],[\"Write\",\"write\"]]"))
+    assert(report.json.contains("\"types\":{\"variants\":[{\"name\":\"ActionKind\",\"cases\":[{\"name\":\"Read\"},{\"name\":\"Write\"}],\"words\":["))
+}
+
+test "wd order" {
+    ro report = enum_report("перечисление ВидДействия = Запись \"write\" | Чтение \"read\" | Удаление \"delete\"")
+    assert(report.errors.len() == 0)
+    assert(report.json.contains("\"cases\":[{\"name\":\"Write\"},{\"name\":\"Read\"},{\"name\":\"Delete\"}]"))
+    assert(report.json.contains("\"words\":[[\"Write\",\"write\"],[\"Read\",\"read\"],[\"Delete\",\"delete\"]]"))
+}
+
+test "wd none" {
+    ro report = enum_report("перечисление ВидВызывающего = Линза | СессияЦикла | ХодЧата | Вратарь")
+    assert(report.errors.len() == 0)
+    assert(!types_part(report.json).contains("words"))
+    assert(types_part(report.json).contains("\"name\":\"CallerKind\""))
+}
+
+test "wd partial" {
+    ro report = enum_report("перечисление ВидДействия = Чтение \"read\" | Запись")
+    assert(report.errors.len() == 0)
+    assert(report.json.contains("\"words\":[[\"Read\",\"read\"]]"))
+}
+
+test "wd other word" {
+    ro report = enum_report("перечисление ВидДействия = Чтение \"look\" | Запись \"save\"")
+    if report.errors.len() > 0 { panic(first_error_of(report)) }
+    assert(report.json.contains("\"words\":[[\"Read\",\"look\"],[\"Write\",\"save\"]]"))
+    assert(!report_says(report, "unsupported"))
+}
+
+test "wd twice" {
+    ro report = enum_report("перечисление ВидДействия = Чтение \"x\" | Запись \"x\"")
+    assert(report.errors.len() > 0)
+    assert(report_says(report, "повторено"))
+    assert(report_says(report, "`Чтение`"))
+}
+
+test "wd empty word" {
+    ro report = enum_report("перечисление ВидДействия = Чтение \"\" | Запись \"write\"")
+    assert(report.errors.len() > 0)
+    assert(report_says(report, "не может быть пустым"))
+}
+
+test "wd latin word" {
+    assert(report_says(enum_report("перечисление ВидДействия = Чтение \"чтение\" | Запись \"write\""), "латинское слово кода"))
+    assert(report_says(enum_report("перечисление ВидДействия = Чтение \"Read\" | Запись \"write\""), "латинское слово кода"))
+    assert(report_says(enum_report("перечисление ВидДействия = Чтение \"re ad\" | Запись \"write\""), "латинское слово кода"))
+    assert(enum_report("перечисление ВидДействия = Чтение \"read_2\" | Запись \"write\"").errors.len() == 0)
+}
+
+test "wd fail code" {
+    ro report = enum_report(fail_words())
+    if report.errors.len() > 0 { panic(first_error_of(report)) }
+    assert(!report.json.contains("\"types\""))
+    ro wrong = enum_report(replaced(fail_words(), "НетРезультата \"no_result\"", "НетРезультата \"nothing\""))
+    assert(wrong.errors.len() > 0)
+    assert(report_says(wrong, "unsupported"))
+    assert(report_says(wrong, "слово значения \"nothing\""))
+    assert(enum_report(replaced(fail_words(), " \"no_result\"", "")).errors.len() == 0)
+}
+
+test "wd translate types" {
+    match translate_types("перечисление ВидДействия = Чтение \"read\" | Запись \"write\"") {
+        Ok(json) => {
+            assert(json.contains("\"words\":[[\"Read\",\"read\"],[\"Write\",\"write\"]]"))
+            assert(json.starts_with("{\"records\":[],\"variants\":[{\"name\":\"ActionKind\""))
+        }
+        Err(e) => panic("types do not translate")
+    }
+    match translate_types("перечисление ВидДействия = Чтение | Запись") {
+        Ok(json) => assert(!json.contains("words"))
+        Err(e) => panic("types do not translate")
+    }
+}
+
+test "wd variant has none" {
+    ro report = enum_report("вариант ИтогХода {\n  ВременнаяОшибка\n  ПостояннаяОшибка\n}\n")
+    assert(report.errors.len() == 0)
+    assert(types_part(report.json).contains("\"cases\""))
+    assert(!types_part(report.json).contains("words"))
+}
+
+test "wd same json twice" {
+    ro first = types_part(base_json())
+    assert(first == types_part(base_json()))
+    ro bare = types_part(enum_report("перечисление ВидДействия = Чтение | Запись").json)
+    assert(bare != first)
+    assert(!bare.contains("words"))
+    assert(first.contains("words"))
+}

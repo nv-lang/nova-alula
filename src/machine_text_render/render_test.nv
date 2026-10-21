@@ -1,0 +1,525 @@
+// render_test.nv - task 113: the reverse generator `render_machine(json, language)`: the canonical form of section 1b (the header, the eleven sections, the keys of a state in their order, the
+// tables with one space round the bar, the operators of the language), the circles "tree -> file -> tree" in both languages on every machine of the product, and "Russian -> English -> Russian".
+module alula.machine_text_render
+
+import std.text
+import alula.machine.{table_files, text_of_file, chat_table_text, agent_step_table_text}
+import alula.machine_agent.{methodology_text, methodology_en_text}
+import alula.machine_text_eq.{case_text}
+import alula.machine_text.{render_machine, render_machine_with, render, translate_report, render_type_in, render_expression_in, render_actions_in}
+
+fn chat_json() -> str => machine_json("chat.portolan.json")
+
+fn calc_json() -> str => machine_json("calc.portolan.json")
+
+// ---- the canonical form ----------------------------------------------------------------------------------------------------------
+
+test "rn header ru" {
+    ro text = render(calc_json(), "ru")
+    ro lines = text.split("\n")
+    mut first = []str.new()
+    for l in lines {
+        if first.len() < 7 { first.push(l) }
+    }
+    assert(first[0] == "# Машина: Calc")
+    assert(first[1] == "")
+    assert(first[2] == "- machine: Calc")
+    assert(first[3] == "- machine_version: 1")
+    assert(first[4] == "- format: 2.12")
+    assert(first[5] == "- language: ru")
+    assert(first[6] == "")
+}
+
+test "rn header en" {
+    ro text = render(calc_json(), "en")
+    assert(text.starts_with("# Machine: Calc\n\n- machine: Calc\n- machine_version: 1\n- format: 2.12\n- language: en\n\n"))
+}
+
+test "rn eleven sections" {
+    ro ru = render(calc_json(), "ru")
+    ro en = render(calc_json(), "en")
+    mut at = 0
+    for h in ["## Типы", "## Константы", "## Параметры", "## Вход", "## Данные", "## Стороны", "## Определения", "## Подключения", "## Состояния", "## Концы", "## Примитивы"] {
+        ro found = index_of_line(ru, h)
+        assert(found > at)
+        at = found
+    }
+    mut at_en = 0
+    for h in ["## Types", "## Constants", "## Parameters", "## Input", "## Data", "## Parties", "## Definitions", "## Includes", "## States", "## Ends", "## Primitives"] {
+        ro found = index_of_line(en, h)
+        assert(found > at_en)
+        at_en = found
+    }
+}
+
+test "rn empty section dash" {
+    ro en = render(chat_json(), "en")
+    ro at = index_of_line(en, "## Types")
+    assert(at > 0)
+    assert(lines_from(en, at, 3) == "## Types\n—\n")
+    assert(lines_from(en, index_of_line(en, "## Input"), 2) == "## Input\n—")
+    assert(lines_from(en, index_of_line(en, "## Includes"), 2) == "## Includes\n—")
+    // a table has an empty line under the heading
+    assert(lines_from(en, index_of_line(en, "## Data"), 3).starts_with("## Data\n\n| name |"))
+}
+
+test "rn file ends once" {
+    for lang in ["ru", "en"] {
+        ro text = render(calc_json(), lang)
+        assert(text.ends_with("\n"))
+        assert(!text.ends_with("\n\n"))
+        assert(!text.contains("\r"))
+        assert(text.to_code_points()[0] != 65279)
+    }
+}
+
+test "rn language word" {
+    ro ru = render(chat_json(), "ru")
+    ro en = render(chat_json(), "en")
+    assert(text_has_line(ru, "## Состояния") && text_has_line(ru, "## Концы"))
+    assert(text_has_line(en, "## States") && text_has_line(en, "## Ends"))
+    assert(!en.contains("Состояния"))
+    assert(ru.contains("Начальное состояние: ") && en.contains("Initial state: "))
+}
+
+test "rn tables" {
+    ro en = render(calc_json(), "en")
+    assert(text_has_line(en, "| name | type | initial | non_decreasing | writes |"))
+    assert(text_has_line(en, "|---|---|---|---|---|"))
+    assert(text_has_line(en, "| № | Event | Condition | Actions | To |"))
+    ro ru = render(calc_json(), "ru")
+    assert(text_has_line(ru, "| имя | тип | начальное | не убывает | пишет |"))
+    assert(text_has_line(ru, "| № | Событие | Условие | Действия | Куда |"))
+    assert(text_has_line(ru, "|---|---|---|---|---|"))
+}
+
+test "rn appeal keys in order" {
+    ro en = render(machine_json("gate.portolan.json"), "en")
+    ro party = index_of_line(en, "- Party: agent")
+    assert(party > 0)
+    assert(lines_from(en, party, 1) == "- Party: agent")
+    ro idle = lines_from(en, party + 1, 1)
+    assert(idle.starts_with("- Idle term: "))
+    assert(lines_from(en, party + 2, 1).starts_with("- Input:"))
+}
+
+test "rn state heading no brackets" {
+    ro en = render(calc_json(), "en")
+    assert(en.contains("### Errored — end\n"))
+    assert(!en.contains(" — end (Errored)"))
+    ro ru = render(calc_json(), "ru")
+    assert(ru.contains("### Errored — конец\n"))
+    assert(ru.contains("Начальное состояние: "))
+}
+
+test "rn operators en ascii" {
+    ro en = render(calc_json(), "en")
+    for sign in ["≥", "≤", "≠", "→", "…", "∈"] { assert(!en.contains(sign)) }
+    ro agent = render(machine_json("agent_step.portolan.json"), "en")
+    for sign in ["≥", "≤", "≠", "→", "…", "∈"] { assert(!agent.contains(sign)) }
+    assert(agent.contains("int>=0"))
+    assert(agent.contains("-> "))
+}
+
+test "rn operators ru canon" {
+    ro agent = render(machine_json("agent_step.portolan.json"), "ru")
+    assert(agent.contains("число≥0"))
+    assert(agent.contains("→"))
+    assert(agent.contains(" ∈ {") || agent.contains("Кроме: "))
+    assert(agent.contains(" >= "))
+    assert(!agent.contains(" ≥ "))
+}
+
+test "rn declarations in blocks" {
+    ro agent = render(machine_json("agent_step.portolan.json"), "en")
+    ro at = index_of_line(agent, "## Types")
+    assert(lines_from(agent, at + 1, 2) == "\n```")
+    assert(agent.contains("\nenum CallerKind = Lens | CycleSession | ChatTurn | Gatekeeper\n"))
+    assert(agent.contains("\nvariant TurnResult {\n  Finished { text ?text, artifact ?text, usage TransportUsage }\n"))
+    assert(agent.contains("\ndefine sum_ints(a ?int, b ?int) -> ?int =\n  "))
+}
+
+test "rn words of an enum" {
+    ro agent = render(machine_json("agent_step.portolan.json"), "en")
+    assert(agent.contains("Read \"read\""))
+    assert(agent.contains("SwitchMode \"switch_mode\""))
+}
+
+fn inc_en(hash str) -> str => `# Machine: Inc
+
+- machine: Inc
+- machine_version: 1
+- format: 2.12
+- language: en
+
+## Data
+
+| name | type | initial | non_decreasing | writes |
+|---|---|---|---|---|
+| n | int>=0 | 0 | — | rows |
+
+## Includes
+
+definitions: cycle_arithmetic version 1 hash ${hash}
+
+## States
+
+Initial state: S
+
+### S — operation
+- Input: n
+
+| № | Event | Condition | Actions | To |
+|---|---|---|---|---|
+| 1 | immediate | — | n = if ceiling_reached(n, 1, 3) then 0 else n + 1 | F |
+
+### F — end
+- Input: n
+
+## Ends
+
+- Result: int
+
+| end | № | when | response |
+|---|---|---|---|
+| F | 1 | true | Response(n) |
+`
+
+test "rn includes line by default" {
+    ro first = json_of(inc_en("eee8c3a13a08"))
+    assert(!first.starts_with("ERROR "))
+    ro made = render_machine(first, "en")
+    assert(made.notes.len() == 0)
+    assert(made.text.contains("## Includes\n\n```\ndefinitions: cycle_arithmetic version 1 hash eee8c3a13a08\n```\n"))
+    assert(!made.text.contains("define ceiling_reached"))
+    assert(same_tree(first, json_of(made.text)) == "")
+    ro ru = render(first, "ru")
+    assert(ru.contains("определения: cycle_arithmetic версия 1 хеш eee8c3a13a08"))
+    assert(same_tree(first, json_of(ru)) == "")
+}
+
+test "rn includes as copy" {
+    ro first = json_of(inc_en("eee8c3a13a08"))
+    ro made = render_machine_with(first, "en", true)
+    assert(made.text.contains("define ceiling_reached(pass_number int>=1, origin int>=1, limit int>=0) -> bool =\n  pass_number - 1 - origin + 1 >= limit"))
+    assert(made.text.contains("## Includes\n—\n"))
+    ro back = json_of(made.text)
+    assert(!back.starts_with("ERROR "))
+    assert(!back.contains("\"includes\""))
+    assert(back.contains("\"definitions\":[{\"name\":\"ceiling_reached\""))
+}
+
+test "rn include unknown file" {
+    ro first = "{\"format\":\"machine/2\",\"machine\":\"M\",\"version\":\"1\",\"includes\":[{\"name\":\"nothing\",\"version\":\"1\",\"hash\":\"000000000000\"}],\"data\":[],\"parties\":[],\"initial\":\"S\",\"states\":[],\"ends\":{\"result\":\"int\",\"rows\":[]}}"
+    ro made = render_machine(first, "en")
+    assert(made.notes.len() == 1)
+    assert(made.notes[0].contains("`nothing` is not in the registry"))
+}
+
+// ---- circles on the machines of the product ------------------------------------------------------------------------------------
+
+test "rn circle en actions" {
+    assert(circle(machine_json("actions.portolan.json"), "en") == "")
+}
+
+test "rn circle en calc" {
+    assert(circle(calc_json(), "en") == "")
+}
+
+test "rn circle en gate" {
+    assert(circle(machine_json("gate.portolan.json"), "en") == "")
+}
+
+test "rn circle en lenses" {
+    assert(circle(machine_json("lenses.portolan.json"), "en") == "")
+}
+
+test "rn circle en variants" {
+    assert(circle(machine_json("variants.portolan.json"), "en") == "")
+}
+
+test "rn circle en chat" {
+    assert(circle(chat_json(), "en") == "")
+}
+
+test "rn circle ru actions" {
+    assert(circle(machine_json("actions.portolan.json"), "ru") == "")
+}
+
+test "rn circle ru calc" {
+    assert(circle(calc_json(), "ru") == "")
+}
+
+test "rn circle ru gate" {
+    assert(circle(machine_json("gate.portolan.json"), "ru") == "")
+}
+
+test "rn circle ru lenses" {
+    assert(circle(machine_json("lenses.portolan.json"), "ru") == "")
+}
+
+test "rn circle ru variants" {
+    assert(circle(machine_json("variants.portolan.json"), "ru") == "")
+}
+
+test "rn circle ru chat" {
+    assert(circle(chat_json(), "ru") == "")
+}
+
+test "rn circle chat table" {
+    // md -> JSON -> md -> JSON on the chat machine written by hand in Russian
+    ro first = translate_report(chat_table_text()).json
+    assert(circle(first, "ru") == "")
+    assert(circle(first, "en") == "")
+}
+
+test "rn ru to en to ru chat" {
+    ro first = translate_report(chat_table_text()).json
+    ro english = render(first, "en")
+    ro second = json_of(english)
+    assert(same_tree(first, second) == "")
+    ro russian = render(second, "ru")
+    ro third = json_of(russian)
+    assert(same_tree(first, third) == "")
+    assert(render(third, "en") == english)
+}
+
+test "rn render is stable" {
+    // the file of the second pass is the file of the first: the canonical form is a fixed point
+    for lang in ["ru", "en"] {
+        ro once = render(calc_json(), lang)
+        ro tree = json_of(once)
+        assert(!tree.starts_with("ERROR "))
+        assert(render(tree, lang) == once)
+    }
+}
+
+// ---- the pieces ----------------------------------------------------------------------------------------------------------------
+
+test "rn types" {
+    assert(render_type_in("int", "ru") == "число" && render_type_in("int", "en") == "int")
+    assert(render_type_in("int>=0", "ru") == "число≥0" && render_type_in("int>=0", "en") == "int>=0")
+    assert(render_type_in("float", "ru") == "дробное")
+    assert(render_type_in("text", "en") == "text" && render_type_in("text", "ru") == "текст")
+    assert(render_type_in("bool", "ru") == "да/нет" && render_type_in("bool", "en") == "bool")
+    assert(render_type_in("id", "en") == "id")
+    assert(render_type_in("?text", "en") == "?text")
+    assert(render_type_in("[]int", "ru") == "[]число")
+    assert(render_type_in("{text: int}", "en") == "map[text, int]")
+    assert(render_type_in("{text: int}", "ru") == "словарь[текст, число]")
+    assert(render_type_in("full {Kind: text}", "en") == "full map[Kind, text]")
+    assert(render_type_in("(int, text)", "en") == "(int, text)")
+    assert(render_type_in("\"a\" | \"b\"", "en") == "\"a\" | \"b\"")
+    assert(render_type_in("?(\"a\" | \"b\")", "en") == "?(\"a\" | \"b\")")
+    assert(render_type_in("[]?text", "en") == "[]?text")
+    assert(render_type_in("{text: []int}", "en") == "map[text, []int]")
+    assert(render_type_in("JournalEvent", "ru") == "СобытиеЖурнала")
+}
+
+fn lit(v str) -> str => `{"op":"lit","value":${v}}`
+
+fn nm(n str) -> str => `{"op":"name","name":"${n}"}`
+
+fn bin(op str, l str, r str) -> str => `{"op":"${op}","left":${l},"right":${r}}`
+
+test "rn expression literals" {
+    assert(render_expression_in(lit("12"), "en", []) == "12")
+    assert(render_expression_in(lit("0.0"), "en", []) == "0.0")
+    assert(render_expression_in(lit("1e-7"), "en", []) == "1e-7")
+    assert(render_expression_in(lit("-5"), "en", []) == "-5")
+    assert(render_expression_in(lit("true"), "en", []) == "true" && render_expression_in(lit("true"), "ru", []) == "истина")
+    assert(render_expression_in(lit("false"), "ru", []) == "ложь")
+    assert(render_expression_in(lit("null"), "en", []) == "none" && render_expression_in(lit("null"), "ru", []) == "пусто")
+    assert(render_expression_in(lit("\"a b\""), "en", []) == "\"a b\"")
+    assert(render_expression_in(lit("\"q\\\"x\\\\y\""), "en", []) == "\"q\\\"x\\\\y\"")
+    assert(render_expression_in(lit("\"line\\nnext\""), "en", []) == "\"line\\nnext\"")
+    assert(render_expression_in(lit("\"дом\""), "ru", []) == "\"дом\"")
+}
+
+test "rn expression operators" {
+    assert(render_expression_in(bin("+", lit("1"), lit("2")), "en", []) == "1 + 2")
+    assert(render_expression_in(bin(">=", lit("1"), lit("2")), "ru", []) == "1 >= 2")
+    assert(render_expression_in(bin("!=", lit("1"), lit("2")), "ru", []) == "1 != 2")
+    assert(render_expression_in(bin("and", lit("true"), lit("false")), "en", []) == "true and false")
+    assert(render_expression_in(bin("or", lit("true"), lit("false")), "ru", []) == "истина или ложь")
+    assert(render_expression_in(bin("??", lit("null"), lit("1")), "en", []) == "none ?? 1")
+    assert(render_expression_in(`{"op":"not","operand":${lit("true")}}`, "ru", []) == "не истина")
+    assert(render_expression_in(`{"op":"neg","operand":${nm("x")}}`, "en", ["x"]) == "-x")
+}
+
+test "rn expression precedence" {
+    // (1 + 2) * 3 needs its brackets, 1 + 2 * 3 does not; the left operand of `-` keeps its place, the right one is bracketed
+    assert(render_expression_in(bin("*", bin("+", lit("1"), lit("2")), lit("3")), "en", []) == "(1 + 2) * 3")
+    assert(render_expression_in(bin("+", lit("1"), bin("*", lit("2"), lit("3"))), "en", []) == "1 + 2 * 3")
+    assert(render_expression_in(bin("-", bin("-", lit("1"), lit("2")), lit("3")), "en", []) == "1 - 2 - 3")
+    assert(render_expression_in(bin("-", lit("1"), bin("-", lit("2"), lit("3"))), "en", []) == "1 - (2 - 3)")
+    assert(render_expression_in(bin("and", bin("or", lit("true"), lit("false")), lit("true")), "en", []) == "(true or false) and true")
+    assert(render_expression_in(bin("or", bin("and", lit("true"), lit("false")), lit("true")), "en", []) == "true and false or true")
+    assert(render_expression_in(bin("==", bin("+", lit("1"), lit("2")), lit("3")), "en", []) == "1 + 2 == 3")
+}
+
+test "rn expression forms" {
+    ro cond = `{"op":"if","cond":${lit("true")},"then":${lit("1")},"else":${lit("2")}}`
+    assert(render_expression_in(cond, "en", []) == "if true then 1 else 2")
+    assert(render_expression_in(cond, "ru", []) == "если истина то 1 иначе 2")
+    assert(render_expression_in(bin("+", cond, lit("1")), "en", []) == "(if true then 1 else 2) + 1")
+    ro letx = `{"op":"let","name":"x","value":${lit("1")},"body":${nm("x")}}`
+    assert(render_expression_in(letx, "en", []) == "let x = 1 in x")
+    assert(render_expression_in(letx, "ru", []) == "пусть x = 1 в x")
+    ro lam = `{"op":"lambda","params":["a","b"],"body":${bin("+", nm("a"), nm("b"))}}`
+    assert(render_expression_in(lam, "en", []) == "(a, b) -> a + b")
+    assert(render_expression_in(lam, "ru", []) == "(a, b) → a + b")
+    assert(render_expression_in(`{"op":"list","items":[${lit("1")},${lit("2")}]}`, "en", []) == "[1, 2]")
+    assert(render_expression_in(`{"op":"tuple","items":[${lit("1")},${lit("2")}]}`, "en", []) == "(1, 2)")
+    assert(render_expression_in(`{"op":"dict","entries":[]}`, "en", []) == "{}")
+    assert(render_expression_in(`{"op":"dict","entries":[{"key":${lit("\"k\"")},"value":${lit("1")}}]}`, "en", []) == "{\"k\": 1}")
+    assert(render_expression_in(`{"op":"field","of":${nm("x")},"name":"size"}`, "en", ["x"]) == "x.size")
+    assert(render_expression_in(`{"op":"index","of":${nm("x")},"index":${lit("1")}}`, "en", ["x"]) == "x[1]")
+    assert(render_expression_in(`{"op":"field","of":${bin("+", nm("x"), nm("y"))},"name":"size"}`, "en", ["x", "y"]) == "(x + y).size")
+}
+
+test "rn expression records" {
+    ro rec = `{"op":"record","type":"Pair","fields":{"first":${lit("1")},"second":${lit("2")}}}`
+    assert(render_expression_in(rec, "en", []) == "Pair { first: 1, second: 2 }")
+    ro var1 = `{"op":"variant","type":"Shape","name":"Dot"}`
+    assert(render_expression_in(var1, "en", []) == "Shape.Dot")
+    ro var2 = `{"op":"variant","type":"Shape","name":"Box","fields":{"w":${lit("1")}}}`
+    assert(render_expression_in(var2, "en", []) == "Shape.Box { w: 1 }")
+    ro with_f = `{"op":"with_field","of":${nm("x")},"fields":{"a":${lit("1")}}}`
+    assert(render_expression_in(with_f, "en", ["x"]) == "{ ...x, a: 1 }")
+    assert(render_expression_in(with_f, "ru", ["x"]) == "{ ...x, a: 1 }")
+}
+
+test "rn expression calls" {
+    assert(render_expression_in(`{"op":"call","fn":"has","args":[${nm("x")}]}`, "en", ["x"]) == "has(x)")
+    assert(render_expression_in(`{"op":"call","fn":"has","args":[${nm("x")}]}`, "ru", ["x"]) == "есть(x)")
+    assert(render_expression_in(`{"op":"call","fn":"require","args":[${nm("x")}]}`, "ru", ["x"]) == "обязательно(x)")
+    ro ev = `{"op":"call","fn":"journal_event","args":[${lit("\"agent_usage\"")},${lit("\"session\"")},${nm("x")}]}`
+    assert(render_expression_in(ev, "en", ["x"]) == "journal_event(\"agent_usage\", session: x)")
+    assert(render_expression_in(ev, "ru", ["x"]) == "событие_журнала(\"agent_usage\", session: x)")
+    assert(render_expression_in(`{"op":"primitive_call","name":"time_now","args":[]}`, "en", []) == "call(time_now)")
+    assert(render_expression_in(`{"op":"primitive_call","name":"time_now","args":[]}`, "ru", []) == "вызвать(time_now)")
+}
+
+test "rn expression match" {
+    ro arm1 = `{"patterns":[{"kind":"case","type":"Zeta","name":"Alpha"},{"kind":"case","type":"Zeta","name":"Beta"}],"guard":${lit("true")},"body":${lit("1")}}`
+    ro arm2 = `{"patterns":[{"kind":"any"}],"body":${lit("2")}}`
+    ro m = `{"op":"match","on":${nm("x")},"arms":[${arm1},${arm2}]}`
+    assert(render_expression_in(m, "en", ["x"]) == "match x { Zeta.Alpha | Zeta.Beta if true -> 1; else -> 2 }")
+    assert(render_expression_in(m, "ru", ["x"]) == "выбор x { Zeta.Alpha | Zeta.Beta если истина → 1; иначе → 2 }")
+    ro lit_arm = `{"patterns":[{"kind":"lit","value":"a"},{"kind":"lit","value":3}],"body":${lit("1")}}`
+    ro m2 = `{"op":"match","on":${nm("x")},"arms":[${lit_arm},${arm2}]}`
+    assert(render_expression_in(m2, "en", ["x"]) == "match x { \"a\" | 3 -> 1; else -> 2 }")
+    ro bound = `{"patterns":[{"kind":"case","name":"Done","bind":{"text":"text","usage":"u"}}],"body":${nm("u")}}`
+    ro m3 = `{"op":"match","on":${nm("x")},"arms":[${bound},${arm2}]}`
+    assert(render_expression_in(m3, "en", ["x", "u", "text"]) == "match x { Done(text, usage: u) -> u; else -> 2 }")
+}
+
+test "rn cell pipe" {
+    // a bar in a cell is written `\|`; the set of literals of a type too
+    ro arm = `{"patterns":[{"kind":"lit","value":"a"},{"kind":"lit","value":"b"}],"body":${lit("1")}}`
+    ro m = `{"op":"match","on":${nm("x")},"arms":[${arm},{"patterns":[{"kind":"any"}],"body":${lit("2")}}]}`
+    ro text = render_actions_in(`[{"do":"assign","target":"y","value":${m}}]`, "en", ["x", "y"])
+    assert(text == "y = match x { \"a\" | \"b\" -> 1; else -> 2 }")
+}
+
+fn act(json str) -> str => render_actions_in("[${json}]", "en", ["x", "y"])
+
+test "rn actions" {
+    assert(act(`{"do":"assign","target":"y","value":${lit("1")}}`) == "y = 1")
+    assert(act(`{"do":"add","target":"y","value":${lit("1")}}`) == "y += 1")
+    assert(act(`{"do":"assign","target":{"name":"y","path":[{"key":${nm("x")}},{"field":"a"}]},"value":${lit("1")}}`) == "y[x].a = 1")
+    assert(act(`{"do":"journal","code":"turn_failed","params":[{"name":"reason","value":${nm("x")}}]}`) == "journal(turn_failed, reason: x)")
+    assert(act(`{"do":"journal","code":"plain"}`) == "journal(plain)")
+    assert(act(`{"do":"journal_value","value":${nm("x")}}`) == "journal(x)")
+    assert(act(`{"do":"journal_all"}`) == "journal(all_data)")
+    assert(act(`{"do":"machine_error","code":"fork_no_match","params":[{"name":"fork","value":${lit("\"Retry\"")}}]}`) == "machine_error(\"fork_no_match\", fork: \"Retry\")")
+    assert(act(`{"do":"cancel_open"}`) == "cancel_open")
+    assert(act(`{"do":"cancel_open","party":"agent"}`) == "cancel_open(party: agent)")
+    assert(act(`{"do":"call","primitive":"close_agent_turn","args":[]}`) == "call(close_agent_turn)")
+    assert(act(`{"do":"bind","name":"now","value":${lit("1")}}`) == "let now = 1")
+}
+
+test "rn actions compound" {
+    ro body = `[{"do":"assign","target":"y","value":${lit("1")}}]`
+    assert(act(`{"do":"for_each","var":"n","in":${nm("x")},"body":${body}}`) == "for each n in x: y = 1")
+    assert(render_actions_in(`[{"do":"for_each","var":"n","in":${nm("x")},"body":${body}}]`, "ru", ["x", "y"]) == "для каждого n в x: y = 1")
+    assert(act(`{"do":"if","cond":${nm("x")},"then":${body}}`) == "if x then (y = 1)")
+    assert(act(`{"do":"if","cond":${nm("x")},"then":${body},"else":${body}}`) == "if x then (y = 1) else (y = 1)")
+    assert(act(`{"do":"let","name":"k","value":${lit("1")},"body":${body}}`) == "let k = 1 in (y = 1)")
+    ro two = `[{"do":"assign","target":"y","value":${lit("1")}},{"do":"add","target":"y","value":${lit("2")}}]`
+    assert(act(`{"do":"for_each","var":"n","in":${nm("x")},"body":${two}}`) == "for each n in x: (y = 1; y += 2)")
+    assert(render_actions_in(two, "en", ["y"]) == "y = 1; y += 2")
+    assert(render_actions_in("[]", "en", []) == "—")
+}
+
+test "rn unsupported noted" {
+    ro bad = `{"format":"machine/2","machine":"M","version":"1","data":[],"parties":[{"name":"n","id":"n","kind":"robot","counter":"c"}],"initial":"S","states":[],"ends":{"result":"int","rows":[]}}`
+    ro made = render_machine(bad, "en")
+    assert(made.notes.len() > 0)
+    assert(made.notes[0].contains("$.parties[0]"))
+    ro broken = render_machine("{", "en")
+    assert(broken.notes.len() == 1 && broken.notes[0].contains("not a JSON"))
+    ro wrong_lang = render_machine(calc_json(), "de")
+    assert(wrong_lang.notes.len() == 1 && wrong_lang.notes[0].contains("language"))
+}
+
+// ---- circles from the files of Portolan --------------------------------------------------------------------------------------
+
+test "rn circle sample ru" {
+    ro first = json_of(methodology_text())
+    assert(!first.starts_with("ERROR "))
+    assert(circle(first, "ru") == "")
+    assert(circle(first, "en") == "")
+}
+
+test "rn circle sample en" {
+    ro first = json_of(methodology_en_text())
+    assert(!first.starts_with("ERROR "))
+    assert(circle(first, "en") == "")
+    assert(circle(first, "ru") == "")
+}
+
+test "rn circle product table" {
+    ro first = json_of(agent_step_table_text())
+    assert(!first.starts_with("ERROR "))
+    assert(circle(first, "ru") == "")
+    assert(circle(first, "en") == "")
+}
+
+test "rn circle pilot and examples" {
+    ro pilot = json_of(case_text("agent-step.portolan.md"))
+    assert(!pilot.starts_with("ERROR "))
+    assert(circle(pilot, "ru") == "")
+    assert(circle(pilot, "en") == "")
+    // the examples of the format are pieces of a machine, not a machine: they are translated without the checks of the table
+    ro examples = translate_report(case_text("format-examples.portolan.md")).json
+    assert(examples.byte_len() > 1000)
+    assert(circle_loose(examples, "ru") == "")
+    assert(circle_loose(examples, "en") == "")
+}
+
+test "rn ru to en to ru sample" {
+    ro first = json_of(methodology_text())
+    ro english = render(first, "en")
+    ro second = json_of(english)
+    assert(!second.starts_with("ERROR "))
+    assert(same_tree(first, second) == "")
+    ro russian = render(second, "ru")
+    ro third = json_of(russian)
+    assert(same_tree(first, third) == "")
+    assert(render(third, "en") == english)
+    assert(render(third, "ru") == russian)
+}
+
+test "rn english sample has the checked shape" {
+    // the generated English file has what the checks of the methodology look at: the sections in order, the states with their kinds, the numbers of the rows, the codes of the journal
+    ro made = render(json_of(methodology_en_text()), "en")
+    assert(made.contains("### AgentTurn — appeal\n- Party: agent\n"))
+    assert(made.contains("### Retry — fork\n- Input: retry_count, turn\n"))
+    assert(made.contains("### Start — operation\n- Input: none\n- On entry: let moment = call(time_now)\n"))
+    assert(made.contains("### Halted — end\n- Input: usage, agent_request, stop_reason, transport_usage, started\n- On entry:\n  - let now = call(time_now);\n"))
+    assert(made.contains("- Except: stop_reason in {\"\"}\n"))
+    assert(made.contains("| 9 | failure(reason in {FailCode.ConnectionLost, FailCode.Timeout, FailCode.NoResult}) | — | stop_reason = text(reason); journal(turn_failed, reason: text(reason)) | Accounting |"))
+    assert(made.contains("| Halted | 11 | stop_reason == \"cancel_request\" | Refusal(FailCode.Cancelled, stop_reason) |"))
+}
