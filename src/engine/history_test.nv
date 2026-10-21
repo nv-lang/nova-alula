@@ -1,0 +1,168 @@
+// history_test.nv - the events an engine has accepted, as the stamped values they were (task 099): `take_events` hands the new
+// ones out once, `history` reads the committed ones again from the journal (after a restart). The input of an event is the
+// parameter `input` of the journal event `event_accepted`. A tiny machine that ignores everything is enough: the engine does the
+// stamping, the journal and the snapshot.
+module alula.engine
+
+type EchoMachine { tag str }
+
+fn EchoMachine @name() -> str => "Echo"
+fn EchoMachine @initial() -> str => "idle"
+fn EchoMachine @state_name(state str) -> str => state
+fn EchoMachine @step(current str, event Incoming, mut environment Environment) -> Transition[str] => Stay
+fn EchoMachine @encode_state(state str) -> str => state
+fn EchoMachine @decode_state(text str) -> Option[str] => Some(text)
+
+fn echo() -> EchoMachine => { tag: "echo" }
+
+fn echo_begin(mut world MemoryWorld) -> Engine[EchoMachine, str] {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        // ORACLE-WORKAROUND(12, 13, 26): the type arguments of `start_engine` and `resume_engine` are written out here and below; infer them when items 12 and 13 are fixed
+        start_engine[str, EchoMachine](echo(), "s-1")
+    }
+}
+
+fn echo_resumed(mut world MemoryWorld) -> Engine[EchoMachine, str] {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        match resume_engine[str, EchoMachine](echo(), "s-1") {
+            Some(e) => e
+            None => panic("no snapshot")
+        }
+    }
+}
+
+fn echo_arrives(mut e Engine[EchoMachine, str], mut world MemoryWorld, event Incoming) -> () {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        e.on_arrival(event)
+    }
+}
+
+fn echo_history(e Engine[EchoMachine, str], mut world MemoryWorld) -> []Incoming {
+    with Journal = memory_journal(world) {
+        e.history()
+    }
+}
+
+// The journal events with this code, in order of writing.
+fn accepted_events(world MemoryWorld) -> []JournalEvent {
+    mut out = []JournalEvent.new()
+    for entry in world.journal_entries() {
+        if entry.event.code == "event_accepted" { out.push(entry.event) }
+    }
+    out
+}
+
+test "journal: the input of an event is a parameter of event_accepted, only when there is one" {
+    mut world = MemoryWorld.at(5000)
+    mut e = echo_begin(world)
+    echo_arrives(e, world, Incoming.word("hello", "привет\nвторая строка \"мир\""))
+    echo_arrives(e, world, Incoming.word("empty", ""))
+    ro events = accepted_events(world)
+    assert(events.len() == 2)
+    assert(events[0].value_of("input") == Some("привет\nвторая строка \"мир\""))
+    assert(events[0].value_of("name") == Some("hello"))
+    assert(events[1].value_of("input") == None)
+}
+
+test "events: take_events hands the accepted events out once, stamped, in order" {
+    mut world = MemoryWorld.at(5000)
+    mut e = echo_begin(world)
+    assert(e.take_events().len() == 0)
+    echo_arrives(e, world, Incoming.word("hello", "один"))
+    world.advance(10)
+    echo_arrives(e, world, Incoming.word("hello", "два"))
+    ro got = e.take_events()
+    assert(got.len() == 2)
+    assert(got[0].id == "input-2")
+    assert(got[0].name == "hello")
+    assert(got[0].input == "один")
+    assert(got[0].step == 2)
+    assert(got[0].at == 5000)
+    assert(got[1].id == "input-3")
+    assert(got[1].input == "два")
+    assert(got[1].step == 3)
+    assert(got[1].at == 5010)
+    assert(got[0].trace == e.trace())
+    assert(e.take_events().len() == 0)
+}
+
+test "pump: a ready backlog yields at the event budget and resumes in order" {
+    mut world = MemoryWorld.at(5000)
+    mut e = echo_begin(world)
+    mut i = 0
+    while i < 20 {
+        world.deliver(Incoming.word("hello", "event-${i}"))
+        i += 1
+    }
+    ro first = with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        e.pump()
+    }
+    assert(first == 16)
+    assert(e.take_events().len() == 16)
+    assert(world.inbox.len() == 4)
+    ro second = with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        e.pump()
+    }
+    assert(second == 4)
+    ro rest = e.take_events()
+    assert(rest.len() == 4)
+    assert(rest[0].input == "event-16")
+    assert(rest[3].input == "event-19")
+}
+
+test "events: a discarded event is not handed out" {
+    mut world = MemoryWorld.at(5000)
+    mut e = echo_begin(world)
+    echo_arrives(e, world, Incoming.incoming(EventKind.Progress, "agent_chunk", Some("agent-9"), "поздно"))
+    assert(e.take_events().len() == 0)
+}
+
+test "events: history after a restart is the accepted events again" {
+    mut world = MemoryWorld.at(5000)
+    mut e = echo_begin(world)
+    echo_arrives(e, world, Incoming.word("hello", "один"))
+    world.advance(10)
+    echo_arrives(e, world, Incoming.incoming(EventKind.Progress, "agent_chunk", Some("agent-9"), "поздно"))
+    world.advance(10)
+    echo_arrives(e, world, Incoming.word("hello", "два\nстрока"))
+    ro live = e.take_events()
+    ro again = echo_history(echo_resumed(world), world)
+    assert(again.len() == 2)
+    assert(again[0].id == live[0].id)
+    assert(again[0].name == "hello")
+    assert(again[0].kind == EventKind.Input)
+    assert(again[0].input == "один")
+    assert(again[0].step == live[0].step)
+    assert(again[0].at == live[0].at)
+    assert(again[0].trace == live[0].trace)
+    assert(again[1].id == live[1].id)
+    assert(again[1].input == "два\nстрока")
+    assert(again[1].request == None)
+}
+
+test "events: history leaves out the lines of a step that was never committed" {
+    mut world = MemoryWorld.at(5000)
+    mut e = echo_begin(world)
+    echo_arrives(e, world, Incoming.word("hello", "один"))
+    // the process died after the journal line of the next step and before its snapshot
+    ro lost JournalEntry = {
+        trace: e.trace(), step: e.step_number() + 1, cause: "input-9", state: "idle", request: "", at: 5100,
+        event: journal_event("event_accepted", [param("kind", "input"), param("name", "hello"), param("input", "потеряно")])
+    }
+    world.journal.push(journal_line(lost))
+    ro again = echo_history(echo_resumed(world), world)
+    assert(again.len() == 1)
+    assert(again[0].input == "один")
+}
+
+test "events: the kind of an event is named and parsed" {
+    // ORACLE-WORKAROUND(33): the variants are bound to a list before the loop: `for x in [A, B]` over a literal list of variants of a user enum does not compile; loop over the literal when item 33 is fixed
+    ro kinds = []EventKind.of(EventKind.Input, EventKind.Progress, EventKind.Answered, EventKind.Refused, EventKind.Expired)
+    for kind in kinds {
+        match EventKind.parse(kind.name()) {
+            Some(back) => assert(back == kind)
+            None => assert(false)
+        }
+    }
+    assert(EventKind.parse("weather") == None)
+}

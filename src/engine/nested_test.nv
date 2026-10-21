@@ -1,0 +1,323 @@
+// nested_test.nv - what the engine gives to nested machines (task 119): the order `order_signal` (a signal to a nested machine, rule 35 item 8), the signals the engine holds until the
+// caller passes them on and marks them passed, the repeat of an open request with the same identifier (rule 22 and rule 35 item 4), a trace given by the caller (the trace of a nested
+// machine is a child of the trace of the parent, rule 35 item 3). A tiny machine is enough: the word `ask` orders a request to `callee`, `stop` and `halt` order a signal to the request
+// `callee-1`, `finish` ends the machine.
+module alula.engine
+
+type CallMachine { tag str }
+
+fn CallMachine @name() -> str => "Caller"
+fn CallMachine @initial() -> str => "idle"
+fn CallMachine @state_name(state str) -> str => state
+fn CallMachine @encode_state(state str) -> str => state
+fn CallMachine @decode_state(text str) -> Option[str] => Some(text)
+
+fn CallMachine @step(current str, event Incoming, mut environment Environment) -> Transition[str] {
+    if event.name == "ask" {
+        environment.order_send(SendOrder { party: "callee", input: "{\"label\":\"m\"}", idle_term: 0 })
+        return Go("waiting")
+    }
+    if event.name == "stop" {
+        environment.order_signal(SignalOrder { request: "callee-1", signal: "stop" })
+        return Go("paused")
+    }
+    if event.name == "halt" {
+        environment.order_signal(SignalOrder { request: "callee-1", signal: "halt" })
+        environment.order_signal(SignalOrder { request: "other-1", signal: "cancel" })
+        return Stay
+    }
+    if event.name == "finish" {
+        environment.order_finish(Conclusion { failure: None, text: "done" })
+        return Go("done")
+    }
+    Stay
+}
+
+fn caller() -> CallMachine => { tag: "caller" }
+
+fn caller_begin(mut world MemoryWorld) -> Engine[CallMachine, str] {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        start_engine[str, CallMachine](caller(), "p-1")
+    }
+}
+
+fn caller_begin_in(mut world MemoryWorld, trace str) -> Engine[CallMachine, str] {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        start_engine_in[str, CallMachine](caller(), "p-1", trace)
+    }
+}
+
+fn caller_resumed(mut world MemoryWorld) -> Engine[CallMachine, str] {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        match resume_engine[str, CallMachine](caller(), "p-1") {
+            Some(e) => e
+            None => panic("no snapshot")
+        }
+    }
+}
+
+fn caller_feed(mut e Engine[CallMachine, str], mut world MemoryWorld, name str) -> () {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        e.feed(Incoming.word(name, ""))
+    }
+}
+
+fn caller_accept(mut e Engine[CallMachine, str], mut world MemoryWorld, name str) -> () {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        e.on_arrival(Incoming.word(name, ""))
+    }
+}
+
+fn caller_dispatch(mut e Engine[CallMachine, str], mut world MemoryWorld) -> () {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        e.dispatch()
+    }
+}
+
+fn caller_repeat(mut e Engine[CallMachine, str], mut world MemoryWorld, ids []str) -> int {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        e.repeat_open(ids)
+    }
+}
+
+fn caller_passed(mut e Engine[CallMachine, str], mut world MemoryWorld) -> () {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        e.signals_passed(e.pending_signals())
+    }
+}
+
+fn caller_passed_some(mut e Engine[CallMachine, str], mut world MemoryWorld, done []SignalOrder) -> () {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        e.signals_passed(done)
+    }
+}
+
+fn caller_answer(mut e Engine[CallMachine, str], mut world MemoryWorld, request str) -> () {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        e.feed(Incoming.incoming(Answered, "answer", Some(request), "ok"))
+    }
+}
+
+// The lines of the journal with this code: (request, parameters as "name=value;…").
+fn lines_with(world MemoryWorld, code str) -> []str {
+    mut out = []str.new()
+    for entry in world.journal_entries() {
+        if entry.event.code == code {
+            mut parts = []str.new()
+            for p in entry.event.params { parts.push("${p.name}=${p.value}") }
+            out.push("${entry.request}|${parts.join(";")}")
+        }
+    }
+    out
+}
+
+test "ng order in the recorder" {
+    mut env = StepEnvironment.new()
+    env.order_signal(SignalOrder { request: "a-1", signal: "stop" })
+    env.order_send(SendOrder { party: "a", input: "", idle_term: 0 })
+    // a signal is not one of the orders of the enum `Order`: it has its own list
+    assert(env.orders.len() == 1)
+    assert(env.signals.len() == 1)
+    assert(env.signals[0].request == "a-1")
+    assert(env.signals[0].signal == "stop")
+}
+
+test "ng signal is journaled" {
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    caller_feed(e, world, "ask")
+    caller_feed(e, world, "stop")
+    ro lines = lines_with(world, "signal_ordered")
+    assert(lines.len() == 1)
+    assert(lines[0] == "callee-1|signal=stop;request=callee-1")
+}
+
+test "ng signal pending" {
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    assert(e.pending_signals().len() == 0)
+    caller_feed(e, world, "ask")
+    caller_feed(e, world, "halt")
+    ro pending = e.pending_signals()
+    assert(pending.len() == 2)
+    assert(pending[0].request == "callee-1" && pending[0].signal == "halt")
+    assert(pending[1].request == "other-1" && pending[1].signal == "cancel")
+}
+
+test "ng signal not sent by dispatch" {
+    // the engine holds a signal until the caller passes it: dispatch sends requests and cancels only
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    caller_feed(e, world, "ask")
+    caller_feed(e, world, "stop")
+    assert(world.sent.len() == 1)
+    assert(world.cancelled.len() == 0)
+    assert(e.pending_signals().len() == 1)
+}
+
+test "ng signal passed" {
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    caller_feed(e, world, "ask")
+    caller_feed(e, world, "halt")
+    caller_passed(e, world)
+    assert(e.pending_signals().len() == 0)
+    ro lines = lines_with(world, "signal_passed")
+    assert(lines.len() == 2)
+    assert(lines[0] == "callee-1|signal=halt;request=callee-1")
+    assert(lines[1] == "other-1|signal=cancel;request=other-1")
+}
+
+test "ng signal passed some" {
+    // the signals of a nested machine that has not started stay pending
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    caller_feed(e, world, "halt")
+    caller_passed_some(e, world, [SignalOrder { request: "callee-1", signal: "halt" }])
+    ro pending = e.pending_signals()
+    assert(pending.len() == 1)
+    assert(pending[0].request == "other-1")
+    assert(lines_with(world, "signal_passed").len() == 1)
+    caller_passed_some(e, world, [SignalOrder { request: "other-1", signal: "stop" }])
+    assert(e.pending_signals().len() == 1)
+}
+
+test "ng signal passed once" {
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    caller_feed(e, world, "stop")
+    caller_passed(e, world)
+    caller_passed(e, world)
+    assert(lines_with(world, "signal_passed").len() == 1)
+}
+
+test "ng signal restart before" {
+    // the process died before the signal was passed: the restart finds it in the journal and holds it again
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    caller_feed(e, world, "ask")
+    caller_feed(e, world, "stop")
+    mut again = caller_resumed(world)
+    ro pending = again.pending_signals()
+    assert(pending.len() == 1)
+    assert(pending[0].request == "callee-1" && pending[0].signal == "stop")
+}
+
+test "ng signal restart after" {
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    caller_feed(e, world, "stop")
+    caller_passed(e, world)
+    mut again = caller_resumed(world)
+    assert(again.pending_signals().len() == 0)
+}
+
+test "ng signal accept only" {
+    // the step is committed, the process died: the signal is in the journal, not passed
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    caller_accept(e, world, "stop")
+    mut again = caller_resumed(world)
+    assert(again.pending_signals().len() == 1)
+}
+
+test "ng repeat open" {
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    caller_feed(e, world, "ask")
+    assert(world.sent.len() == 1)
+    assert(world.sent[0].id == "callee-1")
+    assert(caller_repeat(e, world, ["callee-1"]) == 1)
+    caller_dispatch(e, world)
+    assert(world.sent.len() == 2)
+    assert(world.sent[1].id == "callee-1")
+    assert(world.sent[1].attempt == 1)
+    assert(world.sent[1].input == world.sent[0].input)
+    assert(world.sent[1].trace == world.sent[0].trace)
+    assert(world.sent[1].step == world.sent[0].step)
+}
+
+test "ng repeat mark" {
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    caller_feed(e, world, "ask")
+    ro n = caller_repeat(e, world, ["callee-1"])
+    caller_dispatch(e, world)
+    assert(lines_with(world, "request_sent").len() == 1)
+    ro repeated = lines_with(world, "request_repeated")
+    assert(repeated.len() == 1)
+    assert(repeated[0] == "callee-1|attempt=1")
+    caller_dispatch(e, world)
+    assert(world.sent.len() == 2)
+}
+
+test "ng repeat only open" {
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    caller_feed(e, world, "ask")
+    caller_answer(e, world, "callee-1")
+    assert(caller_repeat(e, world, ["callee-1", "nobody-1"]) == 0)
+    caller_dispatch(e, world)
+    assert(world.sent.len() == 1)
+}
+
+test "ng repeat same attempt" {
+    // a repeat is not a new attempt: the counter of the party stays, the next request is callee-2
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    caller_feed(e, world, "ask")
+    ro n = caller_repeat(e, world, ["callee-1"])
+    caller_dispatch(e, world)
+    caller_answer(e, world, "callee-1")
+    caller_feed(e, world, "ask")
+    assert(world.sent.len() == 3)
+    assert(world.sent[2].id == "callee-2")
+}
+
+test "ng repeat after restart" {
+    // the way of rule 22: the engine is resumed, the open request of a nested machine is repeated with its identifier
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    caller_feed(e, world, "ask")
+    mut again = caller_resumed(world)
+    caller_dispatch(again, world)
+    assert(world.sent.len() == 1)
+    assert(caller_repeat(again, world, again.open_ids()) == 1)
+    caller_dispatch(again, world)
+    assert(world.sent.len() == 2)
+    assert(world.sent[1].id == "callee-1")
+}
+
+test "ng repeat twice once" {
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    caller_feed(e, world, "ask")
+    ro first = caller_repeat(e, world, ["callee-1"])
+    ro second = caller_repeat(e, world, ["callee-1"])
+    caller_dispatch(e, world)
+    assert(world.sent.len() == 2)
+}
+
+test "ng trace given" {
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin_in(world, "t1000-parent/callee-1")
+    assert(e.trace() == "t1000-parent/callee-1")
+    caller_feed(e, world, "ask")
+    assert(world.sent[0].trace == "t1000-parent/callee-1")
+    ro entries = world.journal_entries()
+    assert(entries.len() > 0)
+    for entry in entries { assert(entry.trace == "t1000-parent/callee-1") }
+}
+
+test "ng trace default" {
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    assert(e.trace() == "t1000-p-1")
+}
+
+test "ng trace kept by restart" {
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin_in(world, "T/x")
+    mut again = caller_resumed(world)
+    assert(again.trace() == "T/x")
+}

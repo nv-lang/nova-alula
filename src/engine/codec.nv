@@ -1,0 +1,268 @@
+// codec.nv - text forms: a journal line and a snapshot (JSON, UTF-8, non-ASCII text is written as it is).
+//
+// Source: state-machine-spec.md rule 31 (the envelope of a journal line: trace, step number, cause,
+// state name, request id, time), rules 12, 22 (what a snapshot keeps) and state-machine-journal.md (the event of a
+// line: a code and parameters, in jsonb as an object "name -> value"). The format is a line of
+// JSON, as the task fixes; the standard `std.encoding.json` writes and reads it.
+//
+// A journal line:
+//   {"trace":"t1-s","step":2,"cause":"input-2","state":"Awaiting","request":"agent-1","at":1000,
+//    "event":{"code":"request_ordered","params":{"party":"agent","attempt":"1"}}}
+// A line of the old form (`kind`, `text`) is still read: its code is the one for the old `kind` (`sent` -> `request_sent`, ...), its parameter `text`.
+// A snapshot keeps the typed state of the machine as an object under `state` (the border: `Machine.encode_state`); a snapshot of the
+// old form (`machine_state` as a text, `open` with `idle_term` and `deadline`) is still read.
+module alula.engine
+
+import std.encoding.json.{Json, JsonValue, JsonObject}
+
+fn put(mut o JsonObject, key str, value JsonValue) -> () {
+    ro replaced = o.insert(key, value)
+}
+
+fn text_of(o JsonObject, key str) -> Option[str] {
+    match o.get(key) {
+        Some(v) => v.str()
+        None => None
+    }
+}
+
+fn int_of(o JsonObject, key str) -> Option[int] {
+    match o.get(key) {
+        Some(v) => v.int()
+        None => None
+    }
+}
+
+fn list_of(o JsonObject, key str) -> Option[[]JsonValue] {
+    match o.get(key) {
+        Some(v) => v.array()
+        None => None
+    }
+}
+
+fn object_of(text str) -> Option[JsonObject] {
+    match Json.parse(text) {
+        Ok(v) => v.object()
+        Err(e) => None
+    }
+}
+
+fn event_to_json(event JournalEvent) -> JsonValue {
+    mut params = JsonObject.new()
+    for p in event.params { put(params, p.name, JsonValue.str(p.value)) }
+    mut o = JsonObject.new()
+    put(o, "code", JsonValue.str(event.code))
+    put(o, "params", JsonValue.object(params))
+    JsonValue.object(o)
+}
+
+fn event_from_json(v JsonValue) -> Option[JournalEvent] {
+    ro o = v.object()?
+    ro code = text_of(o, "code")?
+    ro params_value = o.get("params")?
+    ro params_object = params_value.object()?
+    mut params = []JournalParam.new()
+    for name in params_object.keys() {
+        ro value_json = params_object.get(name)?
+        params.push(param(name, value_json.str()?))
+    }
+    Some(journal_event(code, params))
+}
+
+// The code of a line of the old form (the old `kind`): the code the engine writes now for the same thing, so that a restart reads the marks
+// (`sent`, `cancel`, `restart`, ...) of a journal that the old engine wrote. A kind not in the list (`note`) stays as it is.
+fn old_code(kind str) -> str {
+    if kind == "start" { return "machine_started" }
+    if kind == "event" { return "event_accepted" }
+    if kind == "discarded" { return "reply_discarded" }
+    if kind == "request" { return "request_ordered" }
+    if kind == "sent" { return "request_sent" }
+    if kind == "closed" { return "request_closed" }
+    if kind == "cancel" { return "cancel_ordered" }
+    if kind == "snapshot" { return "snapshot_ordered" }
+    if kind == "finish" { return "machine_finished" }
+    if kind == "restart" { return "engine_resumed" }
+    kind
+}
+
+// The event of a line of the old form: the code of the old `kind` (see above), the old `text` the parameter `text`; an `event` line
+// kept the source key at the end of its text (` src=<key>`) - it is the parameter `source` now.
+fn old_event(o JsonObject) -> Option[JournalEvent] {
+    ro kind = text_of(o, "kind")?
+    ro text = text_of(o, "text")?
+    mut params = [param("text", text)]
+    if kind == "event" {
+        match text.find(" src=") {
+            Some(at) => params.push(param("source", text[at + 5..]))
+            None => ()
+        }
+    }
+    Some(journal_event(old_code(kind), params))
+}
+
+/// The journal line of an entry: one line of JSON without a line break.
+export fn journal_line(entry JournalEntry) -> str {
+    mut o = JsonObject.new()
+    put(o, "trace", JsonValue.str(entry.trace))
+    put(o, "step", JsonValue.int(entry.step))
+    put(o, "cause", JsonValue.str(entry.cause))
+    put(o, "state", JsonValue.str(entry.state))
+    put(o, "request", JsonValue.str(entry.request))
+    put(o, "at", JsonValue.int(entry.at))
+    put(o, "event", event_to_json(entry.event))
+    JsonValue.object(o).to_str()
+}
+
+/// Parse a journal line; a line that is not a journal entry is `None`.
+export fn parse_journal_line(line str) -> Option[JournalEntry] {
+    ro o = object_of(line)?
+    ro trace = text_of(o, "trace")?
+    ro step = int_of(o, "step")?
+    ro cause = text_of(o, "cause")?
+    ro state = text_of(o, "state")?
+    ro request = text_of(o, "request")?
+    ro at = int_of(o, "at")?
+    ro event = match o.get("event") {
+        Some(v) => event_from_json(v)?
+        None => old_event(o)?
+    }
+    Some({ trace, step, cause, state, request, at, event })
+}
+
+fn waiting_to_json(w Waiting) -> JsonValue {
+    mut o = JsonObject.new()
+    put(o, "sent", JsonValue.int(w.sent))
+    put(o, "term", JsonValue.int(w.term))
+    JsonValue.object(o)
+}
+
+fn open_to_json(r OpenRequest) -> JsonValue {
+    mut o = JsonObject.new()
+    put(o, "id", JsonValue.str(r.id))
+    put(o, "party", JsonValue.str(r.party))
+    put(o, "attempt", JsonValue.int(r.attempt))
+    put(o, "step", JsonValue.int(r.step))
+    put(o, "input", JsonValue.str(r.input))
+    put(o, "waiting", waiting_to_json(r.waiting))
+    JsonValue.object(o)
+}
+
+fn waiting_of(o JsonObject) -> Option[Waiting] {
+    match o.get("waiting") {
+        Some(w) => {
+            ro wo = w.object()?
+            ro sent = int_of(wo, "sent")?
+            ro term = int_of(wo, "term")?
+            Some({ sent, term })
+        }
+        None => {
+            // the old form: the idle term and the clock when it passes (0 - no term)
+            ro idle_term = int_of(o, "idle_term")?
+            ro deadline = int_of(o, "deadline")?
+            ro sent = if deadline > 0 { deadline - idle_term } else { 0 }
+            Some({ sent, term: idle_term })
+        }
+    }
+}
+
+fn open_from_json(v JsonValue) -> Option[OpenRequest] {
+    ro o = v.object()?
+    ro id = text_of(o, "id")?
+    ro party = text_of(o, "party")?
+    ro attempt = int_of(o, "attempt")?
+    ro step = int_of(o, "step")?
+    ro input = text_of(o, "input")?
+    ro waiting = waiting_of(o)?
+    Some({ id, party, attempt, step, input, waiting })
+}
+
+fn counter_to_json(c PartyCounter) -> JsonValue {
+    mut o = JsonObject.new()
+    put(o, "party", JsonValue.str(c.party))
+    put(o, "attempts", JsonValue.int(c.attempts))
+    JsonValue.object(o)
+}
+
+fn counter_from_json(v JsonValue) -> Option[PartyCounter] {
+    ro o = v.object()?
+    ro party = text_of(o, "party")?
+    ro attempts = int_of(o, "attempts")?
+    Some({ party, attempts })
+}
+
+// The typed state of the machine as a JSON value: the object of its text form (the text itself if it is not JSON).
+fn state_to_json(text str) -> JsonValue {
+    match Json.parse(text) {
+        Ok(v) => v
+        Err(e) => JsonValue.str(text)
+    }
+}
+
+// The text form of the state of a snapshot: an object under `state`, or the old text under `machine_state`.
+fn state_text_of(o JsonObject) -> Option[str] {
+    match o.get("state") {
+        Some(v) => match v.str() {
+            Some(text) => Some(text)
+            None => Some(v.to_str())
+        }
+        None => text_of(o, "machine_state")
+    }
+}
+
+/// The snapshot of the engine state; the state of the machine is encoded by the machine, here, at the border.
+export fn encode_snapshot[S, M Machine[S]](machine M, state EngineState[S]) -> Snapshot {
+    mut open = []JsonValue.new()
+    for r in state.open_requests { open.push(open_to_json(r)) }
+    mut closed = []JsonValue.new()
+    for id in state.closed { closed.push(JsonValue.str(id)) }
+    mut counters = []JsonValue.new()
+    for c in state.counters { counters.push(counter_to_json(c)) }
+    mut o = JsonObject.new()
+    put(o, "trace", JsonValue.str(state.trace))
+    put(o, "step", JsonValue.int(state.step))
+    put(o, "event_counter", JsonValue.int(state.event_counter))
+    put(o, "state", state_to_json(machine.encode_state(state.state)))
+    put(o, "open_requests", JsonValue.array(open))
+    put(o, "closed", JsonValue.array(closed))
+    put(o, "counters", JsonValue.array(counters))
+    put(o, "final_kind", JsonValue.str(state.final_kind))
+    put(o, "final_text", JsonValue.str(state.final_text))
+    put(o, "final_code", JsonValue.str(state.final_code))
+    put(o, "final_step", JsonValue.int(state.final_step))
+    { step: state.step, data: JsonValue.object(o).to_str() }
+}
+
+// The engine state around a state that the machine has already decoded.
+fn engine_state_of[S](o JsonObject, snapshot_step int, state S) -> Option[EngineState[S]] {
+    ro trace = text_of(o, "trace")?
+    ro step = int_of(o, "step")?
+    ro event_counter = int_of(o, "event_counter")?
+    ro final_kind = text_of(o, "final_kind")?
+    ro final_text = text_of(o, "final_text")?
+    ro final_code = text_of(o, "final_code")?
+    ro final_step = int_of(o, "final_step")?
+    ro open_items = match list_of(o, "open_requests") {
+        Some(items) => items
+        None => list_of(o, "open")?
+    }
+    mut open_requests = []OpenRequest.new()
+    for item in open_items { open_requests.push(open_from_json(item)?) }
+    mut closed = []str.new()
+    for item in list_of(o, "closed")? { closed.push(item.str()?) }
+    mut counters = []PartyCounter.new()
+    for item in list_of(o, "counters")? { counters.push(counter_from_json(item)?) }
+    if step != snapshot_step { return None }
+    ro restored EngineState[S] = { trace, step, event_counter, state, open_requests, closed, counters, final_kind, final_text, final_code, final_step }
+    Some(restored)
+}
+
+/// Restore the engine state from a snapshot; a damaged snapshot (or a state the machine does not know) is `None`.
+export fn decode_snapshot[S, M Machine[S]](machine M, snapshot Snapshot) -> Option[EngineState[S]] {
+    ro o = object_of(snapshot.data)?
+    ro state_text = state_text_of(o)?
+    // ORACLE-WORKAROUND(27): `match` on the option of the machine, not `?`: the operator `?` on an `Option` of a sum type inside a generic function writes a type name that does not exist in the C; use `?` when item 27 is fixed
+    match machine.decode_state(state_text) {
+        None => None
+        Some(state) => engine_state_of[S](o, snapshot.step, state)
+    }
+}

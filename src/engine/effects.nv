@@ -1,0 +1,44 @@
+// effects.nv - the outside world of the engine: four effects (spec rule 8: only the executor writes).
+//
+// Source: state-machine-engine-automaton.md, effects `Store`, `Journal`, `Link`; here the
+// concrete types are used, because Oracle 0.1.0 has no generic effects in this shape and the
+// methodology itself fixes the concrete wire types. The clock is the standard `Time` effect.
+//
+// Handlers: tests use the in-memory ones (`memory.nv`); the real ones are the file ones (`src/storage/`),
+// the PostgreSQL ones (`src/pgstore/`) and the ACP client (`src/acp/`).
+// A failed operation is not an error value: a real handler that cannot write stops the process
+// (the step is then not committed - spec rule 13), so the operations return plain values.
+
+module alula.engine
+
+/// Journal: the append-only log of the events and steps. `read_all` returns the entries written so
+/// far in the order of writing; the engine reads it at resume to know which requests were already sent.
+export type Journal effect {
+    fn write(entry JournalEntry) -> ()
+    fn read_all() -> []JournalEntry
+}
+
+/// Store: snapshots by session id; `save` replaces, `load` returns the last saved one.
+export type Store effect {
+    fn save(id str, snapshot Snapshot) -> ()
+    fn load(id str) -> Option[Snapshot]
+}
+
+/// Link: the link to the party (here the party is one - the agent). `send` sends a request, `receive` returns the next
+/// incoming event without waiting (None - nothing arrived), `cancel` tells the party that the request is cancelled,
+/// `ack` confirms an incoming event. The methodology's `signal` and `reply` are not here: there are no nested machines
+/// and no calling party.
+///
+/// Acknowledgement: an event returned by `receive` is not yet the engine's. The handler keeps it as
+/// "taken, not confirmed" and hands it out again after a restart. The event carries its source key
+/// in `Incoming.id` (the creator of an incoming event may fill it; the engine stamps its own id and keeps
+/// the key in the journal event of the step as the parameter `source`). The engine calls `ack(key)` after the
+/// step of the event is committed, and after a restart for every key that the journal shows as
+/// committed (the process may have died between the commit and the `ack`). `ack` is idempotent.
+/// An event without a source key (an empty `id`) is never acknowledged.
+export type Link effect {
+    fn send(request PartyRequest[str]) -> ()
+    fn receive() -> Option[Incoming]
+    fn cancel(request_id str) -> ()
+    fn ack(source str) -> ()
+}

@@ -1,0 +1,230 @@
+// codec_test.nv - the journal line and the snapshot: JSON, one line, UTF-8 as it is.
+module alula.engine
+
+// A machine for the tests of the snapshot: a typed state with a payload, encoded at the border.
+type Mode enum
+    | Calm
+    | Busy { user str }
+
+type Stub { n int }
+
+fn stub() -> Stub => { n: 0 }
+
+fn Stub @name() -> str => "Stub"
+fn Stub @initial() -> Mode => Calm
+fn Stub @state_name(state Mode) -> str => match state {
+    Calm => "Calm"
+    Busy { user } => "Busy"
+}
+fn Stub @step(current Mode, event Incoming, mut environment Environment) -> Transition[Mode] => Stay
+fn Stub @encode_state(state Mode) -> str {
+    mut o = JsonObject.new()
+    match state {
+        Calm => put(o, "state", JsonValue.str("Calm"))
+        Busy { user } => {
+            put(o, "state", JsonValue.str("Busy"))
+            put(o, "user", JsonValue.str(user))
+        }
+    }
+    JsonValue.object(o).to_str()
+}
+fn Stub @decode_state(text str) -> Option[Mode] {
+    ro o = object_of(text)?
+    ro name = text_of(o, "state")?
+    if name == "Calm" { return Some(Calm) }
+    if name == "Busy" { return Some(Busy { user: text_of(o, "user")? }) }
+    None
+}
+
+fn sample_entry() -> JournalEntry => {
+    trace: "t1000-chat-1", step: 3, cause: "answered-4", state: "Awaiting", request: "agent-1",
+    at: 1500, event: journal_event("user_message", [param("text", "получено: привет, \"мир\"\nвторая строка"), param("size", "42")])
+}
+
+test "journal line: one line, no line break, the envelope fields and the event are in it" {
+    ro line = journal_line(sample_entry())
+    assert(line.byte_len() > 0)
+    assert(!line.contains("\n"))
+    assert(line.contains("\"trace\":\"t1000-chat-1\""))
+    assert(line.contains("\"step\":3"))
+    assert(line.contains("\"event\":{\"code\":\"user_message\",\"params\":{"))
+    assert(line.contains("\"size\":\"42\""))
+    assert(line.contains("\"request\":\"agent-1\""))
+    assert(line.contains("\"at\":1500"))
+    assert(!line.contains("\"kind\""))
+}
+
+test "journal line: parses back to the same entry, Cyrillic and a line break inside a parameter included" {
+    ro entry = sample_entry()
+    match parse_journal_line(journal_line(entry)) {
+        Some(back) => {
+            assert(back.trace == entry.trace)
+            assert(back.step == entry.step)
+            assert(back.cause == entry.cause)
+            assert(back.state == entry.state)
+            assert(back.request == entry.request)
+            assert(back.at == entry.at)
+            assert(back.event.code == entry.event.code)
+            assert(back.event.params.len() == 2)
+            assert(back.event.value_of("text") == Some("получено: привет, \"мир\"\nвторая строка"))
+            assert(back.event.value_of("size") == Some("42"))
+            assert(back.event.value_of("missing") == None)
+        }
+        None => assert(false)
+    }
+}
+
+test "journal line: an event without parameters has an empty object" {
+    ro entry JournalEntry = { trace: "t", step: 1, cause: "start-1", state: "Idle", request: "", at: 1, event: journal_event("cancel_sent", []JournalParam.new()) }
+    ro line = journal_line(entry)
+    assert(line.contains("\"event\":{\"code\":\"cancel_sent\",\"params\":{}}"))
+    match parse_journal_line(line) {
+        Some(back) => {
+            assert(back.event.code == "cancel_sent")
+            assert(back.event.params.len() == 0)
+        }
+        None => assert(false)
+    }
+}
+
+test "journal line: Cyrillic is written as it is, not as escapes" {
+    ro line = journal_line(sample_entry())
+    assert(line.contains("привет"))
+    assert(!line.contains("u043"))
+    assert(!line.contains("u044"))
+}
+
+test "journal line: a line of the old form (kind, text) is read: the code is the one for the old kind, the text the parameter" {
+    ro old = "{\"trace\":\"t1\",\"step\":2,\"cause\":\"input-2\",\"state\":\"Awaiting\",\"request\":\"agent-1\",\"at\":1000,\"kind\":\"sent\",\"text\":\"attempt 1\"}"
+    match parse_journal_line(old) {
+        Some(back) => {
+            assert(back.event.code == "request_sent")
+            assert(back.event.value_of("text") == Some("attempt 1"))
+            assert(back.request == "agent-1")
+        }
+        None => assert(false)
+    }
+    ro note = "{\"trace\":\"t1\",\"step\":2,\"cause\":\"input-2\",\"state\":\"Awaiting\",\"request\":\"\",\"at\":1000,\"kind\":\"note\",\"text\":\"user message: hi\"}"
+    match parse_journal_line(note) {
+        Some(back) => assert(back.event.code == "note")
+        None => assert(false)
+    }
+}
+
+test "journal line: an old event line gives back its source key as the parameter source, an old restart line is a resume" {
+    ro event_line = "{\"trace\":\"t1\",\"step\":3,\"cause\":\"progress-3\",\"state\":\"Awaiting\",\"request\":\"agent-1\",\"at\":1000,\"kind\":\"event\",\"text\":\"progress/agent_chunk src=acp-7\"}"
+    match parse_journal_line(event_line) {
+        Some(back) => {
+            assert(back.event.code == "event_accepted")
+            assert(back.event.value_of("source") == Some("acp-7"))
+        }
+        None => assert(false)
+    }
+    ro without_key = "{\"trace\":\"t1\",\"step\":3,\"cause\":\"input-3\",\"state\":\"Awaiting\",\"request\":\"\",\"at\":1000,\"kind\":\"event\",\"text\":\"input/user_message\"}"
+    match parse_journal_line(without_key) {
+        Some(back) => assert(back.event.value_of("source") == None)
+        None => assert(false)
+    }
+    ro restart_line = "{\"trace\":\"t1\",\"step\":4,\"cause\":\"restart-4\",\"state\":\"Awaiting\",\"request\":\"\",\"at\":1000,\"kind\":\"restart\",\"text\":\"resumed from the snapshot of step 3\"}"
+    match parse_journal_line(restart_line) {
+        Some(back) => assert(back.event.code == "engine_resumed")
+        None => assert(false)
+    }
+}
+
+test "journal line: a line that is not an entry is not parsed" {
+    assert(parse_journal_line("") == None)
+    assert(parse_journal_line("not json") == None)
+    assert(parse_journal_line("{\"trace\":\"x\"}") == None)
+    assert(parse_journal_line("[1,2,3]") == None)
+    assert(parse_journal_line("{\"trace\":\"t\",\"step\":1,\"cause\":\"c\",\"state\":\"s\",\"request\":\"\",\"at\":1,\"event\":{\"code\":\"x\",\"params\":{\"a\":1}}}") == None)
+}
+
+fn sample_state() -> EngineState[Mode] {
+    mut s = EngineState.fresh("t1000-chat-1", Busy { user: "привет" })
+    s.step = 4
+    s.event_counter = 5
+    ro waiting Waiting = { sent: 31500, term: 30000 }
+    ro open OpenRequest = { id: "agent-2", party: "agent", attempt: 2, step: 4, input: "вопрос", waiting }
+    s.open_requests.push(open)
+    s.closed.push("agent-1")
+    s.counters.push({ party: "agent", attempts: 2 })
+    s
+}
+
+test "snapshot: the engine state is saved with its step" {
+    ro snap = encode_snapshot[Mode, Stub](stub(), sample_state())
+    assert(snap.step == 4)
+    assert(snap.data.byte_len() > 0)
+}
+
+test "snapshot: the typed state is an object under state, not an encoded text" {
+    ro snap = encode_snapshot[Mode, Stub](stub(), sample_state())
+    assert(snap.data.contains("\"state\":{\"state\":\"Busy\",\"user\":\"привет\"}"))
+    assert(!snap.data.contains("machine_state"))
+}
+
+test "snapshot: restores the same state, the open request with its input and waiting included" {
+    ro s = sample_state()
+    // ORACLE-WORKAROUND(12, 13, 26): the type arguments of `decode_snapshot` and `encode_snapshot` are written out here and in the tests below; infer them when items 12 and 13 are fixed
+    match decode_snapshot[Mode, Stub](stub(), encode_snapshot[Mode, Stub](stub(), s)) {
+        Some(back) => {
+            assert(back.trace == s.trace)
+            assert(back.step == 4)
+            assert(back.event_counter == 5)
+            match back.state {
+                Busy { user } => assert(user == "привет")
+                Calm => assert(false)
+            }
+            assert(back.open_requests.len() == 1)
+            assert(back.open_requests[0].id == "agent-2")
+            assert(back.open_requests[0].party == "agent")
+            assert(back.open_requests[0].attempt == 2)
+            assert(back.open_requests[0].step == 4)
+            assert(back.open_requests[0].input == "вопрос")
+            assert(back.open_requests[0].waiting.sent == 31500)
+            assert(back.open_requests[0].waiting.term == 30000)
+            assert(back.closed.len() == 1)
+            assert(back.closed[0] == "agent-1")
+            assert(back.counters.len() == 1)
+            assert(back.counters[0].attempts == 2)
+            assert(back.final_kind == "")
+        }
+        None => assert(false)
+    }
+}
+
+test "snapshot: the Cyrillic text is in the saved data as it is" {
+    ro snap = encode_snapshot[Mode, Stub](stub(), sample_state())
+    assert(snap.data.contains("привет"))
+    assert(snap.data.contains("вопрос"))
+}
+
+test "snapshot: a damaged snapshot is not restored" {
+    ro empty Snapshot = { step: 1, data: "" }
+    ro wrong_type Snapshot = { step: 1, data: "{\"trace\":1}" }
+    assert(decode_snapshot[Mode, Stub](stub(), empty) == None)
+    assert(decode_snapshot[Mode, Stub](stub(), wrong_type) == None)
+}
+
+test "snapshot: a state the machine does not know makes the snapshot damaged" {
+    ro broken Snapshot = { step: 4, data: "{\"trace\":\"t\",\"step\":4,\"event_counter\":5,\"state\":{\"state\":\"Mystery\"},\"open_requests\":[],\"closed\":[],\"counters\":[],\"final_kind\":\"\",\"final_text\":\"\",\"final_code\":\"\",\"final_step\":0}" }
+    assert(decode_snapshot[Mode, Stub](stub(), broken) == None)
+}
+
+test "snapshot: a snapshot of the old form (machine_state as text, idle_term and deadline) is read" {
+    ro old_text = "{\"trace\":\"t1000-chat-1\",\"step\":4,\"event_counter\":5,\"machine_state\":\"{\\\"state\\\":\\\"Busy\\\",\\\"user\\\":\\\"привет\\\"}\",\"open\":[{\"id\":\"agent-2\",\"party\":\"agent\",\"attempt\":2,\"step\":4,\"input\":\"вопрос\",\"idle_term\":30000,\"deadline\":61500}],\"closed\":[\"agent-1\"],\"counters\":[{\"party\":\"agent\",\"attempts\":2}],\"final_kind\":\"\",\"final_text\":\"\",\"final_code\":\"\",\"final_step\":0}"
+    ro old_snapshot Snapshot = { step: 4, data: old_text }
+    match decode_snapshot[Mode, Stub](stub(), old_snapshot) {
+        Some(back) => {
+            match back.state {
+                Busy { user } => assert(user == "привет")
+                Calm => assert(false)
+            }
+            assert(back.open_requests.len() == 1)
+            assert(back.open_requests[0].waiting.term == 30000)
+            assert(back.open_requests[0].waiting.sent + back.open_requests[0].waiting.term == 61500)
+        }
+        None => assert(false)
+    }
+}

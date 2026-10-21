@@ -1,0 +1,583 @@
+// engine.nv - the executor: accepts an event, runs the machine step, applies the orders through the effects.
+//
+// Source: state-machine-engine-automaton.md ("Executor mechanics", "Executor loop") and
+// state-machine-spec.md rules 12-18, 22, 31 - the subset for one machine of one session (see README.md,
+// "What is covered"). The order of a step is the order of rule 13:
+//   1. stamp the event (id, trace, step, clock), check that a reply belongs to an open request (rules 14, 17);
+//   2. run the `step` of the machine: it returns the transition and gives its orders to the environment;
+//   3. apply the orders to the engine data (requests, cancels, end) and collect the journal lines;
+//   4. COMMIT: write the journal lines, then save the snapshot - the snapshot is the commit point;
+//   5. only after the commit send the requests and the cancels (`dispatch`), and mark each send in the journal.
+// A process that dies between 4 and 5 sends nothing; `resume_engine` finds the requests that were
+// ordered but have no send mark in the journal and sends exactly those (rule 12: no second send).
+//
+// ORACLE-WORKAROUND(12, 13, 26): the type arguments of the free functions (`start_engine[ChatState, ChatSession](...)`) are written out: inferred, they break the C; infer them when items 12 and 13 are fixed
+module alula.engine
+
+import std.time.duration
+
+// ORACLE-WORKAROUND(11): the record is generic over the machine type (`Engine[M, S]`, `M Machine[S]`), not a record with a field of the protocol type: a call through a protocol-typed field breaks the C; a field `machine Machine[S]` would do when item 11 is fixed
+/// Engine: runs one machine for one session. `to_send` and `to_cancel` are the orders committed
+/// and not yet dispatched; `to_ack` are the source keys of events that the journal shows as committed
+/// before a restart and that the handler of the link is told about again (see the effect `Link`, `ack`);
+/// `fresh` are the events accepted and not yet handed out by `take_events` (task 099: the session server shows them to the page).
+/// `to_signal` are the signals to nested machines that are ordered and not yet passed on (task 119), `to_repeat` the identifiers of the requests in `to_send` that are repeats of a request already sent.
+export type Engine[M, S] {
+    machine M,
+    id str,
+    engine_state EngineState[S],
+    to_send []PartyRequest[str],
+    to_cancel []str,
+    to_ack []str,
+    fresh []Incoming,
+    to_signal []SignalOrder,
+    to_repeat []str
+}
+
+fn now_ms() Time -> int => Time.now().unix_millis()
+
+// ORACLE-WORKAROUND(54): the records are made by functions (`request_of`, `reply_of`), because a literal of a generic record with its type arguments (`PartyRequest[str] { ... }`) is a syntax error; write the literals in place when item 54 is fixed
+fn request_of(id str, attempt int, party str, input str, idle_term int, trace str, step int) -> PartyRequest[str] => {
+    id, attempt, party, input, idle_term, trace, step
+}
+
+fn reply_of(request str, party str, result str, trace str, step int) -> Reply[str] => { request, party, result, trace, step }
+
+// A journal line of a step; the name of the state is filled in at the commit (the state the machine waits in after the step).
+fn entry_of(trace str, step int, cause str, request str, at int, event JournalEvent) -> JournalEntry => {
+    trace, step, cause, state: "", request, at, event
+}
+
+fn entry_in(e JournalEntry, state str) -> JournalEntry => {
+    trace: e.trace, step: e.step, cause: e.cause, state, request: e.request, at: e.at, event: e.event
+}
+
+fn closed_event(how str) -> JournalEvent => journal_event("request_closed", [param("how", how)])
+
+fn cancel_event(reason str) -> JournalEvent => journal_event("cancel_ordered", [param("reason", reason)])
+
+fn EngineState[S] mut @close_request(id str) -> () {
+    mut rest = []OpenRequest.new()
+    for r in @open_requests {
+        if r.id != id { rest.push(r) }
+    }
+    @open_requests = rest
+    if !@closed.contains(id) { @closed.push(id) }
+}
+
+fn EngineState[S] mut @bump(party str) -> int {
+    mut rest = []PartyCounter.new()
+    mut attempts = 1
+    mut found = false
+    for c in @counters {
+        if c.party == party {
+            attempts = c.attempts + 1
+            found = true
+            rest.push(PartyCounter { party, attempts })
+        } else {
+            rest.push(c)
+        }
+    }
+    if !found { rest.push(PartyCounter { party, attempts }) }
+    @counters = rest
+    attempts
+}
+
+fn EngineState[S] mut @renew(id str, sent int) -> () {
+    mut rest = []OpenRequest.new()
+    for r in @open_requests {
+        if r.id == id {
+            rest.push(OpenRequest { id: r.id, party: r.party, attempt: r.attempt, step: r.step, input: r.input, waiting: Waiting { sent, term: r.waiting.term } })
+        } else {
+            rest.push(r)
+        }
+    }
+    @open_requests = rest
+}
+
+fn EngineState[S] @open_of(id str) -> Option[OpenRequest] {
+    for r in @open_requests {
+        if r.id == id { return Some(r) }
+    }
+    None
+}
+
+fn EngineState[S] @open_of_party(party str) -> Option[OpenRequest] {
+    for r in @open_requests {
+        if r.party == party { return Some(r) }
+    }
+    None
+}
+
+/// Start a new session: the first step, the first snapshot.
+export fn start_engine[S, M Machine[S]](machine M, id str) Journal Store Time -> Engine[M, S] {
+    ro trace = "t${now_ms()}-${id}"
+    start_engine_in[S, M](machine, id, trace)
+}
+
+/// Start a new session under a trace the caller gives: a nested machine runs under a trace that is a child of the trace of its parent (spec rule 35, item 3).
+export fn start_engine_in[S, M Machine[S]](machine M, id str, trace str) Journal Store Time -> Engine[M, S] {
+    ro now = now_ms()
+    mut engine_state = EngineState.fresh(trace, machine.initial())
+    engine_state.event_counter = 1
+    mut e Engine[M, S] = { machine, id, engine_state, to_send: []PartyRequest[str].new(), to_cancel: []str.new(), to_ack: []str.new(), fresh: []Incoming.new(), to_signal: []SignalOrder.new(), to_repeat: []str.new() }
+    mut entries = []JournalEntry.new()
+    entries.push(entry_of(trace, 1, "start-1", "", now, journal_event("machine_started", [param("machine", machine.name())])))
+    e.commit(1, entries)
+    e
+}
+
+/// Resume a session from its snapshot and the journal; None - there is no snapshot.
+/// The restart is a step of its own (spec rule 31, the event "restart"); it sends nothing by itself,
+/// `dispatch` (or `pump`) sends what was ordered and never sent.
+export fn resume_engine[S, M Machine[S]](machine M, id str) Journal Store Time -> Option[Engine[M, S]] {
+    match Store.load(id) {
+        None => None
+        Some(snapshot) => match decode_snapshot[S, M](machine, snapshot) {
+            None => panic("the snapshot of ${id} is damaged")
+            Some(engine_state) => Some(restart[S, M](machine, id, engine_state))
+        }
+    }
+}
+
+// Which lines of the journal belong to steps that did not commit and were then taken over by a restart? A step that did not
+// commit leaves lines with the number that the next restart takes for its own line (the restart is a step of its own and the
+// snapshot of the last commit does not know the dead step), and the restart line is written AFTER them. So, walking from the
+// end, a line whose step number is not below the number of a restart line that comes later in the file belongs to a step that
+// did not commit (rule 13): it must not count as sent, cancelled or accepted. Returns one flag per line (1 - such a line).
+fn overtaken_lines(all []JournalEntry, trace str) -> []int {
+    mut flags = []int.new()
+    flags.resize(all.len(), 0)
+    mut cut = -1
+    mut i = all.len() - 1
+    while i >= 0 {
+        ro entry = all[i]
+        if entry.trace == trace {
+            ro live = cut < 0 || entry.step < cut
+            if !live { flags[i] = 1 }
+            if live && entry.event.code == "engine_resumed" { cut = entry.step }
+        }
+        i -= 1
+    }
+    flags
+}
+
+fn restart[S, M Machine[S]](machine M, id str, engine_state EngineState[S]) Journal Store Time -> Engine[M, S] {
+    ro now = now_ms()
+    mut sent = []str.new()
+    mut cancels = []str.new()
+    mut cancels_sent = []str.new()
+    mut committed_sources = []str.new()
+    mut ordered_signals = []SignalOrder.new()
+    mut passed_signals = []str.new()
+    mut rolled_back = 0
+    ro journal = Journal.read_all()
+    ro overtaken = overtaken_lines(journal, engine_state.trace)
+    mut at = 0
+    for entry in journal {
+        if entry.trace == engine_state.trace && overtaken[at] == 0 {
+            if entry.step > engine_state.step {
+                rolled_back += 1
+            } else if entry.event.code == "event_accepted" {
+                match entry.event.value_of("source") {
+                    Some(key) => committed_sources.push(key)
+                    None => ()
+                }
+            } else if entry.event.code == "request_sent" {
+                sent.push(entry.request)
+            } else if entry.event.code == "cancel_ordered" {
+                cancels.push(entry.request)
+            } else if entry.event.code == "cancel_sent" {
+                cancels_sent.push(entry.request)
+            } else if entry.event.code == "signal_ordered" {
+                ordered_signals.push(SignalOrder { request: entry.request, signal: entry.event.value_of("signal") ?? "" })
+            } else if entry.event.code == "signal_passed" {
+                passed_signals.push("${entry.request}|${entry.event.value_of("signal") ?? ""}")
+            }
+        }
+        at += 1
+    }
+    mut e Engine[M, S] = { machine, id, engine_state, to_send: []PartyRequest[str].new(), to_cancel: []str.new(), to_ack: []str.new(), fresh: []Incoming.new(), to_signal: []SignalOrder.new(), to_repeat: []str.new() }
+    mut unsent = 0
+    for r in engine_state.open_requests {
+        if !sent.contains(r.id) {
+            unsent += 1
+            e.to_send.push(request_of(r.id, r.attempt, r.party, r.input, r.waiting.term, engine_state.trace, r.step))
+        }
+    }
+    for cid in cancels {
+        if !cancels_sent.contains(cid) { e.to_cancel.push(cid) }
+    }
+    e.to_ack = committed_sources
+    // the signals that were ordered and not passed on: a passed one cancels the first ordered one equal to it
+    for sig in ordered_signals {
+        ro key = "${sig.request}|${sig.signal}"
+        if passed_signals.contains(key) {
+            mut rest = []str.new()
+            mut removed = false
+            for p in passed_signals {
+                if p == key && !removed {
+                    removed = true
+                } else {
+                    rest.push(p)
+                }
+            }
+            passed_signals = rest
+        } else {
+            e.to_signal.push(sig)
+        }
+    }
+    e.engine_state.event_counter += 1
+    ro step = engine_state.step + 1
+    ro cause = "restart-${e.engine_state.event_counter}"
+    ro resumed = journal_event("engine_resumed", [
+        param("snapshot_step", "${engine_state.step}"),
+        param("open", "${engine_state.open_requests.len()}"),
+        param("not_sent", "${unsent}"),
+        param("ignored_lines", "${rolled_back}")
+    ])
+    mut entries = []JournalEntry.new()
+    entries.push(entry_of(engine_state.trace, step, cause, "", now, resumed))
+    e.commit(step, entries)
+    e
+}
+
+// The reason a reply cannot be accepted, "" when its request is open (spec rules 14, 17).
+fn Engine[M Machine[S], S] @why_not_open(event Incoming) -> str {
+    match event.request {
+        None => "no_request_id"
+        Some(rid) => match @engine_state.open_of(rid) {
+            Some(r) => ""
+            None => if @engine_state.closed.contains(rid) { "closed_request" } else { "unknown_request" }
+        }
+    }
+}
+
+// The commit of a step (spec rule 13): the journal lines first, then the snapshot.
+fn Engine[M Machine[S], S] mut @commit(step int, entries []JournalEntry) Journal Store -> () {
+    @engine_state.step = step
+    ro name = @machine.state_name(@engine_state.state)
+    for entry in entries { Journal.write(entry_in(entry, name)) }
+    Store.save(@id, encode_snapshot[S, M](@machine, @engine_state))
+}
+
+// One order of the machine applied to the engine data; the journal lines are collected in `entries`.
+fn Engine[M Machine[S], S] mut @apply(order Order, step int, cause str, now int, mut entries []JournalEntry) -> () {
+    match order {
+        Note(event) => entries.push(entry_of(@engine_state.trace, step, cause, "", now, event))
+        Save => entries.push(entry_of(@engine_state.trace, step, cause, "", now, journal_event("snapshot_ordered", [param("step", "${step}")])))
+        Send(send) => {
+            ro attempt = @engine_state.bump(send.party)
+            ro rid = "${send.party}-${attempt}"
+            @engine_state.open_requests.push(OpenRequest {
+                id: rid, party: send.party, attempt, step, input: send.input, waiting: Waiting { sent: now, term: send.idle_term }
+            })
+            @to_send.push(request_of(rid, attempt, send.party, send.input, send.idle_term, @engine_state.trace, step))
+            entries.push(entry_of(@engine_state.trace, step, cause, rid, now, journal_event("request_ordered", [param("party", send.party), param("attempt", "${attempt}")])))
+        }
+        Cancel(cancel) => match @engine_state.open_of_party(cancel.party) {
+            Some(r) => {
+                @engine_state.close_request(r.id)
+                @to_cancel.push(r.id)
+                entries.push(entry_of(@engine_state.trace, step, cause, r.id, now, closed_event("cancelled")))
+                entries.push(entry_of(@engine_state.trace, step, cause, r.id, now, cancel_event("machine")))
+            }
+            None => entries.push(entry_of(@engine_state.trace, step, cause, "", now, journal_event("cancel_without_request", [param("party", cancel.party)])))
+        }
+        Finish(conclusion) => {
+            @engine_state.final_step = step
+            @engine_state.final_text = conclusion.text
+            mut code_word = ""
+            match conclusion.failure {
+                Some(code) => {
+                    @engine_state.final_kind = "refusal"
+                    @engine_state.final_code = code.name()
+                    code_word = fail_code_word(code)
+                }
+                None => {
+                    @engine_state.final_kind = "answer"
+                    @engine_state.final_code = ""
+                }
+            }
+            // the end cancels what is still open (spec rule 22)
+            ro pending = @engine_state.open_requests
+            for r in pending {
+                @engine_state.close_request(r.id)
+                @to_cancel.push(r.id)
+                entries.push(entry_of(@engine_state.trace, step, cause, r.id, now, closed_event("machine_ended")))
+                entries.push(entry_of(@engine_state.trace, step, cause, r.id, now, cancel_event("machine_ended")))
+            }
+            entries.push(entry_of(@engine_state.trace, step, cause, "", now, journal_event("machine_finished", [param("outcome", @engine_state.final_kind), param("code", code_word)])))
+        }
+    }
+}
+
+/// Accept one event on its arrival: stamp it, check it, run the step, apply the orders, commit (journal lines, then the snapshot).
+/// Sends nothing: the orders wait for `dispatch`.
+export fn Engine[M Machine[S], S] mut @on_arrival(raw Incoming) Journal Store Time -> () {
+    ro now = now_ms()
+    @engine_state.event_counter += 1
+    ro step = @engine_state.step + 1
+    ro event = Incoming {
+        id: "${raw.kind.name()}-${@engine_state.event_counter}", trace: @engine_state.trace, step, kind: raw.kind,
+        name: raw.name, request: raw.request, input: raw.input, at: now
+    }
+    ro rid = match event.request {
+        Some(x) => x
+        None => ""
+    }
+    mut entries = []JournalEntry.new()
+    mut accepted = [param("kind", event.kind.name()), param("name", event.name)]
+    if raw.id.byte_len() > 0 { accepted.push(param("source", raw.id)) }
+    // the input of the event: with it the journal alone tells the whole conversation again after a restart (task 099)
+    if event.input.byte_len() > 0 { accepted.push(param("input", event.input)) }
+    entries.push(entry_of(@engine_state.trace, step, event.id, rid, now, journal_event("event_accepted", accepted)))
+
+    // a reply of a request that is not open is discarded and remembered (spec rule 17), the machine does not see it
+    if event.kind.is_request_bound() {
+        ro why = @why_not_open(event)
+        if why.byte_len() > 0 {
+            entries.push(entry_of(@engine_state.trace, step, event.id, rid, now, journal_event("reply_discarded", [param("reason", why)])))
+            @commit(step, entries)
+            return
+        }
+    }
+    @fresh.push(event)
+    if event.kind.renews_term() {
+        match @engine_state.open_of(rid) {
+            Some(r) => if r.waiting.term > 0 { @engine_state.renew(rid, now) }
+            None => ()
+        }
+    }
+    if event.kind.closes_request() {
+        @engine_state.close_request(rid)
+        match event.kind {
+            Expired => {
+                // the term passed: the request is closed and the party is told (spec rule 18, the message is allowed)
+                @to_cancel.push(rid)
+                entries.push(entry_of(@engine_state.trace, step, event.id, rid, now, closed_event("expired")))
+                entries.push(entry_of(@engine_state.trace, step, event.id, rid, now, cancel_event("idle_term")))
+            }
+            Refused => entries.push(entry_of(@engine_state.trace, step, event.id, rid, now, journal_event("request_closed", [param("how", "refused"), param("code", fail_code_word(FailCode.of(event.input)))])))
+            _ => entries.push(entry_of(@engine_state.trace, step, event.id, rid, now, closed_event("answered")))
+        }
+    }
+
+    mut environment = StepEnvironment.carrying([]SignalOrder.new())
+    ro transition = @machine.step(@engine_state.state, event, environment)
+    match transition {
+        Go(next) => { @engine_state.state = next }
+        Stay => ()
+    }
+    for order in environment.orders {
+        @apply(order, step, event.id, now, entries)
+    }
+    for signal in environment.signals {
+        @to_signal.push(signal)
+        entries.push(entry_of(@engine_state.trace, step, event.id, signal.request, now, journal_event("signal_ordered", [param("signal", signal.signal), param("request", signal.request)])))
+    }
+    @commit(step, entries)
+}
+
+fn Engine[M Machine[S], S] @mark(code str, request str, params []JournalParam) Time -> JournalEntry {
+    entry_in(entry_of(@engine_state.trace, @engine_state.step, "dispatch", request, now_ms(), journal_event(code, params)), @machine.state_name(@engine_state.state))
+}
+
+/// Tell the handler of the link which incoming events are committed (after a restart), then send what the commits have ordered
+/// and nobody has sent yet: the requests, then the cancels.
+/// Every send leaves a mark in the journal ("request_sent", "cancel_sent"); the marks tell a restart what is done.
+export fn Engine[M Machine[S], S] mut @dispatch() Journal Link Time -> () {
+    ro acks = @to_ack
+    @to_ack = []str.new()
+    for key in acks { Link.ack(key) }
+    ro requests = @to_send
+    @to_send = []PartyRequest[str].new()
+    ro repeats = @to_repeat
+    @to_repeat = []str.new()
+    for request in requests {
+        Link.send(request)
+        ro code = if repeats.contains(request.id) { "request_repeated" } else { "request_sent" }
+        Journal.write(@mark(code, request.id, [param("attempt", "${request.attempt}")]))
+    }
+    ro cancels = @to_cancel
+    @to_cancel = []str.new()
+    for rid in cancels {
+        Link.cancel(rid)
+        Journal.write(@mark("cancel_sent", rid, []JournalParam.new()))
+    }
+}
+
+/// Repeat the open requests among `ids` with the same identifier (spec rule 22 and rule 35, item 4): a request to a nested machine is not cancelled by a restart, it is sent again,
+/// and the nested machine answers with the answer it has or goes on. The repeat is not a new attempt (the counter of the party stays); `dispatch` sends it and leaves the mark
+/// `request_repeated`. Returns the number of the requests that will be repeated: an id that is not open, or whose request waits for its send, is left out.
+export fn Engine[M Machine[S], S] mut @repeat_open(ids []str) -> int {
+    mut n = 0
+    for r in @engine_state.open_requests {
+        if !ids.contains(r.id) { continue }
+        mut waiting = false
+        for q in @to_send {
+            if q.id == r.id { waiting = true }
+        }
+        if waiting { continue }
+        @to_send.push(request_of(r.id, r.attempt, r.party, r.input, r.waiting.term, @engine_state.trace, r.step))
+        @to_repeat.push(r.id)
+        n += 1
+    }
+    n
+}
+
+/// The signals to nested machines that were ordered and are not passed on yet, in the order of ordering. After a restart they are found again in the journal.
+export fn Engine[M Machine[S], S] @pending_signals() -> []SignalOrder {
+    mut out = []SignalOrder.new()
+    for s in @to_signal { out.push(s) }
+    out
+}
+
+/// The caller has passed signals on to the nested machines: each of `done` that is pending leaves the journal event `signal_passed` (`signal`, `request`; the methodology writes it too) and
+/// is no longer pending. A pending signal that is not in `done` stays (its nested machine has not started yet).
+export fn Engine[M Machine[S], S] mut @signals_passed(done []SignalOrder) Journal Time -> () {
+    mut left = []SignalOrder.new()
+    mut marks = []SignalOrder.new()
+    mut taken = []int.new()
+    for s in @to_signal {
+        mut at = -1
+        mut k = 0
+        for d in done {
+            if at < 0 && !taken.contains(k) && d.request == s.request && d.signal == s.signal { at = k }
+            k += 1
+        }
+        if at >= 0 {
+            taken.push(at)
+            marks.push(s)
+        } else {
+            left.push(s)
+        }
+    }
+    @to_signal = left
+    for s in marks {
+        Journal.write(@mark("signal_passed", s.request, [param("signal", s.signal), param("request", s.request)]))
+    }
+}
+
+/// Accept and dispatch.
+export fn Engine[M Machine[S], S] mut @feed(raw Incoming) Journal Store Link Time -> () {
+    @on_arrival(raw)
+    @dispatch()
+}
+
+// Sixteen input events is a scheduling quantum, not a response-size limit: Hub.pump gets back
+// to drain this session and then advances to the next one; stdio can service page commands and
+// flush output between calls. The bound applies even when receive() never goes empty. Each event
+// still commits (journal then snapshot) and is acknowledged independently.
+const PUMP_EVENT_BUDGET = 16
+
+/// Take what is due: send the pending orders, accept the incoming events of the link in the order of
+/// arrival (each is acknowledged to the handler after its step is committed), then make an `Expired` event for every open request whose idle term passed.
+/// Returns the number of steps made.
+export fn Engine[M Machine[S], S] mut @pump() Journal Store Link Time -> int {
+    mut made = 0
+    @dispatch()
+    while made < PUMP_EVENT_BUDGET {
+        match Link.receive() {
+            Some(event) => {
+                // the step is committed by `on_arrival`; only then the handler is told that the event is the engine's
+                @on_arrival(event)
+                if event.id.byte_len() > 0 { Link.ack(event.id) }
+                @dispatch()
+                made += 1
+            }
+            None => { break }
+        }
+    }
+    ro now = now_ms()
+    mut due = []str.new()
+    for r in @engine_state.open_requests {
+        if r.waiting.term > 0 && r.waiting.sent + r.waiting.term <= now { due.push(r.id) }
+    }
+    for rid in due {
+        @feed(Incoming.incoming(Expired, "timeout", Some(rid), ""))
+        made += 1
+    }
+    made
+}
+
+/// The number of the last committed step.
+export fn Engine[M Machine[S], S] @step_number() -> int => @engine_state.step
+
+/// Did the machine end?
+export fn Engine[M Machine[S], S] @is_finished() -> bool => @engine_state.final_kind.byte_len() > 0
+
+/// The ids of the open requests, in the order of opening.
+export fn Engine[M Machine[S], S] @open_ids() -> []str {
+    mut ids = []str.new()
+    for r in @engine_state.open_requests { ids.push(r.id) }
+    ids
+}
+
+/// The state of the machine.
+export fn Engine[M Machine[S], S] @state() -> S => @engine_state.state
+
+/// The trace of this run (the same after a restart).
+export fn Engine[M Machine[S], S] @trace() -> str => @engine_state.trace
+
+/// The outcome of the session once the machine ended: the answer with the final text, or the refusal
+/// with the reason of the closed list; None while the session runs. The request id of the outcome is the
+/// id of the session, the party is the machine.
+export fn Engine[M Machine[S], S] @outcome() -> Option[PartyResponse[str]] {
+    if @engine_state.final_kind == "answer" {
+        ro response PartyResponse[str] = Answer(reply_of(@id, @machine.name(), @engine_state.final_text, @engine_state.trace, @engine_state.final_step))
+        return Some(response)
+    }
+    if @engine_state.final_kind == "refusal" {
+        ro rejection = Rejection {
+            request: @id, party: @machine.name(), reason: FailCode.of(@engine_state.final_code), text: @engine_state.final_text,
+            trace: @engine_state.trace, step: @engine_state.final_step
+        }
+        ro response PartyResponse[str] = Refusal(rejection)
+        return Some(response)
+    }
+    None
+}
+
+/// The events accepted since the last call, stamped, in the order of acceptance (the discarded ones are not among them).
+export fn Engine[M Machine[S], S] mut @take_events() -> []Incoming {
+    ro out = @fresh
+    @fresh = []Incoming.new()
+    out
+}
+
+// The event of an "event_accepted" line of the journal: the class, the name and the input are its parameters, the rest comes from
+// the envelope of the line; None - the line is not what `on_arrival` writes.
+fn incoming_of_entry(entry JournalEntry) -> Option[Incoming] {
+    ro kind = EventKind.parse(entry.event.value_of("kind")?)?
+    ro name = entry.event.value_of("name")?
+    ro input = entry.event.value_of("input") ?? ""
+    ro request = if entry.request.byte_len() > 0 { Some(entry.request) } else { None }
+    Some(Incoming { id: entry.cause, trace: entry.trace, step: entry.step, kind, name, request, input, at: entry.at })
+}
+
+/// The accepted events of the committed journal, stamped as they were, in the order of acceptance. Left out: the events the
+/// engine discarded, and the lines of a step that did not commit (a restart took its number over, or it is newer than the snapshot).
+export fn Engine[M Machine[S], S] @history() Journal -> []Incoming {
+    ro journal = Journal.read_all()
+    ro overtaken = overtaken_lines(journal, @engine_state.trace)
+    mut dropped = []int.new()
+    mut at = 0
+    for entry in journal {
+        if entry.trace == @engine_state.trace && overtaken[at] == 0 && entry.event.code == "reply_discarded" { dropped.push(entry.step) }
+        at += 1
+    }
+    mut out = []Incoming.new()
+    at = 0
+    for entry in journal {
+        if entry.trace == @engine_state.trace && overtaken[at] == 0 && entry.event.code == "event_accepted"
+            && entry.step <= @engine_state.step && !dropped.contains(entry.step) {
+            match incoming_of_entry(entry) {
+                Some(event) => out.push(event)
+                None => ()
+            }
+        }
+        at += 1
+    }
+    out
+}

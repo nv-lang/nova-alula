@@ -1,0 +1,96 @@
+// machine.nv - the protocols of a state machine and of its environment (spec rules 8, 13: a step does not touch the world).
+//
+// Source: state-machine-engine-automaton.md, protocols `Machine` and `Environment` (reduced to what the MVP needs).
+// The methodology generalises the machine over `State` and the other types; here `Machine[S]` is generic over the state only.
+// ORACLE-WORKAROUND(12, 13, 26): a generic protocol compiles only when the type arguments of a free function are written out; the state of the machine is typed in the engine and is encoded only at the border of the snapshot; infer the arguments when items 12 and 13 are fixed
+
+module alula.engine
+
+/// Environment: what the engine gives a machine inside a step. Everything a step does to the world goes through it: the
+/// machine only orders, the engine applies the orders after the step, in the order of giving, and commits (spec rule 13).
+/// `write_journal` is the methodology's operation; the other four are the orders of the MVP (a request, a cancel, a snapshot,
+/// the end), which the methodology derives from the description of a state and from rule 18 instead.
+export type Environment protocol {
+    // Write a journal event of the step: the engine adds the envelope.
+    mut @write_journal(event JournalEvent)
+    // Order a request to a party.
+    mut @order_send(order SendOrder)
+    // Order a cancel of the open request of a party.
+    mut @order_cancel(order CancelOrder)
+    // Order a snapshot (every commit saves one anyway; the order leaves a mark in the journal).
+    mut @order_save()
+    // The machine has ended: the engine cancels what is still open and records the outcome.
+    mut @order_finish(conclusion Conclusion)
+    // Pass a signal to the nested machine that holds an open request (spec rule 35, item 8): the engine journals it and holds it for the caller.
+    mut @order_signal(order SignalOrder)
+}
+
+/// Machine: what the engine requires of a machine. The match is structural: a type with these
+/// methods is a machine, no `impl` is needed. `S` is the state of the machine, typed.
+///
+/// `step` takes the state, the event and the environment and returns the transition: nothing is read from outside - everything
+/// it may use is in `current` and `event` (the event is self-contained). Its signature has no effects, so Oracle rejects a raw
+/// effect call inside it at compile time (`E_RAW_EFFECT_OP_UNDECLARED`); a call of a function that carries an effect is
+/// rejected with `--strict-effects`. The environment only records the orders.
+export type Machine[S] protocol {
+    // The name of the machine for the journal.
+    @name() -> str
+    // The initial state.
+    @initial() -> S
+    // The name of a state for the journal line envelope ("Idle", "Awaiting", ...).
+    @state_name(state S) -> str
+    // One step: where the machine goes; the orders go to the environment.
+    @step(current S, event Incoming, mut environment Environment) -> Transition[S]
+    // The state as text, for the snapshot (the border: the engine keeps the typed state).
+    @encode_state(state S) -> str
+    // The state from its text; text that is not a state is `None`.
+    @decode_state(text str) -> Option[S]
+}
+
+/// Order: one order of a machine as the engine records it, in the order of giving.
+export type Order enum
+    | Note(JournalEvent)
+    | Send(SendOrder)
+    | Cancel(CancelOrder)
+    | Save
+    | Finish(Conclusion)
+
+/// StepEnvironment: the environment of the engine for one step - it records the orders in the order they are given. The signals to nested machines are kept apart (`signals`): they
+/// are not requests, and the enum `Order` of the machines of the product stays as it was.
+export type StepEnvironment { orders []Order, signals []SignalOrder }
+
+/// An environment with no orders.
+export fn StepEnvironment.new() -> StepEnvironment => { orders: []Order.new(), signals: []SignalOrder.new() }
+
+// ORACLE-WORKAROUND(60): a method of the protocol `Environment` that no reachable code calls is cut from the program, and the C of the program does not build ("returning 'int' from nova_unit");
+// the engine builds its environment with this function, which calls `order_signal` for the signals it carries (none at a step), so the method has a call site in every program that links the engine;
+// when item 60 is fixed the engine uses `StepEnvironment.new()` and this function goes
+export fn StepEnvironment.carrying(signals []SignalOrder) -> StepEnvironment {
+    mut environment = StepEnvironment.new()
+    for s in signals { environment.order_signal(s) }
+    environment
+}
+
+export fn StepEnvironment mut @write_journal(event JournalEvent) -> () {
+    @orders.push(Note(event))
+}
+
+export fn StepEnvironment mut @order_send(order SendOrder) -> () {
+    @orders.push(Send(order))
+}
+
+export fn StepEnvironment mut @order_cancel(order CancelOrder) -> () {
+    @orders.push(Cancel(order))
+}
+
+export fn StepEnvironment mut @order_save() -> () {
+    @orders.push(Save)
+}
+
+export fn StepEnvironment mut @order_finish(conclusion Conclusion) -> () {
+    @orders.push(Finish(conclusion))
+}
+
+export fn StepEnvironment mut @order_signal(order SignalOrder) -> () {
+    @signals.push(order)
+}
