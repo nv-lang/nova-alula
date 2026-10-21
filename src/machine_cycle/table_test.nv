@@ -1,0 +1,146 @@
+// table_test.nv - the machine "Cycle check" of the product: the table `machines/cycle_check.portolan.md` translates without a note, its translation is the committed file `cycle_check.portolan.json`,
+// the machine passes the checks of the load and is made; the circles "tree - file - tree" in both languages give the same tree; the record is in the lists of the data files.
+module alula.machine_cycle
+
+import std.text
+import alula.machine.{standard_registry, cycle_check_table_text, cycle_check_machine_text, machine_files, table_files, text_of_file}
+import alula.machine_table.{StateKind, AppealKind, ForkKind, EndKind, OperationKind, PartyKind, MachineParty, GatekeeperParty, EnhancedParty}
+import alula.machine_run.{load_portolan_machine}
+import alula.machine_text.{translate_checked, translate_report, render_summary, render_machine}
+
+test "cc clean" {
+    ro report = table_report()
+    if report.errors.len() > 0 { panic(errors_text(report)) }
+    assert(report.errors.len() == 0)
+    assert(report.warnings.len() == 0)
+    assert(report.rows_noted == 0)
+    assert(report.rows_total > 80)
+}
+
+test "cc file is translation" {
+    assert(table_report().json == cycle_check_machine_text())
+    assert(translate_report(cycle_check_table_text()).json == cycle_check_machine_text())
+}
+
+test "cc in the lists" {
+    assert(text_of_file(machine_files(), "cycle_check.portolan.json") == cycle_check_machine_text())
+    assert(text_of_file(table_files(), "cycle_check.portolan.md") == cycle_check_table_text())
+    assert(cycle_check_table_text().starts_with("# Машина: Проверка цикла"))
+}
+
+test "cc loads" {
+    ro def = cycle_def()
+    assert(def.name == "cycle_check")
+    assert(def.version == "portolan-2.12")
+    assert(def.initial == "ReviewEntry")
+    assert(def.error_end == "Errored")
+    assert(def.states.len() == 23)
+    assert(def.common.len() == 6)
+    assert(def.parties.len() == 4)
+    assert(def.end_rows.len() == 5)
+    assert(def.primitives.len() == 1)
+    assert(def.primitives[0] == "stop_agent_group")
+    assert(def.request_limit.len() == 1)
+    assert(def.includes.len() == 1)
+    assert(def.includes[0].version == "1")
+    assert(def.includes[0].hash == "51e15e557120")
+    assert(def.constants.len() == 3)
+}
+
+test "cc builds" {
+    match load_portolan_machine(cycle_check_machine_text(), standard_registry()) {
+        Ok(m) => {
+            assert(m.name() == "cycle_check")
+            assert(m.limit == 1)
+            assert(m.state_name(m.initial()) == "ReviewEntry")
+        }
+        Err(e) => panic("the cycle check is not made: ${e}")
+    }
+}
+
+test "cc kinds" {
+    ro def = cycle_def()
+    mut forks = 0
+    mut appeals = 0
+    mut ends = 0
+    for st in def.states {
+        if st.kind == ForkKind { forks += 1 }
+        if st.kind == AppealKind { appeals += 1 }
+        if st.kind == EndKind { ends += 1 }
+        assert(st.kind != OperationKind)
+    }
+    assert(forks == 13)
+    assert(appeals == 7)
+    assert(ends == 3)
+}
+
+test "cc parties" {
+    ro def = cycle_def()
+    mut nested = []str.new()
+    mut gatekeepers = 0
+    mut enhanced = 0
+    for p in def.parties {
+        if p.kind == MachineParty { nested.push(p.nested) }
+        if p.kind == GatekeeperParty { gatekeepers += 1 }
+        if p.kind == EnhancedParty { enhanced += 1 }
+    }
+    assert(nested.len() == 2)
+    assert(nested.contains("session_start"))
+    assert(nested.contains("meeting"))
+    assert(gatekeepers == 1)
+    assert(enhanced == 1)
+    mut ids = []str.new()
+    for p in def.parties { ids.push(p.id) }
+    assert(ids.contains("session_launch"))
+    assert(ids.contains("meeting"))
+    assert(ids.contains("gatekeeper"))
+    assert(ids.contains("enhanced"))
+}
+
+test "cc summary" {
+    ro text = render_summary(cycle_check_machine_text())
+    assert(text.starts_with("machine cycle_check (version portolan-2.12): 23 states, "))
+    assert(text.contains("  SessionLaunch (appeal): 3 rows"))
+    assert(text.contains("  Levels (fork): 7 rows"))
+    assert(text.contains("  Pause (appeal): 4 rows"))
+    assert(text.contains("common events: 6 rows"))
+    assert(text.contains("ends: 5 rows"))
+}
+
+test "cc header" {
+    assert(cycle_check_machine_text().starts_with("{\"format\":\"machine/2\",\"portolan_version\":\"2.12\",\"machine\":\"cycle_check\",\"version\":\"portolan-2.12\""))
+    assert(cycle_check_table_text().contains("- format: 2.12"))
+}
+
+test "cc circle ru" {
+    assert(circle(cycle_check_machine_text(), "ru") == "")
+}
+
+test "cc circle en" {
+    assert(circle(cycle_check_machine_text(), "en") == "")
+}
+
+test "cc circle same file" {
+    // the generated file is the canonical form: a second pass gives the same file
+    ro first = render_machine(cycle_check_machine_text(), "ru")
+    assert(first.notes.len() == 0)
+    ro again = translate_checked(first.text, standard_registry())
+    assert(again.errors.len() == 0)
+    assert(render_machine(again.json, "ru").text == first.text)
+}
+
+test "cc english file" {
+    ro en = render_machine(cycle_check_machine_text(), "en")
+    assert(en.notes.len() == 0)
+    assert(en.text.contains("- language: en"))
+    assert(en.text.contains("machine session_start(input "))
+    assert(en.text.contains("### SessionLaunch — appeal"))
+    ro back = translate_checked(en.text, standard_registry())
+    assert(back.errors.len() == 0)
+    assert(tree_diff(cycle_check_machine_text(), back.json) == "")
+    // ru -> en -> ru
+    ro ru = render_machine(back.json, "ru")
+    ro twice = translate_checked(ru.text, standard_registry())
+    assert(twice.errors.len() == 0)
+    assert(tree_diff(cycle_check_machine_text(), twice.json) == "")
+}

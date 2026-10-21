@@ -1,0 +1,232 @@
+// fit_test.nv - the cycle check as a machine that is called and as a machine that calls: the input of the machine is the 14 fields of the contract of the methodology, a parent that calls it by the
+// types of the methodology fits (`check_nested`), a parent with a wrong type does not, the types of the two nested machines it calls (the session launch, the meeting) are pinned for the tasks 121
+// and 124, and the runner of pairs of task 119 does not yet route two levels (task 123).
+module alula.machine_cycle
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine.{standard_registry, cycle_check_table_text, cycle_check_machine_text, spec_text, TypeSpec, FieldDef}
+import alula.machine_table.{MachineDef, MachineParty, PartyDef, NestedProblem, check_nested, load_machine}
+import alula.machine_text.{translate_checked}
+import alula.machine_run.{NestedRegistry, check_registry, registry_gaps, load_portolan_machine}
+
+fn field_line(f FieldDef) -> str => "${f.name}:${spec_text(f.spec)}"
+
+fn input_lines(def MachineDef) -> []str {
+    mut out = []str.new()
+    for f in def.input.fields { out.push(field_line(f)) }
+    out
+}
+
+// The block `## Типы` of the table of the cycle check: the types of the call that a caller declares the same.
+fn types_block() -> str {
+    ro text = cycle_check_table_text()
+    ro from = text.find("## Типы") ?? -1
+    ro to = text.find("## Константы") ?? -1
+    if from < 0 || to < from { panic("the table has no block of types") }
+    text[from..to]
+}
+
+// The record of the input of the call: the 14 fields of the contract of the machine (a caller declares it; the machine takes the fields from its `## Вход`).
+fn review_input() -> str {
+    ro ticks = "```"
+    ro record = `тип ВходПроверки { стадия Стадия, цикл Цикл, вне_задачи []Находка, папка_задачи текст, рабочее_дерево текст, режим_сдачи текст, маршрут текст, чистых_подряд число≥0, потолок_заходов число≥0, проб_в_чистом число≥0, сдача_сжата да/нет, предложение ?текст, порядок_линз []текст, вопрос_автора ?текст }`
+    "${ticks}\n${record}\n${ticks}\n"
+}
+
+// A caller of the cycle check as the runner will be: one party of the kind machine with the input and the result of the methodology.
+fn probe_parent() -> str {
+    ro head = "# Машина: Раннер пробный\n\n- machine: runner_probe\n- machine_version: 1\n- format: 2.12\n\n"
+    ro data = "\n## Данные\n\n| имя | тип | начальное | не убывает | пишет |\n|---|---|---|---|---|\n| итог | ?ИтогПроверки | пусто | — | строки |\n| попытка_проверки | число≥0 | 0 | да | механика |\n\n"
+    ro parties = "## Стороны\n\n| имя | идентификатор | вид | профиль | слова ворот | счётчик |\n|---|---|---|---|---|---|\n| проверка | review | machine cycle_check(вход ВходПроверки, итог ИтогПроверки) | — | — | попытка_проверки |\n\n"
+    ro states = "## Состояния\n\nНачальное состояние: ВЫЗОВ\n\n### ВЫЗОВ — обращение (Call)\n- Сторона: проверка\n- Срок тишины: —\n- Вход:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| стадия | Стадия.Разбор | сторона |\n| цикл | Цикл { номер_захода: 1, заход_отсчёта: 1, серия_чистых: 0, без_проб_подряд: 0 } | сторона |\n| вне_задачи | [] | сторона |\n| папка_задачи | \"t\" | сторона |\n| рабочее_дерево | \"w\" | сторона |\n| режим_сдачи | \"files\" | сторона |\n| маршрут | \"full\" | сторона |\n| чистых_подряд | 2 | сторона |\n| потолок_заходов | 4 | сторона |\n| проб_в_чистом | 3 | сторона |\n| сдача_сжата | ложь | сторона |\n| предложение | пусто | сторона |\n| порядок_линз | [] | сторона |\n| вопрос_автора | пусто | сторона |\n\n| № | Событие | Условие | Действия | Куда |\n|---|---|---|---|---|\n| 1 | ответ(результат) | — | итог = результат | КОНЕЦ |\n| 2 | сбой | — | — | КОНЕЦ |\n\n### КОНЕЦ — конец (Done)\n- Вход: итог\n\n"
+    ro ends = "## Концы\n\n- Результат: ?ИтогПроверки\n\n| конец | № | когда | ответ |\n|---|---|---|---|\n| КОНЕЦ | 1 | истина | Ответ(итог) |\n"
+    "${head}${types_block()}${review_input()}${data}${parties}${states}${ends}"
+}
+
+fn parent_json(text str) -> str {
+    ro report = translate_checked(text, standard_registry())
+    if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
+    report.json
+}
+
+fn parent_def(text str) -> MachineDef {
+    match load_machine(parent_json(text), standard_registry()) {
+        Ok(d) => d
+        Err(issues) => panic("the probe parent does not load: ${issues[0].path}: ${issues[0].message}")
+    }
+}
+
+fn problems_text(list []NestedProblem) -> str {
+    mut out = []str.new()
+    for p in list { out.push("${p.path}: ${p.message}") }
+    out.join(" ## ")
+}
+
+test "ft input is the contract" {
+    ro lines = input_lines(cycle_def())
+    assert(lines.len() == 14)
+    assert(lines[0] == "stage:Stage")
+    assert(lines[1] == "cycle:Cycle")
+    assert(lines[2] == "out_of_scope:[]Finding")
+    assert(lines[3] == "task_dir:text")
+    assert(lines[4] == "repo_dir:text")
+    assert(lines[5] == "delivery_mode:text")
+    assert(lines[6] == "route:text")
+    assert(lines[7] == "clean_needed:int>=0")
+    assert(lines[8] == "ceiling:int>=0")
+    assert(lines[9] == "probes_min:int>=0")
+    assert(lines[10] == "delivery_short:bool")
+    assert(lines[11] == "proposal:?text")
+    assert(lines[12] == "lens_order:[]text")
+    assert(lines[13] == "author_question:?text")
+}
+
+test "ft result is the result of the methodology" {
+    ro def = cycle_def()
+    assert(def.result_spec.len() == 1)
+    assert(spec_text(def.result_spec[0]) == "ReviewResult")
+}
+
+test "ft parent fits" {
+    ro parent = parent_def(probe_parent())
+    ro problems = check_nested(parent, "cycle_check", cycle_def())
+    if problems.len() > 0 { panic(problems_text(problems)) }
+    assert(problems.len() == 0)
+    mut nested = 0
+    for p in parent.parties {
+        if p.kind == MachineParty { nested += 1 }
+    }
+    assert(nested == 1)
+}
+
+test "ft parent with a wrong field" {
+    ro wrong = probe_parent().replace("сдача_сжата да/нет", "сдача_сжата текст").replace("| сдача_сжата | ложь | сторона |", "| сдача_сжата | \"no\" | сторона |")
+    assert(wrong != probe_parent())
+    ro parent = parent_def(wrong)
+    ro problems = check_nested(parent, "cycle_check", cycle_def())
+    assert(problems.len() >= 1)
+    assert(problems_text(problems).contains("delivery_short"))
+}
+
+test "ft parent with a missing field" {
+    ro less = probe_parent().replace("порядок_линз []текст, ", "").replace("| порядок_линз | [] | сторона |\n", "")
+    assert(less != probe_parent())
+    ro parent = parent_def(less)
+    ro problems = check_nested(parent, "cycle_check", cycle_def())
+    assert(problems.len() >= 1)
+    assert(problems_text(problems).contains("lens_order"))
+}
+
+test "ft parent with a wrong result" {
+    ro wrong = probe_parent().replace("тип ИтогПроверки { вердикт Вердикт, источник текст,", "тип ИтогПроверки { вердикт Вердикт, источник ?текст,")
+    assert(wrong != probe_parent())
+    ro parent = parent_def(wrong.replace("Ответ(итог)", "Ответ(итог)"))
+    ro problems = check_nested(parent, "cycle_check", cycle_def())
+    assert(problems.len() >= 1)
+}
+
+test "ft runner routes several levels" {
+    // the parent calls the cycle check; the cycle check calls two machines itself: the runner of pairs (task 119) routed one level, task 123 made it recursive: the machines below the first level
+    // that the registry lacks are gaps, not issues
+    match load_portolan_machine(parent_json(probe_parent()), standard_registry()) {
+        Ok(parent) => {
+            ro registry = NestedRegistry.empty().add("cycle_check", cycle_machine())
+            ro problems = check_registry(parent, registry)
+            assert(problems.len() == 0)
+            assert(registry_gaps(parent, registry).len() == 2)
+        }
+        Err(e) => panic("the probe parent is not made: ${e}")
+    }
+}
+
+fn party_named(def MachineDef, id str) -> Option[PartyDef] {
+    for p in def.parties {
+        if p.id == id { return Some(p) }
+    }
+    None
+}
+
+fn fields_of_type(def MachineDef, spec TypeSpec) -> []str {
+    mut out = []str.new()
+    for r in def.types.records {
+        if "${r.name}" == spec_text(spec) {
+            for f in r.fields { out.push(field_line(f)) }
+        }
+    }
+    out
+}
+
+test "ft session launch contract" {
+    // pinned for the task 121: the types of the methodology (SessionLaunchInput, SessionLaunchResult)
+    ro def = cycle_def()
+    match party_named(def, "session_launch") {
+        Some(p) => {
+            assert(p.nested == "session_start")
+            assert(p.input_spec.len() == 1)
+            assert(spec_text(p.input_spec[0]) == "SessionLaunchInput")
+            ro input = fields_of_type(def, p.input_spec[0])
+            assert(input.len() == 10)
+            assert(input[0] == "session:text")
+            assert(input[1] == "launch_source:?text")
+            assert(input[2] == "phase:?text")
+            assert(input[3] == "launch_pass:?int")
+            assert(input[4] == "task_dir:text")
+            assert(input[5] == "repo_dir:text")
+            assert(input[6] == "delivery_mode:text")
+            assert(input[7] == "route:text")
+            assert(input[8] == "source_list:?text")
+            assert(input[9] == "delivery_short:bool")
+            assert(p.result_spec.len() == 1)
+            assert(spec_text(p.result_spec[0]) == "SessionLaunchResult")
+            ro result = fields_of_type(def, p.result_spec[0])
+            assert(result.len() == 3)
+            assert(result[0] == "result:SessionResult")
+            assert(result[1] == "summary:?Summary")
+            assert(result[2] == "findings:?[]Finding")
+        }
+        None => panic("no party session_launch")
+    }
+}
+
+test "ft meeting contract" {
+    // pinned for the task 124: the types of the methodology (MeetingInput, MeetingResult)
+    ro def = cycle_def()
+    match party_named(def, "meeting") {
+        Some(p) => {
+            assert(p.nested == "meeting")
+            assert(spec_text(p.input_spec[0]) == "MeetingInput")
+            ro input = fields_of_type(def, p.input_spec[0])
+            assert(input.len() == 3)
+            assert(input[0] == "proposal:text")
+            assert(input[1] == "lens_order:[]text")
+            assert(input[2] == "author_question:?text")
+            assert(spec_text(p.result_spec[0]) == "MeetingResult")
+            ro result = fields_of_type(def, p.result_spec[0])
+            assert(result.len() == 4)
+            assert(result[0] == "decision:text")
+            assert(result[1] == "source:text")
+            assert(result[2] == "passes:int>=0")
+            assert(result[3] == "open:[]MeetingFinding")
+        }
+        None => panic("no party meeting")
+    }
+}
+
+test "ft cycle fields" {
+    ro def = cycle_def()
+    mut cycle = []str.new()
+    mut finding = []str.new()
+    mut counter = []str.new()
+    mut summary = []str.new()
+    for r in def.types.records {
+        if r.name == "Cycle" { for f in r.fields { cycle.push(field_line(f)) } }
+        if r.name == "Finding" { for f in r.fields { finding.push(field_line(f)) } }
+        if r.name == "Counter" { for f in r.fields { counter.push(field_line(f)) } }
+        if r.name == "Summary" { for f in r.fields { summary.push(field_line(f)) } }
+    }
+    assert(cycle.join(",") == "number:int>=1,origin:int>=1,streak:int>=0,no_probes:int>=0")
+    assert(finding.join(",") == "severity:Severity,level:Level,evidence:text")
+    assert(counter.join(",") == "evidence:text,passes:int>=0")
+    assert(summary.join(",") == "essential:int>=0,probes:int>=0")
+}

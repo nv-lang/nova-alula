@@ -1,0 +1,76 @@
+// border_test.nv - task 126: the tables of the dialog and of the chat after the border with the code was drawn: the field of the words is `содержание` (not `текст текст`),
+// the cancel of the dialog is declared once (a signal, not a word of the user), the translation says `content`.
+module alula.machine_dialog
+
+import std.text
+import alula.machine.{standard_registry, dialog_machine_text, dialog_table_text, chat_table_text}
+import alula.machine_text.{translate_checked, error_text}
+
+test "bd dialog: the message and the chunk have the field содержание" {
+    ro t = dialog_table_text()
+    assert(t.contains("сообщение_пользователя(содержание текст)"))
+    assert(t.contains("| агент | кусок_ответа | содержание текст |"))
+}
+
+test "bd dialog: the rows name the field" {
+    ro t = dialog_table_text()
+    assert(t.contains("слово(сообщение_пользователя(содержание: сообщение))"))
+    assert(t.contains("часть(кусок_ответа(содержание: кусок))"))
+}
+
+test "bd dialog: the field текст текст is gone" {
+    ro t = dialog_table_text()
+    assert(!t.contains("(текст текст)"))
+    assert(!t.contains("текст: сообщение"))
+    assert(!t.contains("текст: кусок"))
+}
+
+test "bd dialog: the cancel is not a word of the user" {
+    ro t = dialog_table_text()
+    assert(!t.contains("сообщение_пользователя(содержание текст), отмена"))
+    assert(!t.contains("слово(отмена)"))
+}
+
+test "bd dialog: the cancel is a signal and a row of the open turn takes it" {
+    ro t = dialog_table_text()
+    assert(t.contains("## Сигналы"))
+    assert(t.contains("| отмена | — |"))
+    assert(t.contains("сигнал(отмена)"))
+}
+
+test "bd dialog: the table translates without errors" {
+    ro report = translate_checked(dialog_table_text(), standard_registry())
+    assert(report.errors.len() == 0)
+}
+
+test "bd dialog: the translation is the committed file" {
+    ro report = translate_checked(dialog_table_text(), standard_registry())
+    assert(report.json == dialog_machine_text())
+}
+
+test "bd dialog: the tree has content, not text, in the words" {
+    ro j = dialog_machine_text()
+    assert(j.contains("\"name\":\"user_message\",\"fields\":[{\"name\":\"content\",\"type\":\"text\"}]"))
+    assert(j.contains("\"name\":\"agent_chunk\",\"fields\":[{\"name\":\"content\",\"type\":\"text\"}]"))
+    assert(!j.contains("\"fields\":[{\"name\":\"text\""))
+}
+
+test "bd dialog: the tree declares the cancel once, as a signal" {
+    ro j = dialog_machine_text()
+    assert(j.contains("\"signals\":[{\"name\":\"cancel\"}]"))
+    assert(!j.contains("{\"name\":\"user_message\",\"fields\":[{\"name\":\"content\",\"type\":\"text\"}]},{\"name\":\"cancel\"}"))
+}
+
+test "bd chat: the message and the chunk have the field содержание" {
+    ro t = chat_table_text()
+    assert(t.contains("сообщение_пользователя(содержание текст)"))
+    assert(t.contains("| агент | кусок_ответа | содержание текст |"))
+    assert(t.contains("слово(сообщение_пользователя(содержание: сообщение))"))
+    assert(t.contains("часть(кусок_ответа(содержание: кусок))"))
+    assert(!t.contains("(текст текст)"))
+}
+
+test "bd chat: the cancel before a request stays a word of the user" {
+    ro t = chat_table_text()
+    assert(t.contains("слово(отмена)"))
+}
