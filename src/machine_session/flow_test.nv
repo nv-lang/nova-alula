@@ -1,0 +1,313 @@
+// flow_test.nv - AC-2: the scenarios `session-*` of the machine "Session start" run together with its nested machine, the agent step: one for every row of the table (`session-<state>-<n>`) and the
+// flows (`session-flow-*`): the start, the volume, a session with the agent, the parse of the result, the pause, the stop, the failure, the restart in the middle of a call, the answer of the nested
+// machine after the cancel. The files are data (`src/machine/scenarios/`); the numbers here say how many there are, and the tests below read what the runs left.
+module alula.machine_session
+
+import std.text
+import std.encoding.json.{Json}
+import alula.machine.{NamedText}
+import alula.machine_run.{PortolanMachine, NestedStepTrace, StepTrace, run_ok, report_text, state_data_fields}
+
+fn flow_names() -> []str => [
+    "session-flow-cancel-answered", "session-flow-cancel-in-gate", "session-flow-cancel-midcall", "session-flow-death-between", "session-flow-delivery-kind", "session-flow-fail-connection",
+    "session-flow-fail-model-refused", "session-flow-fail-no-result", "session-flow-input-absent", "session-flow-input-full", "session-flow-input-missing", "session-flow-input-type",
+    "session-flow-late-answer", "session-flow-parent-stop", "session-flow-pause-halt", "session-flow-request-fields", "session-flow-restart-after-answer", "session-flow-restart-gate2",
+    "session-flow-restart-kid", "session-flow-restart-midcall", "session-flow-result-plan", "session-flow-result-question", "session-flow-result-requirements", "session-flow-result-revision",
+    "session-flow-retry-twice", "session-flow-review-pass", "session-flow-runner-done", "session-flow-scope-retry", "session-flow-session-retry", "session-flow-stop-in-gate13",
+    "session-flow-stop-in-gate2", "session-flow-unknown-word"
+]
+
+fn file_named(name str) -> NamedText {
+    for f in session_scenarios() {
+        if f.name == "${name}.scenario.test.json" { return f }
+    }
+    panic("no scenario file ${name}")
+}
+
+fn flow_in(c SessCtx, name str) -> []NestedStepTrace => traces_of(c, file_named(name))
+
+fn flow(name str) -> []NestedStepTrace => flow_in(sctx(), name)
+
+fn last_parent(ts []NestedStepTrace) -> StepTrace => ts[ts.len() - 1].parent
+
+fn last_kid(ts []NestedStepTrace, request str) -> StepTrace {
+    ro t = ts[ts.len() - 1]
+    mut i = 0
+    for r in t.requests {
+        if r == request { return t.kids[i] }
+        i += 1
+    }
+    panic("no nested machine ${request} at the end")
+}
+
+fn plain(text str) -> str => text.replace(": ", ":").replace(", ", ",")
+
+fn field_of(encoded str, key str) -> str {
+    match state_data_fields(encoded).get(key) {
+        Some(v) => v.to_str()
+        None => "<no ${key}>"
+    }
+}
+
+// ---- the groups of the files ----------------------------------------------------------------------------------------------------
+
+test "fl the files of the rows" {
+    assert(count_group("session-gate2-") == 1)
+    assert(count_group("session-scope-") == 2)
+    assert(count_group("session-gate1-") == 2)
+    assert(count_group("session-session-") == 2)
+    assert(count_group("session-result-parsing-") == 1)
+    assert(count_group("session-gate13-") == 2)
+}
+
+test "fl the files of the pause and the common events" {
+    assert(count_group("session-pause-") == 4)
+    assert(count_group("session-common-") == 5)
+}
+
+test "fl the files of the ends" {
+    assert(count_group("session-end-") == 4)
+}
+
+test "fl the flows are the ones named" {
+    mut have = []str.new()
+    for f in session_scenarios() {
+        if f.name.starts_with("session-flow-") { have.push(f.name.replace(".scenario.test.json", "")) }
+    }
+    assert(have.len() == flow_names().len())
+    for n in flow_names() {
+        if !have.contains(n) { panic("no flow ${n}") }
+    }
+}
+
+test "fl the flows run" {
+    assert(count_group("session-flow-") == 32)
+}
+
+test "fl the names of the files are the names of the machine" {
+    for f in session_scenarios() {
+        assert(scenario_of(f).machine == "session_start")
+        assert(scenario_of(f).steps.len() >= 1)
+    }
+}
+
+// ---- what the flows leave ------------------------------------------------------------------------------------------------------
+
+test "fl the runner starts a session and gets its result" {
+    ro ts = flow("session-flow-runner-done")
+    ro end = last_parent(ts)
+    assert(end.state == "End")
+    assert(end.outcome.starts_with("answer:"))
+    assert(end.outcome.contains("\"result\":{\"$variant\":\"SessionResult\",\"name\":\"Done\""))
+    assert(end.sent == ["agent_step-1"])
+    assert(end.open.len() == 0)
+    assert(end.cancelled.len() == 0)
+}
+
+test "fl the result of a check session has the summary and the findings" {
+    ro ts = flow("session-flow-review-pass")
+    ro end = last_parent(ts)
+    assert(end.state == "End")
+    assert(end.outcome.contains("\"summary\":{\"$record\":\"Summary\""))
+    assert(end.outcome.contains("\"essential\":1"))
+    assert(end.outcome.contains("\"probes\":3"))
+    assert(end.outcome.contains("\"findings\":[{\"$record\":\"Finding\""))
+    assert(field_of(end.encoded, "launch_pass") == "3")
+}
+
+test "fl the words of the stop of a session are the results" {
+    // ORACLE-WORKAROUND(52): the list of tuples is bound first; a loop over a literal list of tuples in a unit that imports std.encoding.json reads it as a JSON object; loop over the literal when item 52 is fixed
+    ro pairs = [("question", "Question"), ("revision", "Revision"), ("plan", "Plan"), ("requirements", "Requirements")]
+    ro c = sctx()
+    for pair in pairs {
+        ro end = last_parent(flow_in(c, "session-flow-result-${pair.0}"))
+        assert(end.state == "End")
+        assert(end.outcome.contains("\"name\":\"${pair.1}\""))
+    }
+}
+
+test "fl the volume that does not fit asks the keeper again" {
+    ro ts = flow("session-flow-scope-retry")
+    ro end = last_parent(ts)
+    assert(end.sent == ["agent_step-1"])
+    // a gate is not a request of the engine: the keeper answers by a word, the counter of the keeper stays 0
+    assert(field_of(end.encoded, "gatekeeper_attempt") == "0")
+    assert(end.state == "End")
+}
+
+test "fl the retry of the session sends a new request to the agent step" {
+    ro ts = flow("session-flow-session-retry")
+    ro end = last_parent(ts)
+    assert(end.sent == ["agent_step-1", "agent_step-2"])
+    assert(field_of(end.encoded, "step_attempt") == "2")
+    assert(end.state == "End")
+    // the first nested machine ended with a refusal, the second answered
+    assert(ts[ts.len() - 1].requests == ["agent_step-1", "agent_step-2"])
+}
+
+test "fl the second retry" {
+    ro end = last_parent(flow("session-flow-retry-twice"))
+    assert(field_of(end.encoded, "step_attempt") == "3")
+    assert(end.sent == ["agent_step-1", "agent_step-2", "agent_step-3"])
+    assert(end.state == "End")
+}
+
+test "fl every failure of the agent step is a failure of the session" {
+    ro c = sctx()
+    for name in ["session-flow-fail-connection", "session-flow-fail-model-refused", "session-flow-fail-no-result"] {
+        ro end = last_parent(flow_in(c, name))
+        assert(end.state == "Gate13Session")
+        assert(end.open.len() == 0)
+        mut seen = false
+        for t in flow_in(c, name) {
+            for e in t.parent.entries {
+                if e.event.code == "session_not_finished" { seen = true }
+            }
+        }
+        assert(seen)
+    }
+}
+
+test "fl the stop of a human in a gate is a pause there" {
+    ro c = sctx()
+    ro end = last_parent(flow_in(c, "session-flow-stop-in-gate2"))
+    // the gate is entered again after the pause and the keeper confirms: the session is asked of the agent step
+    assert(end.state == "Session")
+    assert(end.sent == ["agent_step-1"])
+    assert(end.cancelled.len() == 0)
+    ro end13 = last_parent(flow_in(c, "session-flow-stop-in-gate13"))
+    assert(end13.state == "Session")
+    assert(end13.sent == ["agent_step-1", "agent_step-2"])
+    assert(end13.cancelled.len() == 0)
+}
+
+test "fl the halt in a pause ends the session and the nested machine" {
+    ro ts = flow("session-flow-pause-halt")
+    ro end = last_parent(ts)
+    assert(end.state == "Halted")
+    assert(end.outcome == "refusal:StoppedByHuman")
+    assert(field_of(end.encoded, "stop_reason") == "\"pause_halt\"")
+    ro kid = last_kid(ts, "agent_step-1")
+    assert(kid.state == "Halted")
+    assert(kid.outcome == "refusal:StoppedByHuman")
+}
+
+test "fl the stop of a parent is passed to the agent step" {
+    ro ts = flow("session-flow-parent-stop")
+    ro kid = last_kid(ts, "agent_step-1")
+    assert(kid.state == "End")
+    ro end = last_parent(ts)
+    assert(end.state == "End")
+    assert(end.sent == ["agent_step-1"])
+}
+
+test "fl the cancel ends the session and cancels the nested request" {
+    ro ts = flow("session-flow-cancel-midcall")
+    ro end = last_parent(ts)
+    assert(end.state == "Halted")
+    assert(end.outcome == "refusal:Cancelled")
+    assert(end.cancelled == ["agent_step-1"])
+    assert(field_of(end.encoded, "stop_reason") == "\"cancel_request\"")
+    ro kid = last_kid(ts, "agent_step-1")
+    assert(kid.state == "Halted")
+    assert(kid.outcome == "refusal:Cancelled")
+}
+
+test "fl an answer that comes after the cancel is dropped" {
+    ro end = last_parent(flow("session-flow-cancel-answered"))
+    assert(end.state == "Halted")
+    assert(end.outcome == "refusal:Cancelled")
+    assert(end.queue.len() == 0)
+}
+
+test "fl the cancel in a gate" {
+    ro end = last_parent(flow("session-flow-cancel-in-gate"))
+    assert(end.state == "Halted")
+    assert(end.outcome == "refusal:Cancelled")
+    assert(end.cancelled.len() == 0)
+}
+
+test "fl a restart in the middle of a call sends the request again" {
+    ro ts = flow("session-flow-restart-midcall")
+    ro end = last_parent(ts)
+    assert(end.state == "End")
+    // the request is the same, the nested machine is one
+    assert(end.sent == ["agent_step-1", "agent_step-1"])
+    assert(ts[ts.len() - 1].requests == ["agent_step-1"])
+}
+
+test "fl a restart of the nested machine" {
+    ro ts = flow("session-flow-restart-kid")
+    ro end = last_parent(ts)
+    assert(end.state == "End")
+    assert(ts[ts.len() - 1].requests == ["agent_step-1"])
+}
+
+test "fl a restart after the answer repeats the answer" {
+    ro end = last_parent(flow("session-flow-restart-after-answer"))
+    assert(end.state == "End")
+    assert(end.sent == ["agent_step-1", "agent_step-1"])
+}
+
+test "fl a restart in a gate asks the gate again" {
+    ro end = last_parent(flow("session-flow-restart-gate2"))
+    assert(end.sent == ["agent_step-1"])
+    assert(end.state == "Session")
+}
+
+test "fl the death between the commit and the send" {
+    ro end = last_parent(flow("session-flow-death-between"))
+    assert(end.state == "End")
+    assert(end.sent == ["agent_step-1"])
+    assert(end.cancelled.len() == 0)
+}
+
+test "fl the input is checked" {
+    ro c = sctx()
+    ro missing = last_parent(flow_in(c, "session-flow-input-missing"))
+    assert(missing.outcome == "refusal:NoResult")
+    assert(missing.sent.len() == 0)
+    ro typed = last_parent(flow_in(c, "session-flow-input-type"))
+    assert(typed.outcome == "refusal:NoResult")
+    assert(typed.sent.len() == 0)
+}
+
+test "fl a word that the gate does not wait for is ignored" {
+    ro end = last_parent(flow("session-flow-unknown-word"))
+    assert(end.state == "Gate2")
+    assert(end.outcome == "none")
+    assert(end.open.len() == 0)
+}
+
+test "fl a second answer of the nested machine is dropped" {
+    ro end = last_parent(flow("session-flow-late-answer"))
+    assert(end.state == "End")
+    assert(end.queue.len() == 0)
+}
+
+test "fl the request of the agent step carries the session" {
+    ro ts = flow("session-flow-request-fields")
+    ro kid = last_kid(ts, "agent_step-1")
+    ro request = plain(field_of(kid.encoded, "agent_request"))
+    assert(request.contains("\"session\":\"s3\""))
+    assert(request.contains("\"dialog_kind\":\"main\""))
+    assert(request.contains("\"$variant\":\"CallerKind\""))
+    assert(request.contains("\"name\":\"CycleSession\""))
+    assert(request.contains("\"silence_term\":null"))
+    assert(request.contains("\"token_budget\":null"))
+    assert(request.contains("\"cost_budget\":null"))
+    assert(request.contains("\"turn_limit\":null"))
+    assert(request.contains("the prompt of s3"))
+    assert(request.contains("\"family\":\"claude\""))
+    // the envelope of the session: its trace and the number of its step
+    assert(request.contains("\"trace\":\"t1000-chat-1\""))
+    assert(request.contains("\"step\":3"))
+}
+
+test "fl the delivery sessions have the delivery dialog" {
+    ro ts = flow("session-flow-delivery-kind")
+    ro kid = last_kid(ts, "agent_step-1")
+    ro request = plain(field_of(kid.encoded, "agent_request"))
+    assert(request.contains("\"session\":\"s7\""))
+    assert(request.contains("\"dialog_kind\":\"delivery\""))
+}

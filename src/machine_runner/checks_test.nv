@@ -1,0 +1,136 @@
+// checks_test.nv - the 42 "Checks of the implementation" of the table of the methodology (task-runner-states.md, section "Проверки реализации"): for each, what the scenarios and the tests of the
+// product cover and what they do not. A line is `number|kind|files|note`; the kind is `scenario` (the files are scenarios of `scenarios/`), `unit` (a test of this unit), `other` (covered
+// by the scenarios or the tests of another machine) or `none` (not covered, with the reason). The test checks that all 42 numbers are there and that every named scenario exists.
+module alula.machine_runner
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine.{task_runner_table_text}
+
+fn items() -> []str => [
+    "1|scenario|runner-preparation-1,runner-gate14-2|no session is sent before the word of the human at the gate 14: the start ends at the gate 14 with no open request",
+    "2|scenario|runner-flow-fast-clean,runner-flow-fast-gate14|the fast route passes the gates 14, 5 (copy), 8, 10a, 10c, 10d; the search by file for the route in the delivery is the unit `ck no route in the delivery`",
+    "3|scenario|runner-route-check-2,runner-route-check-4,runner-gate14-refusal-1,runner-flow-fast-refused|settings rejected: the fast route goes to the full one with the gate 14 refusal, the full route stops with NoResult",
+    "4|scenario|runner-route-check-4,runner-gate14-refusal-1,runner-flow-fast-clean|0 clean passes and 2 probes are rejected, 1 and 3 are allowed",
+    "5|other|cycle-summary-4,cycle-no-probes-1|the check of the passes without probes is the cycle check (task 122)",
+    "6|scenario|runner-full-path-return-1,runner-gate5-2,runner-gate8-4,runner-gate10a-2|the word full path at the gates 5, 8, 10a: the route is full, the analysis starts from s1, the record of the approval goes",
+    "7|none||a requirement to the executor of the session launch (the reviewer is not the author), not a row of the machine",
+    "8|scenario|runner-flow-restart-gate14,runner-flow-restart-launch,runner-flow-death-start|a restart at the gate 14 enters it again with the same proposal and does not classify again; the death between the changes of a step does not exist: the interpreter commits a step whole",
+    "9|scenario|runner-route-classification-1,runner-route-classification-2|no features and incomplete features: full, the basis names them",
+    "10|scenario|runner-route-classification-3,runner-route-classification-4,runner-route-classification-5|the helper, the threshold and all within; the boundary value equal to the threshold has no scenario of its own",
+    "11|scenario|runner-flow-fast-clean|the fast route reaches the gates of the delivery and each waits for the human",
+    "12|scenario|runner-review-parsing-5,runner-plan-phase-2,runner-review-parsing-4|the automatic return to the full route with the rule as the source",
+    "13|scenario|runner-flow-full-clean|the full route passes the same states as before the routes",
+    "14|none||the snapshot without the route is loaded by the executor, not a row of the machine",
+    "15|none||the field of the route in the line of the journal is not written by the product (the route is in the data of the snapshot); the choice, the rejection and the change of the route are separate lines (`route_proposed`, `route_recorded`, `fast_route_settings_rejected`, `full_route_return`)",
+    "16|scenario|runner-brief-copy-1,runner-review-parsing-2,runner-review-parsing-3,runner-review-parsing-4,runner-specification-reconciliation-4|the copy of the brief, the copy edited, no copy",
+    "17|scenario|runner-full-path-return-1,runner-copy-snapshot-1|the record of the approval goes and the phase is the analysis; the zero series and the start of the count are asserted by the data of the copy snapshot",
+    "18|scenario|runner-gate14-refusal-1|the gate 14 refusal has the one word accepted; it leads to the check of the settings with the route full",
+    "19|other|cycle-review-entry-2,cycle-review-entry-3|the minimums in the cycle check (task 122)",
+    "20|scenario|runner-flow-death-start,runner-flow-death-between|the death between the commit and the send of the request; the order record-then-file is the order of the actions of BriefCopy (the irreversible call is last)",
+    "21|scenario|runner-flow-stranger-in-window|an answer of a stranger in the window is discarded; the edit of the files by a human is the executor",
+    "22|scenario|runner-factory-word-2,runner-factory-word-3,runner-brief-check-2|empty word, empty date, incomplete brief",
+    "23|scenario|runner-copy-snapshot-1,runner-specification-reconciliation-4|the copy edited in the delivery goes back to the analysis (the scripted host ends the chain at an error, see the scenario)",
+    "24|none||the death between the changes of CopySnapshot: the interpreter commits a step whole, there is no state between the changes",
+    "25|none||the other party in the window between the changes: the executor, not a row",
+    "26|none||the gatekeeper agent is the mechanics of the executor of the gates",
+    "27|none||the check of the profile of the gatekeeper is made by the executor at the start",
+    "28|none||low confidence, refusal, a word outside the list at the gate: the executor",
+    "29|unit|ck sides|the expensive gates have the side enhanced (the test `rw sides of the gates` and `ck sides`)",
+    "30|none||the family of the gatekeeper is the executor",
+    "31|none||the word of the human is older than the word of the gatekeeper: the executor",
+    "32|other|cycle-gate9-1|the answer of the gatekeeper does not move the counters of the cycle: the cycle check",
+    "33|none||the death after the answer of the gatekeeper: the executor of the gates",
+    "34|unit|ck sides|the sides of the gates against the table of the sides",
+    "35|other|cycle-outcome-1|the counter of the criterion: the cycle check",
+    "36|other|cycle-criterion-2|the ceiling of the evidence: the cycle check",
+    "37|other|cycle-gate15-1|narrowing: the cycle check",
+    "38|other|cycle-gate15-2|one more pass: the cycle check",
+    "39|other|cycle-stop-stage-1|stop at the gate 15: the cycle check",
+    "40|other|cycle-gate15-1|the side of the gate 15: the cycle check",
+    "41|other|cycle-pass-1|the meeting stage: the cycle check",
+    "42|none||the norm of the assumption in the log is the behavior of the executor and of the integrator"
+]
+
+fn field(line str, i int) -> str {
+    mut cells = []str.new()
+    for c in line.split("|") { cells.push(c) }
+    cells[i]
+}
+
+test "ck the 42 checks" {
+    assert(items().len() == 42)
+    mut k = 1
+    for line in items() {
+        assert(field(line, 0) == "${k}")
+        assert(["scenario", "unit", "other", "none"].contains(field(line, 1)))
+        k += 1
+    }
+}
+
+test "ck every named scenario exists" {
+    mut have = []str.new()
+    for f in runner_scenarios() { have.push(f.name) }
+    mut named = 0
+    for line in items() {
+        if field(line, 1) != "scenario" { continue }
+        for file in field(line, 2).split(",") {
+            if !have.contains("${file}.scenario.test.json") { panic("check ${field(line, 0)}: no scenario ${file}") }
+            named += 1
+        }
+    }
+    assert(named > 40)
+}
+
+test "ck other machines scenarios exist" {
+    mut have = []str.new()
+    for f in scenario_files_all() { have.push(f) }
+    for line in items() {
+        if field(line, 1) != "other" { continue }
+        for file in field(line, 2).split(",") {
+            if !have.contains("${file}.scenario.test.json") { panic("check ${field(line, 0)}: no scenario ${file}") }
+        }
+    }
+}
+
+test "ck counts" {
+    mut counts = [0, 0, 0, 0]
+    for line in items() {
+        ro kind = field(line, 1)
+        if kind == "scenario" { counts[0] += 1 }
+        if kind == "unit" { counts[1] += 1 }
+        if kind == "other" { counts[2] += 1 }
+        if kind == "none" { counts[3] += 1 }
+    }
+    // covered by the scenarios of the runner: 18; by a test of the unit: 2; by the scenarios of the cycle check: 10; not covered (the executor, the interpreter, a requirement): 12
+    assert(counts[0] == 18)
+    assert(counts[1] == 2)
+    assert(counts[2] == 10)
+    assert(counts[3] == 12)
+}
+
+test "ck no route in the delivery" {
+    // check 2: in the conditions of the states of the delivery and of the gates after it the variable "маршрут" is not read (the gates 8 and 10a offer "full path" by a field of the request)
+    ro text = task_runner_table_text()
+    ro from = text.find("### СДАЧА — развилка") ?? -1
+    ro to = text.find("### В11 — обращение") ?? -1
+    assert(from > 0 && to > from)
+    ro part = text[from..to]
+    assert(!part.contains("маршрут =="))
+    assert(!part.contains("маршрут !="))
+}
+
+test "ck sides" {
+    // the expensive gates have the side enhanced, the gates that the gatekeeper may answer have the side gatekeeper: the same table as in rows_test, read from the table text
+    ro text = task_runner_table_text()
+    for name in ["### В14 — обращение", "### В14_ОТКАЗ — обращение", "### В5 — обращение", "### В8 — обращение", "### В12 — обращение", "### В10а — обращение", "### В10г — обращение"] {
+        ro at = text.find(name) ?? -1
+        assert(at > 0)
+        assert(text[at..(at + 200)].contains("- Сторона: усиленный"))
+    }
+    for name in ["### В4 — обращение", "### В6 — обращение", "### В7_СДАЧА — обращение", "### В11 — обращение", "### В13_СТАТУС — обращение"] {
+        ro at = text.find(name) ?? -1
+        assert(at > 0)
+        assert(text[at..(at + 200)].contains("- Сторона: вратарь"))
+    }
+}

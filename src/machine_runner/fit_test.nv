@@ -1,0 +1,105 @@
+// fit_test.nv - the task runner as a machine that calls: the types of the calls are those of the machines it calls (`check_nested`), the whole tree of the calls is in the registry of the product but
+// the meeting (task 124), a wrong type of the call is found, and the runner of the pairs is recursive (task 123): `check_registry` checks every level.
+module alula.machine_runner
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine.{standard_registry, task_runner_table_text, task_runner_machine_text}
+import alula.machine_table.{MachineDef, NestedProblem, check_nested, load_machine}
+import alula.machine_text.{translate_checked}
+import alula.machine_run.{NestedRegistry, check_registry, registry_gaps, product_registry, load_portolan_machine}
+
+fn problems_text(list []NestedProblem) -> str {
+    mut out = []str.new()
+    for p in list { out.push("${p.path}: ${p.message}") }
+    out.join(" ## ")
+}
+
+fn callee_def(name str) -> MachineDef {
+    ro reg = product_registry()
+    match reg.find(name) {
+        Some(m) => m.def
+        None => panic("no machine ${name} in the registry of the product")
+    }
+}
+
+fn runner_with(old str, new str) -> MachineDef {
+    ro text = task_runner_table_text().replace(old, new)
+    ro report = translate_checked(text, standard_registry())
+    if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
+    match load_machine(report.json, standard_registry()) {
+        Ok(d) => d
+        Err(issues) => panic("the changed runner does not load: ${issues[0].path}: ${issues[0].message}")
+    }
+}
+
+test "ft the launch fits" {
+    assert(problems_text(check_nested(runner_def(), "session_start", callee_def("session_start"))) == "")
+}
+
+test "ft the cycle check fits" {
+    assert(problems_text(check_nested(runner_def(), "cycle_check", callee_def("cycle_check"))) == "")
+}
+
+test "ft the registry has the tree of the calls" {
+    ro reg = product_registry()
+    for n in ["agent_step", "session_start", "cycle_check"] {
+        match reg.find(n) {
+            Some(m) => assert(m.def.name == n)
+            None => panic("no ${n}")
+        }
+    }
+}
+
+test "ft the registry check is recursive" {
+    ro reg = product_registry()
+    match load_portolan_machine(task_runner_machine_text(), standard_registry()) {
+        Ok(m) => {
+            // the runner calls the launch, which calls the agent step; and the cycle check, which calls the launch: every level is checked and none is an issue
+            ro issues = check_registry(m, reg)
+            if issues.len() > 0 { panic(issues.join(" ## ")) }
+            assert(issues.len() == 0)
+            // the one machine of the tree that the registry lacks is the meeting of the cycle check (task 124); it is a gap, not an issue
+            ro gaps = registry_gaps(m, reg)
+            assert(gaps.len() == 1)
+            assert(gaps[0] == "meeting (called by cycle_check)")
+        }
+        Err(e) => panic("the runner is not made: ${e}")
+    }
+}
+
+test "ft the machine of the first level must be in the registry" {
+    match load_portolan_machine(task_runner_machine_text(), standard_registry()) {
+        Ok(m) => {
+            ro empty = NestedRegistry.empty()
+            ro issues = check_registry(m, empty)
+            assert(issues.len() == 2)
+            assert(issues[0].contains("is not in the registry"))
+        }
+        Err(e) => panic("the runner is not made: ${e}")
+    }
+}
+
+test "ft a wrong type of the launch is found" {
+    ro def = runner_with("тип ВходЗапускаСессии { сессия текст,", "тип ВходЗапускаСессии { сессия число,")
+    ro found = problems_text(check_nested(def, "session_start", callee_def("session_start")))
+    assert(found.contains("session"))
+}
+
+test "ft a wrong type of the review is found" {
+    ro def = runner_with("тип ИтогПроверки { вердикт Вердикт,", "тип ИтогПроверки { вердикт текст,")
+    ro found = problems_text(check_nested(def, "cycle_check", callee_def("cycle_check")))
+    assert(found.contains("verdict") || found.contains("result"))
+}
+
+test "ft the input is the contract" {
+    ro def = runner_def()
+    assert(def.input.fields.len() == 3)
+    assert(def.input.fields[0].name == "task_dir")
+    assert(def.input.fields[1].name == "repo_dir")
+    assert(def.input.fields[2].name == "delivery_mode")
+    ro launch = callee_def("session_start")
+    assert(launch.input.fields.len() == 10)
+    ro review = callee_def("cycle_check")
+    assert(review.input.fields.len() == 14)
+}

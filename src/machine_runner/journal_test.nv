@@ -1,0 +1,217 @@
+// journal_test.nv - the codes of the journal of the task runner are exactly the codes of the table of the journal of the methodology (state-machine-journal.md, section 2 and the events of the
+// format) with the same parameters: the table of the methodology is copied here as data. Static: the codes the machine writes; dynamic: the codes the scenarios see.
+module alula.machine_runner
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine.{journal_union, journal_find}
+import alula.machine_table.{MachineDef, Action, JournalAct, MachineErrorAct, IfAct, ForEachAct, LetAct, NamedExpr}
+
+// code, parameters (names, in the order of the table of the methodology)
+type JCode { code str, params []str }
+
+fn jc(code str, params []str) -> JCode => { code, params }
+
+// The codes of the machine "runner" in the table of the methodology (28 of its own; `fork_no_match` is shared with the others).
+fn review_codes() -> []JCode => [
+    jc("edit_after_approval_specification", []), jc("brief_copy_edit_after_approval", []), jc("edit_after_approval_plan", []), jc("session_launch_failed", ["session", "reason"]),
+    jc("route_proposed", ["proposal", "source", "basis"]), jc("factory_word_missing", []), jc("factory_word_date_missing", []), jc("full_route_settings_rejected", ["reason"]),
+    jc("fast_route_settings_rejected", ["reason"]), jc("route_recorded", ["route", "source", "basis"]), jc("fast_route_brief_incomplete", []), jc("brief_copy_created", ["factory_word"]),
+    jc("full_route_return", ["source", "basis"]), jc("foreign_approval_cleared", ["document"]), jc("fast_route_copy_approved", []), jc("fast_route_copy_edited", []),
+    jc("fast_route_no_brief", []), jc("fast_route_requirements_fix_queue", []), jc("review_parsing_failed", ["reason"]), jc("fast_route_plan_phase_skipped", []),
+    jc("fast_route_plan_fix_queue", []), jc("plan_review_failed", ["reason"]), jc("default_confirmed", []), jc("review_restart_outside_delivery", []),
+    jc("implementation_review_failed", ["reason"]), jc("delivery_review_failed", ["reason"]), jc("delivery_no_code_changes", []), jc("runner_stopped", ["reason"]),
+    jc("task_completed", ["feedback_rounds"]), jc("fork_no_match", ["fork"])
+]
+
+// The codes of the pause (the engine, rule 23).
+fn pause_codes() -> []JCode => [
+    jc("human_stop", ["author", "source", "event"]), jc("pause_by_parent_stop", ["request", "event"]),
+    jc("cancel_discarded_foreign_request", ["request", "event"]), jc("cancel_discarded_already_replied", ["request", "event"]),
+    jc("request_cancelled", ["request", "event"]), jc("cancel_parse_no_match", []),
+    jc("human_continue", ["previous", "author", "source", "event"]), jc("parent_continue", ["previous", "request", "event"])
+]
+
+// The events of the format (`input_rejected` has optional parameters and is checked apart).
+fn format_codes() -> []JCode => [jc("machine_data", ["data"]), jc("machine_error", ["reason"])]
+
+fn all_codes() -> []JCode {
+    mut out = []JCode.new()
+    for c in review_codes() { out.push(c) }
+    for c in pause_codes() { out.push(c) }
+    for c in format_codes() { out.push(c) }
+    out
+}
+
+// What the interpreter itself writes (the executor discards and journals, rule 17; a defect; the passing of signals of the pause, rule 35): not codes of a machine.
+fn executor_notes() -> []str => ["event_ignored", "event_unknown", "event_malformed", "machine_defect", "input_rejected", "signal_passed", "signal_ordered", "request_repeated", "answer_held", "answer_replayed"]
+
+fn engine_codes() -> []str => [
+    "machine_started", "event_accepted", "reply_discarded", "request_ordered", "request_sent", "request_closed", "cancel_ordered", "cancel_sent",
+    "cancel_without_request", "snapshot_ordered", "machine_finished", "engine_resumed", "signal_ordered", "signals_passed"
+]
+
+fn find_code(code str) -> Option[JCode] {
+    for c in all_codes() {
+        if c.code == code { return Some(c) }
+    }
+    None
+}
+
+fn names_text(names []str) -> str => names.join(",")
+
+fn param_names(params []NamedExpr) -> []str {
+    mut out = []str.new()
+    for p in params { out.push(p.name) }
+    out
+}
+
+// The journal actions of a list of actions: "code|name,name", the nested ones too.
+fn journal_of_actions(actions []Action, mut out []str) -> () {
+    for a in actions {
+        match a {
+            JournalAct { code, params } => out.push("${code}|${names_text(param_names(params))}")
+            MachineErrorAct { code, params } => out.push("${code}|${names_text(param_names(params))}")
+            IfAct { cond, then_actions, else_actions } => {
+                journal_of_actions(then_actions, out)
+                journal_of_actions(else_actions, out)
+            }
+            ForEachAct { var, list, body } => journal_of_actions(body, out)
+            LetAct { name, value, body } => journal_of_actions(body, out)
+            _ => ()
+        }
+    }
+}
+
+fn written_codes(def MachineDef) -> []str {
+    mut out = []str.new()
+    for st in def.states {
+        journal_of_actions(st.entry, out)
+        for r in st.rows { journal_of_actions(r.actions, out) }
+        for a in st.accept { journal_of_actions(a.actions, out) }
+    }
+    for r in def.common { journal_of_actions(r.actions, out) }
+    out
+}
+
+fn is_written(written []str, code str) -> bool {
+    for w in written {
+        if w.starts_with("${code}|") { return true }
+    }
+    false
+}
+
+test "jn static codes" {
+    ro written = written_codes(runner_def())
+    for w in written {
+        ro at = w.find("|") ?? 0
+        ro code = w[..at]
+        ro names = w[(at + 1)..]
+        match find_code(code) {
+            Some(c) => {
+                if names != names_text(c.params) { panic("the code ${code} has the parameters [${names}], the table of the methodology has [${names_text(c.params)}]") }
+            }
+            None => panic("the code ${code} is not in the table of the journal of the methodology")
+        }
+    }
+    // every code of the table of the methodology for the cycle check is written by the table of states
+    for c in review_codes() {
+        if !is_written(written, c.code) { panic("the table of the methodology has the code ${c.code}, the machine does not write it") }
+    }
+    for c in pause_codes() {
+        if !is_written(written, c.code) { panic("the pause has the code ${c.code}, the machine does not write it") }
+    }
+}
+
+test "jn the ends write the state" {
+    // КОНЕЦ writes the completion with the number of the rounds, ОСТАНОВЛЕНО the stop; ОШИБКА the note of the transition and the data
+    ro def = runner_def()
+    mut end_codes = []str.new()
+    journal_of_actions(state_of(def, "End").entry, end_codes)
+    assert(end_codes.len() == 1)
+    assert(end_codes[0] == "task_completed|feedback_rounds")
+    mut halted = []str.new()
+    journal_of_actions(state_of(def, "Halted").entry, halted)
+    assert(halted.len() == 1)
+    assert(halted[0] == "runner_stopped|reason")
+}
+
+test "jn dynamic codes" {
+    mut seen = []str.new()
+    for fr in all_runs() {
+        for t in fr.run.traces {
+            for e in t.entries {
+                ro code = e.event.code
+                if engine_codes().contains(code) { continue }
+                if !seen.contains(code) { seen.push(code) }
+                if code == "input_rejected" {
+                    assert(e.event.params.len() == 2)
+                    assert(e.event.params[0].name == "reason")
+                    assert(e.event.params[1].name == "field")
+                }
+                if executor_notes().contains(code) { continue }
+                mut names = []str.new()
+                for p in e.event.params { names.push(p.name) }
+                match find_code(code) {
+                    Some(c) => {
+                        if names_text(names) != names_text(c.params) { panic("${fr.name}: the code ${code} has the parameters [${names_text(names)}], the table has [${names_text(c.params)}]") }
+                    }
+                    None => panic("${fr.name}: the code ${code} is not in the table of the journal of the methodology")
+                }
+            }
+        }
+    }
+    // the codes the scenarios do not see: the defensive row of the common events, and the row "иначе" of the forks
+    for c in all_codes() {
+        if !seen.contains(c.code) && c.code != "cancel_parse_no_match" && c.code != "machine_data" && c.code != "machine_error" {
+            panic("no scenario writes the code ${c.code}")
+        }
+    }
+    assert(seen.contains("fork_no_match"))
+    assert(seen.contains("machine_data"))
+    assert(!seen.contains("cancel_parse_no_match"))
+}
+
+test "jn counts" {
+    assert(review_codes().len() == 30)
+    assert(pause_codes().len() == 8)
+    assert(all_codes().len() == 40)
+}
+
+// The codes against the union of the table of the methodology and the table of the product (format 5, 2.12, Ya-31): the machine writes only codes of the union, with the parameters of the row.
+test "jn union static" {
+    for w in written_codes(runner_def()) {
+        ro at = w.find("|") ?? 0
+        ro code = w[..at]
+        mut names = []str.new()
+        if at + 1 < w.byte_len() {
+            for piece in w[(at + 1)..].split(",") { names.push(piece) }
+        }
+        match journal_find(journal_union(), code) {
+            Some(row) => {
+                for n in row.params { if !names.contains(n) { panic("the code ${code} lacks ${n} of the union") } }
+                for n in names { if n != "" && !row.params.contains(n) && !row.optional.contains(n) { panic("the code ${code} has ${n}, the union has not") } }
+            }
+            None => panic("the code ${code} is in neither table")
+        }
+    }
+}
+
+test "jn union dynamic" {
+    for fr in all_runs() {
+        for t in fr.run.traces {
+            for e in t.entries {
+                match journal_find(journal_union(), e.event.code) {
+                    Some(row) => {
+                        for n in row.params {
+                            mut found = false
+                            for p in e.event.params { if p.name == n { found = true } }
+                            if !found { panic("${fr.name}: the code ${e.event.code} lacks ${n}") }
+                        }
+                    }
+                    None => panic("${fr.name}: the code ${e.event.code} is in neither table")
+                }
+            }
+        }
+    }
+}

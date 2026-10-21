@@ -1,0 +1,422 @@
+// table_test.nv - the table "Session start" (task 121) as the tree the checks read: the ten states of the methodology with their kinds, parties and rows, the data in the order of the table,
+// the three parties, the input of ten fields, the ends with the table "Ends", the five primitives, the fragment "Pause" with the list of the nested machines. The numbers are those of
+// `task-runner-session-states.md`; a change of the table that moves a row turns a test red.
+module alula.machine_session
+
+import std.text
+import alula.machine.{standard_registry, session_start_machine_text, session_start_table_text}
+import alula.machine_text.{translate_report, translate_checked}
+import alula.machine_table.{MachineDef, StateDef, TableRow, StateKind, AppealKind, OperationKind, ForkKind, EndKind, ToState, ToPrevious, ToSame, ToNothing, ToPrepareReturn, MachineParty, GatekeeperParty, EnhancedParty, AssignAct, JournalAct, MachineErrorAct, IfAct, CallAct, PassAct, CancelOpenAct, WordEv, AnswerEv, FailureEv, NowEv, SignalEv, find_party, find_data, find_state}
+
+fn target_name(r TableRow) -> str {
+    match r.next.target {
+        ToState(n) => n
+        ToPrevious => "@previous"
+        ToSame => "@same"
+        ToNothing => "-"
+        ToPrepareReturn => "@prepare_return"
+    }
+}
+
+fn row_of(def MachineDef, state str, n int) -> TableRow {
+    for r in state_named(def, state).rows {
+        if r.n == n { return r }
+    }
+    panic("the state ${state} has no row ${n}")
+}
+
+fn kind_name(st StateDef) -> str {
+    match st.kind {
+        AppealKind => "appeal"
+        OperationKind => "operation"
+        ForkKind => "fork"
+        EndKind => "end"
+    }
+}
+
+fn data_names(def MachineDef) -> []str {
+    mut out = []str.new()
+    for d in def.data { out.push(d.name) }
+    out
+}
+
+test "st the table loads" {
+    ro def = session_def()
+    assert(def.name == "session_start")
+    assert(def.version == "1")
+    assert(def.initial == "Gate2")
+    assert(def.error_end == "Errored")
+}
+
+test "st ten states" {
+    ro def = session_def()
+    assert(def.states.len() == 10)
+    mut names = []str.new()
+    for st in def.states { names.push(st.name) }
+    for n in ["Gate2", "Scope", "Gate1", "Session", "ResultParsing", "Gate13Session", "Pause", "End", "Halted", "Errored"] { assert(names.contains(n)) }
+}
+
+test "st kinds" {
+    ro def = session_def()
+    for n in ["Gate2", "Gate1", "Session", "Gate13Session", "Pause"] { assert(kind_name(state_named(def, n)) == "appeal") }
+    assert(kind_name(state_named(def, "ResultParsing")) == "operation")
+    assert(kind_name(state_named(def, "Scope")) == "fork")
+    for n in ["End", "Halted", "Errored"] { assert(kind_name(state_named(def, n)) == "end") }
+}
+
+test "st rows per state" {
+    ro def = session_def()
+    assert(state_named(def, "Gate2").rows.len() == 1)
+    assert(state_named(def, "Scope").rows.len() == 3)
+    assert(state_named(def, "Gate1").rows.len() == 2)
+    assert(state_named(def, "Session").rows.len() == 2)
+    assert(state_named(def, "ResultParsing").rows.len() == 1)
+    assert(state_named(def, "Gate13Session").rows.len() == 2)
+    assert(state_named(def, "Pause").rows.len() == 4)
+    assert(def.common.len() == 6)
+    assert(def.end_rows.len() == 5)
+    assert(all_rows(def).len() == 26)
+}
+
+test "st targets" {
+    ro def = session_def()
+    assert(target_name(row_of(def, "Gate2", 1)) == "Scope")
+    assert(target_name(row_of(def, "Scope", 1)) == "Session")
+    assert(target_name(row_of(def, "Scope", 2)) == "Gate1")
+    assert(target_name(row_of(def, "Scope", 3)) == "-")
+    assert(target_name(row_of(def, "Gate1", 1)) == "Gate2")
+    assert(target_name(row_of(def, "Gate1", 2)) == "Halted")
+    assert(target_name(row_of(def, "Session", 1)) == "ResultParsing")
+    assert(target_name(row_of(def, "Session", 2)) == "Gate13Session")
+    assert(target_name(row_of(def, "ResultParsing", 1)) == "End")
+    assert(target_name(row_of(def, "Gate13Session", 1)) == "Session")
+    assert(target_name(row_of(def, "Gate13Session", 2)) == "Halted")
+}
+
+test "st the pause rows" {
+    ro def = session_def()
+    assert(target_name(row_of(def, "Pause", 1)) == "@previous")
+    assert(target_name(row_of(def, "Pause", 2)) == "Halted")
+    assert(target_name(row_of(def, "Pause", 3)) == "@previous")
+    assert(target_name(row_of(def, "Pause", 4)) == "Halted")
+    mut targets = []str.new()
+    for r in def.common { targets.push(target_name(r)) }
+    assert(targets == ["Pause", "Pause", "@same", "@same", "Halted", "-"])
+}
+
+test "st restart is the retry of the session" {
+    ro def = session_def()
+    assert(row_of(def, "Gate13Session", 1).next.restart)
+    assert(!row_of(def, "Gate13Session", 2).next.restart)
+    assert(!row_of(def, "Gate1", 1).next.restart)
+    for st in def.states {
+        for r in st.rows {
+            if "${st.name}#${r.n}" != "Gate13Session#1" { assert(!r.next.restart) }
+        }
+    }
+}
+
+test "st the fork" {
+    ro def = session_def()
+    ro scope = state_named(def, "Scope")
+    assert(scope.entry.len() == 1)
+    assert(!scope.rows[0].is_else && !scope.rows[1].is_else)
+    assert(scope.rows[2].is_else)
+    assert(scope.rows[2].actions.len() == 1)
+    match scope.rows[2].actions[0] {
+        MachineErrorAct { code, params } => {
+            assert(code == "fork_no_match")
+            assert(params.len() == 1 && params[0].name == "fork")
+        }
+        _ => assert(false)
+    }
+}
+
+test "st the gates write the stop" {
+    ro def = session_def()
+    for key in ["Gate1#2", "Gate13Session#2"] {
+        ro at = key.find("#") ?? 0
+        ro r = row_of(def, key[..at], 2)
+        assert(r.actions.len() == 1)
+        match r.actions[0] {
+            AssignAct { target, value } => assert(target.root == "stop_reason")
+            _ => assert(false)
+        }
+    }
+}
+
+test "st the session row writes" {
+    ro def = session_def()
+    ro answered = row_of(def, "Session", 1)
+    assert(answered.actions.len() == 1)
+    match answered.actions[0] {
+        AssignAct { target, value } => assert(target.root == "agent_reply")
+        _ => assert(false)
+    }
+    ro failed = row_of(def, "Session", 2)
+    assert(failed.actions.len() == 1)
+    match failed.actions[0] {
+        JournalAct { code, params } => {
+            assert(code == "session_not_finished")
+            assert(params.len() == 2 && params[0].name == "session" && params[1].name == "reason")
+        }
+        _ => assert(false)
+    }
+}
+
+test "st events of the rows" {
+    ro def = session_def()
+    match row_of(def, "Gate2", 1).event {
+        WordEv { word, binds } => assert(word == "confirm")
+        _ => assert(false)
+    }
+    match row_of(def, "Gate1", 1).event {
+        WordEv { word, binds } => assert(word == "repeat")
+        _ => assert(false)
+    }
+    match row_of(def, "Gate1", 2).event {
+        WordEv { word, binds } => assert(word == "halt")
+        _ => assert(false)
+    }
+    match row_of(def, "Session", 1).event {
+        AnswerEv { bind } => assert(bind == "received")
+        _ => assert(false)
+    }
+    match row_of(def, "Session", 2).event {
+        FailureEv { reasons, bind } => {
+            assert(reasons.len() == 0)
+            assert(bind == "prichina")
+        }
+        _ => assert(false)
+    }
+    match row_of(def, "ResultParsing", 1).event {
+        NowEv => ()
+        _ => assert(false)
+    }
+}
+
+test "st the three parties" {
+    ro def = session_def()
+    assert(def.parties.len() == 3)
+    ro step = def.parties[find_party(def, "agent_step")]
+    assert(step.kind == MachineParty)
+    assert(step.id == "agent_step")
+    assert(step.nested == "agent_step")
+    assert(step.counter == "step_attempt")
+    assert(step.input_spec.len() == 1 && step.result_spec.len() == 1)
+    assert(step.words.len() == 0)
+    ro keeper = def.parties[find_party(def, "gatekeeper")]
+    assert(keeper.kind == GatekeeperParty)
+    assert(keeper.id == "gatekeeper")
+    assert(keeper.counter == "gatekeeper_attempt")
+    mut words = []str.new()
+    for w in keeper.words { words.push(w.name) }
+    assert(words == ["confirm", "repeat", "halt"])
+    ro enhanced = def.parties[find_party(def, "enhanced")]
+    assert(enhanced.kind == EnhancedParty)
+    assert(enhanced.counter == "enhanced_attempt")
+    assert(def.request_limit.len() == 1)
+}
+
+test "st the input" {
+    ro def = session_def()
+    assert(def.input.present)
+    assert(def.input.fields.len() == 10)
+    assert(def.input.invariants.len() == 0)
+    mut names = []str.new()
+    for f in def.input.fields { names.push(f.name) }
+    assert(names == ["session", "launch_source", "phase", "launch_pass", "task_dir", "repo_dir", "delivery_mode", "route", "source_list", "delivery_short"])
+}
+
+test "st the data in the order of the table" {
+    ro def = session_def()
+    ro names = data_names(def)
+    // the data of the fragment first, then the data of the machine
+    assert(names[0] == "previous" && names[1] == "call_request_id" && names[2] == "open_requests")
+    assert(names[3] == "session")
+    assert(names.contains("launch_source") && names.contains("launch_pass") && names.contains("phase") && names.contains("route"))
+    assert(names.contains("source_list") && names.contains("delivery_short") && names.contains("agent_reply") && names.contains("result"))
+    assert(names.contains("summary") && names.contains("findings") && names.contains("task_dir") && names.contains("repo_dir") && names.contains("delivery_mode"))
+    assert(names.contains("step_attempt") && names.contains("gatekeeper_attempt") && names.contains("enhanced_attempt"))
+    assert(names.len() == 22)
+    assert(find_data(def, "stop_reason") >= 0)
+}
+
+test "st the counters do not decrease" {
+    ro def = session_def()
+    for n in ["step_attempt", "gatekeeper_attempt", "enhanced_attempt"] {
+        ro d = def.data[find_data(def, n)]
+        assert(d.monotonic.on)
+    }
+    assert(!def.data[find_data(def, "session")].monotonic.on)
+}
+
+test "st the ends" {
+    ro def = session_def()
+    ro halted = state_named(def, "Halted")
+    assert(halted.reads == ["stop_reason"])
+    assert(halted.except_field == "stop_reason")
+    assert(halted.except_values == [""])
+    assert(halted.entry.len() == 2)
+    ro errored = state_named(def, "Errored")
+    assert(errored.reads_all)
+    assert(errored.entry.len() == 3)
+    ro done = state_named(def, "End")
+    assert(done.entry.len() == 1)
+    mut rows = []str.new()
+    for er in def.end_rows { rows.push("${er.state}#${er.n}") }
+    assert(rows == ["End#1", "Errored#1", "Halted#1", "Halted#2", "Halted#3"])
+}
+
+test "st the entry of the ends calls the group" {
+    ro def = session_def()
+    for n in ["Halted", "Errored"] {
+        mut found = false
+        for a in state_named(def, n).entry {
+            match a {
+                CallAct { name, args } => {
+                    assert(name == "stop_agent_group")
+                    assert(args.len() == 0)
+                    found = true
+                }
+                _ => ()
+            }
+        }
+        assert(found)
+    }
+}
+
+test "st the primitives of the table" {
+    ro def = session_def()
+    assert(def.primitives.len() == 5)
+    for n in ["launch_scope", "launch_profile", "session_context", "parse_session_artifact", "stop_agent_group"] { assert(def.primitives.contains(n)) }
+}
+
+test "st the definition" {
+    ro def = session_def()
+    assert(def.definitions.len() == 1)
+    assert(def.definitions[0].name == "session_dialog_kind")
+    assert(def.definitions[0].params.len() == 1)
+}
+
+test "st the pause fragment passes to the agent step" {
+    ro def = session_def()
+    // the common events 1 and 2 (the stop of a human, the stop of a parent) pass the stop and spare the nested requests
+    mut passes = 0
+    mut spares = 0
+    for i in [0, 1] {
+        for a in def.common[i].actions {
+            match a {
+                PassAct { nested, signal } => {
+                    assert(signal == "stop")
+                    passes += 1
+                }
+                CancelOpenAct { party, except } => {
+                    assert(except.len() == 1)
+                    spares += 1
+                }
+                _ => ()
+            }
+        }
+    }
+    assert(passes == 2)
+    assert(spares == 2)
+    // the cancel of the request passes `cancel` and cancels all of them
+    mut cancelled = false
+    for a in def.common[4].actions {
+        match a {
+            PassAct { nested, signal } => {
+                assert(signal == "cancel")
+                cancelled = true
+            }
+            _ => ()
+        }
+    }
+    assert(cancelled)
+}
+
+test "st the pause is the enhanced party" {
+    ro def = session_def()
+    ro pause = state_named(def, "Pause")
+    assert(pause.party == "enhanced")
+    assert(pause.inputs.len() == 2)
+    match pause.rows[0].event {
+        WordEv { word, binds } => assert(word == "continue")
+        _ => assert(false)
+    }
+    match pause.rows[1].event {
+        WordEv { word, binds } => assert(word == "halt")
+        _ => assert(false)
+    }
+    match pause.rows[2].event {
+        SignalEv { name, binds } => assert(name == "parent_continue")
+        _ => assert(false)
+    }
+    match pause.rows[3].event {
+        SignalEv { name, binds } => assert(name == "parent_halt")
+        _ => assert(false)
+    }
+}
+
+test "st the session appeal builds the request of the agent step" {
+    ro def = session_def()
+    ro session = state_named(def, "Session")
+    assert(session.party == "agent_step")
+    // the fields of the request are the fields of the input of the agent step but the profile, which the column of the party gives (format 2.12, Ya-30)
+    assert(session.inputs.len() == 7)
+    assert(session.inputs[0].field == "kind")
+    assert(session.inputs[0].to_party)
+    mut fields = []str.new()
+    for f in session.inputs { fields.push(f.field) }
+    assert(fields == ["kind", "session", "dialog_kind", "context", "limits", "trace", "step"])
+    assert(def.parties.len() > 0)
+    for p in def.parties {
+        if p.name == "agent_step" { assert(p.profile.len() == 1) }
+    }
+    assert(session.silence.len() == 0)
+    assert(session.form_returns == 0)
+}
+
+test "st the gates ask what the methodology says" {
+    ro def = session_def()
+    // B2: the session and the phase; B1: the session; B13: the session and the text of the refusal
+    mut gate2 = []str.new()
+    for f in state_named(def, "Gate2").inputs { gate2.push(f.field) }
+    assert(gate2 == ["session", "phase"])
+    mut gate1 = []str.new()
+    for f in state_named(def, "Gate1").inputs { gate1.push(f.field) }
+    assert(gate1 == ["session"])
+    mut gate13 = []str.new()
+    for f in state_named(def, "Gate13Session").inputs { gate13.push(f.field) }
+    assert(gate13 == ["session", "refusal_text"])
+}
+
+test "st the table text is a table of 2.12" {
+    ro text = session_start_table_text()
+    assert(text.starts_with("# Машина: Запуск сессии\n"))
+    assert(text.contains("- machine: session_start\n"))
+    assert(text.contains("- format: 2.12\n"))
+    assert(text.contains("Начальное состояние: В2"))
+    assert(text.contains("Пауза(слово_остановки: остановить"))
+    assert(session_start_machine_text().contains("\"format\": \"machine/2\"") || session_start_machine_text().contains("\"format\":\"machine/2\""))
+}
+
+test "st the json is the translation of the table" {
+    // the file of the product is what the program `portolan compile` makes of the table, byte for byte
+    ro report = translate_report(session_start_table_text())
+    assert(report.errors.len() == 0)
+    assert(report.json == session_start_machine_text())
+    ro checked = translate_checked(session_start_table_text(), standard_registry())
+    assert(checked.errors.len() == 0)
+    assert(checked.json == session_start_machine_text())
+    assert(report.rows_total >= 21)
+    assert(report.rows_noted == 0)
+}
+
+test "st the table has no unsupported note" {
+    // every construction of the table runs: the translator leaves no note `unsupported` and no warning
+    ro report = translate_checked(session_start_table_text(), standard_registry())
+    assert(report.warnings.len() == 0)
+    assert(report.rows_noted == 0)
+    assert(!session_start_machine_text().contains("unsupported"))
+}
