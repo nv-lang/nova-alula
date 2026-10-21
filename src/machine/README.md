@@ -1,7 +1,8 @@
-# machine: the core of the machines-as-data of the product
+# machine: the core of the machines as data
 
-The goal of the owner (2026-10-19): every ability of the current plugin and the state machines of the methodology are written as TABLES that one
-interpreter on Nova runs inside the bare product CrewHarness; the user writes no Nova. This directory is the first stage, the CORE that does not
+The goal of the owner of the CrewHarness product (2026-10-19): every ability of the current plugin and the state machines of the methodology are written as TABLES that one
+interpreter on Nova runs inside the bare product; the user writes no Nova. Since task 144 of the CrewHarness repository the core lives in this package (`alula`) and the product depends on it;
+the numbered tasks named in this file are the tasks of that repository (`doc/tasks/NNN-.../` there). This directory is the first stage, the CORE that does not
 depend on the final syntax of the tables: the dynamic value, the tree of an expression, a pure evaluator, the types of the data and the registry of the
 primitives of the host. Task 106 (`doc/tasks/106-expr-evaluator/`). Task 107 (`doc/tasks/107-table-machine/`) added the interpreter of the table of states on top of this core (see "The interpreter of a machine that is data" below); the next tasks are the translator of the tables of the methodology into the JSON and the transfer of the agent step and of the other machines.
 
@@ -17,7 +18,6 @@ tests under Oracle 0.1.0 and the output of a unit must stay under 4 KB:
 | `src/machine/` | `alula.machine` | the core (task 106) and the data files compiled into the binary: `schema/`, `machines/`, `scenarios/` |
 | `src/machine_table/` | `alula.machine_table` | the model of a machine, the decoder of the JSON tree `machine/2`, the type syntax, the checks of a table |
 | `src/machine_run/` | `alula.machine_run` | the interpreter `PortolanMachine`, the state, the host of the primitives, the scenario runner `scenario/0` |
-| `src/machine_chat/` | `alula.machine_chat` | tests only: the proof that the chat machine as data equals the chat machine on Nova |
 | `src/machine_text/` | `alula.machine_text` | the translator of Portolan (the tables in Russian or English, format 2.12 only) into the JSON `machine/2` and the reverse generator JSON -> Portolan ([README](../machine_text/README.md), tasks 108, 113) |
 | `src/machine_text_eq/` | `alula.machine_text_eq` | tests only: the chat table equals the hand-written chat machine on 39 scenarios; the pilot "Agent step", the examples of the format |
 | `src/machine_agent/` | `alula.machine_agent` | tests only: the agent step of the product (task 109): the table equals its JSON, every row has a scenario, the journal codes are the methodology's; task 110: the sample of the methodology (format 2.7) is translated whole and the product table is that sample with two project keys |
@@ -31,6 +31,9 @@ tests under Oracle 0.1.0 and the output of a unit must stay under 4 KB:
 | `src/machine_cycle/` | `alula.machine_cycle` | tests only (task 122): the machine "Cycle check" of the methodology as a table - it translates, equals the 71 rows of the methodology row by row, writes the codes of the table of the journal, every row has a scenario (`scenarios/cycle-*`), a parent fits it by the types of the methodology |
 | `src/machine_session/` | `alula.machine_session` | tests only (task 121): the machine "Session start" - the table in the tree, the registry of the machines of the product, the 55 scenarios `session-*` with the agent step as the nested machine, every row taken, the journal codes and the hand-written automaton of the methodology, the end ERRORED through a changed table |
 
+The proofs that need the hand-written chat machine on Nova (`machine_chat`: the chat machine as data equals it; `machine_dialog_eq`: the dialog equals it, with the failure injection) import the module `chat` of
+the CrewHarness product and stay in the product repository; they read the machines and the scenarios of this package through `alula.machine`.
+
 ## Run the tests (Windows, Nova Oracle 0.1.0)
 
 ```powershell
@@ -39,7 +42,6 @@ cd C:/work/alula
 nova test src/machine                # the core: 170 tests
 nova test src/machine_table          # the decoder and the checks: 85 tests
 nova test src/machine_run            # the interpreter and the scenarios (the 83 of the agent step too): 164 tests
-nova test src/machine_chat           # the equality with the chat machine: 11 tests
 nova test src/machine_text           # the translator of Portolan and its table of words: 199 tests
 nova test src/machine_text_eq        # the proofs of the translator: 45 tests
 nova test src/machine_agent          # the proofs of the agent step and of the sample of the methodology: 29 tests
@@ -53,7 +55,7 @@ nova test src/machine_nested_eq      # the agent step called by a session equals
 nova test src/machine_cycle          # the cycle check: the table, the rows of the methodology, the journal, the 101 scenarios: 48 tests (about a minute and a half)
 nova test src/machine_session         # the session start: the table, the registry, the 55 scenarios with the agent step, the journal, the automaton of the methodology: 89 tests (about a minute and a half)
 nova test --strict-effects src       # the same, and an effect used without being declared in a signature is an error
-nova test src --jobs 4               # the whole tree (the PostgreSQL units need the temporary container of src/pg/testdb.ps1)
+nova test src --jobs 4               # the whole package
 ```
 
 Everything for Oracle 0.1.0 is in [`spikes/env/README.md`](../../spikes/env/README.md). `src/machine/` is ONE module, `alula.machine`; a module in a folder UNDER `src/machine/`
@@ -206,7 +208,7 @@ of processes of the agent is stopped as a whole when the check ends in HALTED or
 
 ## Oracle 0.1.0: limits met and the ways round them
 
-<!-- ORACLE-WORKAROUND(25, 20): the interpreter and its proofs are sibling folders (`src/machine`, `src/machine_table`, `src/machine_run`, `src/machine_chat`, `src/machine_dialog`, `src/machine_agent`, ...), one module and one unit each: a module in a folder under a module's folder is refused (25) and the output of a unit must stay under 4 KB (20), so the tests have short names and a big proof is a unit of its own; one module tree and units of any size would do when items 25 and 20 are fixed -->
+<!-- ORACLE-WORKAROUND(25, 20): the interpreter and its proofs are sibling folders (`src/machine`, `src/machine_table`, `src/machine_run`, `src/machine_dialog`, `src/machine_agent`, ...), one module and one unit each: a module in a folder under a module's folder is refused (25) and the output of a unit must stay under 4 KB (20), so the tests have short names and a big proof is a unit of its own; one module tree and units of any size would do when items 25 and 20 are fixed -->
 
 The rules of the language that cost a compile and the three new defects (items 33-35, with reproductions in `spikes/env/repro_engine/`) are in the survey README. What shaped this code:
 
@@ -291,7 +293,7 @@ the traces, which is how the equality below is proved. The operations of a step:
 
 ## The chat machine as data and the proof of equality
 
-`machines/chat.portolan.json` is the machine of `src/chat/chat.nv` (Idle, Awaiting, Done, Failed; the words `user_message`, `cancel`; the part `agent_chunk`; the answer, the failure, the term) written by hand. `src/machine_chat/equal_test.nv` runs the SAME scenarios on both machines -
+`machines/chat.portolan.json` is the machine of `src/chat/chat.nv` of the CrewHarness product (Idle, Awaiting, Done, Failed; the words `user_message`, `cancel`; the part `agent_chunk`; the answer, the failure, the term) written by hand. `src/machine_chat/equal_test.nv` runs the SAME scenarios on both machines -
 the 39 files `scenarios/chat-*.scenario.test.json`, which reproduce every case of `chat_test.nv` and `chat_engine_test.nv` (the ten failure codes and an unknown one, the cancel in both states, the term, ignored and unknown events, tool and permission parts, Cyrillic, the discarded replies, the pump, the three restarts, the
 acknowledgement of the source key, the cancel in the window between the commit and the send) - and compares at the level of the engine, step by step: the name of the state, the data both machines hold, the events of the machine, ALL journal lines with the envelope (trace, step, cause, state, request, time), the open, sent and cancelled
 requests, the queue, the acknowledged keys, the outcome and the number of the step; and at the level of the machine (one `step`, no engine): the orders in order (journal event with parameters, send, cancel, finish with the text, save), the transition (`Go`/`Stay`) and the data. A deliberate change in the JSON machine turns the tests red (checked).
