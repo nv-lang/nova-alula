@@ -1,0 +1,137 @@
+// support_test.nv - helpers of the proofs of the program `portolan` (task 116): the program is run over the memory file system with the arguments, the standard output and the
+// standard error captured; the trees of two JSON are compared as trees (the order of the keys, the spaces and the `title` do not count).
+module alula.portolan_eq
+
+import std.fs.{Path, MemFs, mock_fs, write_text, read_text, create_dir_all}
+import std.text
+import std.encoding.json.{Json, JsonValue, JsonObject}
+import std.io.{IoCapture, mock_io}
+import std.os.{MockOs, mock_os}
+import alula.machine.{NamedText, machine_files, table_files, scenario_files, text_of_file}
+import alula.portolan_cli.{execute}
+
+/// Ran: what a run of the program left.
+type Ran { code int, out str, err str }
+
+fn run_with(argv []str, files []NamedText) -> Ran {
+    mut os = MockOs.new()
+    os.push_arg("portolan")
+    for a in argv { os.push_arg(a) }
+    mut fs = MemFs.new()
+    mut cap = IoCapture.new([]u8.new())
+    mut code = -1
+    with Os = mock_os(os), Fs = mock_fs(fs), Io = mock_io(cap) {
+        for f in files {
+            make_parents(f.name)
+            ro written = write_text(Path.posix(f.name), f.text)
+        }
+        code = execute()
+    }
+    Ran { code, out: cap.out_bytes().to_str_lossy(), err: cap.err_bytes().to_str_lossy() }
+}
+
+// Every folder above the file is there.
+// ORACLE-WORKAROUND(55): the memory file system makes only the LAST folder of `create_dir_all`, so every folder above the file is made one by one; make the path in one call when item 55 is fixed
+fn make_parents(path str) Fs -> () {
+    mut names = []str.new()
+    for part in path.split("/") { names.push(part) }
+    mut acc = ""
+    mut i = 0
+    while i + 1 < names.len() {
+        if names[i] != "" {
+            acc = "${acc}/${names[i]}"
+            ro made = create_dir_all(Path.posix(acc))
+        }
+        i += 1
+    }
+}
+
+fn one(name str, text str) -> []NamedText => [NamedText { name, text }]
+
+fn machine_json(name str) -> str => text_of_file(machine_files(), name)
+
+// The machines of the product that are JSON: the chat, the agent step and the five small ones.
+fn json_names() -> []str => ["actions.portolan.json", "agent_step.portolan.json", "calc.portolan.json", "chat.portolan.json", "gate.portolan.json", "lenses.portolan.json", "variants.portolan.json"]
+
+// The keys that a circle does not keep: the title (the header of the canonical file holds the Latin name of the machine) and the version of the language of the tree.
+fn dropped_keys() -> []str => ["title", "portolan_version"]
+
+fn kind_of(v JsonValue) -> str {
+    if v.is_null() { return "null" }
+    if v.is_bool() { return "bool" }
+    if v.is_num() { return "num" }
+    if v.is_str() { return "str" }
+    if v.is_array() { return "array" }
+    "object"
+}
+
+// Where two trees differ: the place and the two pieces, or "" when they are equal.
+fn first_difference(left JsonValue, right JsonValue, place str) -> str {
+    if kind_of(left) != kind_of(right) { return "${place}: ${kind_of(left)} / ${kind_of(right)}" }
+    match left.array() {
+        Some(xs) => {
+            ro ys = right.array() ?? []JsonValue.new()
+            if xs.len() != ys.len() { return "${place}: ${xs.len()} items / ${ys.len()} items" }
+            mut i = 0
+            while i < xs.len() {
+                ro d = first_difference(xs[i], ys[i], "${place}[${i}]")
+                if d != "" { return d }
+                i += 1
+            }
+            return ""
+        }
+        None => ()
+    }
+    match left.object() {
+        Some(xo) => {
+            ro yo = right.object() ?? JsonObject.new()
+            for k in xo.keys() {
+                if place == "$" && dropped_keys().contains(k) { continue }
+                match yo.get(k) {
+                    Some(yv) => {
+                        ro d = first_difference(xo.get(k) ?? JsonValue.null(), yv, "${place}.${k}")
+                        if d != "" { return d }
+                    }
+                    None => {
+                        // a datum without `writes` is a datum written by rows, a key with an empty list is no key: the translator writes both always
+                        if !(k == "writes" && sval(xo, k) == "rows") && !is_empty_list(xo.get(k) ?? JsonValue.null()) { return "${place}.${k}: missing in the second tree" }
+                    }
+                }
+            }
+            for k in yo.keys() {
+                if place == "$" && dropped_keys().contains(k) { continue }
+                if !xo.contains(k) && !(k == "writes" && sval(yo, k) == "rows") && !is_empty_list(yo.get(k) ?? JsonValue.null()) { return "${place}.${k}: missing in the first tree" }
+            }
+            return ""
+        }
+        None => ()
+    }
+    if left.to_str() != right.to_str() { return "${place}: ${left.to_str()} / ${right.to_str()}" }
+    ""
+}
+
+// The same for two texts of JSON.
+fn same_tree(first str, second str) -> str {
+    match Json.parse(first) {
+        Ok(left) => match Json.parse(second) {
+            Ok(right) => first_difference(left, right, "$")
+            Err(e) => "the second text is no JSON"
+        }
+        Err(e) => "the first text is no JSON"
+    }
+}
+
+fn is_empty_list(v JsonValue) -> bool {
+    match v.array() {
+        Some(items) => items.len() == 0
+        None => false
+    }
+}
+
+fn sval(o JsonObject, key str) -> str {
+    match o.get(key) {
+        Some(v) => v.str() ?? ""
+        None => ""
+    }
+}
+

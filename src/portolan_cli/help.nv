@@ -1,0 +1,132 @@
+// help.nv - the texts of `portolan`: the help of the program, the help of every command, the version.
+module alula.portolan_cli
+
+import std.text
+import alula.machine_table.{portolan_versions, MACHINE_FORMAT}
+
+/// The version of the program.
+export const PROGRAM_VERSION = "0.1.0"
+
+/// The line of `portolan version`: the program, the version of the language it reads (2.12 only: there is no transition period), the format of the compiled machine.
+export fn version_text() -> str {
+    ro versions = portolan_versions()
+    if versions.len() == 1 { return "portolan ${PROGRAM_VERSION} (Portolan ${versions[0]}, ${MACHINE_FORMAT})\n" }
+    "portolan ${PROGRAM_VERSION} (Portolan ${versions[0]} - ${versions[versions.len() - 1]}, ${MACHINE_FORMAT})\n"
+}
+
+/// The help of the program.
+export fn help_text() -> str => `portolan - compile, render, convert, check and run machines of Portolan
+
+Usage:
+  portolan <command> [arguments]
+  portolan <command> --help
+
+Commands:
+  portolan compile <file.portolan.md> [-o <file.portolan.json>] [--lenient] [--no-check] [--force]
+      Portolan -> the JSON machine/2 (the language of the file is read from its header).
+  portolan render <file.portolan.json> [--language ru|en] [-o <file.portolan.md>] [--lenient] [--force]
+      the JSON machine/2 -> a file of Portolan in the canonical form (Russian by default).
+  portolan convert <file.portolan.md> --language ru|en [-o <file.portolan.md>] [--no-check] [--lenient] [--force]
+      a file of Portolan in the other language, through the JSON.
+  portolan check <file.portolan.md|file.portolan.json> [--no-check]
+      the translation and the checks of the table; the errors and the warnings.
+  portolan summary <file.portolan.md|file.portolan.json> [--no-check]
+      the states, the rows, the actions, the data, the parties.
+  portolan run <machine> <scenario.scenario.test.json>
+      one scenario on a machine: ok, or the report of the difference.
+  portolan test <folder> [-v]
+      every *.scenario.test.json of the folder on the machines of the folder: "N of M scenarios passed".
+  portolan version
+      the version of the program and of the languages it reads.
+
+Files:
+  *.portolan.md            a machine written in Portolan (Russian or English; the header says which)
+  *.portolan.json          the compiled machine (machine/2)
+  *.scenario.test.json     a scenario (scenario/0)
+
+An error is "file:line:column: kind: message" and the quoted line under it (a JSON file has no lines: 1:1).
+Exit codes: 0 success; 1 errors in a file, or a scenario that differs; 2 a wrong command or arguments (or a file that cannot be read).
+`
+
+/// The help of one command; "" when there is no such command.
+export fn command_help(command str) -> str {
+    if command == "compile" {
+        return `portolan compile <file.portolan.md> [-o <file.portolan.json>] [--lenient] [--no-check] [--force]
+
+Portolan -> the JSON machine/2. The language of the file (ru or en) is read from its header; the extension is not looked at.
+The JSON goes to the standard output; with -o it goes to the file (an existing file is not overwritten without --force).
+The errors and the warnings go to the standard error as "file:line:column: kind: message".
+
+  -o, --output <file>   write the JSON to the file
+  --force               overwrite the file of -o
+  --lenient             print the JSON of what could be translated even when there are errors (the code is still 1)
+  --no-check            do not check the table against the primitives of the host
+`
+    }
+    if command == "render" {
+        return `portolan render <file.portolan.json> [--language ru|en] [-o <file.portolan.md>] [--lenient] [--force]
+
+The JSON machine/2 -> a file of Portolan in the canonical form of the specification (section 1b). Russian by default.
+What the file cannot say goes to the standard error and the code is 1.
+
+  --language ru|en      the language of the file to write (default ru)
+  -o, --output <file>   write the file (an existing file is not overwritten without --force)
+  --force               overwrite the file of -o
+  --lenient             print what could be said even when something could not
+`
+    }
+    if command == "convert" {
+        return `portolan convert <file.portolan.md> --language ru|en [-o <file.portolan.md>] [--no-check] [--lenient] [--force]
+
+A file of Portolan in the other language: compile, then render. The meaning is kept; the comments (the paragraphs of free text and the lines
+starting with ">" or "//") are not carried over, and the program says so on the standard error.
+
+  --language ru|en      the language of the result (needed)
+  -o, --output <file>   write the file (an existing file is not overwritten without --force)
+  --force               overwrite the file of -o
+  --no-check            do not check the table against the primitives of the host
+  --lenient             go on when there are errors
+`
+    }
+    if command == "check" {
+        return `portolan check <file.portolan.md|file.portolan.json> [--no-check]
+
+A file of Portolan: the translation, the checks of the table, the warnings. A file *.json: the decoding of machine/2 and the checks of the table.
+Prints "ok" and the code 0 when there are no errors; the errors and the warnings go to the standard error.
+
+  --no-check            do not check the table against the primitives of the host
+`
+    }
+    if command == "summary" {
+        return `portolan summary <file.portolan.md|file.portolan.json> [--no-check]
+
+The summary of a machine: the states, the rows, the actions, the data, the parties; one line per state.
+
+  --no-check            do not check the table against the primitives of the host
+`
+    }
+    if command == "run" {
+        return `portolan run <machine.portolan.json|machine.portolan.md> <scenario.scenario.test.json>
+
+One scenario (scenario/0) on a machine. Prints "ok" and the code 0, or the report of the first differences and the code 1.
+The scenario names its machine; a machine with another name is an error.
+`
+    }
+    if command == "test" {
+        return `portolan test <folder> [-v]
+
+Every *.scenario.test.json of the folder (and of the folders under it) on the machine that the scenario names; the machines are the *.portolan.json files
+of the folder, or the *.portolan.md files when a machine has no JSON. Prints the report of every scenario that differs and "N of M scenarios passed".
+The code is 1 when a scenario differs.
+
+  -v, --verbose         one line "ok <file>" for every scenario that passed
+`
+    }
+    if command == "version" {
+        return `portolan version
+
+Prints the version of the program, the versions of Portolan it reads and the format of the compiled machine.
+`
+    }
+    ""
+}

@@ -1,0 +1,101 @@
+// options.nv - the arguments of a command of `portolan`: the files, the options with and without a value, the help flag; what is wrong with them is a text for the standard error.
+module alula.portolan_cli
+
+import std.text
+
+/// Args: what the words after the name of the command say. `error` is empty when they are right; `help` is the flag `--help` or `-h`.
+export type Args {
+    files []str, output str, has_output bool, force bool, lenient bool, no_check bool, verbose bool, language str, has_language bool, help bool, error str
+}
+
+fn args_empty() -> Args {
+    Args { files: []str.new(), output: "", has_output: false, force: false, lenient: false, no_check: false, verbose: false, language: "", has_language: false, help: false, error: "" }
+}
+
+/// The names of the commands.
+export fn command_names() -> []str => ["compile", "render", "convert", "check", "summary", "run", "test", "version"]
+
+/// The options that a command takes (`-o` and `--output` are one option, `-v` and `--verbose` too); the others are "unknown option".
+fn options_of(command str) -> []str {
+    if command == "compile" { return ["-o", "--force", "--lenient", "--no-check"] }
+    if command == "render" { return ["-o", "--force", "--lenient", "--language"] }
+    if command == "convert" { return ["-o", "--force", "--lenient", "--no-check", "--language"] }
+    if command == "check" { return ["--no-check"] }
+    if command == "summary" { return ["--no-check"] }
+    if command == "test" { return ["-v"] }
+    []str.new()
+}
+
+fn first_error(current str, message str) -> str {
+    if current != "" { return current }
+    message
+}
+
+fn is_option(word str) -> bool => word.starts_with("-") && word.byte_len() > 1
+
+/// The arguments of the command `command` (the words after its name).
+export fn parse_args(command str, words []str) -> Args {
+    ro allowed = options_of(command)
+    mut a = args_empty()
+    mut i = 0
+    while i < words.len() {
+        ro w = words[i]
+        ro name = if w.starts_with("--") && w.contains("=") { w[..(w.find("=") ?? 0)] } else { w }
+        if w == "--help" || w == "-h" {
+            a.help = true
+        } else if !is_option(w) {
+            a.files.push(w)
+        } else if name == "--output" || name == "-o" {
+            if !allowed.contains("-o") {
+                a.error = first_error(a.error, "unknown option `${w}`")
+            } else if i + 1 < words.len() && !is_option(words[i + 1]) {
+                a.output = words[i + 1]
+                a.has_output = true
+                i += 1
+            } else {
+                a.error = first_error(a.error, "-o needs a file")
+            }
+        } else if name == "--language" {
+            if !allowed.contains("--language") {
+                a.error = first_error(a.error, "unknown option `${w}`")
+            } else if w.contains("=") {
+                a.language = w[(w.find("=") ?? 0) + 1..]
+                a.has_language = true
+            } else if i + 1 < words.len() && !is_option(words[i + 1]) {
+                a.language = words[i + 1]
+                a.has_language = true
+                i += 1
+            } else {
+                a.error = first_error(a.error, "--language needs ru or en")
+            }
+        } else if (name == "-v" || name == "--verbose") && allowed.contains("-v") {
+            a.verbose = true
+        } else if name == "--force" && allowed.contains("--force") {
+            a.force = true
+        } else if name == "--lenient" && allowed.contains("--lenient") {
+            a.lenient = true
+        } else if name == "--no-check" && allowed.contains("--no-check") {
+            a.no_check = true
+        } else {
+            a.error = first_error(a.error, "unknown option `${w}`")
+        }
+        i += 1
+    }
+    if a.has_language && a.language != "ru" && a.language != "en" {
+        a.error = first_error(a.error, "--language is ru or en, got ${a.language}")
+    }
+    a
+}
+
+/// The error of the number of the files, or "" when it is right: `wanted` is how many files the command takes.
+export fn files_error(command str, a Args, wanted int) -> str {
+    if wanted == 0 { return "" }
+    if command == "run" {
+        if a.files.len() != 2 { return "a machine and a scenario are needed, got ${a.files.len()} file(s)" }
+        return ""
+    }
+    ro what = if command == "test" { "a folder" } else { "a file" }
+    if a.files.len() == 0 { return "${what} is needed" }
+    if a.files.len() > 1 { return "one ${if command == "test" { "folder" } else { "file" }} is expected, got ${a.files.len()}" }
+    ""
+}

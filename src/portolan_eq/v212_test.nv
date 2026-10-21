@@ -1,0 +1,93 @@
+// v212_test.nv - task 125: the program `portolan` and the machines of the product on Portolan 2.12: every machine file says `format: 2.12`, every JSON is what `compile` makes of its file, a file of 2.11
+// is refused with a message that names 2.12, the circles `compile -> render -> compile` and `convert ru -> en -> ru` give an equal tree with the line of connection of the fragment "Pause".
+module alula.portolan_eq
+
+import std.text
+import alula.machine.{NamedText, table_files, machine_files, text_of_file}
+
+fn product_tables() -> []str => ["callee.portolan.md", "caller.portolan.md", "chat.portolan.md", "cycle_check.portolan.md", "dialog.portolan.md", "dialog_steps.portolan.md", "fan.portolan.md", "session_start.portolan.md", "agent_step.portolan.txt"]
+
+fn json_of_table(name str) -> str => name.replace(".portolan.md", ".portolan.json").replace(".portolan.txt", ".portolan.json")
+
+test "v212 table files say 2.12" {
+    for name in product_tables() {
+        ro text = text_of_file(table_files(), name)
+        assert(text.contains("format: 2.12\n"))
+        assert(!text.contains("format: 2.11"))
+        assert(!text.contains("portolan-2.11"))
+    }
+}
+
+test "v212 json files say 2.12" {
+    for f in machine_files() {
+        assert(f.text.contains("\"portolan_version\":\"2.12\"") || f.text.contains("\"portolan_version\": \"2.12\""))
+    }
+}
+
+test "v212 compile makes the json of the product" {
+    for name in product_tables() {
+        ro made = run_with(["compile", "/m/${name}"], one("/m/${name}", text_of_file(table_files(), name)))
+        if made.code != 0 { panic("compile ${name}: ${made.err}") }
+        assert(same_tree(text_of_file(machine_files(), json_of_table(name)), made.out) == "")
+    }
+}
+
+test "v212 check takes every table" {
+    for name in product_tables() {
+        ro made = run_with(["check", "/m/${name}"], one("/m/${name}", text_of_file(table_files(), name)))
+        if made.code != 0 { panic("check ${name}: ${made.err}") }
+        assert(made.code == 0)
+    }
+}
+
+test "v212 compile refuses 2.11" {
+    ro old = text_of_file(table_files(), "dialog.portolan.md").replace("format: 2.12", "format: 2.11")
+    assert(old.contains("format: 2.11"))
+    ro made = run_with(["compile", "/m/dialog.portolan.md"], one("/m/dialog.portolan.md", old))
+    assert(made.code != 0)
+    assert(made.err.contains("2.11"))
+    assert(made.err.contains("format: 2.12"))
+}
+
+test "v212 check refuses 2.11" {
+    ro old = text_of_file(table_files(), "chat.portolan.md").replace("format: 2.12", "format: 2.11")
+    assert(old.contains("format: 2.11"))
+    ro made = run_with(["check", "/m/chat.portolan.md"], one("/m/chat.portolan.md", old))
+    assert(made.code != 0)
+}
+
+test "v212 render writes 2.12" {
+    ro made = run_with(["render", "/m/dialog.portolan.json"], one("/m/dialog.portolan.json", text_of_file(machine_files(), "dialog.portolan.json")))
+    assert(made.code == 0)
+    assert(made.out.contains("- format: 2.12\n"))
+    ro en = run_with(["render", "/m/dialog.portolan.json", "--language", "en"], one("/m/dialog.portolan.json", text_of_file(machine_files(), "dialog.portolan.json")))
+    assert(en.out.contains("- format: 2.12\n"))
+}
+
+test "v212 json of 2.11 is refused" {
+    ro old = text_of_file(machine_files(), "dialog.portolan.json").replace("\"portolan_version\":\"2.12\"", "\"portolan_version\":\"2.11\"")
+    ro made = run_with(["render", "/m/dialog.portolan.json"], one("/m/dialog.portolan.json", old))
+    assert(made.code != 0)
+}
+
+test "v212 the line of the fragment in the written file" {
+    ro made = run_with(["render", "/m/dialog_steps.portolan.json"], one("/m/dialog_steps.portolan.json", text_of_file(machine_files(), "dialog_steps.portolan.json")))
+    assert(made.code == 0)
+    assert(made.out.contains("Пауза(слово_остановки: остановить, код_остановки: \"pause_halt\", вложенные: [шаг_агента], отмена_запросов: механика, вход_заново: ничего, право_записи: \"сессия ничего не пишет\")"))
+    assert(!made.out.contains("### Pause"))
+}
+
+test "v212 the line of the fragment in english" {
+    ro made = run_with(["render", "/m/dialog_steps.portolan.json", "--language", "en"], one("/m/dialog_steps.portolan.json", text_of_file(machine_files(), "dialog_steps.portolan.json")))
+    assert(made.code == 0)
+    assert(made.out.contains("Pause(halt_word: "))
+    assert(made.out.contains("reenter: nothing"))
+}
+
+test "v212 circle of every machine that includes the fragment" {
+    for name in ["dialog_steps.portolan.json", "session_start.portolan.json", "cycle_check.portolan.json", "caller.portolan.json", "fan.portolan.json", "callee.portolan.json", "agent_step.portolan.json", "dialog.portolan.json"] {
+        assert(circle(name, "ru") == "")
+        assert(circle(name, "en") == "")
+        assert(convert_circle(name) == "")
+    }
+}

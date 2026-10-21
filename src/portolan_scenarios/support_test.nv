@@ -1,0 +1,84 @@
+// support_test.nv - helpers of the proofs of `portolan run` and `portolan test` (task 116) on the folder `src/machine/`: the program is run over the memory file system with the arguments, the standard output and the
+// standard error captured.
+module alula.portolan_scenarios
+
+import std.fs.{Path, MemFs, mock_fs, write_text, read_text, create_dir_all}
+import std.text
+import std.io.{IoCapture, mock_io}
+import std.os.{MockOs, mock_os}
+import alula.machine.{NamedText, machine_files, table_files, scenario_files, text_of_file}
+import alula.portolan_cli.{execute}
+
+/// Ran: what a run of the program left.
+type Ran { code int, out str, err str }
+
+fn run_with(argv []str, files []NamedText) -> Ran {
+    mut os = MockOs.new()
+    os.push_arg("portolan")
+    for a in argv { os.push_arg(a) }
+    mut fs = MemFs.new()
+    mut cap = IoCapture.new([]u8.new())
+    mut code = -1
+    with Os = mock_os(os), Fs = mock_fs(fs), Io = mock_io(cap) {
+        for f in files {
+            make_parents(f.name)
+            ro written = write_text(Path.posix(f.name), f.text)
+        }
+        code = execute()
+    }
+    Ran { code, out: cap.out_bytes().to_str_lossy(), err: cap.err_bytes().to_str_lossy() }
+}
+
+// Every folder above the file is there.
+// ORACLE-WORKAROUND(55): the memory file system makes only the LAST folder of `create_dir_all`, so every folder above the file is made one by one; make the path in one call when item 55 is fixed
+fn make_parents(path str) Fs -> () {
+    mut names = []str.new()
+    for part in path.split("/") { names.push(part) }
+    mut acc = ""
+    mut i = 0
+    while i + 1 < names.len() {
+        if names[i] != "" {
+            acc = "${acc}/${names[i]}"
+            ro made = create_dir_all(Path.posix(acc))
+        }
+        i += 1
+    }
+}
+
+fn one(name str, text str) -> []NamedText => [NamedText { name, text }]
+
+
+// The folder `src/machine/` as the program sees it: the machines (JSON and the tables of Portolan) and the scenarios, each in its folder.
+fn machine_folder() -> []NamedText {
+    mut files = []NamedText.new()
+    for f in machine_files() { files.push(NamedText { name: "/machine/machines/${f.name}", text: f.text }) }
+    for f in table_files() { files.push(NamedText { name: "/machine/machines/${f.name}", text: f.text }) }
+    for f in scenario_files() { files.push(NamedText { name: "/machine/scenarios/${f.name}", text: f.text }) }
+    files
+}
+
+// The scenarios of the folder whose names start with `prefix`.
+fn scenarios_with(prefix str) -> []NamedText {
+    mut out = []NamedText.new()
+    for f in scenario_files() {
+        if f.name.starts_with(prefix) { out.push(f) }
+    }
+    out
+}
+
+// `portolan run` of every scenario in `list` on the machine in the file `machine_name`; "" when all are `ok`, else the first that is not and what it printed.
+fn run_all(machine_name str, machine_text str, list []NamedText) -> str {
+    for s in list {
+        ro ran = run_with(["run", "/r/${machine_name}", "/r/${s.name}"], [NamedText { name: "/r/${machine_name}", text: machine_text }, NamedText { name: "/r/${s.name}", text: s.text }])
+        if ran.code != 0 || ran.out != "ok\n" { return "${s.name}: code ${ran.code} ${ran.out} ${ran.err}" }
+    }
+    ""
+}
+
+fn count_lines_with(text str, needle str) -> int {
+    mut n = 0
+    for line in text.split("\n") {
+        if line.contains(needle) { n += 1 }
+    }
+    n
+}

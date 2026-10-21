@@ -1,0 +1,103 @@
+// help_test.nv - task 116: the program `portolan` with no arguments, the help, the version, a command that is not one; the codes 0 and 2.
+module alula.portolan_cli
+
+import std.text
+
+test "pc no arguments help" {
+    ro ran = run0([])
+    assert(ran.code == 0)
+    assert(ran.err == "")
+    assert(ran.out.contains("Usage:"))
+    for command in ["compile", "render", "convert", "check", "summary", "run", "test", "version"] {
+        assert(ran.out.contains("portolan ${command}"))
+    }
+}
+
+test "pc help flag" {
+    ro plain = run0([])
+    for flag in ["--help", "-h", "help"] {
+        ro ran = run0([flag])
+        assert(ran.code == 0)
+        assert(ran.out == plain.out)
+    }
+}
+
+test "pc help first line" {
+    ro ran = run0(["--help"])
+    assert(first_line(ran.out).starts_with("portolan - "))
+}
+
+test "pc help names the formats" {
+    ro out = run0([]).out
+    assert(out.contains(".portolan.md"))
+    assert(out.contains(".portolan.json"))
+    assert(out.contains(".scenario.test.json"))
+    assert(out.contains("Exit codes"))
+}
+
+test "pc version" {
+    ro ran = run0(["version"])
+    assert(ran.code == 0)
+    assert(ran.err == "")
+    assert(ran.out.starts_with("portolan 0.1.0"))
+    assert(ran.out.contains("Portolan 2.12,"))
+    assert(!ran.out.contains("2.11"))
+    assert(ran.out.contains("machine/2"))
+    assert(ran.out.ends_with("\n"))
+}
+
+test "pc version flag" {
+    assert(run0(["--version"]).out == run0(["version"]).out)
+}
+
+test "pc unknown command" {
+    ro ran = run0(["frob"])
+    assert(ran.code == 2)
+    assert(ran.out == "")
+    assert(ran.err.contains("portolan: unknown command `frob`"))
+    assert(ran.err.contains("portolan --help"))
+}
+
+test "pc command help" {
+    for command in ["compile", "render", "convert", "check", "summary", "run", "test", "version"] {
+        ro long = run0([command, "--help"])
+        assert(long.code == 0)
+        assert(long.out.starts_with("portolan ${command}"))
+        assert(run0(["help", command]).out == long.out)
+    }
+}
+
+test "pc command help short flag" {
+    assert(run0(["compile", "-h"]).out == run0(["compile", "--help"]).out)
+}
+
+test "pc compile help options" {
+    ro out = run0(["compile", "--help"]).out
+    for option in ["--lenient", "--no-check", "--force", "-o"] {
+        assert(out.contains(option))
+    }
+}
+
+test "pc render help options" {
+    ro out = run0(["render", "--help"]).out
+    assert(out.contains("--language ru|en"))
+    assert(out.contains("-o"))
+}
+
+test "pc help of unknown command" {
+    ro ran = run0(["help", "frob"])
+    assert(ran.code == 2)
+    assert(ran.err.contains("unknown command `frob`"))
+}
+
+test "pc usage errors share one form" {
+    // every wrong use is code 2 and a line `portolan <command>: <reason>` on the standard error
+    // ORACLE-WORKAROUND(52): the list of lists is bound first: `for argv in [["compile"], ...]` does not compile; loop over the list literal when item 52 is fixed
+    ro wrong_uses = [["compile"], ["render"], ["convert"], ["check"], ["summary"], ["run"], ["test"], ["run", "a"]]
+    for argv in wrong_uses {
+        ro ran = run0(argv)
+        assert(ran.code == 2)
+        assert(ran.out == "")
+        assert(ran.err.starts_with("portolan ${argv[0]}: "))
+    }
+}

@@ -1,0 +1,253 @@
+// support_test.nv - helpers of the tests of the program `portolan` (task 116): the program is run over the memory file system with the arguments, the standard output and
+// the standard error captured; the small machine "Tiny" in Russian and in English; a scenario for it.
+module alula.portolan_cli
+
+import std.fs.{Path, MemFs, mock_fs, write_text, read_text, create_dir_all, try_exists}
+import std.text
+import std.io.{IoCapture, mock_io}
+import std.os.{MockOs, mock_os}
+import alula.machine.{NamedText, standard_registry}
+import alula.machine_text.{translate_checked, translate_report, render_machine, render_summary}
+
+/// Ran: what a run of the program left: the exit code, the standard output, the standard error, the text of the file `back` (empty when it is not there).
+type Ran { code int, out str, err str, back str, present bool }
+
+// Runs `portolan <argv>` over a memory file system that holds `files` (a name is a path from the root, `/work/a.portolan.md`); then reads the file `back_path`.
+fn run_cli(argv []str, files []NamedText, back_path str) -> Ran => run_full(argv, files, back_path, false)
+
+// The same; with `fail_writes` the memory file system refuses every write after the files are put (a disk that is full, a folder that is not there).
+fn run_full(argv []str, files []NamedText, back_path str, fail_writes bool) -> Ran {
+    mut os = MockOs.new()
+    os.push_arg("portolan")
+    for a in argv { os.push_arg(a) }
+    mut fs = MemFs.new()
+    mut cap = IoCapture.new([]u8.new())
+    mut code = -1
+    mut back = ""
+    mut present = false
+    with Os = mock_os(os), Fs = mock_fs(fs), Io = mock_io(cap) {
+        for f in files {
+            make_parents(f.name)
+            ro written = write_text(Path.posix(f.name), f.text)
+        }
+        if fail_writes { fs.fail_writes() }
+        code = execute()
+        if back_path != "" {
+            match try_exists(Path.posix(back_path)) {
+                Ok(there) => { present = there }
+                Err(e) => ()
+            }
+            match read_text(Path.posix(back_path)) {
+                Ok(text) => { back = text }
+                Err(e) => ()
+            }
+        }
+    }
+    Ran { code, out: cap.out_bytes().to_str_lossy(), err: cap.err_bytes().to_str_lossy(), back, present }
+}
+
+// Every folder above the file is there.
+// ORACLE-WORKAROUND(55): the memory file system makes only the LAST folder of `create_dir_all`, so every folder above the file is made one by one; make the path in one call when item 55 is fixed
+fn make_parents(path str) Fs -> () {
+    mut names = []str.new()
+    for part in path.split("/") { names.push(part) }
+    mut acc = ""
+    mut i = 0
+    while i + 1 < names.len() {
+        if names[i] != "" {
+            acc = "${acc}/${names[i]}"
+            ro made = create_dir_all(Path.posix(acc))
+        }
+        i += 1
+    }
+}
+
+fn run0(argv []str) -> Ran => run_cli(argv, []NamedText.new(), "")
+
+fn run_with(argv []str, files []NamedText) -> Ran => run_cli(argv, files, "")
+
+fn file(name str, text str) -> NamedText => { name, text }
+
+fn one(name str, text str) -> []NamedText => [NamedText { name, text }]
+
+fn lines_of_text(text str) -> []str {
+    mut out = []str.new()
+    for line in text.split("\n") { out.push(line) }
+    out
+}
+
+fn first_line(text str) -> str => lines_of_text(text)[0]
+
+fn count_lines_with(text str, needle str) -> int {
+    mut n = 0
+    for line in text.split("\n") {
+        if line.contains(needle) { n += 1 }
+    }
+    n
+}
+
+// The tree of a JSON without the title and the version of the language, as a text, for the comparison of two trees.
+fn no_title(json str) -> str {
+    ro at = json.find("\"title\":\"") ?? -1
+    if at < 0 { return json }
+    ro rest = json[at + 9..]
+    ro end = rest.find("\"") ?? -1
+    "${json[..at - 1]}${rest[end + 1..]}"
+}
+
+// A small machine: a gate that waits for a word, a fork, two ends (Russian, format 2.5).
+fn tiny_ru() -> str => `# Машина: Малая
+
+- machine: Tiny
+- machine_version: 1
+- format: 2.12
+
+## Данные
+
+| имя | тип | начальное | не убывает | пишет |
+|---|---|---|---|---|
+| число_ходов | число≥0 | 0 | да | строки |
+| остановка | "" \| "a" \| "b" | "" | — | строки |
+| попытка_вратаря | число≥0 | 0 | да | механика |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | слова ворот | счётчик |
+|---|---|---|---|---|---|
+| вратарь | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — | разрешить, отказать | попытка_вратаря |
+
+## Состояния
+
+Начальное состояние: ЖДАТЬ
+
+### ЖДАТЬ — обращение (Wait)
+Сторона: вратарь
+Срок тишины: —
+Вход:
+
+| поле запроса | выражение | читает |
+|---|---|---|
+| ход | число_ходов | исполнитель |
+
+| № | Событие | Условие | Действия | Куда |
+|---|---|---|---|---|
+| 1 | слово(разрешить) | — | число_ходов += 1 | РЕШИТЬ |
+| 2 | слово(отказать) | — | остановка = "a" | СТОП |
+
+### РЕШИТЬ — развилка (Decide)
+Вход: число_ходов
+
+| № | Условие | Действия | Куда |
+|---|---|---|---|
+| 1 | число_ходов >= 2 | — | КОНЕЦ |
+| 2 | иначе | — | ЖДАТЬ |
+
+### КОНЕЦ — конец (Finished)
+Вход: число_ходов
+
+### СТОП — конец (Stopped)
+Вход: остановка
+Кроме: остановка ∈ {""}
+
+## Концы
+
+Результат: число
+
+| конец | № | когда | ответ |
+|---|---|---|---|
+| КОНЕЦ | 1 | истина | Ответ(число_ходов) |
+| СТОП | 1 | остановка == "a" | Отказ(КодСбоя.ОстановленоЧеловеком, "stopped") |
+| СТОП | 2 | остановка == "b" | Отказ(КодСбоя.НетРезультата, "b") |
+`
+
+// The same machine written in English (format 2.5, the line `language: en`).
+fn tiny_en() -> str => `# Machine: Малая
+
+- machine: Tiny
+- machine_version: 1
+- format: 2.12
+- language: en
+
+## Data
+
+| name | type | initial | non_decreasing | writes |
+|---|---|---|---|---|
+| turn_count | int>=0 | 0 | yes | rows |
+| stop_reason | "" \| "a" \| "b" | "" | — | rows |
+| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |
+
+## Parties
+
+| name | id | kind | profile | gate_words | counter |
+|---|---|---|---|---|---|
+| gatekeeper | gatekeeper | human or agent by setting attention_executor(result GateOutcome) | — | allow, deny | gatekeeper_attempt |
+
+## States
+
+Initial state: Wait
+
+### Wait — appeal
+Party: gatekeeper
+Idle term: —
+Input:
+
+| request_field | expression | reads |
+|---|---|---|
+| turn | turn_count | executor |
+
+| № | Event | Condition | Actions | To |
+|---|---|---|---|---|
+| 1 | word(allow) | — | turn_count += 1 | Decide |
+| 2 | word(deny) | — | stop_reason = "a" | Stopped |
+
+### Decide — fork
+Input: turn_count
+
+| № | Condition | Actions | To |
+|---|---|---|---|
+| 1 | turn_count >= 2 | — | Finished |
+| 2 | else | — | Wait |
+
+### Finished — end
+Input: turn_count
+
+### Stopped — end
+Input: stop_reason
+Except: stop_reason in {""}
+
+## Ends
+
+Result: int
+
+| end | № | when | response |
+|---|---|---|---|
+| Finished | 1 | true | Response(turn_count) |
+| Stopped | 1 | stop_reason == "a" | Refusal(FailCode.StoppedByHuman, "stopped") |
+| Stopped | 2 | stop_reason == "b" | Refusal(FailCode.NoResult, "b") |
+`
+
+// A scenario for the machine "Tiny": it starts and waits at `Wait`.
+fn tiny_scenario() -> str => `{"format":"scenario/0","machine":"Tiny","name":"tiny starts","start_at":1000,"steps":[{"do":"feed","event":{"kind":"start"},"expect":{"state":"Wait"}}]}`
+
+// The same scenario that expects a wrong state.
+fn tiny_scenario_wrong() -> str => `{"format":"scenario/0","machine":"Tiny","name":"tiny wrong","start_at":1000,"steps":[{"do":"feed","event":{"kind":"start"},"expect":{"state":"Decide"}}]}`
+
+// A scenario of another machine.
+fn other_scenario() -> str => `{"format":"scenario/0","machine":"Other","name":"other","start_at":1000,"steps":[{"do":"feed","event":{"kind":"start"},"expect":{"state":"Wait"}}]}`
+
+// The JSON of the small machine, translated and checked by the functions of the translator.
+fn tiny_json() -> str => translate_checked(tiny_ru(), standard_registry()).json
+
+fn tiny_json_en() -> str => translate_checked(tiny_en(), standard_registry()).json
+
+fn tiny_file() -> []NamedText => one("/work/tiny.portolan.md", tiny_ru())
+
+fn json_file() -> []NamedText => one("/work/tiny.portolan.json", tiny_json())
+
+// A fork that leads to a state that is not there.
+fn broken_ru() -> str => tiny_ru().replace("| 2 | иначе | — | ЖДАТЬ |", "| 2 | иначе | — | НЕТ |")
+
+// A paragraph that starts with the word of a key, before a heading, in a file of the format 2.7: a warning (P-1), not an error.
+fn with_prose(text str) -> str => text.replace("- format: 2.12\n", "- format: 2.12\n").replace("\n## Данные\n", "\nСторона без пояснений\n\n## Данные\n")
+
+fn noted_ru() -> str => with_prose(tiny_ru())

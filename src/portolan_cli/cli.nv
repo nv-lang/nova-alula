@@ -1,0 +1,224 @@
+// cli.nv - the program `portolan` over its effects: the arguments (`Os`), the files (`Fs`), the standard output and error (`Io`). `execute` returns the exit code; the entry point
+// `src/portolan.nv` ends the process with it, and the tests run it over the memory handlers (`mock_os`, `mock_fs`, `mock_io`).
+//   0 success; 1 errors in a file (or a scenario that differs); 2 a wrong command or arguments, a file that cannot be read or written.
+module alula.portolan_cli
+
+// ORACLE-WORKAROUND(32): std.fs comes first: with the imports of the modules of the product before it, `.join` on a `Vec` resolves to `Path.join` (E_RECV_METHOD_MISMATCH); order the imports freely when item 32 is fixed
+import std.fs.{Fs, Path, read, write_text, try_exists, read_dir}
+import std.os.{args}
+import std.io.{stderr, stdout}
+import std.text
+import alula.machine.{NamedText}
+
+fn put_out(text str) Io -> () {
+    if text == "" { return }
+    mut o = stdout()
+    ro written = o.write(text.bytes())
+}
+
+fn put_err(text str) Io -> () {
+    if text == "" { return }
+    mut e = stderr()
+    ro written = e.write(text.bytes())
+}
+
+// A usage error: `portolan <command>: <reason>` on the standard error, the code 2.
+fn usage_error(command str, reason str) Io -> int {
+    put_err("portolan ${command}: ${reason}\n")
+    2
+}
+
+fn path_of(name str) -> Path => Path.from_bytes(name.bytes())
+
+// The text of a file; `None` when it cannot be read.
+fn read_file(name str) Fs -> Option[str] {
+    match read(path_of(name)) {
+        Ok(bytes) => Some(bytes.to_str_lossy())
+        Err(e) => None
+    }
+}
+
+// Does the file exist?
+fn file_exists(name str) Fs -> bool {
+    match try_exists(path_of(name)) {
+        Ok(there) => there
+        Err(e) => false
+    }
+}
+
+// The folder without the sign at its end (`dir/` is `dir`); the root stays as it is.
+fn trimmed_dir(dir str) -> str {
+    mut d = dir
+    while d.byte_len() > 1 && (d.ends_with("/") || d.ends_with("\\")) { d = d[..d.byte_len() - 1] }
+    d
+}
+
+// ORACLE-WORKAROUND(53): the function is not named `collect_names`: the registry of the machines has a private one without `Fs`, and under --strict-effects the call there is checked against this one; use the name when item 53 is fixed
+// The files of a folder that `portolan test` reads (scenarios and machines), with the folders under it, in the order of their names; false when the folder cannot be read.
+fn scan_folder(dir str, mut names []str) Fs -> bool {
+    match read_dir(path_of(dir)) {
+        Err(e) => false
+        Ok(entries) => {
+            mut here = []str.new()
+            for entry in entries {
+                match entry.name_str() {
+                    Some(name) => here.push(name)
+                    None => ()
+                }
+            }
+            here.sort()
+            for name in here {
+                ro full = "${dir}/${name}"
+                if is_test_file(name) {
+                    names.push(full)
+                } else if !name.starts_with(".") {
+                    // a folder is read; anything else (a file, a link) fails to be read as a folder and is skipped
+                    ro ignored = scan_folder(full, names)
+                }
+            }
+            true
+        }
+    }
+}
+
+fn folder_files(dir str) Fs -> Option[[]NamedText] {
+    mut names = []str.new()
+    if !scan_folder(dir, names) { return None }
+    mut files = []NamedText.new()
+    for name in names {
+        match read_file(name) {
+            Some(text) => files.push(NamedText { name, text })
+            None => ()
+        }
+    }
+    Some(files)
+}
+
+// What the command gave: the errors go to the standard error; the product goes to the file of `-o` (the code 2 when it cannot be written) or to the standard output.
+fn deliver(made CmdResult, command str, a Args) Fs Io -> int {
+    put_err(made.err)
+    if a.has_output && made.out != "" {
+        match write_text(path_of(a.output), made.out) {
+            Ok(written) => return made.code
+            Err(e) => return usage_error(command, "cannot write ${a.output}")
+        }
+    }
+    put_out(made.out)
+    made.code
+}
+
+// Before anything is done: the file of `-o` must not be there, unless `--force`.
+fn output_error(a Args) Fs -> str {
+    if a.has_output && !a.force && file_exists(a.output) {
+        return "${a.output} already exists (use --force to overwrite)"
+    }
+    ""
+}
+
+fn run_file_command(command str, a Args) Fs Io -> int {
+    ro file = a.files[0]
+    ro language = if a.has_language { a.language } else { "ru" }
+    if command == "convert" && !a.has_language { return usage_error(command, "--language ru|en is needed") }
+    ro blocked = output_error(a)
+    if blocked != "" { return usage_error(command, blocked) }
+    ro text = match read_file(file) {
+        Some(t) => t
+        None => return usage_error(command, "cannot read ${file}")
+    }
+    if command == "compile" { return deliver(compile_command(text, file, a.no_check, a.lenient), command, a) }
+    if command == "render" { return deliver(render_command(text, file, language, a.lenient), command, a) }
+    if command == "convert" { return deliver(convert_command(text, file, language, a.no_check, a.lenient), command, a) }
+    if command == "check" { return deliver(check_command(text, file, a.no_check), command, a) }
+    deliver(summary_command(text, file, a.no_check), command, a)
+}
+
+fn run_scenario_command(a Args) Fs Io -> int {
+    ro machine_file = a.files[0]
+    ro scenario_file = a.files[1]
+    ro machine_text = match read_file(machine_file) {
+        Some(t) => t
+        None => return usage_error("run", "cannot read ${machine_file}")
+    }
+    ro scenario_text = match read_file(scenario_file) {
+        Some(t) => t
+        None => return usage_error("run", "cannot read ${scenario_file}")
+    }
+    deliver(run_command(machine_text, machine_file, scenario_text, scenario_file), "run", a)
+}
+
+fn run_folder_command(a Args) Fs Io -> int {
+    ro dir = trimmed_dir(a.files[0])
+    if !file_exists(dir) { return usage_error("test", "cannot read the folder ${dir}") }
+    match folder_files(dir) {
+        None => usage_error("test", "cannot read the folder ${dir}")
+        Some(files) => deliver(test_command(files, dir, a.verbose), "test", a)
+    }
+}
+
+fn command_function(command str, a Args) Fs Io -> int {
+    if command == "version" {
+        put_out(version_text())
+        return 0
+    }
+    if command == "run" { return run_scenario_command(a) }
+    if command == "test" { return run_folder_command(a) }
+    run_file_command(command, a)
+}
+
+fn is_command(word str) -> bool => command_names().contains(word)
+
+// The words of the command line from the position `from`.
+fn rest_of(argv []str, from int) -> []str {
+    mut rest = []str.new()
+    mut i = from
+    while i < argv.len() {
+        rest.push(argv[i])
+        i += 1
+    }
+    rest
+}
+
+/// The whole program: the arguments of the process, the work, the exit code. No arguments is the help and the code 0 (`nova test src` runs every program of the folder with none).
+export fn execute() Os Fs Io -> int {
+    ro argv = args()
+    if argv.len() < 2 {
+        put_out(help_text())
+        return 0
+    }
+    ro first = argv[1]
+    if first == "--help" || first == "-h" {
+        put_out(help_text())
+        return 0
+    }
+    if first == "--version" {
+        put_out(version_text())
+        return 0
+    }
+    if first == "help" {
+        if argv.len() < 3 {
+            put_out(help_text())
+            return 0
+        }
+        ro wanted = argv[2]
+        if !is_command(wanted) {
+            put_err("portolan: unknown command `${wanted}` (try `portolan --help`)\n")
+            return 2
+        }
+        put_out(command_help(wanted))
+        return 0
+    }
+    if !is_command(first) {
+        put_err("portolan: unknown command `${first}` (try `portolan --help`)\n")
+        return 2
+    }
+    ro a = parse_args(first, rest_of(argv, 2))
+    if a.help {
+        put_out(command_help(first))
+        return 0
+    }
+    if a.error != "" { return usage_error(first, a.error) }
+    ro wanted_files = if first == "version" { 0 } else { 1 }
+    ro files_problem = files_error(first, a, wanted_files)
+    if files_problem != "" { return usage_error(first, files_problem) }
+    command_function(first, a)
+}

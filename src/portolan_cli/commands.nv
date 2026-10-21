@@ -1,0 +1,334 @@
+// commands.nv - the commands of `portolan` on texts: a command gets the text of its file (the files are read by `cli.nv`) and gives an `CmdResult`: what goes to the
+// standard output, what goes to the standard error, the exit code. Nothing here touches a file, so every command is the same function in a test and in the program.
+module alula.portolan_cli
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine.{NamedText, standard_registry}
+import alula.machine_table.{load_machine, parse_machine, issue_text}
+import alula.machine_text.{translate_report, translate_checked, TranslateReport, error_text, render_summary, render_machine}
+import alula.machine_run.{PortolanMachine, NestedRegistry, check_registry, run_nested_scenario, load_portolan_machine, parse_scenario, scenario_problem, run_scenario, run_ok, report_text}
+import alula.machine_table.{MachineParty}
+
+// ORACLE-WORKAROUND(9): the type is not named `Outcome`: a user type named like a prelude type breaks the build of the program (CC-FAIL "no member named tag in struct Nova_Outcome"); name it `Outcome` when item 9 is fixed
+/// CmdResult: the result of a command. `out` is the product (it goes to the standard output or to the file of `-o`), `err` the lines of the standard error, `code` the exit code
+/// (0 success, 1 errors in a file, 2 wrong use).
+export type CmdResult { out str, err str, code int }
+
+fn done(out str, err str, code int) -> CmdResult => { out, err, code }
+
+/// The lines as one text of the standard error: every line ends with a newline; no lines is no text.
+fn lines_text(lines []str) -> str {
+    if lines.len() == 0 { return "" }
+    "${lines.join("\n")}\n"
+}
+
+/// The text of a file of Portolan as the translator reads it: the lines end with a newline (a file saved with CR LF is the same file).
+fn portolan_text(text str) -> str => text.replace("\r\n", "\n")
+
+/// Is the file the compiled JSON? The name says so (`*.portolan.json`, or any `*.json`); every other file is a text of Portolan.
+export fn is_json_file(file str) -> bool => file.ends_with(".json")
+
+fn translated(text str, no_check bool) -> TranslateReport {
+    if no_check { return translate_report(portolan_text(text)) }
+    translate_checked(portolan_text(text), standard_registry())
+}
+
+// The errors and then the warnings of a report, each `file:line:column: kind: message` and the quoted line.
+fn report_lines(report TranslateReport, file str) -> []str {
+    mut lines = []str.new()
+    for e in report.errors { lines.push(error_text(e, file)) }
+    for w in report.warnings { lines.push(error_text(w, file)) }
+    lines
+}
+
+// The notes of the reverse generator, in the form of an error of a JSON file (it has no lines).
+fn note_lines(notes []str, file str) -> []str {
+    mut lines = []str.new()
+    for n in notes { lines.push("${file}:1:1: render: ${n}") }
+    lines
+}
+
+// ---- compile -----------------------------------------------------------------------------------------------------------------------
+
+/// `portolan compile`: Portolan -> the JSON `machine/2`. With errors there is no JSON unless `lenient`; the code is 1 either way.
+export fn compile_command(text str, file str, no_check bool, lenient bool) -> CmdResult {
+    ro report = translated(text, no_check)
+    mut lines = report_lines(report, file)
+    if report.errors.len() == 0 { return done("${report.json}\n", lines_text(lines), 0) }
+    lines.push("portolan compile: ${report.errors.len()} errors in ${file} (${report.rows_noted} of ${report.rows_total} rows with notes)")
+    ro out = if lenient { "${report.json}\n" } else { "" }
+    done(out, lines_text(lines), 1)
+}
+
+// ---- render ------------------------------------------------------------------------------------------------------------------------
+
+/// `portolan render`: the JSON `machine/2` -> a file of Portolan in the language. What the generator cannot say is a note (code 1); with `lenient` the text is printed all the same.
+export fn render_command(text str, file str, language str, lenient bool) -> CmdResult {
+    ro made = render_machine(text, language)
+    if made.notes.len() == 0 { return done(made.text, "", 0) }
+    ro out = if lenient { made.text } else { "" }
+    done(out, lines_text(note_lines(made.notes, file)), 1)
+}
+
+// ---- convert -----------------------------------------------------------------------------------------------------------------------
+
+/// `portolan convert`: a file of Portolan -> the file in the language, through the JSON. The comments do not go through the JSON; the program says so.
+export fn convert_command(text str, file str, language str, no_check bool, lenient bool) -> CmdResult {
+    ro report = translated(text, no_check)
+    mut lines = report_lines(report, file)
+    if report.errors.len() > 0 && !lenient {
+        lines.push("portolan convert: ${report.errors.len()} errors in ${file} (${report.rows_noted} of ${report.rows_total} rows with notes)")
+        return done("", lines_text(lines), 1)
+    }
+    ro made = render_machine(report.json, language)
+    for l in note_lines(made.notes, file) { lines.push(l) }
+    lines.push("portolan: note: the comments of ${file} (paragraphs of free text, lines starting with > or //) are not carried over")
+    ro failed = report.errors.len() > 0 || made.notes.len() > 0
+    ro out = if made.notes.len() == 0 || lenient { made.text } else { "" }
+    done(out, lines_text(lines), if failed { 1 } else { 0 })
+}
+
+// ---- check -------------------------------------------------------------------------------------------------------------------------
+
+fn ok_line(warnings int) -> str {
+    if warnings == 0 { return "ok\n" }
+    if warnings == 1 { return "ok (1 warning)\n" }
+    "ok (${warnings} warnings)\n"
+}
+
+// The issues of the decoder and of the checks of a JSON file, each as an error at 1:1.
+fn json_issue_lines(text str, file str, no_check bool) -> []str {
+    mut lines = []str.new()
+    if no_check {
+        match parse_machine(text) {
+            Ok(def) => ()
+            Err(issue) => lines.push("${file}:1:1: check: ${issue_text(issue)}")
+        }
+        return lines
+    }
+    match load_machine(text, standard_registry()) {
+        Ok(def) => ()
+        Err(issues) => {
+            for issue in issues { lines.push("${file}:1:1: check: ${issue_text(issue)}") }
+        }
+    }
+    lines
+}
+
+/// `portolan check`: a file of Portolan (the translation with the checks of the table) or a JSON `machine/2` (the decoding with the checks).
+export fn check_command(text str, file str, no_check bool) -> CmdResult {
+    if is_json_file(file) {
+        ro problems = json_issue_lines(text, file, no_check)
+        if problems.len() == 0 { return done(ok_line(0), "", 0) }
+        return done("", lines_text(problems), 1)
+    }
+    ro report = translated(text, no_check)
+    ro lines = report_lines(report, file)
+    if report.errors.len() > 0 { return done("", lines_text(lines), 1) }
+    done(ok_line(report.warnings.len()), lines_text(lines), 0)
+}
+
+// ---- summary -----------------------------------------------------------------------------------------------------------------------
+
+/// `portolan summary`: the summary of a machine (the states, the rows, the actions, the data, the parties).
+export fn summary_command(text str, file str, no_check bool) -> CmdResult {
+    if is_json_file(file) {
+        ro summary = render_summary(text)
+        if summary.starts_with("not a machine") { return done("", "${file}:1:1: summary: ${summary}\n", 1) }
+        return done("${summary}\n", "", 0)
+    }
+    ro report = translated(text, no_check)
+    ro lines = report_lines(report, file)
+    done("${render_summary(report.json)}\n", lines_text(lines), if report.errors.len() > 0 { 1 } else { 0 })
+}
+
+// ---- run ---------------------------------------------------------------------------------------------------------------------------
+
+/// The machine of a file of Portolan or of a JSON file, made ready to run; the error is the lines of the errors of the file.
+export fn machine_of_file(text str, file str) -> Result[PortolanMachine, str] {
+    if is_json_file(file) {
+        match load_portolan_machine(text, standard_registry()) {
+            Ok(m) => return Ok(m)
+            Err(e) => return Err("${file}:1:1: check: ${e}")
+        }
+    }
+    ro report = translate_checked(portolan_text(text), standard_registry())
+    if report.errors.len() > 0 {
+        mut lines = []str.new()
+        for e in report.errors { lines.push(error_text(e, file)) }
+        return Err(lines.join("\n"))
+    }
+    match load_portolan_machine(report.json, standard_registry()) {
+        Ok(m) => Ok(m)
+        Err(e) => Err("${file}:1:1: check: ${e}")
+    }
+}
+
+/// `portolan run`: one scenario on one machine. `ok`, or the report of the differences with the code 1.
+export fn run_command(machine_text str, machine_file str, scenario_text str, scenario_file str) -> CmdResult {
+    match machine_of_file(machine_text, machine_file) {
+        Err(lines) => done("", "${lines}\n", 1)
+        Ok(machine) => {
+            match parse_scenario(scenario_text) {
+                Err(e) => done("", "${scenario_file}:1:1: scenario: ${e.path}: ${e.message}\n", 1)
+                Ok(sc) => {
+                    if sc.machine != machine.def.name {
+                        return done("", "${scenario_file}:1:1: scenario: the scenario is for machine ${sc.machine}, the machine of ${machine_file} is ${machine.def.name}\n", 1)
+                    }
+                    if has_nested(machine) && !sc.standalone {
+                        return done("", "${scenario_file}:1:1: scenario: the machine ${machine.def.name} calls nested machines: they are found in a folder, use `portolan test <folder>`\n", 1)
+                    }
+                    ro problem = scenario_problem(machine, sc)
+                    if problem != "" { return done("", "${scenario_file}:1:1: scenario: ${problem}\n", 1) }
+                    ro run = run_scenario(machine, sc)
+                    if run_ok(run) { return done("ok\n", "", 0) }
+                    done("${report_text(run)}\n", "", 1)
+                }
+            }
+        }
+    }
+}
+
+// ---- test --------------------------------------------------------------------------------------------------------------------------
+
+fn is_scenario_name(name str) -> bool => name.ends_with(".scenario.test.json")
+
+fn is_json_machine_name(name str) -> bool => name.ends_with(".portolan.json")
+
+fn is_text_machine_name(name str) -> bool => name.ends_with(".portolan.md") || name.ends_with(".portolan.txt")
+
+/// Is the file one that `portolan test` reads: a scenario or a machine?
+export fn is_test_file(name str) -> bool => is_scenario_name(name) || is_json_machine_name(name) || is_text_machine_name(name)
+
+/// A machine found in the folder: the file it came from and the machine.
+type FoundMachine { file str, machine PortolanMachine }
+
+// Does the machine call nested machines (a party of the kind `machine`)?
+fn has_nested(machine PortolanMachine) -> bool {
+    for p in machine.def.parties {
+        if p.kind == MachineParty { return true }
+    }
+    false
+}
+
+// The registry of the machines of the folder for a caller: every machine under its own name (the name of a party of the kind `machine` is the name of the machine it calls).
+fn registry_of(found []FoundMachine) -> NestedRegistry {
+    mut reg = NestedRegistry.empty()
+    for f in found { reg = reg.add(f.machine.def.name, f.machine) }
+    reg
+}
+
+// The names of the machines that scenarios run together with their nested machines: a standalone scenario (task 122) plays the nested parties itself and needs none.
+fn nested_run_names(scenarios []NamedText) -> []str {
+    mut out = []str.new()
+    for s in scenarios {
+        match parse_scenario(s.text) {
+            Ok(sc) => {
+                if !sc.standalone && !out.contains(sc.machine) { out.push(sc.machine) }
+            }
+            Err(e) => ()
+        }
+    }
+    out
+}
+
+// The names of nested machines that the found machines named in `wanted` call and that are not found yet.
+fn nested_missing(found []FoundMachine, wanted []str) -> []str {
+    mut out = []str.new()
+    for f in found {
+        if !wanted.contains(f.machine.def.name) { continue }
+        for p in f.machine.def.parties {
+            if p.kind == MachineParty && machine_named(found, p.nested).is_none() && !out.contains(p.nested) { out.push(p.nested) }
+        }
+    }
+    out
+}
+
+fn machine_named(found []FoundMachine, name str) -> Option[PortolanMachine] {
+    for f in found {
+        if f.machine.def.name == name { return Some(f.machine) }
+    }
+    None
+}
+
+// The names of the machines that the scenarios of the files ask for and that are not in `found`; the scenarios that do not parse are not asked about.
+fn missing_names(found []FoundMachine, scenarios []NamedText) -> []str {
+    mut out = []str.new()
+    for s in scenarios {
+        match parse_scenario(s.text) {
+            Ok(sc) => {
+                if machine_named(found, sc.machine).is_none() && !out.contains(sc.machine) { out.push(sc.machine) }
+            }
+            Err(e) => ()
+        }
+    }
+    out
+}
+
+/// `portolan test`: every scenario of `files` (the files of the folder `dir`, scenarios and machines, in the order of their names) on the machine of the folder that it names. The
+/// machines are the `*.portolan.json` files; a machine that has no JSON file is read from `*.portolan.md` (`*.portolan.txt`) when a scenario asks for it.
+export fn test_command(files []NamedText, dir str, verbose bool) -> CmdResult {
+    mut scenarios = []NamedText.new()
+    for f in files {
+        if is_scenario_name(f.name) { scenarios.push(f) }
+    }
+    if scenarios.len() == 0 { return done("", "portolan test: no scenarios in ${dir}\n", 2) }
+    mut found = []FoundMachine.new()
+    mut errors = []str.new()
+    for f in files {
+        if is_json_machine_name(f.name) {
+            match machine_of_file(f.text, f.name) {
+                Ok(m) => found.push(FoundMachine { file: f.name, machine: m })
+                Err(lines) => errors.push(lines)
+            }
+        }
+    }
+    // the machines written in Portolan are translated only when a scenario names a machine that no JSON file has (a translation costs a second for a big machine)
+    ro wanted = nested_run_names(scenarios)
+    if missing_names(found, scenarios).len() > 0 || nested_missing(found, wanted).len() > 0 {
+        for f in files {
+            if is_text_machine_name(f.name) && (missing_names(found, scenarios).len() > 0 || nested_missing(found, wanted).len() > 0) {
+                match machine_of_file(f.text, f.name) {
+                    Ok(m) => {
+                        if machine_named(found, m.def.name).is_none() { found.push(FoundMachine { file: f.name, machine: m }) }
+                    }
+                    Err(lines) => errors.push(lines)
+                }
+            }
+        }
+    }
+    mut out = []str.new()
+    mut passed = 0
+    for s in scenarios {
+        match parse_scenario(s.text) {
+            Err(e) => out.push("FAIL ${s.name}\n  ${s.name}:1:1: scenario: ${e.path}: ${e.message}")
+            Ok(sc) => {
+                match machine_named(found, sc.machine) {
+                    None => out.push("FAIL ${s.name}\n  no machine ${sc.machine} in ${dir}")
+                    Some(machine) => {
+                        ro problem = scenario_problem(machine, sc)
+                        // a standalone scenario plays the nested parties itself (task 122): no pair to check
+                        ro nested_run = has_nested(machine) && !sc.standalone
+                        ro pair_problems = if nested_run { check_registry(machine, registry_of(found)) } else { []str.new() }
+                        if problem != "" {
+                            out.push("FAIL ${s.name}\n  ${s.name}:1:1: scenario: ${problem}")
+                        } else if pair_problems.len() > 0 {
+                            out.push("FAIL ${s.name}\n  ${s.name}:1:1: scenario: the nested machines do not fit: ${pair_problems.join(" | ")}")
+                        } else {
+                            ro run = if nested_run { run_nested_scenario(machine, registry_of(found), sc) } else { run_scenario(machine, sc) }
+                            if run_ok(run) {
+                                passed += 1
+                                if verbose { out.push("ok ${s.name}") }
+                            } else {
+                                out.push("FAIL ${s.name}\n${report_text(run)}")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out.push("${passed} of ${scenarios.len()} scenarios passed")
+    done(lines_text(out), lines_text(errors), if passed == scenarios.len() { 0 } else { 1 })
+}

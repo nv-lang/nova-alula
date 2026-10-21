@@ -1,0 +1,59 @@
+// nested_test.nv - task 119: the circles of the program `portolan` on the machines of the nested machines (the parent `caller`, the callee, the set parent `fan`, the chat session `dialog_steps`): `compile` -> `render` -> `compile`
+// gives an equal JSON in Russian and in English, `convert` ru -> en -> ru gives an equal JSON, and `check` passes them (the words of the party kind `machine`, `Signal`, `State`, the profile, `Предел запросов`).
+module alula.portolan_eq
+
+import std.text
+import alula.machine.{machine_files, table_files, text_of_file}
+
+fn probe_names() -> []str => ["callee.portolan.json", "caller.portolan.json", "dialog_steps.portolan.json", "fan.portolan.json"]
+
+test "pn circle callee ru" { assert(circle("callee.portolan.json", "ru") == "") }
+
+test "pn circle callee en" { assert(circle("callee.portolan.json", "en") == "") }
+
+test "pn circle caller ru" { assert(circle("caller.portolan.json", "ru") == "") }
+
+test "pn circle caller en" { assert(circle("caller.portolan.json", "en") == "") }
+
+test "pn circle fan ru" { assert(circle("fan.portolan.json", "ru") == "") }
+
+test "pn circle fan en" { assert(circle("fan.portolan.json", "en") == "") }
+
+test "pn circle dialog steps ru" { assert(circle("dialog_steps.portolan.json", "ru") == "") }
+
+test "pn circle dialog steps en" { assert(circle("dialog_steps.portolan.json", "en") == "") }
+
+test "pn convert callee" { assert(convert_circle("callee.portolan.json") == "") }
+
+test "pn convert caller" { assert(convert_circle("caller.portolan.json") == "") }
+
+test "pn convert fan" { assert(convert_circle("fan.portolan.json") == "") }
+
+test "pn convert dialog steps" { assert(convert_circle("dialog_steps.portolan.json") == "") }
+
+test "pn the tables compile to the json of the product" {
+    // the file of Portolan of a machine and its JSON in src/machine/machines/ are the same tree
+    for name in probe_names() {
+        ro base = name.replace(".portolan.json", "")
+        ro ran = run_with(["compile", "/m/${base}.portolan.md"], one("/m/${base}.portolan.md", text_of_file(table_files(), "${base}.portolan.md")))
+        assert(ran.err == "")
+        assert(ran.code == 0)
+        assert(same_tree(machine_json(name), ran.out) == "")
+    }
+}
+
+test "pn check the probe machines" {
+    for name in probe_names() {
+        ro ran = run_with(["check", "/m/${name}"], one("/m/${name}", machine_json(name)))
+        assert(ran.err == "")
+        assert(ran.code == 0)
+        assert(ran.out == "ok\n")
+    }
+}
+
+test "pn the machines are the files of the product" {
+    ro names = probe_names()
+    assert(names.len() == 4)
+    assert(machine_files().len() == 15)
+    for name in names { assert(machine_json(name).byte_len() > 100) }
+}

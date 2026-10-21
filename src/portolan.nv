@@ -1,0 +1,18 @@
+// portolan.nv - the program `portolan` (task 116): compile Portolan to the JSON `machine/2` and back, convert a file from one language to the other, check it, run its scenarios.
+//   portolan compile <file.portolan.md> [-o <file.portolan.json>] [--lenient] [--no-check] [--force]
+//   portolan render <file.portolan.json> [--language ru|en] [-o <file.portolan.md>] [--lenient] [--force]
+//   portolan convert <file.portolan.md> --language ru|en [-o <file>] [--no-check] [--lenient] [--force]
+//   portolan check <file> | summary <file> | run <machine> <scenario> | test <folder> | version | --help
+// The commands are in `src/portolan_cli/` (README.md there); this file only ends the process with the exit code. Exit codes: 0 success, 1 errors in a file, 2 wrong use.
+// Build: nova build src/portolan.nv -o target/portolan.exe   (scripts/build-portolan.ps1)
+module alula.portolan
+
+// ORACLE-WORKAROUND(32): std.fs comes first: with the imports of the modules of the product before it, `.join` on a `Vec` resolves to `Path.join` (E_RECV_METHOD_MISMATCH); order the imports freely when item 32 is fixed
+import std.fs.{Fs}
+import std.os.{exit_process}
+import alula.portolan_cli.{execute}
+
+fn main() Os Fs Io -> () {
+    ro code = execute()
+    if code != 0 { exit_process(code) }
+}
