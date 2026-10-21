@@ -1,0 +1,215 @@
+// sample_test.nv - the sample of the methodology (state-machine-agent-step.portolan.md, format 2.7, copied as it is into `cases/`) goes through the translator without a hand edit: no errors,
+// the checks of the table pass, the paragraphs are skipped, the expansion of the fragment is skipped, the JSON is the JSON of the product table but for the keys of the project.
+module alula.machine_agent
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine.{standard_registry, agent_step_table_text, agent_step_machine_text, is_table_name}
+import alula.machine_table.{load_machine}
+import alula.machine_text.{translate_checked, TranslateReport, error_text, render_summary}
+
+fn lf(text str) -> str => text.replace("\r\n", "\n")
+
+fn sample() -> str => lf(methodology_text())
+
+fn sample_report() -> TranslateReport => translate_checked(sample(), standard_registry())
+
+fn sample_json() -> str => sample_report().json
+
+fn report_of(text str) -> TranslateReport => translate_checked(text, standard_registry())
+
+fn lines_of_errors(report TranslateReport) -> []str {
+    mut out = []str.new()
+    for e in report.errors { out.push("${e.line}:${e.col} ${e.kind} ${e.message}") }
+    out
+}
+
+fn says_error(report TranslateReport, needle str) -> bool {
+    for line in lines_of_errors(report) {
+        if line.contains(needle) { return true }
+    }
+    false
+}
+
+fn line_number(text str, start str) -> int {
+    mut no = 0
+    for line in text.split("\n") {
+        no += 1
+        if line.starts_with(start) { return no }
+    }
+    -1
+}
+
+test "sm clean" {
+    ro report = sample_report()
+    if report.errors.len() > 0 { panic(error_text(report.errors[0], "sample")) }
+    assert(report.errors.len() == 0)
+    assert(report.rows_noted == 0)
+    assert(report.rows_total == 127)
+}
+
+test "sm warnings listed" {
+    ro report = sample_report()
+    assert(report.warnings.len() == 0)
+    assert(sample().contains("Начальное состояние: СТАРТ"))
+}
+
+test "sm loads" {
+    match load_machine(sample_json(), standard_registry()) {
+        Ok(def) => {
+            assert(def.name == "agent_step")
+            assert(def.version == "portolan-2.12")
+            assert(def.states.len() == 14)
+            assert(def.common.len() == 6)
+            assert(def.parties.len() == 3)
+            assert(def.data.len() == 21)
+            assert(def.definitions.len() == 16)
+            assert(def.end_rows.len() == 13)
+            assert(def.primitives.len() == 3)
+            assert(def.request_limit.len() == 1)
+            assert(def.params.len() == 2)
+        }
+        Err(issues) => panic("the sample does not load: ${issues[0].path}: ${issues[0].message}")
+    }
+}
+
+test "sm summary" {
+    ro text = render_summary(sample_json())
+    assert(text.starts_with("machine agent_step (version portolan-2.12): 14 states, 47 rows, "))
+    assert(text.contains("  AgentTurn (appeal): 9 rows, 18 actions"))
+    assert(text.contains("common events: 6 rows"))
+    assert(text.contains("ends: 13 rows"))
+}
+
+test "sm header 27" {
+    assert(sample_json().starts_with("{\"format\":\"machine/2\",\"portolan_version\":\"2.12\",\"machine\":\"agent_step\",\"version\":\"portolan-2.12\""))
+    assert(sample().contains("- format: 2.12"))
+}
+
+test "sm expansion skipped" {
+    ro at = sample().find("## Раскрытие фрагмента «Пауза»") ?? -1
+    assert(at > 0)
+    ro shorter = sample()[..at]
+    assert(!shorter.contains("## Раскрытие"))
+    ro report = report_of(shorter)
+    assert(report.errors.len() == 0)
+    assert(report.json == sample_json())
+    ro junk = report_of("${shorter}## Раскрытие фрагмента «Пауза»\n\n@@@ {{{ \"\n| a |\n")
+    assert(junk.errors.len() == 0)
+    assert(junk.json == sample_json())
+}
+
+test "sm no prose needed" {
+    ro at = sample().find("## Раскрытие фрагмента «Пауза»") ?? -1
+    mut kept = []str.new()
+    mut after_blank = true
+    mut in_code = false
+    for line in sample()[..at].split("\n") {
+        if line.starts_with("```") {
+            in_code = !in_code
+            kept.push(line)
+            after_blank = false
+            continue
+        }
+        ro paragraph = !in_code && after_blank && line != "" && !line.starts_with("#") && !line.starts_with("|") && !line.starts_with("- ") && !line.starts_with("Начальное состояние")
+        if paragraph { continue }
+        kept.push(line)
+        after_blank = line == ""
+    }
+    ro stripped = kept.join("\n")
+    assert(stripped.byte_len() < sample().byte_len() - 3000)
+    ro report = report_of(stripped)
+    if report.errors.len() > 0 { panic(error_text(report.errors[0], "stripped")) }
+    assert(report.errors.len() == 0)
+    assert(report.json == sample_json())
+}
+
+test "sm second state pause" {
+    ro heading = "### ПАУЗА — обращение (Pause)\n- Сторона: усиленный\n- Срок тишины: —\n- Вход: нет\n\n"
+    ro text = sample().replace("### КОНЕЦ — конец (End)", "${heading}### КОНЕЦ — конец (End)")
+    assert(text != sample())
+    ro report = report_of(text)
+    assert(report.errors.len() >= 1)
+    assert(says_error(report, "состояние `ПАУЗА` объявлено дважды"))
+    ro at = line_number(text, "### ПАУЗА — обращение (Pause)")
+    assert(lines_of_errors(report)[0].starts_with("${at}:5 name "))
+}
+
+test "sm connection only" {
+    ro ticks = "```"
+    ro text = sample().replace("право_записи: \"файлы, которые правит агент; пауза их права не трогает\")\n${ticks}\n", "право_записи: \"файлы, которые правит агент; пауза их права не трогает\")\n${ticks}\n\nСправка о подключении.\n")
+    assert(text != sample())
+    ro report = report_of(text)
+    assert(report.errors.len() >= 1)
+    assert(says_error(report, "только строки подключения"))
+    ro list = sample().replace("право_записи: \"файлы, которые правит агент; пауза их права не трогает\")\n${ticks}\n", "право_записи: \"файлы, которые правит агент; пауза их права не трогает\")\n${ticks}\n\n- пункт списка\n")
+    assert(says_error(report_of(list), "только строки подключения"))
+}
+
+test "sm words" {
+    ro json = sample_json()
+    assert(json.contains("\"words\":[[\"Read\",\"read\"],[\"Write\",\"write\"],[\"Delete\",\"delete\"],[\"Move\",\"move\"],[\"Search\",\"search\"],[\"Execute\",\"execute\"],[\"Network\",\"network\"],[\"Think\",\"think\"],[\"SwitchMode\",\"switch_mode\"],[\"Other\",\"other\"]]"))
+    assert(!json.contains("FailCode\",\"cases"))
+    assert(json.contains("{\"name\":\"CallerKind\",\"cases\":[{\"name\":\"Lens\"},{\"name\":\"CycleSession\"},{\"name\":\"ChatTurn\"},{\"name\":\"Gatekeeper\"}]}"))
+}
+
+test "sm sets" {
+    ro json = sample_json()
+    ro q = "\\\""
+    assert(json.contains("full {ActionKind: ${q}allow${q} | ${q}deny${q} | ${q}ask${q}}"))
+    assert(json.contains("\"result\":\"${q}allow${q} | ${q}deny${q} | ${q}ask${q}\""))
+}
+
+test "sm id field" {
+    ro json = sample_json()
+    assert(!json.contains("\"request_id\""))
+    assert(json.contains("\"name\":\"cancel_request\",\"fields\":[{\"name\":\"id\",\"type\":\"text\"}]"))
+}
+
+test "sm project keys" {
+    ro json = sample_json()
+    assert(!json.contains("project_key"))
+    ro product = agent_step_machine_text()
+    assert(product.contains("\"project_key\":\"пауза_повтора\""))
+    assert(product.contains("\"project_key\":\"политика_разрешений\""))
+}
+
+fn with_keys(text str) -> str {
+    mut out = []str.new()
+    for line in text.split("\n") {
+        if line.starts_with("| ПАУЗА_ПОВТОРА |") {
+            out.push("${line[..line.byte_len() - 5]}проект.пауза_повтора |")
+        } else if line.starts_with("| ПОЛИТИКА_РАЗРЕШЕНИЙ |") {
+            out.push("${line[..line.byte_len() - 5]}проект.политика_разрешений |")
+        } else {
+            out.push(line)
+        }
+    }
+    out.join("\n")
+}
+
+test "sm product is sample" {
+    ro keyed = with_keys(sample())
+    assert(keyed != sample())
+    assert(lf(agent_step_table_text()) == keyed)
+}
+
+test "sm json differs by keys" {
+    ro product = agent_step_machine_text()
+    ro plain = product.replace(",\"project_key\":\"пауза_повтора\"", "").replace(",\"project_key\":\"политика_разрешений\"", "")
+    assert(plain != product)
+    assert(plain == sample_json())
+    assert(translate_checked(agent_step_table_text(), standard_registry()).json == product)
+}
+
+test "sm table names" {
+    for n in ["a.portolan.md", "a.portolan.txt"] { assert(is_table_name(n)) }
+    for n in ["a.md", "a.json", "a.portolan", "table.md", "a.portolan.json", "a.table.json", "foo.table.md", "foo.table.txt", "foo.machine.json"] { assert(!is_table_name(n)) }
+    // the translator reads the text and not the name of the file: the notes of one text differ only by the name that the caller prints
+    ro broken = translate_checked(sample().replace("число_ходов += 1", "число_ходов +="), standard_registry())
+    assert(broken.errors.len() > 0)
+    ro old_name = error_text(broken.errors[0], "agent_step.table.md")
+    ro new_name = error_text(broken.errors[0], "agent_step.portolan.md")
+    assert(old_name.replace("agent_step.table.md", "F") == new_name.replace("agent_step.portolan.md", "F"))
+    assert(sample_report().json == translate_checked(sample(), standard_registry()).json)
+}

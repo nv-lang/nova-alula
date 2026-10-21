@@ -1,0 +1,212 @@
+// english_test.nv - task 113: the English twin of the sample of the agent step (state-machine-agent-step.en.portolan.md of the methodology, copied as it is) goes through the translator without
+// a hand edit, gives the JSON of the Russian sample (but for the strings and the names of the locals of its author), and runs the 75 scenarios of the agent step.
+module alula.machine_agent_en
+
+import std.text
+import alula.machine.{standard_registry, agent_step_machine_text, scenario_files, NamedText}
+import alula.machine_table.{load_machine}
+import alula.machine_run.{PortolanMachine, load_portolan_machine, parse_scenario, run_scenario, run_ok, report_text}
+import alula.machine_text.{translate_report, error_text, render_summary, TranslateReport}
+
+fn first_error(report TranslateReport) -> str {
+    if report.errors.len() == 0 { return "ok" }
+    error_text(report.errors[0], "en-sample")
+}
+
+fn has_error_at(report TranslateReport, line int, kind str) -> bool {
+    for e in report.errors {
+        if e.line == line && e.kind == kind { return true }
+    }
+    false
+}
+
+fn line_number(text str, start str) -> int {
+    mut no = 0
+    for line in text.split("\n") {
+        no += 1
+        if line.starts_with(start) { return no }
+    }
+    -1
+}
+
+test "ae clean" {
+    ro report = en_report()
+    assert(first_error(report) == "ok")
+    assert(report.errors.len() == 0)
+    assert(report.warnings.len() == 0)
+    assert(report.rows_total == 127)
+    assert(report.rows_noted == 0)
+}
+
+test "ae copied as it is" {
+    ro text = en_sample()
+    assert(text.starts_with("# Machine: Agent step\n"))
+    assert(text.contains("- language: en"))
+    assert(text.contains("- format: 2.12"))
+    assert(text.contains("- machine_version: portolan-2.12"))
+    assert(text.contains("## Fragment expansion \"Pause\""))
+    assert(text.byte_len() > 30000)
+}
+
+test "ae header" {
+    ro json = en_report().json
+    assert(json.starts_with("{\"format\":\"machine/2\",\"portolan_version\":\"2.12\",\"machine\":\"agent_step\",\"version\":\"portolan-2.12\",\"title\":\"Agent step\""))
+}
+
+test "ae loads" {
+    match load_machine(en_report().json, standard_registry()) {
+        Ok(def) => {
+            assert(def.name == "agent_step")
+            assert(def.states.len() == 14)
+            assert(def.common.len() == 6)
+            assert(def.parties.len() == 3)
+            assert(def.data.len() == 21)
+            assert(def.definitions.len() == 16)
+            assert(def.end_rows.len() == 13)
+            assert(def.primitives.len() == 3)
+            assert(def.request_limit.len() == 1)
+            assert(def.params.len() == 2)
+        }
+        Err(issues) => panic("the English sample does not load: ${issues[0].path}: ${issues[0].message}")
+    }
+}
+
+test "ae summary equals ru" {
+    assert(render_summary(en_report().json) == render_summary(ru_report().json))
+    assert(render_summary(en_report().json).contains("  AgentTurn (appeal): 9 rows, 18 actions"))
+}
+
+test "ae json equals ru" {
+    ro ru = ru_report()
+    ro en = en_report()
+    assert(ru.errors.len() == 0)
+    // the two files are two writings of one machine: the trees are the same but for the strings of the author and the names of the locals
+    assert(en.json != ru.json)
+    assert(tree_text(en.json) == tree_text(ru_strings_in_english(ru.json)))
+}
+
+test "ae json differences are known" {
+    // what differs in the plain trees: the title, the text of one refusal, local names; the names of the machine, the data, the fields and the states are the same
+    ro ru = ru_report().json
+    ro en = en_report().json
+    assert(ru.contains("\"title\":\"Шаг агента\""))
+    assert(en.contains("\"title\":\"Agent step\""))
+    assert(ru.contains("дефект шага агента: ") && en.contains("agent step defect: "))
+    for word in ["\"name\":\"AgentTurn\"", "\"name\":\"turn_count\"", "\"name\":\"stop_reason\"", "\"field\":\"usage\"", "\"setting\":\"attention_executor\"", "\"name\":\"ReplyValidation\"", "\"counter\":\"agent_attempt\""] {
+        assert(ru.contains(word))
+        assert(en.contains(word))
+    }
+}
+
+test "ae the keyed sample is the product table" {
+    ro keyed = report_of(en_keyed())
+    assert(first_error(keyed) == "ok")
+    assert(tree_text(keyed.json) == tree_text(ru_strings_in_english(agent_step_machine_text())))
+    assert(keyed.json.contains("\"project_key\":\"пауза_повтора\""))
+}
+
+// ---- the words of the language are of one language ------------------------------------------------------------------------------
+
+test "ae language line" {
+    ro without = en_sample().replace("- language: en\n", "")
+    ro report = translate_report(without)
+    assert(has_error_at(report, 1, "language"))
+    assert(report.errors[0].message.contains("язык шапки английский, а language не объявлен"))
+    ro russian = en_sample().replace("- language: en\n", "- language: ru\n")
+    assert(has_error_at(translate_report(russian), 1, "language"))
+}
+
+test "ae foreign words" {
+    ro sample = en_sample()
+    ro action = sample.replace("journal(turn_requests_exhausted)", "журнал(turn_requests_exhausted)")
+    assert(has_error_at(translate_report(action), line_number(action, "| 3 | response: TurnRequestLimit"), "language"))
+    ro section = sample.replace("## Ends", "## Концы")
+    assert(has_error_at(translate_report(section), line_number(section, "## Концы"), "language"))
+    ro key = sample.replace("- Party: agent", "- Сторона: agent")
+    assert(has_error_at(translate_report(key), line_number(key, "- Сторона"), "language"))
+    ro column = sample.replace("| № | Event | Condition | Actions | To |", "| № | Событие | Condition | Actions | To |")
+    assert(has_error_at(translate_report(column), line_number(column, "| № | Событие"), "language"))
+    ro kind = sample.replace("### Retry — fork", "### Retry — развилка")
+    assert(has_error_at(translate_report(kind), line_number(kind, "### Retry"), "language"))
+    ro expr = sample.replace("| 1 | retry_count < RETRIES and turn != \"retry\" |", "| 1 | retry_count < RETRIES и turn != \"retry\" |")
+    assert(has_error_at(translate_report(expr), line_number(expr, "| 1 | retry_count < RETRIES и"), "language"))
+}
+
+test "ae foreign first line" {
+    // two foreign words: the first error is the line of the first one
+    ro text = en_sample().replace("## Ends", "## Концы").replace("journal(model_refused)", "журнал(model_refused)")
+    ro report = translate_report(text)
+    mut first_language = 100000
+    for e in report.errors {
+        if e.kind == "language" && e.line < first_language { first_language = e.line }
+    }
+    assert(first_language == line_number(text, "| 4 | response: ModelRefusal"))
+    assert(has_error_at(report, line_number(text, "## Концы"), "language"))
+}
+
+test "ae expansion skipped" {
+    ro sample = en_sample()
+    ro at = sample.find("## Fragment expansion \"Pause\"") ?? -1
+    assert(at > 0)
+    ro shorter = sample[..at]
+    ro report = report_of(shorter)
+    assert(report.errors.len() == 0)
+    assert(report.json == en_report().json)
+    ro junk = report_of("${shorter}## Fragment expansion \"Pause\"\n\n@@@ {{{ \"\n| a |\n")
+    assert(junk.errors.len() == 0)
+    assert(junk.json == en_report().json)
+    // another name in the heading is a warning, not an error
+    ro renamed = report_of("${shorter}## Fragment expansion \"Halt\"\n\ntext\n")
+    assert(renamed.errors.len() == 0)
+    assert(renamed.warnings.len() == 1)
+}
+
+test "ae fragment words" {
+    // the fragment is read in the language of the machine: the parameters are named in English
+    ro sample = en_sample()
+    ro russian_param = sample.replace("halt_word: halt", "слово_остановки: halt")
+    assert(report_of(russian_param).errors.len() > 0)
+    ro missing = sample.replace("nested: [],", "")
+    assert(report_of(missing).errors.len() > 0)
+    ro bad_value = sample.replace("reenter: nothing", "reenter: always")
+    assert(report_of(bad_value).errors.len() > 0)
+}
+
+// ---- the 83 scenarios of the agent step run on the English sample ----------------------------------------------------------------
+
+fn agent_scenarios() -> []NamedText {
+    mut out = []NamedText.new()
+    for f in scenario_files() {
+        if f.name.starts_with("agent-step-") { out.push(f) }
+    }
+    out
+}
+
+fn en_machine() -> PortolanMachine {
+    match load_portolan_machine(report_of(en_keyed()).json, standard_registry()) {
+        Ok(m) => m
+        Err(e) => panic("the English agent step is not made: ${e}")
+    }
+}
+
+test "ae scenarios 75" {
+    ro all = agent_scenarios()
+    assert(all.len() == 83)
+    ro m = en_machine()
+    mut failed = 0
+    mut first = ""
+    for f in all {
+        match parse_scenario(f.text) {
+            Ok(sc) => {
+                ro run = run_scenario(m, sc)
+                if !run_ok(run) {
+                    failed += 1
+                    if first == "" { first = "${f.name}: ${report_text(run)}" }
+                }
+            }
+            Err(e) => panic("${f.name}: ${e.path}: ${e.message}")
+        }
+    }
+    if first != "" { panic(first) }
+    assert(failed == 0)
+}
