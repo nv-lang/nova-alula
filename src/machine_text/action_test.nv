@@ -1,0 +1,162 @@
+// action_test.nv - the actions of the format (section 5) as the actions of the JSON: every kind, the order, the scope of a binding, the errors.
+module alula.machine_text
+
+import std.text
+
+fn act_data() -> []str => ["число_повторов", "ход", "остановка", "расход", "использование", "предыдущее", "к_отправке", "линзы", "номер_захода", "ответившие", "ответы_свидетеля", "находки_линзы", "сессия", "сбойное_обращение", "порядок_линз"]
+
+// The JSON array of the actions of a text, or `ERR kind: message`.
+fn ac(text str) -> str {
+    match translate_actions(text, act_data(), ["пользователь"], ["вложенные"]) {
+        Ok(j) => j
+        Err(problems) => "ERR ${problems[0].kind}: ${problems[0].message}"
+    }
+}
+
+fn ac_errors(text str) -> []TranslateError {
+    match translate_actions(text, act_data(), ["пользователь"], ["вложенные"]) {
+        Ok(j) => []TranslateError.new()
+        Err(problems) => problems
+    }
+}
+
+fn arr(items []TxJ) -> str => tx_text(TxArr(items))
+
+fn tgt(name str) -> TxJ => a_target(name, [])
+
+test "ac assign" {
+    assert(ac("число_повторов = 0") == arr([a_assign(tgt("retry_count"), x_lit(jint(0)))]))
+    assert(ac("число_повторов += 1") == arr([a_add(tgt("retry_count"), x_lit(jint(1)))]))
+    assert(ac("ход = \"retry\"; число_повторов += 1") == arr([a_assign(tgt("turn"), x_lit(js("retry"))), a_add(tgt("retry_count"), x_lit(jint(1)))]))
+    assert(ac("ход = \"a\";") == arr([a_assign(tgt("turn"), x_lit(js("a")))]))
+    assert(ac("ход = остановка") == arr([a_assign(tgt("turn"), x_name("stop_reason"))]))
+    assert(ac("к_отправке = [] + к_отправке") == arr([a_assign(tgt("to_send"), x_bin("+", x_list([]), x_name("to_send")))]))
+}
+
+test "ac assign paths" {
+    ro key = a_target("lenses", [a_step_key(x_name("session"))])
+    assert(ac("линзы[сессия] = 1") == arr([a_assign(key, x_lit(jint(1)))]))
+    ro field = a_target("lenses", [a_step_key(x_name("session")), a_step_field("probes")])
+    assert(ac("линзы[сессия].пробы = 0") == arr([a_assign(field, x_lit(jint(0)))]))
+    ro tuple_key = a_target("lens_findings", [a_step_key(x_tuple([x_name("session"), x_name("number")]))])
+    assert(ac("находки_линзы[(сессия, номер_захода)] = []") == arr([a_assign(tuple_key, x_list([]))]))
+    ro plus = a_target("responded", [])
+    assert(ac("ответившие += 1") == arr([a_add(plus, x_lit(jint(1)))]))
+}
+
+test "ac journal" {
+    assert(ac("журнал(agent_done)") == arr([a_journal("agent_done", [])]))
+    assert(ac("журнал(user_message, text: сессия)") == arr([a_journal("user_message", [kv("text", x_name("session"))])]))
+    assert(ac("журнал(a_b, p: 1, q: \"x\")") == arr([a_journal("a_b", [kv("p", x_lit(jint(1))), kv("q", x_lit(js("x")))])]))
+    assert(ac("журнал(все_данные)") == arr([a_journal_all()]))
+    assert(ac("журнал(запись_перехода)") == arr([a_journal_value(x_name("transition_note"))]))
+    assert(ac("журнал(событие_журнала(\"c\", k: 1))") == arr([a_journal_value(x_call("journal_event", [x_lit(js("c")), x_lit(js("k")), x_lit(jint(1))]))]))
+    assert(ac("журнал(retry_x, retry: текст(число_повторов))") == arr([a_journal("retry_x", [kv("retry", x_call("text", [x_name("retry_count")]))])]))
+}
+
+test "ac machine error" {
+    assert(ac("ошибка_машины(\"fork_no_match\", fork: \"Retry\")") == arr([a_machine_error("fork_no_match", [kv("fork", x_lit(js("Retry")))])]))
+    assert(ac("ошибка_машины(\"cancel_parse_no_match\")") == arr([a_machine_error("cancel_parse_no_match", [])]))
+    assert(ac("ошибка_машины(код)").starts_with("ERR syntax:"))
+}
+
+test "ac call" {
+    assert(ac("вызвать(новый_ид)") == arr([a_call("new_id", [])]))
+    assert(ac("вызвать(новый_ид, 1, ход)") == arr([a_call("new_id", [x_lit(jint(1)), x_name("turn")])]))
+    assert(ac("вызвать(нет_примитива)").starts_with("ERR name:"))
+}
+
+test "ac let" {
+    ro bind = a_bind("moment", x_call("require", [x_null()]))
+    assert(ac("пусть момент = недостижимо") == arr([bind]))
+    ro seen = arr([a_bind("moment", x_lit(jint(5))), a_assign(tgt("retry_count"), x_name("moment"))])
+    assert(ac("пусть момент = 5; число_повторов = момент") == seen)
+    ro local = arr([a_let("moment", x_lit(jint(5)), [a_assign(tgt("retry_count"), x_name("moment"))])])
+    assert(ac("пусть момент = 5 в (число_повторов = момент)") == local)
+    assert(ac("пусть момент = 5 в число_повторов = момент") == local)
+    assert(ac("пусть момент = 5 в (число_повторов = 1); число_повторов = момент").starts_with("ERR name:"))
+}
+
+test "ac if for" {
+    ro cond = x_bin(">", x_name("retry_count"), x_lit(jint(1)))
+    ro then_part = [a_assign(tgt("turn"), x_lit(js("a")))]
+    ro else_part = [a_assign(tgt("turn"), x_lit(js("b")))]
+    assert(ac("если число_повторов > 1 то (ход = \"a\")") == arr([a_if(cond, then_part, [])]))
+    assert(ac("если число_повторов > 1 то (ход = \"a\") иначе (ход = \"b\")") == arr([a_if(cond, then_part, else_part)]))
+    assert(ac("если число_повторов > 1 то ход = \"a\" иначе ход = \"b\"") == arr([a_if(cond, then_part, else_part)]))
+    ro body = [a_journal("x_y", [kv("v", x_name("n"))])]
+    assert(ac("для каждого н в линзы: журнал(x_y, v: н)") == arr([a_for_each("n", x_name("lenses"), body)]))
+    ro two = [a_journal("x_y", []), a_assign(tgt("turn"), x_lit(js("a")))]
+    assert(ac("для каждого н в линзы: (журнал(x_y); ход = \"a\")") == arr([a_for_each("n", x_name("lenses"), two)]))
+    assert(ac("для каждого н в линзы: ход = н") == arr([a_for_each("n", x_name("lenses"), [a_assign(tgt("turn"), x_name("n"))])]))
+}
+
+test "ac cancel" {
+    assert(ac("отменить_открытые") == arr([a_cancel_open("")]))
+    assert(ac("отменить_открытые(сторона: пользователь)") == arr([a_cancel_open("user")]))
+    assert(ac("отменить_открытые(кроме: [])") == arr([a_cancel_open("")]))
+    assert(ac("отменить_открытые(кроме: вложенные)") == arr([a_cancel_open("")]))
+    assert(ac("отменить_открытые(сторона: никто)").starts_with("ERR name:"))
+}
+
+test "ac pass" {
+    assert(ac("передать(вложенные, стоп)") == "[]")
+    assert(ac("передать([], стоп); число_повторов = 1") == arr([a_assign(tgt("retry_count"), x_lit(jint(1)))]))
+    ro step_list = x_list([x_lit(js("agent_step"))])
+    assert(ac("передать([шаг_агента], стоп)") == arr([a_pass(step_list, "stop")]))
+    assert(ac("передать([шаг_агента], продолжить)") == arr([a_pass(step_list, "continue")]))
+    assert(ac("передать([шаг_агента], остановить)") == arr([a_pass(step_list, "halt")]))
+    assert(ac("передать([шаг_агента], отмена)") == arr([a_pass(step_list, "cancel")]))
+    assert(ac("передать([шаг_агента, callee], стоп)") == arr([a_pass(x_list([x_lit(js("agent_step")), x_lit(js("callee"))]), "stop")]))
+    assert(ac_errors("передать([шаг_агента], прыжок)").len() == 1)
+    assert(ac("передать([шаг_агента], прыжок)").starts_with("ERR syntax:"))
+    assert(ac_errors("передать([шаг_агента], стоп)").len() == 0)
+}
+
+test "ac cancel except" {
+    ro step_list = x_list([x_lit(js("agent_step"))])
+    assert(ac("отменить_открытые(кроме: [шаг_агента])") == arr([a_cancel_open_except(step_list)]))
+    assert(ac("отменить_открытые(кроме: [])") == arr([a_cancel_open("")]))
+    assert(ac_errors("отменить_открытые(кроме: [шаг_агента])").len() == 0)
+}
+
+test "ac empty" {
+    assert(ac("—") == "[]")
+    assert(ac("") == "[]")
+    assert(ac("— ;") == "[]")
+}
+
+test "ac errors" {
+    for t in ["= 1", "число_повторов", "число_повторов 1", "число_повторов = ", "журнал(", "журнал(a,", "если истина (ход = \"a\")", "для н в линзы: ход = н", "для каждого н линзы: ход = н", "пусть = 1", "ход = 1 2", "если", "(ход = 1)"] {
+        assert(ac(t).starts_with("ERR"))
+    }
+    assert(ac("неизвестное = 1").starts_with("ERR name:"))
+    assert(ac("число_повторов.нет_поля = 1").starts_with("ERR name:"))
+    assert(ac("журнал(Plain)").starts_with("ERR name:"))
+}
+
+test "ac places" {
+    ro problems = ac_errors("число_повторов = 1; неизвестное = 2; ход = нет_такого")
+    assert(problems.len() == 2)
+    assert(problems[0].col == 21)
+    assert(problems[1].col == 44)
+}
+
+test "ac format examples" {
+    // format 3.2, 4.4, 4.5
+    ro join = a_assign(tgt("stop_reason"), x_bin("+", x_call("non_empty", [x_name("failed_appeal")]), x_lit(js("_halt_meeting"))))
+    assert(ac("остановка = непустое(сбойное_обращение) + \"_halt_meeting\"") == arr([join]))
+    ro lens_key = a_target("lenses", [a_step_key(x_name("party"))])
+    ro copy = x_with(x_name("l"), [kv("lost", x_lit(jint(0)))])
+    ro local = a_let("l", x_call("require", [x_index(x_name("lenses"), x_name("party"))]), [a_assign(lens_key, copy)])
+    assert(ac("пусть л = обязательно(линзы[сторона]) в (линзы[сторона] = { ...л, потери_подряд: 0 })") == arr([local]))
+    ro each_key = a_target("lenses", [a_step_key(x_name("l"))])
+    ro each_copy = x_with(x_call("require", [x_index(x_name("lenses"), x_name("l"))]), [kv("probes", x_lit(jint(0)))])
+    assert(ac("для каждого л в порядок_линз: линзы[л] = { ...обязательно(линзы[л]), пробы: 0 }") == arr([a_for_each("l", x_name("lens_order"), [a_assign(each_key, each_copy)])]))
+}
+
+test "ac conditional" {
+    ro cond = x_un("not", x_call("has", [x_name("usage")]))
+    ro body = [a_journal_value(x_call("journal_event", [x_lit(js("c")), x_lit(js("k")), x_lit(jint(1))]))]
+    assert(ac("если не есть(использование) то (журнал(событие_журнала(\"c\", k: 1)))") == arr([a_if(cond, body, [])]))
+}

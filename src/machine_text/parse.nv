@@ -1,0 +1,1065 @@
+// parse.nv - the reader of the words of a cell: the parser, the context of the translation (the errors, the names), the scope of the bindings,
+// the types of the format (section 2) written out as the type strings of the JSON, and the expressions (section 3) written out as the trees of the core.
+//
+// An error is hard (the cell cannot be read: `Err`) or soft (a word that the table of names does not know: it is put into `cx.errors` and the translation of
+// the cell goes on with the Russian word in its place, so that one cell with two unknown words says both).
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+
+/// TxPair: a Russian word and the Latin word of the JSON.
+// ORACLE-WORKAROUND(39): the type names are global to the program, so the pair is `TxPair` and not `Pair`; the `Tx` prefix of every type of the translator can go when item 39 is fixed
+type TxPair { ru str, en str }
+
+/// TxEnv: the names that the file itself introduces, collected before the sections are translated: states (the Latin name is in the heading), the data,
+/// the constants and the parameters (`globals`), the definitions, the declared types and their cases, the primitives, the parties, the words of the gates,
+/// the parts of an answer and the signals, the nested machines that a fragment is given empty (`empty_lists`) or not empty (`nested_lists`: the name of the parameter and the Latin names of the
+/// machines, joined by a comma).
+type TxEnv {
+    states []TxPair, globals []TxPair, defs []TxPair, types []TxPair, cases []TxPair, prims []TxPair,
+    parties []TxPair, words []TxPair, parts []TxPair, signals []TxPair, input_fields []TxPair, empty_lists []str,
+    nested_lists []TxPair
+}
+
+fn env_new() -> TxEnv {
+    TxEnv {
+        states: []TxPair.new(), globals: []TxPair.new(), defs: []TxPair.new(), types: []TxPair.new(), cases: []TxPair.new(), prims: []TxPair.new(),
+        parties: []TxPair.new(), words: []TxPair.new(), parts: []TxPair.new(), signals: []TxPair.new(), input_fields: []TxPair.new(), empty_lists: []str.new(),
+        nested_lists: []TxPair.new()
+    }
+}
+
+/// TxPlace: a place of the JSON (`$.states[2].rows[0]`) and the line of the file that it comes from; the checks of the table speak in paths.
+type TxPlace { path str, line int }
+
+/// TxCx: the context of one translation: the errors, the table of names, the names of the file, the counts of the rows, the places of the JSON and the words of the language of the file.
+type TxCx { errors []TranslateError, names TxNames, env TxEnv, rows_total int, rows_noted int, places []TxPlace, words TxWords }
+
+fn cx_place(mut cx TxCx, path str, line int) -> () {
+    cx.places.push(TxPlace { path, line })
+}
+
+// ORACLE-WORKAROUND(41): the list is called `pairs_in`, not `list` or `pairs`: a name that means a list of one type in one function and a list of another type in another function of the unit is mixed up by the code generator; use plain names when item 41 is fixed
+fn pair_get(pairs_in []TxPair, ru str) -> Option[str] {
+    for p in pairs_in {
+        if p.ru == ru { return Some(p.en) }
+    }
+    None
+}
+
+fn pair_has(pairs_in []TxPair, ru str) -> bool {
+    match pair_get(pairs_in, ru) {
+        Some(en) => true
+        None => false
+    }
+}
+
+fn pair_add(mut pairs_in []TxPair, ru str, en str) -> () {
+    pairs_in.push(TxPair { ru, en })
+}
+
+/// TxScope: the names bound in the place of an expression (a parameter of a definition, a `пусть`, a variable of a lambda, a name of an event).
+type TxScope { names []TxPair }
+
+fn sc_empty() -> TxScope => { names: []TxPair.new() }
+
+// A copy.
+// ORACLE-WORKAROUND(45): a copy of a `ro` parameter built by hand in a loop; write `mut out = sc.names` when item 45 is fixed
+fn sc_clone(sc TxScope) -> TxScope {
+    mut out = []TxPair.new()
+    for p in sc.names { out.push(p) }
+    TxScope { names: out }
+}
+
+fn sc_with(sc TxScope, ru str, en str) -> TxScope {
+    mut out = []TxPair.new()
+    for p in sc.names { out.push(p) }
+    out.push(TxPair { ru, en })
+    TxScope { names: out }
+}
+
+fn sc_get(sc TxScope, ru str) -> Option[str] {
+    // the latest binding hides the earlier ones
+    mut i = sc.names.len() - 1
+    while i >= 0 {
+        if sc.names[i].ru == ru { return Some(sc.names[i].en) }
+        i -= 1
+    }
+    None
+}
+
+// ---- the parser over the tokens of a cell ------------------------------------------------------------------------------------
+
+/// TxP: the tokens of a cell (or of several lines of one statement) and the place in them. `in_let` is 1 while the value of a `пусть` is read outside any bracket: the word `in`
+/// of an English file ends the value there and is not the sign of a membership.
+type TxP { toks []TxTok, pos int, end_line int, end_col int, in_let int }
+
+fn p_new(toks []TxTok, line int, col int) -> TxP => { toks, pos: 0, end_line: line, end_col: col, in_let: 0 }
+
+// A copy of a parser that can be moved.
+// ORACLE-WORKAROUND(45): a copy of a `ro` parameter built by hand in a loop; write `mut q = p` when item 45 is fixed
+fn p_copy(p TxP) -> TxP {
+    mut toks = []TxTok.new()
+    for t in p.toks { toks.push(t) }
+    TxP { toks, pos: p.pos, end_line: p.end_line, end_col: p.end_col, in_let: p.in_let }
+}
+
+fn p_tok(p TxP) -> TxTok {
+    if p.pos < p.toks.len() { return p.toks[p.pos] }
+    TxTok { kind: TK_EOF, text: "", line: p.end_line, col: p.end_col }
+}
+
+fn p_ahead(p TxP, k int) -> TxTok {
+    if p.pos + k < p.toks.len() { return p.toks[p.pos + k] }
+    TxTok { kind: TK_EOF, text: "", line: p.end_line, col: p.end_col }
+}
+
+fn p_adv(mut p TxP) -> () {
+    p.pos += 1
+}
+
+fn p_done(p TxP) -> bool => p.pos >= p.toks.len()
+
+fn t_is(t TxTok, s str) -> bool => t.kind == TK_SYM && t.text == s
+
+fn t_is_word(t TxTok, w str) -> bool => t.kind == TK_NAME && t.text == w
+
+fn p_is(p TxP, s str) -> bool => t_is(p_tok(p), s)
+
+fn p_is_word(p TxP, w str) -> bool => t_is_word(p_tok(p), w)
+
+fn p_eat(mut p TxP, s str) -> bool {
+    if p_is(p, s) {
+        p.pos += 1
+        return true
+    }
+    false
+}
+
+fn p_eat_word(mut p TxP, w str) -> bool {
+    if p_is_word(p, w) {
+        p.pos += 1
+        return true
+    }
+    false
+}
+
+// What stands under the reader, for the text of an error.
+fn t_shown(t TxTok) -> str {
+    if t.kind == TK_EOF { return "конец текста" }
+    if t.kind == TK_STR { return "строку \"${t.text}\"" }
+    "`${t.text}`"
+}
+
+fn p_fail(p TxP, message str) -> TranslateError {
+    ro t = p_tok(p)
+    tx_err(t.line, t.col, "syntax", "${message}, найдено: ${t_shown(t)}")
+}
+
+fn p_expect(mut p TxP, s str) -> Result[(), TranslateError] {
+    if p_eat(p, s) { return Ok(()) }
+    Err(p_fail(p, "ожидается `${s}`"))
+}
+
+fn p_expect_word(mut p TxP, w str) -> Result[(), TranslateError] {
+    if p_eat_word(p, w) { return Ok(()) }
+    Err(p_fail(p, "ожидается `${w}`"))
+}
+
+// ---- the words of the language of the file --------------------------------------------------------------------------------------
+
+// The tokens of a word or of a phrase of the table of words (`for each`, `human or agent by setting`, `Idle term`): how many of the next tokens spell it, 0 when they do not.
+fn p_phrase_len(p TxP, phrase str) -> int {
+    if !phrase.contains(" ") && !phrase.contains("/") {
+        ro t = p_tok(p)
+        if t.kind == TK_NAME && t.text == phrase { return 1 }
+        return 0
+    }
+    match tx_lex(phrase, 0, 0) {
+        Ok(toks) => {
+            mut n = 0
+            for want in toks {
+                ro t = p_ahead(p, n)
+                if t.kind != want.kind || t.text != want.text { return 0 }
+                n += 1
+            }
+            n
+        }
+        Err(e) => 0
+    }
+}
+
+/// Does the word of the table (a kind and an English key) stand next, in the language of the file?
+fn p_is_kw(p TxP, w TxWords, kind str, key str) -> bool => p_phrase_len(p, kw(w, kind, key)) > 0
+
+/// Eat the word of the table when it stands next.
+fn p_eat_kw(mut p TxP, w TxWords, kind str, key str) -> bool {
+    ro n = p_phrase_len(p, kw(w, kind, key))
+    if n == 0 { return false }
+    p.pos += n
+    true
+}
+
+fn p_expect_kw(mut p TxP, w TxWords, kind str, key str) -> Result[(), TranslateError] {
+    if p_eat_kw(p, w, kind, key) { return Ok(()) }
+    Err(p_fail(p, "ожидается `${kw(w, kind, key)}`"))
+}
+
+/// Is the token the word of the table (one word)?
+fn t_is_kw(t TxTok, w TxWords, kind str, key str) -> bool => t.kind == TK_NAME && t.text == kw(w, kind, key)
+
+fn p_end(p TxP) -> Result[(), TranslateError] {
+    if p_done(p) { return Ok(()) }
+    Err(p_fail(p, "лишний текст после конструкции"))
+}
+
+/// The reserved words of the language of the file: `in`, `then`, `else`, `and`, `or`, `not`, `let`, `match`, `if`, `for`, `each`, `true`, `false`, `none`, `unreachable` (format 3.1, СГ12).
+fn tx_keywords(w TxWords) -> []str {
+    mut out = kw_all(w, "expr", ["in", "then", "else", "and", "or", "not", "let", "match", "if", "true", "false", "none", "unreachable"])
+    out.push(kw(w, "action", "for"))
+    out.push(kw(w, "action", "each"))
+    out
+}
+
+fn is_keyword(w TxWords, text str) -> bool => tx_keywords(w).contains(text)
+
+// A word that belongs to the other language only, in the position of a name: the error of the language (section 1a) at its place, or None.
+fn foreign_find(cx TxCx, t TxTok, kinds []str) -> Option[TranslateError] {
+    match kw_foreign_any(cx.words, kinds, t.text) {
+        Some(key) => {
+            ro kind = foreign_kind(cx.words, kinds, t.text)
+            Some(foreign_error(cx.words, t.line, t.col, t.text, kind, key))
+        }
+        None => None
+    }
+}
+
+// The same, put among the errors of the translation; returns whether the word was a foreign one.
+fn cx_foreign(mut cx TxCx, t TxTok, kinds []str) -> bool {
+    match foreign_find(cx, t, kinds) {
+        Some(e) => {
+            cx.errors.push(e)
+            true
+        }
+        None => false
+    }
+}
+
+// The kind under which the word is foreign (the first of the kinds).
+fn foreign_kind(w TxWords, kinds []str, text str) -> str {
+    for kind in kinds {
+        match kw_foreign(w, kind, text) {
+            Some(k) => return kind
+            None => ()
+        }
+    }
+    ""
+}
+
+fn cx_error(mut cx TxCx, t TxTok, kind str, message str) -> () {
+    cx.errors.push(tx_err(t.line, t.col, kind, message))
+}
+
+// ---- the names ---------------------------------------------------------------------------------------------------------------
+
+fn kinds_field() -> []str => ["field", "signal_field", "data", "variable", "method"]
+
+fn kinds_data() -> []str => ["data", "constant", "variable", "field", "method"]
+
+fn kinds_type() -> []str => ["type"]
+
+fn kinds_case() -> []str => ["case", "type", "event"]
+
+fn kinds_function() -> []str => ["catalog", "function", "method"]
+
+fn kinds_variable() -> []str => ["variable"]
+
+/// The English word under the kinds, or a soft error (the word stays Russian) with the nearest word.
+fn tr_word(mut cx TxCx, t TxTok, kinds []str, what str) -> str => tr_word_f(cx, t, kinds, what, [])
+
+/// The same; `foreign` are the kinds of the table of words under which a word of the other language is an error of the language (the word of the table of the other language is no name).
+fn tr_word_f(mut cx TxCx, t TxTok, kinds []str, what str, foreign []str) -> str {
+    match names_first(cx.names, kinds, t.text) {
+        Some(en) => en
+        None => {
+            if foreign.len() > 0 && cx_foreign(cx, t, foreign) { return t.text }
+            // a name that the author invents may be in Latin letters in a file of either language (section 1a): it is the name of the JSON as it is
+            if is_identifier_latin(t.text) { return t.text }
+            cx_error(cx, t, "name", "${what} `${t.text}` нет в таблице имён (словарь методики, версия 10)${names_hint(cx.names, kinds, t.text)}")
+            t.text
+        }
+    }
+}
+
+/// A name that a table introduces (a parameter, a binding, a variable of a lambda): the dictionary under `variable`, else Latin letters.
+fn tr_binder(mut cx TxCx, t TxTok) -> str {
+    if is_keyword(cx.words, t.text) {
+        cx_error(cx, t, "name", "`${t.text}` — служебное слово, именем быть не может")
+        return t.text
+    }
+    if t.text == "_" { return "_" }
+    match names_get(cx.names, "variable", t.text) {
+        Some(en) => en
+        None => if is_identifier_latin(t.text) { t.text } else { tx_translit(t.text) }
+    }
+}
+
+/// A name of a datum, a constant or a parameter that the file declares, or of the dictionary.
+fn tr_global(mut cx TxCx, t TxTok) -> str {
+    match pair_get(cx.env.globals, t.text) {
+        Some(en) => en
+        None => tr_word_f(cx, t, kinds_data(), "имя", ["enum_value", "readable"])
+    }
+}
+
+/// The type name: declared in the file, else the dictionary.
+fn tr_type_name(mut cx TxCx, t TxTok) -> str {
+    match pair_get(cx.env.types, t.text) {
+        Some(en) => en
+        None => tr_word_f(cx, t, kinds_type(), "тип", ["type"])
+    }
+}
+
+/// The case of a variant or of an enum: declared in the file, else the dictionary.
+fn tr_case_name(mut cx TxCx, t TxTok) -> str {
+    match pair_get(cx.env.cases, t.text) {
+        Some(en) => en
+        None => tr_word(cx, t, kinds_case(), "вариант")
+    }
+}
+
+fn tr_field_name(mut cx TxCx, t TxTok) -> str => tr_word(cx, t, kinds_field(), "поле")
+
+// Does the word look like a type (`Использование`, `КодСбоя`): the first letter is upper case and a lower case letter follows somewhere.
+fn looks_like_type(w str) -> bool {
+    mut first = true
+    mut upper_first = false
+    mut has_lower = false
+    for c in w.chars() {
+        if first {
+            upper_first = tx_is_upper(c)
+            first = false
+        } else if tx_is_lower(c) {
+            has_lower = true
+        }
+    }
+    upper_first && has_lower
+}
+
+// ---- the types (format section 2) -------------------------------------------------------------------------------------------
+
+fn ty_is_type_end(t TxTok) -> bool => t.kind == TK_EOF
+
+/// A type of the format as the type string of the JSON (`int>=0`, `?text`, `[]Finding`, `{text: int}`, `"a" | "b"`, `id`, `full {K: V}`, `(A, B)`).
+fn ty_parse(mut p TxP, mut cx TxCx) -> Result[str, TranslateError] {
+    ro t = p_tok(p)
+    if t.kind == TK_STR { return ty_set(p) }
+    if p_eat(p, "?") {
+        ro inner = ty_under(p, cx)?
+        return Ok("?${inner}")
+    }
+    if p_is(p, "[") && t_is(p_ahead(p, 1), "]") {
+        p_adv(p)
+        p_adv(p)
+        ro inner = ty_under(p, cx)?
+        return Ok("[]${inner}")
+    }
+    if p_eat(p, "(") {
+        mut items = []str.new()
+        while true {
+            items.push(ty_parse(p, cx)?)
+            if p_eat(p, ",") { continue }
+            break
+        }
+        p_expect(p, ")")?
+        if items.len() == 1 {
+            if items[0].starts_with("\"") { return Ok(items[0]) }
+            return Err(tx_err(t.line, t.col, "syntax", "кортеж — от двух полей"))
+        }
+        return Ok("(${items.join(", ")})")
+    }
+    if t.kind != TK_NAME { return Err(p_fail(p, "ожидается тип")) }
+    ro words = cx.words
+    if p_eat_kw(p, words, "type", "int") {
+        if p_eat(p, "≥") || p_eat(p, ">=") {
+            ro n = p_tok(p)
+            if n.kind != TK_INT { return Err(p_fail(p, "после `≥` ожидается целое число")) }
+            p_adv(p)
+            return Ok("int>=${n.text}")
+        }
+        return Ok("int")
+    }
+    if p_eat_kw(p, words, "type", "float") { return Ok("float") }
+    if p_eat_kw(p, words, "type", "text") { return Ok("text") }
+    if p_eat_kw(p, words, "type", "id") { return Ok("id") }
+    if p_eat_kw(p, words, "type", "State") { return Ok("State") }
+    if p_eat_kw(p, words, "type", "Signal") { return Ok("Signal") }
+    if p_eat_kw(p, words, "type", "bool") { return Ok("bool") }
+    if p_is_kw(p, words, "type", "full map") || p_is_kw(p, words, "type", "map") {
+        ro full = p_eat_kw(p, words, "type", "full map")
+        if !full {
+            ro plain = p_eat_kw(p, words, "type", "map")
+        }
+        p_expect(p, "[")?
+        ro key = ty_parse(p, cx)?
+        p_expect(p, ",")?
+        ro value = ty_parse(p, cx)?
+        p_expect(p, "]")?
+        return Ok(if full { "full {${key}: ${value}}" } else { "{${key}: ${value}}" })
+    }
+    if p_eat_kw(p, words, "type", "JournalEvent") { return Ok("JournalEvent") }
+    p_adv(p)
+    Ok(tr_type_name(cx, t))
+}
+
+// The type under `?` or `[]`: a set of literals there is in parentheses.
+fn ty_under(mut p TxP, mut cx TxCx) -> Result[str, TranslateError] {
+    if p_tok(p).kind == TK_STR { return Err(p_fail(p, "набор литералов под ? или [] пишется в скобках")) }
+    ro inner = ty_parse(p, cx)?
+    if inner.starts_with("\"") { return Ok("(${inner})") }
+    Ok(inner)
+}
+
+// A set of literals: two string literals or more with `|` between them.
+fn ty_set(mut p TxP) -> Result[str, TranslateError] {
+    mut words = []str.new()
+    ro first = p_tok(p)
+    while true {
+        ro t = p_tok(p)
+        if t.kind != TK_STR { return Err(p_fail(p, "в наборе литералов ожидается строка")) }
+        words.push(tx_quote(t.text))
+        p_adv(p)
+        if p_eat(p, "|") { continue }
+        break
+    }
+    if words.len() < 2 { return Err(tx_err(first.line, first.col, "type", "набор литералов — два значения и больше")) }
+    Ok(words.join(" | "))
+}
+
+// ---- the expressions (format section 3) --------------------------------------------------------------------------------------
+
+fn tx_arrow(t TxTok) -> bool => t.kind == TK_SYM && (t.text == "→" || t.text == "->")
+
+fn is_lambda_start(p TxP, w TxWords) -> bool {
+    ro t0 = p_tok(p)
+    if t0.kind == TK_NAME && !is_keyword(w, t0.text) && tx_arrow(p_ahead(p, 1)) { return true }
+    t_is(t0, "(") && p_ahead(p, 1).kind == TK_NAME && t_is(p_ahead(p, 2), ",") && p_ahead(p, 3).kind == TK_NAME && t_is(p_ahead(p, 4), ")") && tx_arrow(p_ahead(p, 5))
+}
+
+fn ex_lambda(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    mut names = []TxTok.new()
+    if p_eat(p, "(") {
+        names.push(p_tok(p))
+        p_adv(p)
+        p_expect(p, ",")?
+        names.push(p_tok(p))
+        p_adv(p)
+        p_expect(p, ")")?
+    } else {
+        names.push(p_tok(p))
+        p_adv(p)
+    }
+    if !tx_arrow(p_tok(p)) { return Err(p_fail(p, "ожидается стрелка `→`")) }
+    p_adv(p)
+    mut inner = sc_clone(sc)
+    mut params = []str.new()
+    for n in names {
+        ro en = tr_binder(cx, n)
+        if params.contains(en) && en != "_" { cx_error(cx, n, "name", "параметр `${n.text}` повторён") }
+        params.push(en)
+        inner = sc_with(inner, n.text, en)
+    }
+    ro body = ex_expr(p, cx, inner)?
+    Ok(x_lambda(params, body))
+}
+
+/// An expression. `если`, `пусть` and `выбор` take everything to their right.
+fn ex_expr(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    if p_is_kw(p, cx.words, "expr", "if") { return ex_if(p, cx, sc) }
+    if p_is_kw(p, cx.words, "expr", "let") { return ex_let(p, cx, sc) }
+    if p_is_kw(p, cx.words, "expr", "match") { return ex_match(p, cx, sc) }
+    ex_coalesce(p, cx, sc)
+}
+
+fn ex_if(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    p_adv(p)
+    ro cond = ex_expr(p, cx, sc)?
+    p_expect_kw(p, cx.words, "expr", "then")?
+    ro a = ex_expr(p, cx, sc)?
+    p_expect_kw(p, cx.words, "expr", "else")?
+    ro b = ex_expr(p, cx, sc)?
+    Ok(x_if(cond, a, b))
+}
+
+fn ex_let(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    p_adv(p)
+    ro n = p_tok(p)
+    if n.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "expr", "let")}` ожидается имя")) }
+    p_adv(p)
+    p_expect(p, "=")?
+    ro saved = p.in_let
+    p.in_let = 1
+    ro value = ex_expr(p, cx, sc)?
+    p.in_let = saved
+    p_expect_kw(p, cx.words, "expr", "in")?
+    ro en = tr_binder(cx, n)
+    ro body = ex_expr(p, cx, sc_with(sc, n.text, en))?
+    Ok(x_let(en, value, body))
+}
+
+// ---- `выбор` ------------------------------------------------------------------------------------------------------------------
+
+// The binds of a pattern `Вариант(поле, поле: имя)`: the object {field: local} and the scope with the locals.
+type TxBinds { pairs []TxKV, scope TxScope }
+
+fn ex_pattern_binds(mut p TxP, mut cx TxCx, sc TxScope, kinds []str) -> Result[TxBinds, TranslateError] {
+    mut pairs = []TxKV.new()
+    mut inner = sc_clone(sc)
+    if !p_eat(p, "(") { return Ok(TxBinds { pairs, scope: inner }) }
+    if p_eat(p, ")") { return Ok(TxBinds { pairs, scope: inner }) }
+    while true {
+        ro f = p_tok(p)
+        if f.kind != TK_NAME { return Err(p_fail(p, "в образце ожидается поле")) }
+        p_adv(p)
+        ro field_en = tr_word(cx, f, kinds, "поле")
+        mut local_ru = f.text
+        mut local_en = field_en
+        if p_eat(p, ":") {
+            ro l = p_tok(p)
+            if l.kind != TK_NAME { return Err(p_fail(p, "после `:` в образце ожидается имя")) }
+            p_adv(p)
+            local_ru = l.text
+            local_en = tr_binder(cx, l)
+        }
+        pairs.push(kv(field_en, js(local_en)))
+        inner = sc_with(inner, local_ru, local_en)
+        if p_eat(p, ",") { continue }
+        break
+    }
+    p_expect(p, ")")?
+    Ok(TxBinds { pairs, scope: inner })
+}
+
+fn ex_literal_pattern(t TxTok, w TxWords) -> Option[TxJ] {
+    if t.kind == TK_INT || t.kind == TK_FLOAT { return Some(pat_lit(TxRaw(t.text))) }
+    if t.kind == TK_STR { return Some(pat_lit(js(t.text))) }
+    if t_is_kw(t, w, "expr", "true") { return Some(pat_lit(TxBool(true))) }
+    if t_is_kw(t, w, "expr", "false") { return Some(pat_lit(TxBool(false))) }
+    None
+}
+
+// One alternative of an arm: a literal, `Тип.Значение`, `Вариант`, `Вариант(поле, поле: имя)`. Returns the pattern and the scope for the guard and the body.
+fn ex_pattern(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxBinds, TranslateError] {
+    ro t = p_tok(p)
+    match ex_literal_pattern(t, cx.words) {
+        Some(pat) => {
+            p_adv(p)
+            return Ok(TxBinds { pairs: [kv("pattern", pat)], scope: sc })
+        }
+        None => ()
+    }
+    if t.kind != TK_NAME { return Err(p_fail(p, "ожидается образец")) }
+    p_adv(p)
+    if p_is(p, ".") && p_ahead(p, 1).kind == TK_NAME {
+        p_adv(p)
+        ro c = p_tok(p)
+        p_adv(p)
+        ro type_en = tr_type_name(cx, t)
+        ro case_en = tr_case_name(cx, c)
+        return Ok(TxBinds { pairs: [kv("pattern", pat_case(type_en, case_en, []))], scope: sc })
+    }
+    ro case_en = tr_case_name(cx, t)
+    ro binds = ex_pattern_binds(p, cx, sc, kinds_field())?
+    Ok(TxBinds { pairs: [kv("pattern", pat_case("", case_en, binds.pairs))], scope: binds.scope })
+}
+
+fn ex_match(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    p_adv(p)
+    ro subject = ex_expr(p, cx, sc)?
+    p_expect(p, "{")?
+    ro saved = p.in_let
+    p.in_let = 0
+    mut arms = []TxJ.new()
+    while !p_is(p, "}") {
+        if p_done(p) { return Err(p_fail(p, "в конце `${kw(cx.words, "expr", "match")}` ожидается `}`")) }
+        mut patterns = []TxJ.new()
+        mut arm_scope = sc_clone(sc)
+        if p_eat_kw(p, cx.words, "expr", "else") {
+            patterns.push(pat_any())
+        } else {
+            while true {
+                ro one = ex_pattern(p, cx, sc)?
+                patterns.push(one.pairs[0].value)
+                arm_scope = one.scope
+                if p_eat(p, "|") { continue }
+                break
+            }
+        }
+        mut guards = []TxJ.new()
+        if p_eat_kw(p, cx.words, "expr", "if") { guards.push(ex_expr(p, cx, arm_scope)?) }
+        if !tx_arrow(p_tok(p)) { return Err(p_fail(p, "в ветке `${kw(cx.words, "expr", "match")}` ожидается стрелка `→`")) }
+        p_adv(p)
+        ro body = ex_expr(p, cx, arm_scope)?
+        arms.push(x_arm(patterns, guards, body))
+        if p_eat(p, ";") { continue }
+        if !p_is(p, "}") { return Err(p_fail(p, "после ветки `${kw(cx.words, "expr", "match")}` ожидается `;` или `}`")) }
+    }
+    p_expect(p, "}")?
+    p.in_let = saved
+    if arms.len() == 0 { return Err(p_fail(p, "`${kw(cx.words, "expr", "match")}` needs an arm")) }
+    Ok(x_match(subject, arms))
+}
+
+// ---- the operators -----------------------------------------------------------------------------------------------------------
+
+fn ex_coalesce(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    ro left = ex_or(p, cx, sc)?
+    if p_eat(p, "??") {
+        ro right = ex_coalesce(p, cx, sc)?
+        return Ok(x_bin("??", left, right))
+    }
+    Ok(left)
+}
+
+fn ex_or(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    mut left = ex_and(p, cx, sc)?
+    while p_is_kw(p, cx.words, "expr", "or") {
+        p_eat_kw(p, cx.words, "expr", "or")
+        ro right = ex_and(p, cx, sc)?
+        left = x_bin("or", left, right)
+    }
+    Ok(left)
+}
+
+fn ex_and(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    mut left = ex_not(p, cx, sc)?
+    while p_is_kw(p, cx.words, "expr", "and") {
+        p_eat_kw(p, cx.words, "expr", "and")
+        ro right = ex_not(p, cx, sc)?
+        left = x_bin("and", left, right)
+    }
+    Ok(left)
+}
+
+fn ex_not(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    if p_eat_kw(p, cx.words, "expr", "not") {
+        ro inner = ex_not(p, cx, sc)?
+        return Ok(x_un("not", inner))
+    }
+    ex_cmp(p, cx, sc)
+}
+
+fn cmp_op(t TxTok) -> str {
+    if t.kind != TK_SYM { return "" }
+    if t.text == "==" || t.text == "!=" || t.text == "<" || t.text == "<=" || t.text == ">" || t.text == ">=" { return t.text }
+    if t.text == "≥" { return ">=" }
+    if t.text == "≤" { return "<=" }
+    if t.text == "≠" { return "!=" }
+    ""
+}
+
+fn ex_cmp(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    mut left = ex_add(p, cx, sc)?
+    while true {
+        ro t = p_tok(p)
+        if is_member_sign(p, cx.words) {
+            p_adv(p)
+            left = ex_member(p, cx, sc, left)?
+            continue
+        }
+        ro op = cmp_op(t)
+        if op == "" { break }
+        p_adv(p)
+        ro right = ex_add(p, cx, sc)?
+        left = x_bin(op, left, right)
+    }
+    Ok(left)
+}
+
+// The sign of a membership: `∈`, or the word `in` before a brace (both writings are read in a file of either language, section 1a). In an English file the word `in` also ends the value
+// of a `let`: there, outside any bracket, it is no membership.
+fn is_member_sign(p TxP, w TxWords) -> bool {
+    ro t = p_tok(p)
+    if t_is(t, "∈") { return true }
+    if t.kind == TK_NAME && t.text == "in" && t_is(p_ahead(p, 1), "{") {
+        if p.in_let > 0 && kw(w, "expr", "in") == "in" { return false }
+        return true
+    }
+    false
+}
+
+// `x ∈ {a, b}` is `x == a или x == b`.
+fn ex_member(mut p TxP, mut cx TxCx, sc TxScope, left TxJ) -> Result[TxJ, TranslateError] {
+    p_expect(p, "{")?
+    mut result = x_lit(TxBool(false))
+    mut first = true
+    if !p_is(p, "}") {
+        while true {
+            ro item = ex_add(p, cx, sc)?
+            ro same = x_bin("==", left, item)
+            result = if first { same } else { x_bin("or", result, same) }
+            first = false
+            if p_eat(p, ",") { continue }
+            break
+        }
+    }
+    p_expect(p, "}")?
+    Ok(result)
+}
+
+fn ex_add(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    mut left = ex_mul(p, cx, sc)?
+    while p_is(p, "+") || p_is(p, "-") {
+        ro op = p_tok(p).text
+        p_adv(p)
+        ro right = ex_mul(p, cx, sc)?
+        left = x_bin(op, left, right)
+    }
+    Ok(left)
+}
+
+fn ex_mul(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    mut left = ex_unary(p, cx, sc)?
+    while p_is(p, "*") || p_is(p, "/") || p_is(p, "%") {
+        ro op = p_tok(p).text
+        p_adv(p)
+        ro right = ex_unary(p, cx, sc)?
+        left = x_bin(op, left, right)
+    }
+    Ok(left)
+}
+
+fn ex_unary(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    if p_is(p, "-") {
+        p_adv(p)
+        ro t = p_tok(p)
+        if t.kind == TK_INT || t.kind == TK_FLOAT {
+            p_adv(p)
+            return ex_postfix(p, cx, sc, x_lit(TxRaw("-${t.text}")))
+        }
+        ro inner = ex_unary(p, cx, sc)?
+        return Ok(x_un("neg", inner))
+    }
+    ex_postfix_start(p, cx, sc)
+}
+
+fn ex_postfix_start(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    ro base = ex_primary(p, cx, sc)?
+    ex_postfix(p, cx, sc, base)
+}
+
+// `.поле`, `.0`, `[ключ]` after an operand.
+fn ex_postfix(mut p TxP, mut cx TxCx, sc TxScope, e TxJ) -> Result[TxJ, TranslateError] {
+    if p_is(p, ".") {
+        p_adv(p)
+        ro t = p_tok(p)
+        if t.kind == TK_INT {
+            p_adv(p)
+            return ex_postfix(p, cx, sc, x_field(e, t.text))
+        }
+        if t.kind == TK_FLOAT {
+            // `к.0.1` is read by the lexer as `к`, `.`, `0.1`
+            p_adv(p)
+            ro at = t.text.find(".") ?? 0
+            return ex_postfix(p, cx, sc, x_field(x_field(e, t.text[..at]), t.text[at + 1..]))
+        }
+        if t.kind == TK_NAME {
+            p_adv(p)
+            return ex_postfix(p, cx, sc, x_field(e, tr_field_name(cx, t)))
+        }
+        return Err(p_fail(p, "после `.` ожидается поле"))
+    }
+    if p_is(p, "[") {
+        p_adv(p)
+        ro saved = p.in_let
+        p.in_let = 0
+        ro index = ex_expr(p, cx, sc)?
+        p_expect(p, "]")?
+        p.in_let = saved
+        return ex_postfix(p, cx, sc, x_index(e, index))
+    }
+    Ok(e)
+}
+
+// ---- primary expressions -----------------------------------------------------------------------------------------------------
+
+fn ex_primary(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    ro t = p_tok(p)
+    if t.kind == TK_INT || t.kind == TK_FLOAT {
+        p_adv(p)
+        return Ok(x_lit(TxRaw(t.text)))
+    }
+    if t.kind == TK_STR {
+        p_adv(p)
+        return Ok(x_lit(js(t.text)))
+    }
+    if t_is(t, "(") { return ex_paren(p, cx, sc) }
+    if t_is(t, "[") { return ex_list(p, cx, sc) }
+    if t_is(t, "{") { return ex_brace(p, cx, sc) }
+    if t.kind != TK_NAME { return Err(p_fail(p, "ожидается выражение")) }
+    ro w = t.text
+    ro words = cx.words
+    if p_eat_kw(p, words, "expr", "true") { return Ok(x_lit(TxBool(true))) }
+    if p_eat_kw(p, words, "expr", "false") { return Ok(x_lit(TxBool(false))) }
+    if p_eat_kw(p, words, "expr", "none") { return Ok(x_null()) }
+    if p_eat_kw(p, words, "expr", "unreachable") { return Ok(x_call("require", [x_null()])) }
+    if p_is_kw(p, words, "expr", "if") || p_is_kw(p, words, "expr", "let") || p_is_kw(p, words, "expr", "match") { return ex_expr(p, cx, sc) }
+    if is_keyword(words, w) { return Err(p_fail(p, "ожидается выражение")) }
+    if p_is_kw(p, words, "action", "call") && t_is(p_ahead(p, 1), "(") { return ex_primitive_call(p, cx, sc) }
+    p_adv(p)
+    if p_is(p, "(") { return ex_call(p, cx, sc, t) }
+    // a name that looks like a type is a type, unless a binding or a state of the machine has it (an English state `Pause` looks like a type, a Russian `ПАУЗА` does not)
+    if looks_like_type(w) && pair_get(sc.names, w) == None && (pair_get(cx.env.states, w) == None || pair_has(cx.env.types, w)) { return ex_typed(p, cx, sc, t) }
+    Ok(ex_name(cx, sc, t))
+}
+
+/// A bare name: a binding, a name of the executor, a datum, a constant, a parameter, a state.
+fn ex_name(mut cx TxCx, sc TxScope, t TxTok) -> TxJ {
+    match sc_get(sc, t.text) {
+        Some(en) => return x_name(en)
+        None => ()
+    }
+    match names_get(cx.names, "executor", t.text) {
+        Some(en) => return x_name(en)
+        None => ()
+    }
+    match pair_get(cx.env.globals, t.text) {
+        Some(en) => return x_name(en)
+        None => ()
+    }
+    match pair_get(cx.env.states, t.text) {
+        Some(latin) => return x_lit(js(latin))
+        None => ()
+    }
+    match names_first(cx.names, kinds_data(), t.text) {
+        Some(en) => {
+            cx_error(cx, t, "name", "`${t.text}` не объявлено в этой машине (таблицы данных, констант и параметров)")
+            return x_name(en)
+        }
+        None => ()
+    }
+    if cx_foreign(cx, t, kinds_foreign_names()) { return x_name(t.text) }
+    cx_error(cx, t, "name", "имя `${t.text}` не объявлено и его нет в таблице имён${names_hint(cx.names, kinds_data(), t.text)}")
+    x_name(t.text)
+}
+
+fn ex_args_end(p TxP) -> bool => p_is(p, ")")
+
+// The arguments of a call after `(`: positional ones, then `имя: выр`; a lambda is an argument. Returns the positional and the named.
+type TxArgs { positional []TxJ, named []TxKV, named_tokens []TxTok }
+
+fn ex_args(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxArgs, TranslateError] {
+    mut positional = []TxJ.new()
+    mut named = []TxKV.new()
+    mut named_tokens = []TxTok.new()
+    p_expect(p, "(")?
+    if p_eat(p, ")") { return Ok(TxArgs { positional, named, named_tokens }) }
+    ro saved = p.in_let
+    p.in_let = 0
+    while true {
+        ro t = p_tok(p)
+        if t.kind == TK_NAME && t_is(p_ahead(p, 1), ":") && !is_keyword(cx.words, t.text) {
+            p_adv(p)
+            p_adv(p)
+            ro value = ex_expr(p, cx, sc)?
+            named.push(kv(t.text, value))
+            named_tokens.push(t)
+        } else if is_lambda_start(p, cx.words) {
+            positional.push(ex_lambda(p, cx, sc)?)
+        } else {
+            if named.len() > 0 { return Err(p_fail(p, "позиционный аргумент не может идти после именованного")) }
+            positional.push(ex_expr(p, cx, sc)?)
+        }
+        if p_eat(p, ",") { continue }
+        break
+    }
+    p_expect(p, ")")?
+    p.in_let = saved
+    Ok(TxArgs { positional, named, named_tokens })
+}
+
+/// A call `имя(арг, …)` of a function of the catalog or of a definition of the file; `событие_журнала(код, имя: выр, …)` carries the pairs flat.
+fn ex_call(mut p TxP, mut cx TxCx, sc TxScope, name TxTok) -> Result[TxJ, TranslateError] {
+    ro args = ex_args(p, cx, sc)?
+    mut fn_en = ""
+    match names_get(cx.names, "catalog", name.text) {
+        Some(en) => { fn_en = en }
+        None => {
+            match pair_get(cx.env.defs, name.text) {
+                Some(en) => { fn_en = en }
+                None => {
+                    // a primitive that the machine names in `## Примитивы` is called as a function too (format 4.6, 2.12, Ya-29): the same node as `вызвать(имя, арг)`; which class may stand where is the check's
+                    match pair_get(cx.env.prims, name.text) {
+                        Some(prim_en) => {
+                            if args.named.len() > 0 { return Err(tx_err(args.named_tokens[0].line, args.named_tokens[0].col, "syntax", "именованные аргументы — только у `${kw(cx.words, "catalog", "journal_event")}`")) }
+                            return Ok(x_prim(prim_en, args.positional))
+                        }
+                        None => ()
+                    }
+                    fn_en = tr_word_f(cx, name, kinds_function(), "функция", ["catalog"])
+                }
+            }
+        }
+    }
+    mut args_all = []TxJ.new()
+    for a in args.positional { args_all.push(a) }
+    if fn_en == "journal_event" {
+        for n in args.named {
+            args_all.push(x_lit(js(n.key)))
+            args_all.push(n.value)
+        }
+    } else if args.named.len() > 0 {
+        return Err(tx_err(args.named_tokens[0].line, args.named_tokens[0].col, "syntax", "именованные аргументы — только у `${kw(cx.words, "catalog", "journal_event")}`"))
+    }
+    Ok(x_call(fn_en, args_all))
+}
+
+/// `вызвать(примитив, арг, …)`: the primitive is named by its word of the table `## Примитивы` or by the table of names.
+fn ex_primitive_call(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    p_adv(p)
+    p_expect(p, "(")?
+    ro n = p_tok(p)
+    if n.kind != TK_NAME { return Err(p_fail(p, "ожидается имя примитива")) }
+    p_adv(p)
+    ro en = tr_primitive(cx, n)
+    mut args = []TxJ.new()
+    while p_eat(p, ",") {
+        args.push(ex_expr(p, cx, sc)?)
+    }
+    p_expect(p, ")")?
+    Ok(x_prim(en, args))
+}
+
+fn tr_primitive(mut cx TxCx, t TxTok) -> str {
+    match pair_get(cx.env.prims, t.text) {
+        Some(en) => return en
+        None => ()
+    }
+    match names_first(cx.names, ["primitive", "effect", "function"], t.text) {
+        Some(en) => return en
+        None => ()
+    }
+    cx_error(cx, t, "name", "примитива `${t.text}` нет в таблице `## Примитивы` машины, и он не встроенный")
+    t.text
+}
+
+/// `(выр)` or the tuple `(выр, выр, …)`.
+fn ex_paren(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    p_adv(p)
+    ro saved = p.in_let
+    p.in_let = 0
+    mut items = []TxJ.new()
+    while true {
+        items.push(ex_expr(p, cx, sc)?)
+        if p_eat(p, ",") { continue }
+        break
+    }
+    p_expect(p, ")")?
+    p.in_let = saved
+    if items.len() == 1 { return Ok(items[0]) }
+    Ok(x_tuple(items))
+}
+
+fn ex_list(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    p_adv(p)
+    mut items = []TxJ.new()
+    if p_eat(p, "]") { return Ok(x_list(items)) }
+    ro saved = p.in_let
+    p.in_let = 0
+    while true {
+        items.push(ex_expr(p, cx, sc)?)
+        if p_eat(p, ",") { continue }
+        break
+    }
+    p_expect(p, "]")?
+    p.in_let = saved
+    Ok(x_list(items))
+}
+
+/// `{}` the empty dict, `{ ...выр, поле: выр }` a copy of a record with changed fields, `{ ключ: значение, … }` a dict.
+fn ex_brace(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    p_adv(p)
+    if p_eat(p, "}") { return Ok(x_dict([])) }
+    ro saved = p.in_let
+    p.in_let = 0
+    ro made = ex_brace_inner(p, cx, sc)?
+    p.in_let = saved
+    Ok(made)
+}
+
+fn ex_brace_inner(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    if p_is(p, "...") || p_is(p, "…") {
+        p_adv(p)
+        ro base = ex_expr(p, cx, sc)?
+        ro fields = ex_field_pairs(p, cx, sc, true)?
+        p_expect(p, "}")?
+        return Ok(x_with(base, fields))
+    }
+    mut entries = []TxJ.new()
+    while true {
+        ro key = ex_expr(p, cx, sc)?
+        p_expect(p, ":")?
+        ro value = ex_expr(p, cx, sc)?
+        entries.push(x_entry(key, value))
+        if p_eat(p, ",") {
+            if p_is(p, "}") { break }
+            continue
+        }
+        break
+    }
+    p_expect(p, "}")?
+    Ok(x_dict(entries))
+}
+
+// The fields `поле: выр, …` of a record literal; after `...выр` the list starts with a comma.
+fn ex_field_pairs(mut p TxP, mut cx TxCx, sc TxScope, after_base bool) -> Result[[]TxKV, TranslateError] {
+    mut fields = []TxKV.new()
+    if after_base {
+        if !p_eat(p, ",") { return Ok(fields) }
+    }
+    if p_is(p, "}") { return Ok(fields) }
+    while true {
+        ro f = p_tok(p)
+        if f.kind != TK_NAME { return Err(p_fail(p, "ожидается поле")) }
+        p_adv(p)
+        p_expect(p, ":")?
+        ro value = ex_expr(p, cx, sc)?
+        ro en = tr_field_name(cx, f)
+        for seen in fields {
+            if seen.key == en { cx_error(cx, f, "syntax", "поле `${f.text}` повторено") }
+        }
+        fields.push(kv(en, value))
+        if p_eat(p, ",") {
+            if p_is(p, "}") { break }
+            continue
+        }
+        break
+    }
+    Ok(fields)
+}
+
+/// A name that looks like a type: `Тип { поле: выр }`, `Тип.Вариант`, `Тип.Вариант { поле: выр }`.
+fn ex_typed(mut p TxP, mut cx TxCx, sc TxScope, t TxTok) -> Result[TxJ, TranslateError] {
+    ro type_en = tr_type_name(cx, t)
+    if p_is(p, ".") && p_ahead(p, 1).kind == TK_NAME {
+        p_adv(p)
+        ro c = p_tok(p)
+        p_adv(p)
+        ro case_en = tr_case_name(cx, c)
+        if p_is(p, "{") {
+            p_adv(p)
+            ro fields = ex_field_pairs(p, cx, sc, false)?
+            p_expect(p, "}")?
+            return Ok(x_variant(type_en, case_en, fields))
+        }
+        return Ok(x_variant(type_en, case_en, []))
+    }
+    if p_is(p, "{") {
+        p_adv(p)
+        ro fields = ex_field_pairs(p, cx, sc, false)?
+        p_expect(p, "}")?
+        return Ok(x_record(type_en, fields))
+    }
+    Err(tx_err(t.line, t.col, "syntax", "тип `${t.text}` использован как значение: пишется `${t.text}.Вариант` или `${t.text} { поле: выр }`"))
+}

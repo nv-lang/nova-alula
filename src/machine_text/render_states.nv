@@ -1,0 +1,485 @@
+// render_states.nv - the reverse generator, the states, the ends, the primitives and the whole file (task 113; the pieces before them are in render_expr.nv and render.nv).
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine.{standard_registry, class_word}
+
+fn rn_binds(cx RnCx, bind RJ, kinds_signal bool) -> str {
+    mut parts = []str.new()
+    for q in rj_pairs(bind) {
+        ro local = rj_str(q.value)
+        ro field = if kinds_signal { rn_name(cx, ["signal_field", "field", "data", "variable"], q.key) } else { rn_field_name(cx, q.key) }
+        parts.push(if local == field { field } else { "${field}: ${local}" })
+    }
+    parts.join(", ")
+}
+
+fn rn_bind_locals(bind RJ) -> []str {
+    mut out = []str.new()
+    for q in rj_pairs(bind) { out.push(rj_str(q.value)) }
+    out
+}
+
+/// RnEvent: the text of the cell "event" and the names that the event binds.
+type RnEvent { text str, locals []str }
+
+fn rn_event(cx RnCx, ev RJ, locals []str) -> RnEvent {
+    ro kind = rj_gstr(ev, "kind")
+    ro bind = match rj_get(ev, "bind") {
+        Some(b) => b
+        None => RNull
+    }
+    if kind == "now" { return RnEvent { text: rn_kw(cx, "event", "immediate"), locals } }
+    if kind == "timeout" { return RnEvent { text: rn_kw(cx, "event", "deadline"), locals } }
+    if kind == "answer" {
+        ro name = rj_str(bind)
+        if name == "" { return RnEvent { text: rn_kw(cx, "event", "response"), locals } }
+        return RnEvent { text: "${rn_kw(cx, "event", "response")}(${name})", locals: rn_with(locals, name) }
+    }
+    if kind == "answer_variant" {
+        ro head = "${rn_kw(cx, "event", "response")}: ${rn_case_name(cx, rj_gstr(ev, "variant"))}"
+        ro inner = rn_binds(cx, bind, false)
+        if inner == "" { return RnEvent { text: head, locals } }
+        mut all = rn_copy(locals)
+        for l in rn_bind_locals(bind) { all.push(l) }
+        return RnEvent { text: "${head}(${inner})", locals: all }
+    }
+    if kind == "failure" {
+        ro name = if rj_str(bind) == "" && rj_garr(ev, "reasons").len() > 0 { "_" } else { rj_str(bind) }
+        ro reasons = rj_garr(ev, "reasons")
+        if name == "" { return RnEvent { text: rn_kw(cx, "event", "failure"), locals } }
+        if reasons.len() == 0 { return RnEvent { text: "${rn_kw(cx, "event", "failure")}(${name})", locals: rn_with(locals, name) } }
+        mut codes = []str.new()
+        for r in reasons { codes.push("${rn_type_name(cx, "FailCode")}.${rn_case_name(cx, rj_str(r))}") }
+        ro sign = if cx.lang == "ru" { "∈" } else { "in" }
+        return RnEvent { text: "${rn_kw(cx, "event", "failure")}(${name} ${sign} {${codes.join(", ")}})", locals: rn_with(locals, name) }
+    }
+    if kind == "word" || kind == "signal" || kind == "progress" {
+        ro is_signal = kind == "signal"
+        ro head_key = if kind == "word" { "word" } else if kind == "signal" { "signal" } else { "part" }
+        ro name_en = if kind == "word" { rj_gstr(ev, "word") } else { rj_gstr(ev, "name") }
+        ro phrase = if kind == "word" { rn_phrase_of(cx, cx.gate_words, "word", name_en) } else if is_signal { rn_phrase_of(cx, cx.signal_words, "signal", name_en) } else { rn_phrase_of(cx, cx.part_words, "part", name_en) }
+        ro inner = rn_binds(cx, bind, is_signal)
+        mut all = rn_copy(locals)
+        for l in rn_bind_locals(bind) { all.push(l) }
+        ro shown = if inner == "" { phrase } else { "${phrase}(${inner})" }
+        return RnEvent { text: "${rn_kw(cx, "event", head_key)}(${shown})", locals: all }
+    }
+    RnEvent { text: "—", locals }
+}
+
+fn rn_destination(cx RnCx, row RJ) -> str {
+    ro to = rj_gstr(row, "to")
+    if to == "" { return "—" }
+    mut text = to
+    if to == "@previous" { text = rn_kw(cx, "destination", "previous") }
+    if to == "@same" { text = rn_kw(cx, "destination", "same") }
+    if to == "@prepare_return" { text = rn_kw(cx, "destination", "preparation_return") }
+    match rj_get(row, "restart") {
+        Some(r) => {
+            match r {
+                RBool(b) => { if b { text = "${text}, ${rn_kw(cx, "destination", "rerun")}" } }
+                _ => ()
+            }
+        }
+        None => ()
+    }
+    text
+}
+
+fn rn_bind_names_of(actions []RJ) -> []str {
+    mut out = []str.new()
+    for a in actions {
+        if rj_gstr(a, "do") == "bind" { out.push(rj_gstr(a, "name")) }
+    }
+    out
+}
+
+fn rn_rows(mut cx RnCx, rows []RJ, fork bool, locals []str) -> []str {
+    mut out = []RnRow.new()
+    for r in rows {
+        mut cells = []str.new()
+        cells.push(rj_gscalar(r, "n"))
+        mut row_locals = rn_copy(locals)
+        if !fork {
+            ro ev = match rj_get(r, "event") {
+                Some(e) => rn_event(cx, e, locals)
+                None => RnEvent { text: "—", locals }
+            }
+            cells.push(ev.text)
+            row_locals = ev.locals
+        }
+        ro cond = match rj_get(r, "cond") {
+            Some(c) => rn_expr(cx, c, row_locals)
+            None => "—"
+        }
+        match rj_get(r, "else") {
+            Some(e) => {
+                match e {
+                    RBool(b) => {
+                        if b { cells.push(rn_kw(cx, "event", "else")) } else { cells.push(cond) }
+                    }
+                    _ => cells.push(cond)
+                }
+            }
+            None => cells.push(cond)
+        }
+        cells.push(rn_actions(cx, rj_garr(r, "actions"), row_locals).text)
+        cells.push(rn_destination(cx, r))
+        out.push(RnRow { cells })
+    }
+    ro keys = if fork { ["№", "Condition", "Actions", "To"] } else { ["№", "Event", "Condition", "Actions", "To"] }
+    rn_table(rn_cols(cx, keys), out)
+}
+
+fn rn_entry_lines(mut cx RnCx, st RJ, locals []str) -> []str {
+    ro actions = rj_garr(st, "entry")
+    mut out = []str.new()
+    if actions.len() == 0 { return out }
+    ro key = rn_kw(cx, "key", "On entry")
+    if actions.len() == 1 {
+        out.push("- ${key}: ${rn_actions(cx, actions, locals).text}")
+        return out
+    }
+    out.push("- ${key}:")
+    mut inner = rn_copy(locals)
+    mut at = 0
+    for a in actions {
+        ro text = rn_action(cx, a, inner)
+        if rj_gstr(a, "do") == "bind" { inner = rn_with(inner, rj_gstr(a, "name")) }
+        at += 1
+        out.push(if at < actions.len() { "  - ${text};" } else { "  - ${text}" })
+    }
+    out
+}
+
+fn rn_state(mut cx RnCx, st RJ, index int) -> []str {
+    ro kind = rj_gstr(st, "kind")
+    mut out = []str.new()
+    out.push("### ${rj_gstr(st, "name")} — ${rn_kw(cx, "kind_state", kind)}")
+    if kind == "appeal" {
+        ro party = rj_gstr(st, "party")
+        ro party_word = match rn_pair_ru(cx.parties, party) {
+            Some(w) => w
+            None => party
+        }
+        mut party_line = "- ${rn_kw(cx, "key", "Party")}: ${party_word}"
+        match rj_get(st, "set") {
+            Some(e) => { party_line = "${party_line}; ${rn_kw(cx, "key", "set")}: ${rn_expr(cx, e, []str.new())}" }
+            None => ()
+        }
+        out.push(party_line)
+        ro silence = match rj_get(st, "silence") {
+            Some(e) => rn_expr(cx, e, []str.new())
+            None => "—"
+        }
+        out.push("- ${rn_kw(cx, "key", "Idle term")}: ${silence}")
+        if rj_gstr(st, "edits") != "" {
+            out.push("- ${rn_kw(cx, "key", "Edits")}: ${rn_global(cx, rj_gstr(st, "edits"))}; ${rn_kw(cx, "key", "check")}: ${rj_gstr(st, "edit_check")}")
+        }
+        match rj_get(st, "form_returns") {
+            Some(n) => { out.push("- ${rn_kw(cx, "key", "Form returns")}: ${rj_gscalar(st, "form_returns")}") }
+            None => ()
+        }
+        ro inputs = rj_garr(st, "inputs")
+        // an appeal without the fields of the request writes `Вход: нет`, without a table (format 4.1, 2.12, Ya-23)
+        out.push(if inputs.len() == 0 { "- ${rn_kw(cx, "key", "Input")}: ${rn_kw(cx, "enum_value", "none")}" } else { "- ${rn_kw(cx, "key", "Input")}:" })
+        if inputs.len() > 0 {
+            out.push("")
+            mut rows = []RnRow.new()
+            for i in inputs {
+                ro value = match rj_get(i, "value") {
+                    Some(e) => rn_expr(cx, e, []str.new())
+                    None => "none"
+                }
+                ro reads = rn_kw(cx, "enum_value", if rj_gstr(i, "reads") == "party" { "party" } else { "executor" })
+                rows.push(RnRow { cells: [rn_field_name(cx, rj_gstr(i, "field")), value, reads] })
+            }
+            rn_add(out, rn_table(rn_cols(cx, ["request_field", "expression", "reads"]), rows))
+        }
+        ro accept = rj_garr(st, "accept")
+        if accept.len() > 0 {
+            out.push("")
+            out.push("- ${rn_kw(cx, "key", "On accept")}:")
+            out.push("")
+            mut rows = []RnRow.new()
+            for a in accept {
+                ro ev = match rj_get(a, "event") {
+                    Some(e) => rn_event(cx, e, []str.new())
+                    None => RnEvent { text: "—", locals: []str.new() }
+                }
+                rows.push(RnRow { cells: [ev.text, rn_actions(cx, rj_garr(a, "actions"), ev.locals).text] })
+            }
+            rn_add(out, rn_table(rn_cols(cx, ["event", "actions"]), rows))
+        }
+        out.push("")
+        rn_add(out, rn_rows(cx, rj_garr(st, "rows"), false, []str.new()))
+        return out
+    }
+    // an operation, a fork, an end: the names read, the entry, the exception, the rows
+    mut reads = "—"
+    match rj_get(st, "reads_all") {
+        Some(r) => { reads = rn_kw(cx, "readable", "all_data") }
+        None => {
+            mut names = []str.new()
+            for n in rj_garr(st, "reads") { names.push(rn_global(cx, rj_str(n))) }
+            reads = if names.len() == 0 { rn_kw(cx, "enum_value", "none") } else { names.join(", ") }
+        }
+    }
+    out.push("- ${rn_kw(cx, "key", "Input")}: ${reads}")
+    rn_add(out, rn_entry_lines(cx, st, []str.new()))
+    match rj_get(st, "except") {
+        Some(e) => {
+            mut values = []str.new()
+            for v in rj_garr(e, "values") { values.push(rn_quote(rj_str(v))) }
+            ro sign = if cx.lang == "ru" { "∈" } else { "in" }
+            out.push("- ${rn_kw(cx, "key", "Except")}: ${rn_global(cx, rj_gstr(e, "field"))} ${sign} {${values.join(", ")}}")
+        }
+        None => ()
+    }
+    if kind != "end" {
+        out.push("")
+        rn_add(out, rn_rows(cx, rj_garr(st, "rows"), kind == "fork", rn_bind_names_of(rj_garr(st, "entry"))))
+    }
+    out
+}
+
+fn rn_sec_states(mut cx RnCx, root RJ) -> []str {
+    mut out = []str.new()
+    out.push("${rn_kw(cx, "key", "Initial state")}: ${rj_gstr(root, "initial")}")
+    mut at = 0
+    for st in rj_garr(root, "states") {
+        out.push("")
+        rn_add(out, rn_state(cx, st, at))
+        at += 1
+    }
+    out
+}
+
+/// The common events (the rows of the signals that are tried before the rows of a state, and the rows of an included fragment): a section of their own, only when there are some.
+fn rn_sec_common(mut cx RnCx, root RJ) -> []str {
+    ro rows = rj_garr(root, "common_events")
+    mut out = []str.new()
+    if rows.len() == 0 { return out }
+    out.push("## ${rn_kw(cx, "section", "Common events")}")
+    out.push("")
+    rn_add(out, rn_rows(cx, rows, false, []str.new()))
+    out.push("")
+    out
+}
+
+fn rn_sec_ends(mut cx RnCx, root RJ) -> []str {
+    ro ends = match rj_get(root, "ends") {
+        Some(e) => e
+        None => RNull
+    }
+    mut out = []str.new()
+    out.push("- ${rn_kw(cx, "key", "Result")}: ${rn_type(cx, rj_gstr(ends, "result"))}")
+    out.push("")
+    mut rows = []RnRow.new()
+    for r in rj_garr(ends, "rows") {
+        ro when = match rj_get(r, "when") {
+            Some(e) => rn_expr(cx, e, []str.new())
+            None => "true"
+        }
+        ro answer = match rj_get(r, "answer") {
+            Some(a) => a
+            None => RNull
+        }
+        mut text = "—"
+        if rj_gstr(answer, "kind") == "answer" {
+            ro value = match rj_get(answer, "value") {
+                Some(e) => rn_expr(cx, e, []str.new())
+                None => "none"
+            }
+            text = "${rn_kw(cx, "expr", "Response")}(${value})"
+        } else if rj_gstr(answer, "kind") == "refusal" {
+            ro code = match rj_get(answer, "code") {
+                Some(e) => rn_expr(cx, e, []str.new())
+                None => "none"
+            }
+            ro reason = match rj_get(answer, "text") {
+                Some(e) => rn_expr(cx, e, []str.new())
+                None => "none"
+            }
+            text = "${rn_kw(cx, "expr", "Refusal")}(${code}, ${reason})"
+        }
+        rows.push(RnRow { cells: [rj_gstr(r, "state"), rj_gscalar(r, "n"), when, text] })
+    }
+    rn_add(out, rn_table(rn_cols(cx, ["end", "№", "when", "response"]), rows))
+    out
+}
+
+fn rn_class_of(name str) -> str {
+    for p in standard_registry().primitives {
+        if p.name == name { return class_word(p.class) }
+    }
+    "reading"
+}
+
+fn rn_sec_primitives(cx RnCx, root RJ) -> []str {
+    mut rows = []RnRow.new()
+    for n in rj_garr(root, "primitives") {
+        ro name = rj_str(n)
+        rows.push(RnRow { cells: [name, "—", "—", rn_class_of(name), "—", "—"] })
+    }
+    if rows.len() == 0 { return ["—"] }
+    rn_table(rn_cols(cx, ["name", "parameters", "result", "class", "reads", "writes"]), rows)
+}
+
+// ---- the names of the included files ------------------------------------------------------------------------------------------
+
+/// The names that an included file of definitions brings (types, constants, definitions): they are in the tree beside the machine's own, and the file does not write them again.
+type RnDropped { types []str, constants []str, definitions []str }
+
+fn rn_dropped(mut cx RnCx, root RJ, copy_includes bool) -> RnDropped {
+    mut types = []str.new()
+    mut constants = []str.new()
+    mut definitions = []str.new()
+    if !copy_includes {
+        for inc in rj_garr(root, "includes") {
+            ro name = rj_gstr(inc, "name")
+            ro text = defs_file_text(name)
+            if text == "" {
+                rn_note(cx, "$.includes: the file of definitions `${name}` is not in the registry of the translator, its types, constants and definitions are written as the machine's own")
+                continue
+            }
+            match rj_parse(translate_definitions(text).json) {
+                Ok(doc) => {
+                    match rj_get(doc, "types") {
+                        Some(t) => {
+                            for n in rn_names_of(t, "records") { types.push(n) }
+                            for n in rn_names_of(t, "variants") { types.push(n) }
+                        }
+                        None => ()
+                    }
+                    for n in rn_names_of(doc, "constants") { constants.push(n) }
+                    for n in rn_names_of(doc, "definitions") { definitions.push(n) }
+                }
+                Err(e) => rn_note(cx, "$.includes: the file `${name}` gave no tree: ${e}")
+            }
+        }
+    }
+    RnDropped { types, constants, definitions }
+}
+
+fn rn_has_pair(pairs_in []TxPair, en str) -> bool {
+    match rn_pair_ru(pairs_in, en) {
+        Some(w) => true
+        None => false
+    }
+}
+
+// The lines without the empty ones at the end.
+fn rn_trimmed(lines []str) -> []str {
+    mut end = lines.len()
+    while end > 0 && lines[end - 1] == "" { end -= 1 }
+    mut out = []str.new()
+    mut i = 0
+    while i < end {
+        out.push(lines[i])
+        i += 1
+    }
+    out
+}
+
+/// Section by section: the heading, the lines, an empty line.
+fn rn_section(mut out []str, heading str, lines []str) -> () {
+    out.push("## ${heading}")
+    // an empty section is the one line `—` right under the heading, a table or a block of code has an empty line before it
+    if !(lines.len() == 1 && lines[0] == "—") { out.push("") }
+    rn_add(out, lines)
+    out.push("")
+}
+
+fn rn_register(mut cx RnCx, root RJ, dropped RnDropped) -> () {
+    for c in rj_garr(root, "constants") {
+        ro en = rj_gstr(c, "name")
+        if !dropped.constants.contains(en) { rn_pair(cx.globals, rn_name(cx, kinds_constant(), en), en) }
+    }
+    for p in rj_garr(root, "params") {
+        ro en = rj_gstr(p, "name")
+        rn_pair(cx.globals, rn_name(cx, kinds_constant(), en), en)
+    }
+    for d in rj_garr(root, "data") {
+        ro en = rj_gstr(d, "name")
+        if !en.contains("[*]") { rn_pair(cx.globals, rn_name(cx, kinds_data(), en), en) }
+    }
+    for d in rj_garr(root, "definitions") {
+        ro en = rj_gstr(d, "name")
+        if !dropped.definitions.contains(en) { rn_pair(cx.defs, rn_name(cx, ["function", "method", "variable"], en), en) }
+    }
+    for p in rj_garr(root, "parties") {
+        ro en = rj_gstr(p, "name")
+        rn_pair(cx.parties, rn_name(cx, ["party", "type", "variable"], en), en)
+        for w in rj_garr(p, "words") {
+            ro wen = rj_gstr(w, "name")
+            if !rn_has_pair(cx.gate_words, wen) { rn_pair(cx.gate_words, rn_phrase(cx, "word", wen), wen) }
+        }
+    }
+    for s in rj_garr(root, "signals") {
+        ro en = rj_gstr(s, "name")
+        rn_pair(cx.signal_words, rn_phrase(cx, "signal", en), en)
+    }
+    for p in rj_garr(root, "parties") {
+        for item in rj_garr(p, "progress") {
+            ro en = rj_gstr(item, "name")
+            rn_pair(cx.part_words, rn_phrase(cx, "part", en), en)
+        }
+    }
+}
+
+/// The file of Portolan for a tree `machine/2` in the language (`ru` or `en`); `copy_includes` writes the types, the constants and the definitions of the included files of definitions as the
+/// machine's own (else the line of connection stands and the copies are left out, section 1b (м)).
+export fn render_machine_with(machine_json str, language str, copy_includes bool) -> RenderReport {
+    if language != "ru" && language != "en" {
+        return RenderReport { text: "", notes: ["the language must be `ru` or `en`, got `${language}`"] }
+    }
+    match rj_parse(machine_json) {
+        Err(e) => RenderReport { text: "", notes: ["not a JSON: ${e}"] }
+        Ok(root) => {
+            if rj_gstr(root, "format") != "machine/2" {
+                return RenderReport { text: "", notes: ["the tree is not `machine/2`: the key `format` is `${rj_gstr(root, "format")}`"] }
+            }
+            // a tree of another version of the language is not written (no transition period, task 125): the file would say a version that the translator does not read
+            if rj_gstr(root, "portolan_version") != "" && !format_versions().contains(rj_gstr(root, "portolan_version")) {
+                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "portolan_version")} of the language; the version 2.12 only is read and written (there is no transition period)"] }
+            }
+            mut cx = rn_cx(language)
+            ro dropped = rn_dropped(cx, root, copy_includes)
+            rn_register(cx, root, dropped)
+            // what the fragments bring is written by the line of connection, not as the machine's own (1b (m), 2.12, Ya-32)
+            ro shown = if rj_garr(root, "fragments").len() == 0 { root } else { rn_without_fragments(root) }
+            ro version = if rj_gstr(shown, "portolan_version") == "" { "2.12" } else { rj_gstr(shown, "portolan_version") }
+            mut out = []str.new()
+            out.push("# ${rn_kw(cx, "header", "Machine")}: ${rj_gstr(shown, "machine")}")
+            out.push("")
+            out.push("- machine: ${rj_gstr(shown, "machine")}")
+            out.push("- machine_version: ${rj_gstr(shown, "version")}")
+            out.push("- format: ${version}")
+            out.push("- language: ${language}")
+            out.push("")
+            rn_section(out, rn_kw(cx, "section", "Types"), rn_sec_types(cx, shown, dropped.types))
+            rn_section(out, rn_kw(cx, "section", "Constants"), rn_sec_constants(cx, shown, dropped.constants))
+            rn_section(out, rn_kw(cx, "section", "Parameters"), rn_sec_params(cx, shown))
+            rn_section(out, rn_kw(cx, "section", "Input"), rn_sec_input(cx, shown))
+            rn_section(out, rn_kw(cx, "section", "Data"), rn_sec_data(cx, shown))
+            rn_section(out, rn_kw(cx, "section", "Parties"), rn_sec_parties(cx, shown))
+            rn_add(out, rn_extra_sections(cx, shown))
+            rn_section(out, rn_kw(cx, "section", "Definitions"), rn_sec_definitions(cx, shown, dropped.definitions))
+            rn_section(out, rn_kw(cx, "section", "Includes"), rn_sec_includes(cx, shown, copy_includes))
+            rn_add(out, rn_sec_common(cx, shown))
+            rn_section(out, rn_kw(cx, "section", "States"), rn_sec_states(cx, shown))
+            rn_section(out, rn_kw(cx, "section", "Ends"), rn_sec_ends(cx, shown))
+            rn_section(out, rn_kw(cx, "section", "Primitives"), rn_sec_primitives(cx, shown))
+            RenderReport { text: "${rn_trimmed(out).join("\n")}\n", notes: cx.notes }
+        }
+    }
+}
+
+/// The file of Portolan for a tree `machine/2` in the language; the line of connection for an included file of definitions.
+export fn render_machine(machine_json str, language str) -> RenderReport => render_machine_with(machine_json, language, false)
+
+/// The text of the file only.
+export fn render(machine_json str, language str) -> str => render_machine(machine_json, language).text

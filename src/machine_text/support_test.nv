@@ -1,0 +1,115 @@
+// support_test.nv - helpers and fixtures of the tests of the translator: a small machine in Russian and the way to read what the translator says.
+module alula.machine_text
+
+import std.text
+import alula.machine.{standard_registry, NamedText}
+
+// A small machine: a gate that waits for a word, a fork, two ends. The names are those of the dictionary of the methodology.
+fn tiny_text() -> str => `# Машина: Малая
+
+machine: Tiny
+machine_version: 1
+format: 2.12
+
+## Данные
+
+| имя | тип | начальное | не убывает | пишет |
+|---|---|---|---|---|
+| число_ходов | число≥0 | 0 | да | строки |
+| остановка | "" \| "a" \| "b" | "" | — | строки |
+| попытка_вратаря | число≥0 | 0 | да | механика |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | слова ворот | счётчик |
+|---|---|---|---|---|---|
+| вратарь | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — | разрешить, отказать | попытка_вратаря |
+
+## Состояния
+
+Начальное состояние: ЖДАТЬ
+
+### ЖДАТЬ — обращение (Wait)
+Сторона: вратарь
+Срок тишины: —
+Вход:
+
+| поле запроса | выражение | читает |
+|---|---|---|
+| ход | число_ходов | исполнитель |
+
+| № | Событие | Условие | Действия | Куда |
+|---|---|---|---|---|
+| 1 | слово(разрешить) | — | число_ходов += 1 | РЕШИТЬ |
+| 2 | слово(отказать) | — | остановка = "a" | СТОП |
+
+### РЕШИТЬ — развилка (Decide)
+Вход: число_ходов
+
+| № | Условие | Действия | Куда |
+|---|---|---|---|
+| 1 | число_ходов >= 2 | — | КОНЕЦ |
+| 2 | иначе | — | ЖДАТЬ |
+
+### КОНЕЦ — конец (Finished)
+Вход: число_ходов
+
+### СТОП — конец (Stopped)
+Вход: остановка
+Кроме: остановка ∈ {""}
+
+## Концы
+
+Результат: число
+
+| конец | № | когда | ответ |
+|---|---|---|---|
+| КОНЕЦ | 1 | истина | Ответ(число_ходов) |
+| СТОП | 1 | остановка == "a" | Отказ(КодСбоя.ОстановленоЧеловеком, "stopped") |
+| СТОП | 2 | остановка == "b" | Отказ(КодСбоя.НетРезультата, "b") |
+`
+
+// The report of a translation of a text with the checks of the table.
+fn checked(text str) -> TranslateReport => translate_checked(text, standard_registry())
+
+// The notes as lines `line:col kind message`.
+fn notes(text str) -> []str {
+    mut out = []str.new()
+    for e in checked(text).errors { out.push("${e.line}:${e.col} ${e.kind} ${e.message}") }
+    out
+}
+
+fn is_clean(text str) -> bool => checked(text).errors.len() == 0
+
+// Does some note say the needle?
+fn note_says(text str, needle str) -> bool {
+    for line in notes(text) {
+        if line.contains(needle) { return true }
+    }
+    false
+}
+
+// The first note, or `ok`.
+fn first_note(text str) -> str {
+    ro all = notes(text)
+    if all.len() == 0 { return "ok" }
+    all[0]
+}
+
+// The kinds of the notes, in order.
+fn kinds(text str) -> []str {
+    mut out = []str.new()
+    for e in checked(text).errors { out.push(e.kind) }
+    out
+}
+
+fn count_kind(text str, kind str) -> int {
+    mut n = 0
+    for k in kinds(text) {
+        if k == kind { n += 1 }
+    }
+    n
+}
+
+// A text of the tiny machine with a piece replaced.
+fn tiny_with(old str, new str) -> str => tiny_text().replace(old, new)

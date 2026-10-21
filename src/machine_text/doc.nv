@@ -1,0 +1,261 @@
+// doc.nv - the structure of a file of a machine: the header, the sections `##`, the lines `Ключ: значение` with their continuation lines, the tables
+// with the check of their columns.
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+
+/// TxSection: a section `## Имя`: the key of its name (the English word of the table of words: `Types`, `Parties`, `Common events`), the heading as it stands in the file, the line of the
+/// heading and the entries [first, last) that belong to it (the heading itself is not among them).
+type TxSection { name str, title str, line int, first int, last int }
+
+/// TxSeg: a piece of text of a line with its place; the value of a `Ключ: значение` line is one piece and the pieces of its continuation lines.
+type TxSeg { text str, line int, col int }
+
+/// TxKv: a line `Ключ: значение`: the key (its English word), the pieces of the value, and the number of the entries it takes.
+type TxKv { key str, segs []TxSeg, line int, taken int }
+
+/// Is the entry a line `Ключ: значение` with a key of the language of the file? Returns the BYTE offset of the colon in the text of the entry, or -1 (the classification of the lines found the key).
+fn kv_colon(entry TxEntry) -> int {
+    if entry.kind != EN_TEXT || entry.indent != 0 { return -1 }
+    entry.colon
+}
+
+// The offset of the first char of `s` from `from` that is no space, and the number of the chars that were skipped.
+fn skip_spaces(s str, from int) -> (int, int) {
+    ro n = s.byte_len()
+    mut at = from
+    mut skipped = 0
+    while at < n {
+        ro c = tx_at(s, at)
+        if !tx_is_space(c) { break }
+        at += c.len_utf8()
+        skipped += 1
+    }
+    (at, skipped)
+}
+
+/// The line `Ключ: значение` at `at` of the entries with its continuation lines (the following free lines that are indented).
+fn kv_read(entries []TxEntry, at int) -> TxKv {
+    ro entry = entries[at]
+    ro colon = kv_colon(entry)
+    ro key = entry.key
+    mut segs = []TxSeg.new()
+    ro colon_col = tx_cols(entry.text, 0, colon)
+    ro (lead_at, lead) = skip_spaces(entry.text, colon + 1)
+    segs.push(TxSeg { text: entry.text[lead_at..], line: entry.line, col: entry.indent + entry.shift + colon_col + 1 + lead + 1 })
+    mut taken = 1
+    while at + taken < entries.len() {
+        ro next = entries[at + taken]
+        if next.kind != EN_TEXT || next.indent == 0 { break }
+        // a continuation line may be an item of a nested list (`  - действие;`, format 2.6): the marker is not a part of the text
+        mut item_at = 0
+        mut item_lead = 0
+        if next.text.starts_with("- ") {
+            ro (after, skipped) = skip_spaces(next.text, 1)
+            item_at = after
+            item_lead = 1 + skipped
+        }
+        segs.push(TxSeg { text: next.text[item_at..], line: next.line, col: next.indent + item_lead + 1 })
+        taken += 1
+    }
+    TxKv { key, segs, line: entry.line, taken }
+}
+
+/// The tokens of the pieces, one after another; the end of the text is the end of the last piece.
+fn lex_segs(segs []TxSeg) -> Result[TxP, TranslateError] {
+    mut all = []TxTok.new()
+    mut end_line = 1
+    mut end_col = 1
+    for seg in segs {
+        ro tokens = tx_lex(seg.text, seg.line, seg.col)?
+        for t in tokens { all.push(t) }
+        end_line = seg.line
+        end_col = seg.col + seg.text.chars().count()
+    }
+    Ok(p_new(all, end_line, end_col))
+}
+
+/// The tokens of a cell.
+fn cell_p(cell TxCell, line int) -> Result[TxP, TranslateError] {
+    ro tokens = tx_lex(cell.text, line, cell.col)?
+    Ok(p_new(tokens, line, cell.col + cell.text.chars().count()))
+}
+
+/// The tokens of the free line of an entry.
+fn entry_p(entry TxEntry) -> Result[TxP, TranslateError] {
+    ro tokens = tx_lex(entry.text, entry.line, entry.indent + entry.shift + 1)?
+    Ok(p_new(tokens, entry.line, entry.indent + entry.shift + 1 + entry.text.chars().count()))
+}
+
+fn note(mut cx TxCx, e TranslateError) -> () {
+    cx.errors.push(foreign_refined(cx, e))
+}
+
+// A syntax error whose "found" word is a keyword of the OTHER language is the error of the language (section 1a): the word is in the wrong language, the construction is not wrong.
+fn foreign_refined(cx TxCx, e TranslateError) -> TranslateError {
+    ro same = TranslateError { line: e.line, col: e.col, kind: e.kind, message: e.message, quote: e.quote }
+    if e.kind != "syntax" { return same }
+    ro mark = ", найдено: `"
+    ro at = e.message.find(mark) ?? -1
+    if at < 0 { return same }
+    ro rest = e.message[at + mark.byte_len()..]
+    ro end = rest.find("`") ?? -1
+    if end < 0 { return same }
+    ro word = rest[..end]
+    match kw_foreign_any(cx.words, kinds_foreign_names(), word) {
+        Some(key) => foreign_error(cx.words, e.line, e.col, word, foreign_kind(cx.words, kinds_foreign_names(), word), key)
+        None => same
+    }
+}
+
+fn struct_error(line int, col int, message str) -> TranslateError => tx_err(line, col, "structure", message)
+
+// ---- the sections ----------------------------------------------------------------------------------------------------------------
+
+/// The keys of the sections of a file of a machine, in the order of format section 1 (the English words of the table of words; `Signals` and `Response parts` are the product's).
+fn section_keys() -> []str => [
+    "Types", "Constants", "Parameters", "Input", "Data", "Parties", "Signals", "Response parts", "Definitions", "Includes", "Common events", "States", "Ends", "Primitives"
+]
+
+/// The words of the sections in the language of the file, for a message.
+fn section_words(w TxWords) -> str => kw_all(w, "section", section_keys()).join(", ")
+
+/// The sections of the file after the first heading, in order. A heading of another name, or a repeated one, is an error. A word of the other language is the error of the language.
+fn sections_of(entries []TxEntry, mut cx TxCx) -> []TxSection {
+    mut out = []TxSection.new()
+    ro expansion_word = kw(cx.words, "section", "Fragment expansion")
+    mut i = 0
+    while i < entries.len() {
+        if entries[i].kind == EN_HEAD && entries[i].level == 2 {
+            ro title = entries[i].text
+            mut last = i + 1
+            while last < entries.len() && !(entries[last].kind == EN_HEAD && entries[last].level <= 2) { last += 1 }
+            if title.starts_with(expansion_word) {
+                // a reference for the reader (format 2.7, P-2): the reader skips it whole
+                i = last
+                continue
+            }
+            mut key = ""
+            match kw_key(cx.words, "section", title) {
+                Some(k) => { key = k }
+                None => ()
+            }
+            if key == "" || !section_keys().contains(key) {
+                match kw_foreign(cx.words, "section", title) {
+                    Some(k) => note(cx, foreign_error(cx.words, entries[i].line, 4, title, "section", k))
+                    None => note(cx, struct_error(entries[i].line, 4, "неизвестный раздел `${title}`: бывают ${section_words(cx.words)}"))
+                }
+            } else {
+                for seen in out {
+                    if seen.name == key { note(cx, struct_error(entries[i].line, 4, "раздел `${title}` повторён")) }
+                }
+                out.push(TxSection { name: key, title, line: entries[i].line, first: i + 1, last })
+            }
+            i = last
+        } else {
+            i += 1
+        }
+    }
+    out
+}
+
+fn section_of(sections []TxSection, name str) -> Option[TxSection] {
+    for s in sections {
+        if s.name == name { return Some(s) }
+    }
+    None
+}
+
+// ---- the tables ------------------------------------------------------------------------------------------------------------------
+
+/// The text of a header cell for the comparison: lower case, one space between words.
+fn header_norm(s str) -> str => tx_lower(s)
+
+/// Does the row start another table (all its cells are words of the columns of the tables)? Two tables may follow each other without a line between them.
+fn row_starts_table(e TxEntry, w TxWords) -> bool {
+    if e.kind != EN_ROW || e.cells.len() < 2 { return false }
+    for c in e.cells {
+        if !w.cols.contains(header_norm(c.text)) { return false }
+    }
+    true
+}
+
+/// TxRows: the body rows of a table and the line of its header.
+type TxRows { rows []TxEntry, header_line int }
+
+/// The rows of the table that starts at the entry `at` (its header) and stops at the first entry that is not a row or is the header of another table.
+/// The columns of the header must be `expected` (the keys of the columns, the English words of the table of words); every body row must have as many cells.
+fn tab_read(entries []TxEntry, at int, last int, expected []str, mut cx TxCx) -> TxRows {
+    mut rows = []TxEntry.new()
+    ro head = entries[at]
+    ro want = kw_all(cx.words, "column", expected)
+    mut ok = head.cells.len() == expected.len()
+    if ok {
+        mut k = 0
+        while k < expected.len() {
+            if header_norm(head.cells[k].text) != header_norm(want[k]) { ok = false }
+            k += 1
+        }
+    }
+    if !ok {
+        // a header written in the words of the other language is the error of the language, at the first word that is not of the file's
+        mut foreign_at = -1
+        mut foreign_key = ""
+        mut k = 0
+        while k < head.cells.len() && foreign_at < 0 {
+            match kw_foreign(cx.words, "column", head.cells[k].text) {
+                Some(key) => {
+                    foreign_at = k
+                    foreign_key = key
+                }
+                None => ()
+            }
+            k += 1
+        }
+        if foreign_at >= 0 {
+            note(cx, foreign_error(cx.words, head.line, head.cells[foreign_at].col, head.cells[foreign_at].text, "column", foreign_key))
+        } else {
+            note(cx, struct_error(head.line, 1, "столбцы таблицы: ${want.join(" | ")}"))
+        }
+    }
+    mut i = at + 1
+    while i < last && entries[i].kind == EN_ROW && !row_starts_table(entries[i], cx.words) {
+        if entries[i].cells.len() != expected.len() {
+            note(cx, struct_error(entries[i].line, 1, "в строке ${entries[i].cells.len()} ячеек, а в таблице их ${expected.len()}"))
+        } else {
+            rows.push(entries[i])
+        }
+        i += 1
+    }
+    TxRows { rows, header_line: head.line }
+}
+
+/// The index of the first entry after the table that starts at `at`.
+fn tab_end(entries []TxEntry, at int, last int, w TxWords) -> int {
+    mut i = at + 1
+    while i < last && entries[i].kind == EN_ROW && !row_starts_table(entries[i], w) { i += 1 }
+    i
+}
+
+/// The body of a section that is a single table: its rows (`expected` are the keys of the columns). A section that is only `—` has no rows; any other free line is an error.
+fn section_table(entries []TxEntry, sec TxSection, expected []str, mut cx TxCx) -> []TxEntry {
+    mut rows = []TxEntry.new()
+    mut i = sec.first
+    mut seen = false
+    while i < sec.last {
+        ro e = entries[i]
+        if e.kind == EN_ROW && !seen {
+            ro t = tab_read(entries, i, sec.last, expected, cx)
+            for r in t.rows { rows.push(r) }
+            seen = true
+            i = tab_end(entries, i, sec.last, cx.words)
+        } else if e.kind == EN_TEXT && e.text == "—" {
+            i += 1
+        } else {
+            note(cx, struct_error(e.line, e.indent + 1, "лишняя строка в разделе `${sec.title}`"))
+            i += 1
+        }
+    }
+    rows
+}

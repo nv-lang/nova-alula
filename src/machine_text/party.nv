@@ -1,0 +1,531 @@
+// party.nv - the parties (format section 1, `## Стороны`), the signals and the parts of an answer, the definitions (section 8), the primitives (section 7).
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+
+// ---- the parties -----------------------------------------------------------------------------------------------------------------------
+
+/// TxPartyRow: a party read from its row: the names and the pairs of its JSON object.
+type TxPartyRow { ru str, en str, pairs []TxKV }
+
+// The word list of the column `слова ворот`: `—`, or `слово`, `слово(поле тип, …)`, … separated by commas. Returns the JSON of the words.
+fn party_words(cell TxCell, line int, mut cx TxCx) -> Result[[]TxJ, TranslateError] {
+    mut out = []TxJ.new()
+    if cell.text == "—" || cell.text == "" { return Ok(out) }
+    mut p = cell_p(cell, line)?
+    while true {
+        ro first = p_tok(p)
+        ro phrase = ev_phrase(p)?
+        ro en = decl_name_phrase(cx, first, phrase, "word", "слово")
+        pair_add(cx.env.words, phrase, en)
+        if p_eat(p, "(") {
+            ro fields = decl_fields(p, cx, ")")?
+            p_expect(p, ")")?
+            out.push(jobj([kv("name", js(en)), kv("fields", TxArr(fields))]))
+        } else {
+            out.push(jobj([kv("name", js(en))]))
+        }
+        if p_eat(p, ",") { continue }
+        break
+    }
+    p_end(p)?
+    Ok(out)
+}
+
+// The Latin word of a phrase under a kind of the table of names, else a soft error.
+fn decl_name_phrase(mut cx TxCx, t TxTok, phrase str, kind str, what str) -> str => decl_name_phrase_in(cx, t, phrase, [kind], what)
+
+// The same under the first of the kinds that has the phrase.
+fn decl_name_phrase_in(mut cx TxCx, t TxTok, phrase str, kinds []str, what str) -> str {
+    match names_first(cx.names, kinds, phrase) {
+        Some(en) => en
+        None => {
+            // a word of the author in Latin letters is the name of the JSON as it is (section 1a)
+            if is_identifier_latin(phrase) { return phrase }
+            cx_error(cx, t, "name", "${what} `${phrase}` нет в таблице имён${names_hint(cx.names, kinds, phrase)}")
+            phrase
+        }
+    }
+}
+
+fn party_en(mut cx TxCx, n TxTok, id str) -> str {
+    match names_first(cx.names, ["party", "type", "variable"], n.text) {
+        Some(en) => en
+        None => {
+            if id != "" && is_latin_code(id) { return id }
+            if is_identifier_latin(n.text) { return n.text }
+            tx_translit(n.text)
+        }
+    }
+}
+
+// The counter: a datum (`попытка_агента`) or a path (`линзы[*].попытка`).
+fn party_counter(cell TxCell, line int, mut cx TxCx) -> Result[str, TranslateError] {
+    mut p = cell_p(cell, line)?
+    ro root = p_tok(p)
+    if root.kind != TK_NAME { return Err(p_fail(p, "ожидается имя данного — счётчика попыток")) }
+    p_adv(p)
+    ro root_en = tr_global(cx, root)
+    mut text = root_en
+    if p_eat(p, "[") {
+        p_expect(p, "*")?
+        p_expect(p, "]")?
+        text = "${text}[*]"
+        while p_eat(p, ".") {
+            ro f = p_tok(p)
+            if f.kind != TK_NAME { return Err(p_fail(p, "после `.` ожидается поле")) }
+            p_adv(p)
+            text = "${text}.${tr_field_name(cx, f)}"
+        }
+    }
+    p_end(p)?
+    Ok(text)
+}
+
+// The cell `вид`: agent(итог Тип), human(итог ИсходВорот), enhanced(итог ИсходВорот), human или agent по настройке имя(итог ИсходВорот), machine имя(вход Тип, итог Тип)[; разбор: примитив[("роль")] -> Тип].
+// A party of the kind `machine` is a nested machine (rule 35): the name of the machine of the registry of the caller, the record type of its input, the type of its result and the parse.
+type TxKind { kind str, result str, setting str, nested str, input_type str, parse_primitive str, parse_role str, parse_type str }
+
+fn kind_plain(kind str, result str, setting str) -> TxKind => { kind, result, setting, nested: "", input_type: "", parse_primitive: "", parse_role: "", parse_type: "" }
+
+// The name of the nested machine in the registry of the caller: the table of names (kind `machine`), else a Latin name as it is.
+fn nested_name(mut cx TxCx, t TxTok) -> str {
+    match names_first(cx.names, ["machine"], t.text) {
+        Some(en) => en
+        None => {
+            if is_identifier_latin(t.text) { return t.text }
+            cx_error(cx, t, "name", "машины `${t.text}` нет в таблице имён${names_hint(cx.names, ["machine"], t.text)}")
+            t.text
+        }
+    }
+}
+
+// The same for a name given as a text (a list of the machines in the parameter of a fragment) at the place of a token.
+fn nested_name_text(mut cx TxCx, at TxTok, name str) -> str {
+    match names_first(cx.names, ["machine"], name) {
+        Some(en) => en
+        None => {
+            if is_identifier_latin(name) { return name }
+            cx_error(cx, at, "name", "машины `${name}` нет в таблице имён${names_hint(cx.names, ["machine"], name)}")
+            name
+        }
+    }
+}
+
+fn party_machine(mut p TxP, mut cx TxCx) -> Result[TxKind, TranslateError] {
+    ro words = cx.words
+    ro n = p_tok(p)
+    if n.kind != TK_NAME { return Err(p_fail(p, "после `${kw(words, "kind_party", "machine")}` ожидается имя вызываемой машины")) }
+    p_adv(p)
+    ro nested = nested_name(cx, n)
+    p_expect(p, "(")?
+    p_expect_kw(p, words, "kind_party", "input")?
+    ro input_type = ty_parse(p, cx)?
+    p_expect(p, ",")?
+    p_expect_kw(p, words, "kind_party", "result")?
+    ro result = ty_parse(p, cx)?
+    p_expect(p, ")")?
+    mut prim = ""
+    mut role = ""
+    mut parse_type = ""
+    if p_eat(p, ";") {
+        p_expect_kw(p, words, "kind_party", "parse")?
+        p_expect(p, ":")?
+        ro f = p_tok(p)
+        if f.kind != TK_NAME { return Err(p_fail(p, "после `${kw(words, "kind_party", "parse")}:` ожидается имя примитива")) }
+        p_adv(p)
+        prim = tr_primitive(cx, f)
+        if p_eat(p, "(") {
+            ro r = p_tok(p)
+            if r.kind != TK_STR { return Err(p_fail(p, "роль — текст в кавычках")) }
+            p_adv(p)
+            role = r.text
+            p_expect(p, ")")?
+        }
+        if !tx_arrow(p_tok(p)) { return Err(p_fail(p, "после разбора ожидается `->` и тип его результата")) }
+        p_adv(p)
+        parse_type = ty_parse(p, cx)?
+    }
+    p_end(p)?
+    Ok(TxKind { kind: "machine", result, setting: "", nested, input_type, parse_primitive: prim, parse_role: role, parse_type })
+}
+
+fn party_kind(cell TxCell, line int, mut cx TxCx) -> Result[TxKind, TranslateError] {
+    mut p = cell_p(cell, line)?
+    ro w = p_tok(p)
+    if w.kind != TK_NAME { return Err(p_fail(p, "ожидается вид стороны")) }
+    ro words = cx.words
+    if p_eat_kw(p, words, "kind_party", "machine") { return party_machine(p, cx) }
+    mut setting = ""
+    mut kind = ""
+    if p_eat_kw(p, words, "kind_party", "human or agent by setting") {
+        ro s = p_tok(p)
+        if s.kind != TK_NAME { return Err(p_fail(p, "ожидается имя настройки проекта")) }
+        p_adv(p)
+        setting = tr_word(cx, s, ["variable", "data", "function"], "настройка")
+        kind = "gatekeeper"
+    } else if p_eat_kw(p, words, "kind_party", "agent") {
+        kind = "agent"
+    } else if p_eat_kw(p, words, "kind_party", "human") {
+        kind = "human"
+    } else if p_eat_kw(p, words, "kind_party", "enhanced") {
+        kind = "enhanced"
+    } else {
+        return Err(tx_err(w.line, w.col, "syntax", "вид стороны: ${kw(words, "kind_party", "agent")}, ${kw(words, "kind_party", "human")}, ${kw(words, "kind_party", "enhanced")}, ${kw(words, "kind_party", "human or agent by setting")} …, ${kw(words, "kind_party", "machine")}"))
+    }
+    p_expect(p, "(")?
+    p_expect_kw(p, words, "kind_party", "result")?
+    mut result = ""
+    if kind == "agent" {
+        result = ty_parse(p, cx)?
+    } else {
+        if !p_eat_kw(p, words, "type", "GateOutcome") { return Err(p_fail(p, "у этой стороны итог — `${kw(words, "type", "GateOutcome")}`")) }
+    }
+    p_expect(p, ")")?
+    p_end(p)?
+    Ok(kind_plain(kind, result, setting))
+}
+
+fn party_row(r TxEntry, mut cx TxCx) -> Result[TxPartyRow, TranslateError] {
+    ro n = cell_name(r.cells[0], r.line)?
+    ro id = if r.cells[1].text == "—" { "" } else { r.cells[1].text }
+    ro k = party_kind(r.cells[2], r.line, cx)?
+    ro en = party_en(cx, n, id)
+    if pair_has(cx.env.parties, n.text) { return Err(tx_err(n.line, n.col, "name", "сторона `${n.text}` уже объявлена")) }
+    pair_add(cx.env.parties, n.text, en)
+    mut profile = TxNull
+    mut has_profile = false
+    if r.cells[3].text != "—" && r.cells[3].text != "" {
+        profile = cell_expr(r.cells[3], r.line, cx, sc_empty())?
+        has_profile = true
+    }
+    ro words = party_words(r.cells[4], r.line, cx)?
+    ro counter = party_counter(r.cells[5], r.line, cx)?
+    mut pairs = [kv("name", js(en)), kv("id", js(id)), kv("kind", js(k.kind))]
+    if k.nested != "" { pairs.push(kv("nested", js(k.nested))) }
+    if k.input_type != "" { pairs.push(kv("input_type", js(k.input_type))) }
+    if k.result != "" { pairs.push(kv("result", js(k.result))) }
+    if k.parse_primitive != "" {
+        mut parse_pairs = [kv("primitive", js(k.parse_primitive))]
+        if k.parse_role != "" { parse_pairs.push(kv("role", js(k.parse_role))) }
+        parse_pairs.push(kv("type", js(k.parse_type)))
+        pairs.push(kv("parse", jobj(parse_pairs)))
+    }
+    if has_profile { pairs.push(kv("profile", profile)) }
+    if k.setting != "" { pairs.push(kv("setting", js(k.setting))) }
+    pairs.push(kv("counter", js(counter)))
+    if words.len() > 0 { pairs.push(kv("words", TxArr(words))) }
+    Ok(TxPartyRow { ru: n.text, en, pairs })
+}
+
+fn party_columns() -> []str => ["name", "id", "kind", "profile", "gate_words", "counter"]
+
+fn limit_expression(line TxKv, mut cx TxCx) -> Result[TxJ, TranslateError] {
+    mut p = lex_segs(line.segs)?
+    ro x = ex_expr(p, cx, sc_empty())?
+    p_end(p)?
+    Ok(x)
+}
+
+/// The line `Предел запросов: выражение` of the section `## Стороны` (format 1, rule 21): the expression, or nothing when the line is not written.
+fn decl_request_limit(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
+    mut out = []TxJ.new()
+    mut i = sec.first
+    while i < sec.last {
+        ro e = entries[i]
+        if e.kind == EN_TEXT && kv_colon(e) >= 0 {
+            ro line = kv_read(entries, i)
+            if line.key == "Request limit" {
+                match limit_expression(line, cx) {
+                    Ok(x) => { out.push(x) }
+                    Err(err) => note(cx, err)
+                }
+            }
+            i += line.taken
+        } else {
+            i += 1
+        }
+    }
+    out
+}
+
+/// The section `## Стороны`: the parties; the line `Предел запросов: …` is read by `decl_request_limit`.
+fn decl_parties(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxPartyRow {
+    mut out = []TxPartyRow.new()
+    mut i = sec.first
+    while i < sec.last {
+        ro e = entries[i]
+        if e.kind == EN_ROW {
+            ro t = tab_read(entries, i, sec.last, party_columns(), cx)
+            for r in t.rows {
+                cx.rows_total += 1
+                ro before = cx.errors.len()
+                match party_row(r, cx) {
+                    Ok(row) => {
+                        out.push(row)
+                        cx_place(cx, "$.parties[${out.len() - 1}]", r.line)
+                    }
+                    Err(err) => note(cx, err)
+                }
+                if cx.errors.len() > before { cx.rows_noted += 1 }
+            }
+            i = tab_end(entries, i, sec.last, cx.words)
+        } else if e.kind == EN_TEXT && kv_colon(e) >= 0 {
+            ro line = kv_read(entries, i)
+            if line.key == "Request limit" {
+                // read by `decl_request_limit`
+                cx.rows_total += 0
+            } else {
+                note(cx, struct_error(e.line, 1, "в разделе `Стороны` бывают таблица и строка `Предел запросов: …`"))
+            }
+            i += line.taken
+        } else if e.kind == EN_TEXT && e.text == "—" {
+            i += 1
+        } else {
+            note(cx, struct_error(e.line, e.indent + 1, "лишняя строка в разделе `Стороны`"))
+            i += 1
+        }
+    }
+    // a party that the table names by its Latin name (the canonical form) is also called by its word of the dictionary: the text of a fragment (`усиленный`) says so
+    mut aliases = []TxPair.new()
+    for pr in cx.env.parties {
+        for kind in ["party", "type", "variable"] {
+            match names_file_word(cx.names, kind, pr.en) {
+                Some(w) => {
+                    if w != pr.ru && !pair_has(cx.env.parties, w) { aliases.push(TxPair { ru: w, en: pr.en }) }
+                }
+                None => ()
+            }
+        }
+    }
+    for al in aliases {
+        if !pair_has(cx.env.parties, al.ru) { pair_add(cx.env.parties, al.ru, al.en) }
+    }
+    out
+}
+
+// ---- the signals and the parts of an answer (not in the format: the proposals of its section 14) --------------------------------------------
+
+// Fields in a cell: `—` or `поле тип, поле тип`.
+fn cell_fields(cell TxCell, line int, mut cx TxCx) -> Result[[]TxJ, TranslateError] {
+    mut out = []TxJ.new()
+    if cell.text == "—" || cell.text == "" { return Ok(out) }
+    mut p = cell_p(cell, line)?
+    while !p_done(p) {
+        out.push(decl_field(p, cx)?)
+        if p_eat(p, ",") { continue }
+        break
+    }
+    p_end(p)?
+    Ok(out)
+}
+
+fn cell_phrase(cell TxCell, line int) -> Result[TxPhrase, TranslateError] {
+    mut p = cell_p(cell, line)?
+    ro first = p_tok(p)
+    ro phrase = ev_phrase(p)?
+    p_end(p)?
+    Ok(TxPhrase { text: phrase, first })
+}
+
+type TxPhrase { text str, first TxTok }
+
+/// The section `## Сигналы`: `| имя | поля |`; returns the JSON of the signals.
+fn decl_signals(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
+    mut out = []TxJ.new()
+    for r in section_table(entries, sec, ["name", "fields"], cx) {
+        cx.rows_total += 1
+        ro before = cx.errors.len()
+        match signal_row(r, cx) {
+            Ok(j) => out.push(j)
+            Err(err) => note(cx, err)
+        }
+        if cx.errors.len() > before { cx.rows_noted += 1 }
+    }
+    out
+}
+
+fn signal_row(r TxEntry, mut cx TxCx) -> Result[TxJ, TranslateError] {
+    ro ph = cell_phrase(r.cells[0], r.line)?
+    ro en = decl_name_phrase_in(cx, ph.first, ph.text, ["word", "signal"], "сигнал")
+    ro fields = cell_fields(r.cells[1], r.line, cx)?
+    pair_add(cx.env.signals, ph.text, en)
+    if fields.len() == 0 { return Ok(jobj([kv("name", js(en))])) }
+    Ok(jobj([kv("name", js(en)), kv("fields", TxArr(fields))]))
+}
+
+/// TxPartItem: a part of an answer of one party.
+type TxPartItem { party_ru str, item TxJ }
+
+/// The section `## Части ответа`: `| сторона | имя | поля |`.
+fn decl_parts(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxPartItem {
+    mut out = []TxPartItem.new()
+    for r in section_table(entries, sec, ["party", "name", "fields"], cx) {
+        cx.rows_total += 1
+        ro before = cx.errors.len()
+        match part_row(r, cx) {
+            Ok(row) => out.push(row)
+            Err(err) => note(cx, err)
+        }
+        if cx.errors.len() > before { cx.rows_noted += 1 }
+    }
+    out
+}
+
+fn part_row(r TxEntry, mut cx TxCx) -> Result[TxPartItem, TranslateError] {
+    ro party = cell_name(r.cells[0], r.line)?
+    if !pair_has(cx.env.parties, party.text) { cx_error(cx, party, "name", "стороны `${party.text}` нет в таблице «Стороны»") }
+    ro ph = cell_phrase(r.cells[1], r.line)?
+    ro en = decl_name_phrase(cx, ph.first, ph.text, "part", "часть ответа")
+    ro fields = cell_fields(r.cells[2], r.line, cx)?
+    pair_add(cx.env.parts, ph.text, en)
+    ro item = if fields.len() == 0 { jobj([kv("name", js(en))]) } else { jobj([kv("name", js(en)), kv("fields", TxArr(fields))]) }
+    Ok(TxPartItem { party_ru: party.text, item })
+}
+
+// ---- the definitions --------------------------------------------------------------------------------------------------------------------
+
+fn def_segs(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxSeg {
+    mut segs = []TxSeg.new()
+    mut i = sec.first
+    while i < sec.last {
+        ro e = entries[i]
+        if e.kind == EN_TEXT {
+            if e.text != "—" { segs.push(TxSeg { text: e.text, line: e.line, col: e.indent + 1 }) }
+        } else {
+            note(cx, struct_error(e.line, 1, "в разделе `${sec.name}` таблиц нет"))
+        }
+        i += 1
+    }
+    segs
+}
+
+/// The names of the definitions are known before the bodies are read (a definition may call one that comes later).
+fn defs_register(entries []TxEntry, sec TxSection, mut cx TxCx) -> () {
+    ro segs = def_segs(entries, sec, cx)
+    match lex_segs(segs) {
+        Ok(p0) => {
+            mut k = 0
+            while k + 1 < p0.toks.len() {
+                if t_is_kw(p0.toks[k], cx.words, "decl", "define") && p0.toks[k + 1].kind == TK_NAME {
+                    ro n = p0.toks[k + 1]
+                    ro en = decl_name(cx, n, ["function", "method", "variable"], "функция")
+                    if pair_has(cx.env.defs, n.text) {
+                        cx_error(cx, n, "name", "определение `${n.text}` повторено")
+                    } else {
+                        pair_add(cx.env.defs, n.text, en)
+                    }
+                }
+                k += 1
+            }
+        }
+        Err(e) => note(cx, e)
+    }
+}
+
+// One definition after `определение`.
+fn def_one(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
+    ro n = p_tok(p)
+    if n.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "decl", "define")}` ожидается имя")) }
+    p_adv(p)
+    ro en = match pair_get(cx.env.defs, n.text) {
+        Some(x) => x
+        None => n.text
+    }
+    p_expect(p, "(")?
+    mut params = []TxJ.new()
+    mut scope = sc_empty()
+    while !p_is(p, ")") {
+        ro a = p_tok(p)
+        if a.kind != TK_NAME { return Err(p_fail(p, "ожидается имя параметра")) }
+        p_adv(p)
+        ro a_en = tr_binder(cx, a)
+        if pair_has(scope.names, a.text) { cx_error(cx, a, "name", "параметр `${a.text}` повторён") }
+        ro type_text = ty_parse(p, cx)?
+        params.push(jobj([kv("name", js(a_en)), kv("type", js(type_text))]))
+        scope = sc_with(scope, a.text, a_en)
+        if p_eat(p, ",") { continue }
+        break
+    }
+    p_expect(p, ")")?
+    if !tx_arrow(p_tok(p)) { return Err(p_fail(p, "после параметров ожидается `->` и тип результата")) }
+    p_adv(p)
+    ro result = ty_parse(p, cx)?
+    p_expect(p, "=")?
+    ro body = ex_expr(p, cx, scope)?
+    Ok(jobj([kv("name", js(en)), kv("params", TxArr(params)), kv("result", js(result)), kv("body", body)]))
+}
+
+/// The section `## Определения`: `определение имя(арг тип, …) -> тип = выр`.
+fn decl_definitions(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
+    mut out = []TxJ.new()
+    ro segs = def_segs(entries, sec, cx)
+    match lex_segs(segs) {
+        Ok(p0) => {
+            mut p = p_copy(p0)
+            while !p_done(p) {
+                ro head = p_tok(p)
+                if !t_is_kw(head, cx.words, "decl", "define") {
+                    note(cx, tx_err(head.line, head.col, "syntax", "ожидается `${kw(cx.words, "decl", "define")}`, найдено: ${t_shown(head)}"))
+                    p_adv(p)
+                    while !p_done(p) && !p_is_kw(p, cx.words, "decl", "define") { p_adv(p) }
+                    continue
+                }
+                p_adv(p)
+                cx.rows_total += 1
+                ro before = cx.errors.len()
+                match def_one(p, cx) {
+                    Ok(j) => {
+                        out.push(j)
+                        cx_place(cx, "$.definitions[${out.len() - 1}]", head.line)
+                    }
+                    Err(e) => {
+                        note(cx, e)
+                        while !p_done(p) && !p_is_kw(p, cx.words, "decl", "define") { p_adv(p) }
+                    }
+                }
+                if cx.errors.len() > before { cx.rows_noted += 1 }
+            }
+        }
+        Err(e) => note(cx, e)
+    }
+    out
+}
+
+// ---- the primitives ---------------------------------------------------------------------------------------------------------------------
+
+fn primitive_classes() -> []str => ["pure", "reading", "writing", "irreversible"]
+
+fn prim_row(r TxEntry, mut cx TxCx) -> Result[str, TranslateError] {
+    ro n = cell_name(r.cells[0], r.line)?
+    mut en = n.text
+    if !is_latin_code(n.text) {
+        match names_first(cx.names, ["primitive", "function", "effect"], n.text) {
+            Some(x) => { en = x }
+            None => { cx_error(cx, n, "name", "примитива `${n.text}` нет в таблице имён${names_hint(cx.names, ["primitive", "function", "effect"], n.text)}") }
+        }
+    }
+    if !primitive_classes().contains(r.cells[3].text) {
+        return Err(tx_err(r.line, r.cells[3].col, "syntax", "класс примитива: ${primitive_classes().join(", ")}"))
+    }
+    pair_add(cx.env.prims, n.text, en)
+    Ok(en)
+}
+
+/// The section `## Примитивы`: the names of the primitives (the host's registry has their signatures).
+fn decl_primitives(entries []TxEntry, sec TxSection, mut cx TxCx) -> []str {
+    mut out = []str.new()
+    for r in section_table(entries, sec, ["name", "parameters", "result", "class", "reads", "writes"], cx) {
+        cx.rows_total += 1
+        ro before = cx.errors.len()
+        match prim_row(r, cx) {
+            Ok(en) => {
+                if !out.contains(en) { out.push(en) }
+            }
+            Err(e) => note(cx, e)
+        }
+        if cx.errors.len() > before { cx.rows_noted += 1 }
+    }
+    out
+}

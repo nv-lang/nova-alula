@@ -1,0 +1,305 @@
+// include.nv - the section `## Подключения` (format sections 8 and 9): the fragments (`Пауза(…)`) and the files of definitions (`определения: имя версия N хеш H`).
+//
+// A fragment is a file of its own (here: fragments/pause.fragment.md, compiled in) with parameters; the call names all of them, they are put in the text as
+// `<параметр>` before the text is read, and the data, the common events and the states of the fragment join the machine. A fragment is given the list of
+// the nested machines `вложенные`: an empty list makes `передать` to nobody nothing and `отменить_открытые(кроме: [])` an ordinary cancel; a list of names
+// makes them `pass` actions to those machines and a cancel that leaves their requests open (task 119).
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine.{NamedText}
+
+/// TxParam: a parameter of a call of a fragment: the name, the kind (`word`, `string`, `list`) and the text (the words, the content of the string, the names).
+type TxParam { name str, kind str, text str, tok TxTok }
+
+/// TxCall: a call `Имя(параметр: значение, …)` of a fragment.
+type TxCall { name str, line int, tok TxTok, params []TxParam }
+
+/// The text of the fragment `Pause` (the key of its name) in the language of the file; the placeholders of the parameters are in the words of that language.
+fn fragment_source(key str, lang str) -> str {
+    if key == "Pause" {
+        if lang == "en" { return embed_str("fragments/pause.fragment.en.md") }
+        return embed_str("fragments/pause.fragment.md")
+    }
+    ""
+}
+
+/// The keys of the fragments of the registry (their names in the file are the words of the table of words, kind `fragment`).
+fn fragment_keys() -> []str => ["Pause"]
+
+/// The keys of the six parameters of the connection of the fragment `Pause`.
+fn pause_param_keys() -> []str => ["halt_word", "halt_code", "nested", "cancel_requests", "reenter", "write_right"]
+
+fn pause_params(w TxWords) -> []str => kw_all(w, "fragment_param", pause_param_keys())
+
+fn param_value(mut p TxP) -> Result[TxParam, TranslateError] {
+    ro n = p_tok(p)
+    if n.kind != TK_NAME { return Err(p_fail(p, "ожидается имя параметра")) }
+    p_adv(p)
+    p_expect(p, ":")?
+    ro v = p_tok(p)
+    if v.kind == TK_STR {
+        p_adv(p)
+        return Ok(TxParam { name: n.text, kind: "string", text: v.text, tok: n })
+    }
+    if p_is(p, "[") {
+        p_adv(p)
+        mut names = []str.new()
+        while !p_is(p, "]") {
+            ro item = p_tok(p)
+            if item.kind != TK_NAME { return Err(p_fail(p, "в списке ожидаются имена машин")) }
+            p_adv(p)
+            names.push(item.text)
+            if p_eat(p, ",") { continue }
+            break
+        }
+        p_expect(p, "]")?
+        return Ok(TxParam { name: n.text, kind: "list", text: names.join(","), tok: n })
+    }
+    ro phrase = ev_phrase(p)?
+    Ok(TxParam { name: n.text, kind: "word", text: phrase, tok: n })
+}
+
+/// A call of a fragment from the pieces of its lines.
+fn call_read(segs []TxSeg, line int) -> Result[TxCall, TranslateError] {
+    mut p = lex_segs(segs)?
+    ro head = p_tok(p)
+    if head.kind != TK_NAME { return Err(p_fail(p, "ожидается имя фрагмента")) }
+    p_adv(p)
+    p_expect(p, "(")?
+    mut params = []TxParam.new()
+    while !p_is(p, ")") {
+        params.push(param_value(p)?)
+        if p_eat(p, ",") { continue }
+        break
+    }
+    p_expect(p, ")")?
+    p_end(p)?
+    Ok(TxCall { name: head.text, line, tok: head, params })
+}
+
+fn call_param(call TxCall, name str) -> Option[TxParam] {
+    for q in call.params {
+        if q.name == name { return Some(q) }
+    }
+    None
+}
+
+fn only_connections(e TxEntry) -> TranslateError => tx_err(e.line, e.indent + 1, "structure", "в разделе `Подключения` только строки подключения: `Имя(параметр: значение, …)` фрагмента и `определения: имя версия N хеш H` (проза, список и раскрытие фрагмента сюда не пишутся)")
+
+/// The calls of fragments in the section `## Подключения`; the other lines (the files of definitions) are for `defs_includes`. Format 2.7 (P-2): the section holds the
+/// lines of connection only, anything else (prose, a list, a table, a heading, a key of a state) is an error.
+fn calls_read(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxCall {
+    mut out = []TxCall.new()
+    mut in_table = false
+    mut i = sec.first
+    while i < sec.last {
+        ro e = entries[i]
+        if e.kind == EN_TEXT && e.indent == 0 && kv_colon(e) < 0 && e.text == "—" {
+            i += 1
+        } else if e.kind == EN_TEXT && e.indent == 0 && kv_colon(e) < 0 && is_call_start(e.text) {
+            in_table = false
+            mut segs = [TxSeg { text: e.text, line: e.line, col: e.indent + 1 }]
+            mut k = i + 1
+            while k < sec.last && entries[k].kind == EN_TEXT && entries[k].indent > 0 {
+                segs.push(TxSeg { text: entries[k].text, line: entries[k].line, col: entries[k].indent + 1 })
+                k += 1
+            }
+            match call_read(segs, e.line) {
+                Ok(call) => out.push(call)
+                Err(err) => note(cx, err)
+            }
+            i = k
+        } else if e.kind == EN_TEXT && e.indent == 0 && kv_colon(e) >= 0 {
+            ro line = kv_read(entries, i)
+            if line.key != "definitions" { note(cx, only_connections(e)) }
+            in_table = false
+            i += line.taken
+        } else if e.kind == EN_ROW {
+            if !in_table { note(cx, only_connections(e)) }
+            in_table = true
+            i += 1
+        } else {
+            in_table = false
+            note(cx, only_connections(e))
+            i += 1
+        }
+    }
+    out
+}
+
+fn behavior_words_cancel(w TxWords) -> []str => kw_all(w, "enum_value", ["mechanics", "without_return_to_send", "stop_transport_turn"])
+
+fn behavior_words_reenter(w TxWords) -> []str => kw_all(w, "enum_value", ["nothing", "requests_from_to_send"])
+
+/// The call of the fragment `Пауза` checked against the parameters of section 9: all six named, the kinds and the values fit. Returns the text of the fragment
+/// with the parameters put in, or None when the call is wrong (the errors are noted).
+fn fragment_text(call TxCall, mut cx TxCx) -> Option[str] {
+    ro words = cx.words
+    mut source = ""
+    mut shown = ""
+    for key in fragment_keys() {
+        if call.name == kw(words, "fragment", key) {
+            source = fragment_source(key, words.lang)
+        }
+        shown = kw(words, "fragment", key)
+    }
+    if source == "" {
+        note(cx, tx_err(call.tok.line, call.tok.col, "name", "фрагмента `${call.name}` нет в реестре подключаемых файлов (есть: ${shown})"))
+        return None
+    }
+    mut ok = true
+    for name in pause_params(words) {
+        match call_param(call, name) {
+            Some(q) => ()
+            None => {
+                note(cx, tx_err(call.tok.line, call.tok.col, "structure", "в подключении `${call.name}` не назван параметр `${name}`"))
+                ok = false
+            }
+        }
+    }
+    for q in call.params {
+        if !pause_params(words).contains(q.name) {
+            note(cx, tx_err(q.tok.line, q.tok.col, "structure", "у фрагмента `${call.name}` нет параметра `${q.name}`"))
+            ok = false
+        }
+    }
+    if !ok { return None }
+    mut text = source
+    for q in call.params {
+        ro key = match kw_key(words, "fragment_param", q.name) {
+            Some(k) => k
+            None => ""
+        }
+        if key == "halt_word" {
+            if q.kind != "word" { note(cx, tx_err(q.tok.line, q.tok.col, "structure", "`${q.name}` — слово ворот, без кавычек")) }
+            text = text.replace("<${q.name}>", q.text)
+        } else if key == "halt_code" {
+            if q.kind != "string" { note(cx, tx_err(q.tok.line, q.tok.col, "structure", "`${q.name}` — текст в кавычках")) }
+            text = text.replace("<${q.name}>", tx_quote(q.text))
+        } else if key == "nested" {
+            if q.kind != "list" {
+                note(cx, tx_err(q.tok.line, q.tok.col, "structure", "`${q.name}` — список машин в скобках `[]`"))
+            } else if q.text == "" {
+                cx.env.empty_lists.push(q.name)
+            } else {
+                mut names = []str.new()
+                for one in q.text.split(",") { names.push(nested_name_text(cx, q.tok, one)) }
+                pair_add(cx.env.nested_lists, q.name, names.join(","))
+            }
+        } else if key == "cancel_requests" {
+            if !behavior_words_cancel(words).contains(q.text) {
+                note(cx, tx_err(q.tok.line, q.tok.col, "structure", "`${q.name}`: ${behavior_words_cancel(words).join(", ")}"))
+            }
+        } else if key == "reenter" {
+            if !behavior_words_reenter(words).contains(q.text) {
+                note(cx, tx_err(q.tok.line, q.tok.col, "structure", "`${q.name}`: ${behavior_words_reenter(words).join(", ")}"))
+            }
+            // `запросы_из_к_отправке`: a return to the saved state (`предыдущее`) into the appeal of a set sends the parties of `к_отправке` (rule 21); the interpreter does it for every set,
+            // so the parameter changes no text of the tree (the generator writes the fragment as the machine's own text, 1b (м), and could not carry it)
+        } else if key == "write_right" {
+            if q.kind != "string" { note(cx, tx_err(q.tok.line, q.tok.col, "structure", "`${q.name}` — примечание в кавычках")) }
+        }
+    }
+    Some(text)
+}
+
+// ---- the connection of a fragment in the tree (the key `fragments`, format 1b (m), Ya-32) -----------------------------------------------------------------
+
+/// TxFragShape: what a fragment brings into the tree (the names of the JSON): its data, how many common events it puts first, its states and its signals. The generator leaves them out of the
+/// sections of the machine, because the line of connection stands for them (a repeat would be "объявлено дважды"). The shape of `Pause` is checked against the fragment file by a test.
+type TxFragShape { data []str, common int, states []str, signals []str }
+
+fn fragment_shape(key str) -> TxFragShape {
+    if key == "Pause" {
+        mut signals = []str.new()
+        for s in protocol_signals() { signals.push(s.en) }
+        return TxFragShape { data: ["previous", "call_request_id", "open_requests"], common: 6, states: ["Pause"], signals }
+    }
+    TxFragShape { data: []str.new(), common: 0, states: []str.new(), signals: []str.new() }
+}
+
+// The value of an argument of the connection as an expression of the tree: a gate word is the Latin name of the word of the machine; the strings are literals; the list of the nested machines
+// is a list of literals with the names of the registry; the behavior words are the Latin keys of the table of words.
+fn fragment_arg_json(key str, q TxParam, cx TxCx) -> TxJ {
+    if key == "halt_word" {
+        match pair_get(cx.env.words, q.text) {
+            Some(en) => return x_lit(js(en))
+            None => ()
+        }
+        match names_get(cx.names, "word", q.text) {
+            Some(en) => return x_lit(js(en))
+            None => return x_lit(js(q.text))
+        }
+    }
+    if key == "nested" {
+        mut items = []TxJ.new()
+        match pair_get(cx.env.nested_lists, q.name) {
+            Some(joined) => {
+                for one in joined.split(",") {
+                    if one != "" { items.push(x_lit(js(one))) }
+                }
+            }
+            None => ()
+        }
+        return x_list(items)
+    }
+    if key == "cancel_requests" || key == "reenter" {
+        match kw_key(cx.words, "enum_value", q.text) {
+            Some(k) => return x_lit(js(k))
+            None => return x_lit(js(q.text))
+        }
+    }
+    x_lit(js(q.text))
+}
+
+/// The node of the tree for a call of a fragment that was accepted: `{ "name": key, "args": { argument: expression } }` with every argument in the order of the table `## Параметры`.
+fn fragment_use_json(call TxCall, cx TxCx) -> Option[TxJ] {
+    mut found = ""
+    for key in fragment_keys() {
+        if call.name == kw(cx.words, "fragment", key) { found = key }
+    }
+    if found == "" { return None }
+    mut args = []TxKV.new()
+    for pk in pause_param_keys() {
+        match call_param(call, kw(cx.words, "fragment_param", pk)) {
+            Some(q) => args.push(kv(pk, fragment_arg_json(pk, q, cx)))
+            None => return None
+        }
+    }
+    Some(jobj([kv("name", js(found)), kv("args", TxObj(args))]))
+}
+
+// ---- the signals of the protocol -----------------------------------------------------------------------------------------------------------
+
+/// TxProto: a signal of the call protocol that the fragment reads: the Latin name of the JSON and the Latin names of its fields (the texts).
+type TxProto { en str, fields []str }
+
+fn protocol_signals() -> []TxProto => [
+    TxProto { en: "human_stop", fields: ["human_word", "author", "source"] },
+    TxProto { en: "parent_stop", fields: ["id"] },
+    TxProto { en: "cancel_request", fields: ["id"] },
+    TxProto { en: "parent_continue", fields: ["id"] },
+    TxProto { en: "parent_halt", fields: ["id"] }
+]
+
+// The word of the language of the file for a Latin name of the names layer (the kind `signal`): the Russian phrase of the fragment, the Latin name itself in an English file.
+fn proto_word(cx TxCx, en str) -> str {
+    match names_file_word(cx.names, "signal", en) {
+        Some(x) => x
+        None => en
+    }
+}
+
+/// The signals of the protocol put into the environment; returns their JSON (the fields are texts).
+fn protocol_signals_json(mut cx TxCx) -> []TxJ {
+    mut out = []TxJ.new()
+    for s in protocol_signals() {
+        pair_add(cx.env.signals, proto_word(cx, s.en), s.en)
+        mut fields = []TxJ.new()
+        for f in s.fields { fields.push(jobj([kv("name", js(f)), kv("type", js("text"))])) }
+        out.push(jobj([kv("name", js(s.en)), kv("fields", TxArr(fields))]))
+    }
+    out
+}

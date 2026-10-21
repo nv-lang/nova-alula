@@ -1,0 +1,138 @@
+// v212_test.nv - task 125: the dictionary of the methodology of version 10 (Ya-37): the datum `источник_запуска` is `launch_source`, no longer `source`, so that it does not shadow the binding
+// `source` of the words of the fragment "Pause" (Ya-26); and the table of words of 2.12 (the same as 2.11: the table `portolan-keywords.tsv` did not change).
+module alula.machine_text
+
+import std.text
+import alula.machine.{table_files, text_of_file, standard_registry}
+
+test "v212 names launch source" {
+    ro n = names_load()
+    assert(names_get(n, "data", "источник_запуска") == Some("launch_source"))
+    assert(names_get(n, "field", "источник_запуска") == Some("launch_source"))
+}
+
+test "v212 names launch source en" {
+    ro n = names_load_for("en")
+    assert(names_get(n, "data", "launch_source") == Some("launch_source"))
+    assert(names_get(n, "data", "источник_запуска") == Some("launch_source"))
+}
+
+test "v212 names source stays for the binding" {
+    ro n = names_load()
+    assert(names_get(n, "field", "источник") == Some("source"))
+}
+
+test "v212 names no override" {
+    // the name comes from the dictionary: the file of the names of the format and the product does not repeat it
+    ro format_names = embed_str("names_format.tsv")
+    assert(!format_names.contains("launch_source"))
+}
+
+test "v212 names dictionary version" {
+    ro names = embed_str("names.tsv")
+    assert(names.contains("version 10"))
+    assert(!names.contains("version 9"))
+}
+
+test "v212 names the session datum of the other machines" {
+    ro n = names_load()
+    for ru in ["источник_запуска", "заход_запуска", "перечень_источников"] {
+        assert(names_first(n, kinds_data(), ru) != None)
+    }
+}
+
+test "v212 words table unchanged" {
+    ro ru = words_load("ru")
+    ro en = words_load("en")
+    assert(kw(ru, "fragment", "Pause") == "Пауза")
+    assert(kw(en, "fragment", "Pause") == "Pause")
+    assert(kw(ru, "enum_value", "none") == "нет")
+    assert(kw(en, "enum_value", "none") == "none")
+    assert(kw(ru, "action", "each") == "каждого")
+}
+
+test "v212 fragment params" {
+    ro ru = words_load("ru")
+    assert(pause_params(ru) == ["слово_остановки", "код_остановки", "вложенные", "отмена_запросов", "вход_заново", "право_записи"])
+    ro en = words_load("en")
+    assert(pause_params(en).len() == 6)
+}
+
+test "v212 fragment keys" {
+    assert(fragment_keys() == ["Pause"])
+    assert(pause_param_keys() == ["halt_word", "halt_code", "nested", "cancel_requests", "reenter", "write_right"])
+}
+
+test "v212 fragment files are 2.12" {
+    assert(fragment_source("Pause", "ru").contains("- format: 2.12"))
+    assert(fragment_source("Pause", "en").contains("- format: 2.12"))
+    assert(!fragment_source("Pause", "ru").contains("- format: 2.11"))
+    assert(!fragment_source("Pause", "en").contains("- format: 2.11"))
+}
+
+test "v212 fragment files carry the parameters" {
+    for lang in ["ru", "en"] {
+        ro text = fragment_source("Pause", lang)
+        for key in pause_param_keys() {
+            ro name = kw(words_load(lang), "fragment_param", key)
+            assert(name != "")
+        }
+        assert(text.contains("Pause") || text.contains("Пауза"))
+    }
+}
+
+// ---- what the fragment brings (the shape the generator leaves out) is what the translator puts in --------------------------------------------------------
+
+fn dialog_steps_tree() -> RJ {
+    ro report = translate_checked(text_of_file(table_files(), "dialog_steps.portolan.md"), standard_registry())
+    if report.errors.len() > 0 { panic("dialog_steps: ${report.errors[0].message}") }
+    match rj_parse(report.json) {
+        Ok(root) => root
+        Err(e) => panic("not a JSON: ${e}")
+    }
+}
+
+test "v212 fragment shape data" {
+    ro shape = fragment_shape("Pause")
+    ro data = rj_garr(dialog_steps_tree(), "data")
+    mut at = 0
+    for name in shape.data {
+        assert(rj_gstr(data[at], "name") == name)
+        at += 1
+    }
+}
+
+test "v212 fragment shape common events" {
+    ro shape = fragment_shape("Pause")
+    ro rows = rj_garr(dialog_steps_tree(), "common_events")
+    assert(rows.len() == shape.common)
+    for r in rows { assert(rj_gstr(rj_get(r, "event") ?? RNull, "kind") == "signal") }
+}
+
+test "v212 fragment shape states" {
+    ro shape = fragment_shape("Pause")
+    ro states = rj_garr(dialog_steps_tree(), "states")
+    assert(rj_gstr(states[states.len() - 1], "name") == shape.states[0])
+}
+
+test "v212 fragment shape signals" {
+    ro shape = fragment_shape("Pause")
+    ro signals = rj_garr(dialog_steps_tree(), "signals")
+    assert(signals.len() == shape.signals.len())
+    mut at = 0
+    for name in shape.signals {
+        assert(rj_gstr(signals[at], "name") == name)
+        at += 1
+    }
+}
+
+test "v212 fragment shape of an unknown fragment is empty" {
+    ro shape = fragment_shape("Rest")
+    assert(shape.data.len() == 0 && shape.common == 0 && shape.states.len() == 0 && shape.signals.len() == 0)
+}
+
+test "v212 fragment in the tree is the call" {
+    ro frags = rj_garr(dialog_steps_tree(), "fragments")
+    assert(frags.len() == 1)
+    assert(rj_gstr(frags[0], "name") == "Pause")
+}

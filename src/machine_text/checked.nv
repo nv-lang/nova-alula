@@ -1,0 +1,55 @@
+// checked.nv - the translation together with the checks of the table (`check_machine`, format section 10): every issue of the checks is put at the line of the
+// table that its place in the JSON comes from (`$.states[3].rows[1].actions[0]` -> the line of that row).
+module alula.machine_text
+
+import std.text
+import alula.machine.{Registry, NamedText}
+import alula.machine_table.{load_machine, issue_text, LoadError}
+
+// Does `prefix` name the place `path` or a place above it (the next sign after it is `.`, `[` or the end)?
+fn path_under(path str, prefix str) -> bool {
+    if !path.starts_with(prefix) { return false }
+    if path.byte_len() == prefix.byte_len() { return true }
+    ro next = path[prefix.byte_len()..prefix.byte_len() + 1]
+    next == "." || next == "["
+}
+
+/// The line of the table that the place of the JSON comes from: the longest known place above it, else the first line.
+fn place_line(places []TxPlace, path str) -> int {
+    mut best = 1
+    mut best_len = -1
+    for pl in places {
+        if path_under(path, pl.path) && pl.path.byte_len() > best_len {
+            best = pl.line
+            best_len = pl.path.byte_len()
+        }
+    }
+    best
+}
+
+fn issue_error(places []TxPlace, issue LoadError, lines []str) -> TranslateError {
+    ro line = place_line(places, issue.path)
+    TranslateError { line, col: 1, kind: "check", message: "${issue.path}: ${issue.message}", quote: "" }
+}
+
+fn report_with_issues(report TranslateReport, issues []LoadError, lines []str) -> TranslateReport {
+    mut errors = []TranslateError.new()
+    for e in report.errors { errors.push(e) }
+    for issue in issues { errors.push(issue_error(report.places, issue, lines)) }
+    ro sorted = errors_sorted(errors)
+    TranslateReport { json: report.json, errors: errors_quoted(sorted, lines), warnings: report.warnings, rows_total: report.rows_total, rows_noted: report.rows_noted, places: report.places }
+}
+
+/// The translation with the checks of the table against the registry of the primitives of the host. A machine whose JSON the decoder or the checks refuse has the
+/// issues among the errors, each with the line of its row.
+export fn translate_checked(file_text str, registry Registry) -> TranslateReport => translate_checked_with(file_text, registry, defs_files())
+
+/// The same with the registry of the files of definitions of the caller.
+export fn translate_checked_with(file_text str, registry Registry, files []NamedText) -> TranslateReport {
+    ro report = translate_report_with(file_text, files)
+    ro lines = lines_of(file_text)
+    match load_machine(report.json, registry) {
+        Ok(def) => report
+        Err(issues) => report_with_issues(report, issues, lines)
+    }
+}

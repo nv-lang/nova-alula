@@ -1,0 +1,438 @@
+// render.nv - the reverse generator (task 113): the JSON `machine/2` -> a file of Portolan in Russian or English, in the canonical form of section 1b of the specification (Я-21): the header,
+// the eleven sections in order, an empty one as `—`, the keys of a state as list items in their order, the tables with one space round the bar, the declarations in blocks of code, the operators of
+// the language, the Latin name of a state in its heading. The words are the table of words (`keywords.tsv`) in the language asked for; the names are the dictionary words that the reader takes
+// back to the same Latin name, else the Latin name (names of the author may be of any language, section 1a). Comments and the title are not written.
+//
+// The circle "file -> JSON -> file -> JSON" gives the same tree but for `title` and `portolan_version` (the header of the canonical file holds the Latin name of the machine).
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+
+/// RenderReport: the text of the file and the notes about what the JSON has and the file cannot say (each note names the place in the JSON).
+export type RenderReport { text str, notes []str }
+
+/// RnRow: a row of a table, the texts of its cells.
+type RnRow { cells []str }
+
+fn rn_cell(text str) -> str {
+    if text == "" { return "—" }
+    text.replace("|", "\\|")
+}
+
+fn rn_row_text(cells []str) -> str {
+    mut parts = []str.new()
+    for c in cells { parts.push(rn_cell(c)) }
+    "| ${parts.join(" | ")} |"
+}
+
+/// A table: the header, the separator `|---|`, the rows.
+fn rn_table(headers []str, rows []RnRow) -> []str {
+    mut out = []str.new()
+    out.push(rn_row_text(headers))
+    mut bars = []str.new()
+    for h in headers { bars.push("---") }
+    out.push("|${bars.join("|")}|")
+    for r in rows { out.push(rn_row_text(r.cells)) }
+    out
+}
+
+fn rn_cols(cx RnCx, keys []str) -> []str => kw_all(cx.words, "column", keys)
+
+fn rn_add(mut out []str, lines []str) -> () {
+    for l in lines { out.push(l) }
+}
+
+// ---- names that the file declares ----------------------------------------------------------------------------------------------
+
+fn rn_pair(mut pairs_in []TxPair, ru str, en str) -> () {
+    pairs_in.push(TxPair { ru, en })
+}
+
+/// The word of a name of the kind `word`, `signal`, `part` (a phrase of the table of names): the word of the table that the reader takes back to the same name, else the Latin name.
+fn rn_phrase(cx RnCx, kind str, en str) -> str {
+    if cx.lang == "en" { return en }
+    match names_file_word(cx.names, kind, en) {
+        Some(w) => {
+            match names_get(cx.names, kind, w) {
+                Some(back) => {
+                    if back == en { return w }
+                }
+                None => ()
+            }
+        }
+        None => ()
+    }
+    en
+}
+
+fn rn_phrase_of(cx RnCx, pairs_in []TxPair, kind str, en str) -> str {
+    match rn_pair_ru(pairs_in, en) {
+        Some(w) => w
+        None => rn_phrase(cx, kind, en)
+    }
+}
+
+// A name of a datum with a path `root[*].field`: the root as a datum, the fields as fields.
+fn rn_datum_name(cx RnCx, en str) -> str {
+    match en.find("[*]") {
+        Some(at) => {
+            ro root = en[..at]
+            mut text = "${rn_global(cx, root)}[*]"
+            ro rest = en[at + 3..]
+            for part in rest.split(".") {
+                if part != "" { text = "${text}.${rn_field_name(cx, part)}" }
+            }
+            text
+        }
+        None => rn_global(cx, en)
+    }
+}
+
+// ---- the sections -------------------------------------------------------------------------------------------------------------
+
+fn rn_fields_text(cx RnCx, fields []RJ) -> str {
+    mut parts = []str.new()
+    for f in fields { parts.push("${rn_field_name(cx, rj_gstr(f, "name"))} ${rn_type(cx, rj_gstr(f, "type"))}") }
+    parts.join(", ")
+}
+
+fn rn_record_line(cx RnCx, rec RJ) -> str {
+    ro fields = rj_garr(rec, "fields")
+    ro name = rn_type_name(cx, rj_gstr(rec, "name"))
+    if fields.len() == 0 { return "${rn_kw(cx, "decl", "type")} ${name} { }" }
+    "${rn_kw(cx, "decl", "type")} ${name} { ${rn_fields_text(cx, fields)} }"
+}
+
+fn rn_has_fields(v RJ) -> bool {
+    for c in rj_garr(v, "cases") {
+        if rj_garr(c, "fields").len() > 0 { return true }
+    }
+    false
+}
+
+fn rn_word_of(v RJ, case_en str) -> str {
+    for pair in rj_garr(v, "words") {
+        ro items = rj_items(pair)
+        if items.len() == 2 && rj_str(items[0]) == case_en { return rj_str(items[1]) }
+    }
+    ""
+}
+
+fn rn_enum_line(cx RnCx, v RJ) -> str {
+    mut parts = []str.new()
+    for c in rj_garr(v, "cases") {
+        ro en = rj_gstr(c, "name")
+        ro word = rn_word_of(v, en)
+        parts.push(if word == "" { rn_case_name(cx, en) } else { "${rn_case_name(cx, en)} ${rn_quote(word)}" })
+    }
+    "${rn_kw(cx, "decl", "enum")} ${rn_type_name(cx, rj_gstr(v, "name"))} = ${parts.join(" | ")}"
+}
+
+fn rn_variant_lines(cx RnCx, v RJ) -> []str {
+    mut out = []str.new()
+    out.push("${rn_kw(cx, "decl", "variant")} ${rn_type_name(cx, rj_gstr(v, "name"))} {")
+    for c in rj_garr(v, "cases") {
+        ro fields = rj_garr(c, "fields")
+        ro name = rn_case_name(cx, rj_gstr(c, "name"))
+        out.push(if fields.len() == 0 { "  ${name}" } else { "  ${name} { ${rn_fields_text(cx, fields)} }" })
+    }
+    out.push("}")
+    out
+}
+
+fn rn_names_of(v RJ, key str) -> []str {
+    mut out = []str.new()
+    for x in rj_garr(v, key) { out.push(rj_gstr(x, "name")) }
+    out
+}
+
+fn rn_sec_types(cx RnCx, root RJ, dropped []str) -> []str {
+    ro types = match rj_get(root, "types") {
+        Some(t) => t
+        None => RNull
+    }
+    mut body = []str.new()
+    mut last = ""
+    for rec in rj_garr(types, "records") {
+        if dropped.contains(rj_gstr(rec, "name")) { continue }
+        body.push(rn_record_line(cx, rec))
+        last = "record"
+    }
+    for v in rj_garr(types, "variants") {
+        if dropped.contains(rj_gstr(v, "name")) { continue }
+        if rn_has_fields(v) {
+            if last != "" { body.push("") }
+            rn_add(body, rn_variant_lines(cx, v))
+            last = "variant"
+        } else {
+            if last != "" && last != "enum" { body.push("") }
+            body.push(rn_enum_line(cx, v))
+            last = "enum"
+        }
+    }
+    if body.len() == 0 { return ["—"] }
+    mut out = ["```"]
+    rn_add(out, body)
+    out.push("```")
+    out
+}
+
+fn rn_sec_constants(mut cx RnCx, root RJ, dropped []str) -> []str {
+    mut rows = []RnRow.new()
+    for c in rj_garr(root, "constants") {
+        if dropped.contains(rj_gstr(c, "name")) { continue }
+        ro value = match rj_get(c, "value") {
+            Some(x) => rn_expr(cx, x, []str.new())
+            None => "none"
+        }
+        rows.push(RnRow { cells: [rn_global(cx, rj_gstr(c, "name")), rn_type(cx, rj_gstr(c, "type")), value] })
+    }
+    if rows.len() == 0 { return ["—"] }
+    rn_table(rn_cols(cx, ["name", "type", "value"]), rows)
+}
+
+fn rn_sec_params(mut cx RnCx, root RJ) -> []str {
+    mut rows = []RnRow.new()
+    for p in rj_garr(root, "params") {
+        ro value = match rj_get(p, "default") {
+            Some(x) => rn_expr(cx, x, []str.new())
+            None => "none"
+        }
+        ro key = rj_gstr(p, "project_key")
+        ro project = if key == "" { "—" } else { "${rn_kw(cx, "key", "project")}.${key}" }
+        rows.push(RnRow { cells: [rn_global(cx, rj_gstr(p, "name")), rn_type(cx, rj_gstr(p, "type")), value, project] })
+    }
+    if rows.len() == 0 { return ["—"] }
+    rn_table(rn_cols(cx, ["name", "type", "default", "project_override"]), rows)
+}
+
+fn rn_input_names(root RJ) -> []str {
+    mut out = []str.new()
+    match rj_get(root, "input") {
+        Some(inp) => {
+            for f in rj_garr(inp, "fields") { out.push(rj_gstr(f, "name")) }
+        }
+        None => ()
+    }
+    out
+}
+
+// The fields of the input are written in Latin letters in both languages: the invariants and `вход.поле` read them by the word as written.
+fn rn_sec_input(mut cx RnCx, root RJ) -> []str {
+    ro inp = match rj_get(root, "input") {
+        Some(x) => x
+        None => RNull
+    }
+    mut rows = []RnRow.new()
+    for f in rj_garr(inp, "fields") { rows.push(RnRow { cells: [rj_gstr(f, "name"), rn_type(cx, rj_gstr(f, "type")), "—"] }) }
+    mut out = []str.new()
+    if rows.len() > 0 { rn_add(out, rn_table(rn_cols(cx, ["name", "type", "note"]), rows)) }
+    ro names = rn_input_names(root)
+    mut invariants = []str.new()
+    for e in rj_garr(inp, "invariants") { invariants.push("- ${rn_kw(cx, "key", "Invariant")}: ${rn_expr(cx, e, names)}") }
+    if invariants.len() > 0 {
+        if out.len() > 0 { out.push("") }
+        rn_add(out, invariants)
+    }
+    if out.len() == 0 { return ["—"] }
+    out
+}
+
+fn rn_initial_cell(mut cx RnCx, d RJ) -> str {
+    ro i = match rj_get(d, "initial") {
+        Some(x) => x
+        None => RNull
+    }
+    match rj_get(i, "from_input") {
+        Some(f) => return "${rn_kw(cx, "readable", "input")}.${rj_str(f)}"
+        None => ()
+    }
+    match rj_get(i, "expr") {
+        Some(e) => return rn_expr(cx, e, []str.new())
+        None => ()
+    }
+    "—"
+}
+
+fn rn_monotonic_cell(mut cx RnCx, d RJ) -> str {
+    ro m = match rj_get(d, "monotonic") {
+        Some(x) => x
+        None => RNull
+    }
+    match m {
+        RBool(b) => return if b { rn_kw(cx, "enum_value", "yes") } else { "—" }
+        _ => ()
+    }
+    match rj_get(m, "bound") {
+        Some(b) => {
+            ro sign = if cx.lang == "ru" { "≤" } else { "<=" }
+            return "${rn_kw(cx, "enum_value", "yes")}, ${sign} ${rn_expr(cx, b, []str.new())}"
+        }
+        None => ()
+    }
+    "—"
+}
+
+fn rn_sec_data(mut cx RnCx, root RJ) -> []str {
+    mut rows = []RnRow.new()
+    for d in rj_garr(root, "data") {
+        ro writes_key = if rj_gstr(d, "writes") == "" { "rows" } else { rj_gstr(d, "writes") }
+        ro writes = rn_kw(cx, "enum_value", writes_key)
+        rows.push(RnRow { cells: [rn_datum_name(cx, rj_gstr(d, "name")), rn_type(cx, rj_gstr(d, "type")), rn_initial_cell(cx, d), rn_monotonic_cell(cx, d), writes] })
+    }
+    if rows.len() == 0 { return ["—"] }
+    rn_table(rn_cols(cx, ["name", "type", "initial", "non_decreasing", "writes"]), rows)
+}
+
+fn rn_party_kind(mut cx RnCx, p RJ, path str) -> str {
+    ro kind = rj_gstr(p, "kind")
+    if kind == "agent" { return "${rn_kw(cx, "kind_party", "agent")}(${rn_kw(cx, "kind_party", "result")} ${rn_type(cx, rj_gstr(p, "result"))})" }
+    ro gate = "(${rn_kw(cx, "kind_party", "result")} ${rn_kw(cx, "type", "GateOutcome")})"
+    if kind == "human" || kind == "enhanced" { return "${rn_kw(cx, "kind_party", kind)}${gate}" }
+    if kind == "gatekeeper" {
+        ro setting = rn_name(cx, ["variable", "data", "function"], rj_gstr(p, "setting"))
+        return "${rn_kw(cx, "kind_party", "human or agent by setting")} ${setting}${gate}"
+    }
+    if kind == "machine" {
+        ro nested = rn_name(cx, ["machine"], rj_gstr(p, "nested"))
+        ro input = rn_type(cx, rj_gstr(p, "input_type"))
+        ro result = rn_type(cx, rj_gstr(p, "result"))
+        mut text = "${rn_kw(cx, "kind_party", "machine")} ${nested}(${rn_kw(cx, "kind_party", "input")} ${input}, ${rn_kw(cx, "kind_party", "result")} ${result})"
+        match rj_get(p, "parse") {
+            Some(pr) => {
+                ro role = if rj_gstr(pr, "role") == "" { "" } else { "(${rn_quote(rj_gstr(pr, "role"))})" }
+                text = "${text}; ${rn_kw(cx, "kind_party", "parse")}: ${rj_gstr(pr, "primitive")}${role} -> ${rn_type(cx, rj_gstr(pr, "type"))}"
+            }
+            None => ()
+        }
+        return text
+    }
+    rn_note(cx, "${path}: a party of the kind `${kind}` has no row in this file")
+    ""
+}
+
+fn rn_words_cell(mut cx RnCx, p RJ) -> str {
+    mut parts = []str.new()
+    for w in rj_garr(p, "words") {
+        ro name = rj_gstr(w, "name")
+        ro word = rn_phrase_of(cx, cx.gate_words, "word", name)
+        ro fields = rj_garr(w, "fields")
+        parts.push(if fields.len() == 0 { word } else { "${word}(${rn_fields_text(cx, fields)})" })
+    }
+    if parts.len() == 0 { return "—" }
+    parts.join(", ")
+}
+
+fn rn_sec_parties(mut cx RnCx, root RJ) -> []str {
+    mut rows = []RnRow.new()
+    mut at = 0
+    for p in rj_garr(root, "parties") {
+        ro kind = rn_party_kind(cx, p, "$.parties[${at}]")
+        at += 1
+        if kind == "" { continue }
+        ro party_word = match rn_pair_ru(cx.parties, rj_gstr(p, "name")) {
+            Some(w) => w
+            None => rj_gstr(p, "name")
+        }
+        ro profile = match rj_get(p, "profile") {
+            Some(e) => rn_expr(cx, e, []str.new())
+            None => "—"
+        }
+        rows.push(RnRow { cells: [party_word, rj_gstr(p, "id"), kind, profile, rn_words_cell(cx, p), rn_datum_name(cx, rj_gstr(p, "counter"))] })
+    }
+    mut out = []str.new()
+    if rows.len() > 0 { out = rn_table(rn_cols(cx, ["name", "id", "kind", "profile", "gate_words", "counter"]), rows) }
+    match rj_get(root, "request_limit") {
+        Some(e) => {
+            if out.len() > 0 { out.push("") }
+            out.push("- ${rn_kw(cx, "key", "Request limit")}: ${rn_expr(cx, e, []str.new())}")
+        }
+        None => ()
+    }
+    if out.len() == 0 { return ["—"] }
+    out
+}
+
+fn rn_extra_sections(mut cx RnCx, root RJ) -> []str {
+    mut out = []str.new()
+    ro signals = rj_garr(root, "signals")
+    if signals.len() > 0 {
+        mut rows = []RnRow.new()
+        for s in signals {
+            ro fields = rj_garr(s, "fields")
+            rows.push(RnRow { cells: [rn_phrase_of(cx, cx.signal_words, "signal", rj_gstr(s, "name")), if fields.len() == 0 { "—" } else { rn_fields_text(cx, fields) }] })
+        }
+        out.push("## ${rn_kw(cx, "section", "Signals")}")
+        out.push("")
+        rn_add(out, rn_table(rn_cols(cx, ["name", "fields"]), rows))
+        out.push("")
+    }
+    mut parts = []RnRow.new()
+    for p in rj_garr(root, "parties") {
+        ro party_word = match rn_pair_ru(cx.parties, rj_gstr(p, "name")) {
+            Some(w) => w
+            None => rj_gstr(p, "name")
+        }
+        for item in rj_garr(p, "progress") {
+            ro fields = rj_garr(item, "fields")
+            parts.push(RnRow { cells: [party_word, rn_phrase_of(cx, cx.part_words, "part", rj_gstr(item, "name")), if fields.len() == 0 { "—" } else { rn_fields_text(cx, fields) }] })
+        }
+    }
+    if parts.len() > 0 {
+        out.push("## ${rn_kw(cx, "section", "Response parts")}")
+        out.push("")
+        rn_add(out, rn_table(rn_cols(cx, ["party", "name", "fields"]), parts))
+        out.push("")
+    }
+    out
+}
+
+fn rn_sec_definitions(mut cx RnCx, root RJ, dropped []str) -> []str {
+    mut body = []str.new()
+    for d in rj_garr(root, "definitions") {
+        if dropped.contains(rj_gstr(d, "name")) { continue }
+        mut locals = []str.new()
+        mut params = []str.new()
+        for p in rj_garr(d, "params") {
+            locals.push(rj_gstr(p, "name"))
+            params.push("${rj_gstr(p, "name")} ${rn_type(cx, rj_gstr(p, "type"))}")
+        }
+        ro body_text = match rj_get(d, "body") {
+            Some(x) => rn_expr(cx, x, locals)
+            None => "none"
+        }
+        if body.len() > 0 { body.push("") }
+        ro name = match rn_pair_ru(cx.defs, rj_gstr(d, "name")) {
+            Some(w) => w
+            None => rj_gstr(d, "name")
+        }
+        body.push("${rn_kw(cx, "decl", "define")} ${name}(${params.join(", ")}) -> ${rn_type(cx, rj_gstr(d, "result"))} =")
+        body.push("  ${body_text}")
+    }
+    if body.len() == 0 { return ["—"] }
+    mut out = ["```"]
+    rn_add(out, body)
+    out.push("```")
+    out
+}
+
+fn rn_sec_includes(mut cx RnCx, root RJ, copy_includes bool) -> []str {
+    // the lines of connection of the fragments come first, one line each, with every argument (1b (m), 2.12, Ya-32)
+    mut lines = rn_fragment_lines(cx, root)
+    if copy_includes && lines.len() == 0 { return ["—"] }
+    if copy_includes {
+        mut only = ["```"]
+        rn_add(only, lines)
+        only.push("```")
+        return only
+    }
+    for inc in rj_garr(root, "includes") {
+        lines.push("${rn_kw(cx, "key", "definitions")}: ${rj_gstr(inc, "name")} ${rn_kw(cx, "key", "version")} ${rj_gstr(inc, "version")} ${rn_kw(cx, "key", "hash")} ${rj_gstr(inc, "hash")}")
+    }
+    if lines.len() == 0 { return ["—"] }
+    mut out = ["```"]
+    rn_add(out, lines)
+    out.push("```")
+    out
+}

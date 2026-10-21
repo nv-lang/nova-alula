@@ -1,0 +1,119 @@
+// marker_test.nv - the optional list marker `- ` before a line `Ключ: значение` (format 2.6): with and without it the JSON is the same, the columns of the
+// errors stay the columns of the file.
+module alula.machine_text
+
+import std.text
+import alula.machine.{chat_table_text}
+
+fn pieces(text str, sep str) -> []str {
+    mut out = []str.new()
+    for p in text.split(sep) { out.push(p) }
+    out
+}
+
+fn first_word(text str) -> str => pieces(text, " ")[0]
+
+fn int_or(text str) -> int {
+    match text.to_int() {
+        Ok(n) => n
+        Err(e) => -1
+    }
+}
+
+// The text with the marker put before the line that starts with the given text.
+fn marked(text str, start str) -> str => text.replace("\n${start}", "\n- ${start}")
+
+fn json_of(text str) -> str => checked(text).json
+
+test "mk each key" {
+    ro plain = json_of(tiny_text())
+    assert(plain.byte_len() > 100)
+    assert(json_of(marked(tiny_text(), "machine: ")) == plain)
+    assert(json_of(marked(tiny_text(), "Начальное состояние: ")) == plain)
+    assert(json_of(marked(tiny_text(), "Сторона: ")) == plain)
+    assert(json_of(marked(tiny_text(), "Срок тишины: ")) == plain)
+    assert(json_of(marked(tiny_text(), "Вход:")) == plain)
+    assert(json_of(marked(tiny_text(), "Кроме: ")) == plain)
+    assert(json_of(marked(tiny_text(), "Результат: ")) == plain)
+}
+
+test "mk all and mixed" {
+    ro plain = json_of(tiny_text())
+    mut all = tiny_text()
+    for key in ["machine: ", "machine_version: ", "format: ", "Начальное состояние: ", "Сторона: ", "Срок тишины: ", "Вход:", "Кроме: ", "Результат: "] {
+        all = marked(all, key)
+    }
+    assert(all != tiny_text())
+    assert(json_of(all) == plain)
+    ro mixed = marked(marked(marked(tiny_text(), "Сторона: "), "Вход:"), "Результат: ")
+    assert(json_of(mixed) == plain)
+    assert(checked(all).errors.len() == 0)
+}
+
+test "mk wide marker" {
+    ro plain = json_of(tiny_text())
+    assert(json_of(tiny_text().replace("\nСторона: ", "\n-   Сторона: ")) == plain)
+}
+
+test "mk table after list" {
+    ro plain = json_of(tiny_text())
+    ro text = tiny_text().replace("\nВход:\n\n|", "\n- Вход:\n\n|")
+    assert(text != tiny_text())
+    assert(json_of(text) == plain)
+    ro tight = tiny_text().replace("\nВход:\n\n|", "\n- Вход:\n|")
+    assert(json_of(tight) == plain)
+}
+
+test "mk columns" {
+    ro bad = tiny_text().replace("Срок тишины: —", "Срок тишины: нет_такого_имени")
+    ro bad_marked = bad.replace("\nСрок тишины: ", "\n- Срок тишины: ")
+    assert(name_note(bad) == "27:14")
+    assert(name_note(bad_marked) == "27:16")
+}
+
+// The place of the first note of the kind `name`.
+fn name_note(text str) -> str {
+    for n in notes(text) {
+        ro parts = pieces(n, " ")
+        if parts.len() > 1 && parts[1] == "name" { return parts[0] }
+    }
+    ""
+}
+
+test "mk not a key" {
+    ro text = tiny_text().replace("\nСторона: вратарь", "\n- Прочее: вратарь\nСторона: вратарь")
+    assert(note_says(text, "лишняя строка"))
+}
+
+test "mk chat table" {
+    ro text = chat_table_text()
+    ro plain = json_of(text)
+    mut all = text
+    for key in ["machine: ", "machine_version: ", "format: ", "Начальное состояние: ", "Сторона: ", "Срок тишины: ", "Вход:", "При входе:", "При приёме:", "Кроме: ", "Результат: ", "Правит: "] {
+        all = marked(all, key)
+    }
+    assert(all != text)
+    assert(json_of(all) == plain)
+}
+
+test "mk nested list" {
+    ro flat = tiny_text().replace("\n### РЕШИТЬ — развилка (Decide)\nВход: число_ходов\n", "\n### РЕШИТЬ — развилка (Decide)\nВход: число_ходов\nПри входе: пусть к = число_ходов + 1;\n           пусть м = к + 1\n")
+    ro nested = tiny_text().replace("\n### РЕШИТЬ — развилка (Decide)\nВход: число_ходов\n", "\n### РЕШИТЬ — развилка (Decide)\n- Вход: число_ходов\n- При входе:\n  - пусть к = число_ходов + 1;\n  - пусть м = к + 1\n")
+    assert(flat != tiny_text() && nested != tiny_text())
+    assert(checked(flat).errors.len() == 0)
+    assert(json_of(nested) == json_of(flat))
+    ro one = tiny_text().replace("\n### РЕШИТЬ — развилка (Decide)\nВход: число_ходов\n", "\n### РЕШИТЬ — развилка (Decide)\n- Вход: число_ходов\n- При входе: пусть к = число_ходов + 1\n")
+    assert(checked(one).errors.len() == 0)
+}
+
+test "mk nested columns" {
+    ro text = tiny_text().replace("\n### РЕШИТЬ — развилка (Decide)\nВход: число_ходов\n", "\n### РЕШИТЬ — развилка (Decide)\n- Вход: число_ходов\n- При входе:\n  - пусть к = нет_такого + 1\n")
+    assert(name_note(text).ends_with(":15"))
+}
+
+test "mk format 2.12" {
+    ro report = checked(tiny_text())
+    assert(report.errors.len() == 0)
+    assert(report.json.starts_with("{\"format\":\"machine/2\",\"portolan_version\":\"2.12\",\"machine\":\"Tiny\""))
+    assert(note_says(tiny_text().replace("format: 2.12", "format: 2.11"), "читает формат 2.12"))
+}

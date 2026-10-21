@@ -1,0 +1,67 @@
+// summary.nv - the summary of a machine (`render_summary`): the states, the rows, the number of the actions. It is the check of a translation by eye and by text: two
+// translations of one table give the same summary, a changed table gives another. The full "JSON -> tables" is not made.
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine_table.{MachineDef, StateDef, Action, parse_machine, state_kind_word, issue_text}
+import alula.machine_table.{AssignAct, AddAct, JournalAct, JournalValueAct, JournalAllAct, ForEachAct, LetAct, BindAct, IfAct, CallAct, MachineErrorAct, CancelOpenAct, PassAct}
+
+// The number of the actions of a list, the nested ones counted.
+fn actions_count(actions []Action) -> int {
+    mut n = 0
+    for a in actions {
+        n += 1
+        match a {
+            ForEachAct { var, list, body } => { n += actions_count(body) }
+            LetAct { name, value, body } => { n += actions_count(body) }
+            IfAct { cond, then_actions, else_actions } => { n += actions_count(then_actions) + actions_count(else_actions) }
+            _ => ()
+        }
+    }
+    n
+}
+
+fn state_rows_count(st StateDef) -> int => st.rows.len() + st.accept.len()
+
+fn state_actions_count(st StateDef) -> int {
+    mut n = actions_count(st.entry)
+    for r in st.rows { n += actions_count(r.actions) }
+    for a in st.accept { n += actions_count(a.actions) }
+    n
+}
+
+/// The summary of a machine given as the JSON text `machine/2`: the header, one line per state, the common events and the ends. A text that is not a machine
+/// is one line with the reason.
+export fn render_summary(machine_json str) -> str {
+    match parse_machine(machine_json) {
+        Err(e) => "not a machine: ${issue_text(e)}"
+        Ok(def) => {
+            mut lines = []str.new()
+            mut rows = 0
+            mut acts = 0
+            for st in def.states {
+                rows += state_rows_count(st)
+                acts += state_actions_count(st)
+            }
+            for r in def.common {
+                rows += 1
+                acts += actions_count(r.actions)
+            }
+            lines.push("machine ${def.name} (version ${def.version}): ${def.states.len()} states, ${rows} rows, ${acts} actions, ${def.data.len()} data, ${def.parties.len()} parties")
+            lines.push("initial: ${def.initial}")
+            if def.common.len() > 0 { lines.push("common events: ${def.common.len()} rows, ${acts_of_common(def)} actions") }
+            for st in def.states {
+                lines.push("  ${st.name} (${state_kind_word(st.kind)}): ${state_rows_count(st)} rows, ${state_actions_count(st)} actions")
+            }
+            lines.push("ends: ${def.end_rows.len()} rows")
+            lines.join("\n")
+        }
+    }
+}
+
+fn acts_of_common(def MachineDef) -> int {
+    mut n = 0
+    for r in def.common { n += actions_count(r.actions) }
+    n
+}

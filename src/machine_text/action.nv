@@ -1,0 +1,341 @@
+// action.nv - the actions of a row, of "On accept" and of "On entry" (format section 5) as the actions of the JSON.
+//
+// A list of actions is separated by `;` and every action sees the results of the earlier ones. `пусть имя = выр` binds a name for the actions after it;
+// `пусть имя = выр в действия` binds it for the actions after `в` only. What the format has and this version does not run (`передать` to nested machines, the
+// exceptions of `отменить_открытые`) is a soft error of the kind `unsupported`: it is written down with its place and the translation goes on without it.
+module alula.machine_text
+
+import std.text
+
+/// The error "not supported in this version", with the place.
+fn unsupported(t TxTok, what str) -> TranslateError => { line: t.line, col: t.col, kind: "unsupported", message: "не поддержано в этой версии: ${what}", quote: "" }
+
+fn cx_unsupported(mut cx TxCx, t TxTok, what str) -> () {
+    cx.errors.push(unsupported(t, what))
+}
+
+/// TxStmt: the JSON of an action (none for a construction that is a no-op or not supported) and the name that a `пусть` binds for the next ones.
+type TxStmt { actions []TxJ, bind_ru str, bind_en str }
+
+fn stmt_of(actions []TxJ) -> TxStmt => { actions, bind_ru: "", bind_en: "" }
+
+fn stmt_none() -> TxStmt => { actions: []TxJ.new(), bind_ru: "", bind_en: "" }
+
+fn is_latin_code(w str) -> bool {
+    if w.byte_len() == 0 { return false }
+    for c in w.chars() {
+        ro one = "${c}"
+        ro ok = (one >= "a" && one <= "z") || (one >= "0" && one <= "9") || one == "_"
+        if !ok { return false }
+    }
+    true
+}
+
+/// A group of actions: `( действия )` or a single action.
+fn ac_body(mut p TxP, mut cx TxCx, sc TxScope) -> Result[[]TxJ, TranslateError] {
+    if p_eat(p, "(") {
+        ro inner = ac_list(p, cx, sc)?
+        p_expect(p, ")")?
+        return Ok(inner)
+    }
+    ro one = ac_stmt(p, cx, sc)?
+    Ok(one.actions)
+}
+
+/// TxActList: the actions of a list and the scope after them (the bindings of `пусть` that the rows of the state see).
+type TxActList { actions []TxJ, scope TxScope }
+
+/// The actions up to the end of the tokens or a `)`. A lone `—` is no action.
+fn ac_list(mut p TxP, mut cx TxCx, sc TxScope) -> Result[[]TxJ, TranslateError] {
+    ro all = ac_list_scoped(p, cx, sc)?
+    Ok(all.actions)
+}
+
+fn ac_list_scoped(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxActList, TranslateError] {
+    mut out = []TxJ.new()
+    mut scope = sc_clone(sc)
+    while true {
+        if p_done(p) || p_is(p, ")") { break }
+        if p_is(p, "—") {
+            p_adv(p)
+            if p_eat(p, ";") { continue }
+            break
+        }
+        ro one = ac_stmt(p, cx, scope)?
+        for a in one.actions { out.push(a) }
+        if one.bind_ru != "" { scope = sc_with(scope, one.bind_ru, one.bind_en) }
+        if p_eat(p, ";") { continue }
+        break
+    }
+    Ok(TxActList { actions: out, scope })
+}
+
+fn ac_stmt(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError] {
+    ro t = p_tok(p)
+    if t.kind != TK_NAME { return Err(p_fail(p, "ожидается действие")) }
+    ro w = t.text
+    ro words = cx.words
+    ro opens = t_is(p_ahead(p, 1), "(")
+    if t_is_kw(t, words, "action", "journal") && opens { return ac_journal(p, cx, sc) }
+    if t_is_kw(t, words, "action", "machine_error") && opens { return ac_machine_error(p, cx, sc) }
+    if t_is_kw(t, words, "action", "call") && opens { return ac_call(p, cx, sc) }
+    if t_is_kw(t, words, "action", "for") { return ac_for(p, cx, sc) }
+    if t_is_kw(t, words, "action", "if") { return ac_if(p, cx, sc) }
+    if t_is_kw(t, words, "action", "let") { return ac_let(p, cx, sc) }
+    if t_is_kw(t, words, "action", "cancel_open") { return ac_cancel(p, cx, sc) }
+    if t_is_kw(t, words, "action", "pass") && opens { return ac_pass(p, cx) }
+    if is_keyword(words, w) { return Err(p_fail(p, "ожидается действие")) }
+    match foreign_find(cx, t, ["action"]) {
+        Some(e) => return Err(e)
+        None => ()
+    }
+    ac_assign(p, cx, sc)
+}
+
+// `поле = выр`, `поле += выр`, `поле[ключ] = выр`, `поле[ключ].поле = выр`.
+fn ac_assign(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError] {
+    ro root = p_tok(p)
+    p_adv(p)
+    ro root_en = tr_global(cx, root)
+    mut steps = []TxJ.new()
+    while true {
+        if p_eat(p, "[") {
+            ro key = ex_expr(p, cx, sc)?
+            p_expect(p, "]")?
+            steps.push(a_step_key(key))
+            continue
+        }
+        if p_is(p, ".") && p_ahead(p, 1).kind == TK_NAME {
+            p_adv(p)
+            ro f = p_tok(p)
+            p_adv(p)
+            steps.push(a_step_field(tr_field_name(cx, f)))
+            continue
+        }
+        break
+    }
+    ro target = a_target(root_en, steps)
+    if p_eat(p, "=") {
+        ro value = ex_expr(p, cx, sc)?
+        return Ok(stmt_of([a_assign(target, value)]))
+    }
+    if p_eat(p, "+=") {
+        ro value = ex_expr(p, cx, sc)?
+        return Ok(stmt_of([a_add(target, value)]))
+    }
+    Err(p_fail(p, "после имени ожидается `=` или `+=`"))
+}
+
+// The named parameters `имя: выр, …` after the first argument of `журнал` and `ошибка_машины`; the names are Latin words of the journal.
+fn ac_named(mut p TxP, mut cx TxCx, sc TxScope) -> Result[[]TxKV, TranslateError] {
+    mut params = []TxKV.new()
+    while p_eat(p, ",") {
+        ro n = p_tok(p)
+        if n.kind != TK_NAME || !t_is(p_ahead(p, 1), ":") { return Err(p_fail(p, "ожидается параметр вида `имя: выр`")) }
+        if !is_latin_code(n.text) { cx_error(cx, n, "name", "имя параметра журнала — латиница в нижнем регистре (правило 34б)") }
+        p_adv(p)
+        p_adv(p)
+        ro value = ex_expr(p, cx, sc)?
+        for seen in params {
+            if seen.key == n.text { cx_error(cx, n, "syntax", "параметр `${n.text}` повторён") }
+        }
+        params.push(kv(n.text, value))
+    }
+    Ok(params)
+}
+
+fn ac_journal(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError] {
+    p_adv(p)
+    p_adv(p)
+    ro first = p_tok(p)
+    ro after = p_ahead(p, 1)
+    if first.kind == TK_NAME && (t_is(after, ",") || t_is(after, ")")) {
+        if t_is_kw(first, cx.words, "readable", "all_data") {
+            p_adv(p)
+            p_expect(p, ")")?
+            return Ok(stmt_of([a_journal_all()]))
+        }
+        ro known = pair_has(sc.names, first.text) || pair_has(cx.env.globals, first.text) || is_executor_word(cx, first.text)
+        if !known {
+            p_adv(p)
+            if !is_latin_code(first.text) { cx_error(cx, first, "name", "код журнала — латиница в нижнем регистре (правило 34б)") }
+            ro params = ac_named(p, cx, sc)?
+            p_expect(p, ")")?
+            return Ok(stmt_of([a_journal(first.text, params)]))
+        }
+    }
+    ro value = ex_expr(p, cx, sc)?
+    p_expect(p, ")")?
+    Ok(stmt_of([a_journal_value(value)]))
+}
+
+fn is_executor_word(cx TxCx, w str) -> bool {
+    match names_get(cx.names, "executor", w) {
+        Some(en) => true
+        None => false
+    }
+}
+
+fn ac_machine_error(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError] {
+    p_adv(p)
+    p_adv(p)
+    ro first = p_tok(p)
+    if first.kind != TK_STR { return Err(p_fail(p, "первый аргумент `${kw(cx.words, "action", "machine_error")}` — код в кавычках")) }
+    p_adv(p)
+    ro params = ac_named(p, cx, sc)?
+    p_expect(p, ")")?
+    Ok(stmt_of([a_machine_error(first.text, params)]))
+}
+
+// `вызвать(примитив, арг, …)` as an action.
+fn ac_call(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError] {
+    p_adv(p)
+    p_adv(p)
+    ro n = p_tok(p)
+    if n.kind != TK_NAME { return Err(p_fail(p, "ожидается имя примитива")) }
+    p_adv(p)
+    ro en = tr_primitive(cx, n)
+    mut args = []TxJ.new()
+    while p_eat(p, ",") { args.push(ex_expr(p, cx, sc)?) }
+    p_expect(p, ")")?
+    Ok(stmt_of([a_call(en, args)]))
+}
+
+// `для каждого имя в выр: действие`.
+fn ac_for(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError] {
+    p_adv(p)
+    p_expect_kw(p, cx.words, "action", "each")?
+    ro n = p_tok(p)
+    if n.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "action", "for each")}` ожидается имя")) }
+    p_adv(p)
+    p_expect_kw(p, cx.words, "action", "in")?
+    ro list_expr = ex_expr(p, cx, sc)?
+    p_expect(p, ":")?
+    ro en = tr_binder(cx, n)
+    ro body = ac_body(p, cx, sc_with(sc, n.text, en))?
+    Ok(stmt_of([a_for_each(en, list_expr, body)]))
+}
+
+// `если выр то (действия) иначе (действия)`.
+fn ac_if(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError] {
+    p_adv(p)
+    ro cond = ex_expr(p, cx, sc)?
+    p_expect_kw(p, cx.words, "action", "then")?
+    ro then_actions = ac_body(p, cx, sc)?
+    mut else_actions = []TxJ.new()
+    if p_eat_kw(p, cx.words, "action", "else") { else_actions = ac_body(p, cx, sc)? }
+    Ok(stmt_of([a_if(cond, then_actions, else_actions)]))
+}
+
+// `пусть имя = выр` (bound for the next actions) and `пусть имя = выр в действия` (bound for the actions after `в`).
+fn ac_let(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError] {
+    p_adv(p)
+    ro n = p_tok(p)
+    if n.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "action", "let")}` ожидается имя")) }
+    p_adv(p)
+    p_expect(p, "=")?
+    ro saved = p.in_let
+    p.in_let = 1
+    ro value = ex_expr(p, cx, sc)?
+    p.in_let = saved
+    ro en = tr_binder(cx, n)
+    if p_eat_kw(p, cx.words, "action", "in") {
+        ro body = ac_body(p, cx, sc_with(sc, n.text, en))?
+        return Ok(stmt_of([a_let(en, value, body)]))
+    }
+    Ok(TxStmt { actions: [a_bind(en, value)], bind_ru: n.text, bind_en: en })
+}
+
+// `отменить_открытые`, `отменить_открытые(сторона: имя)`, `отменить_открытые(кроме: вложенные)`.
+fn ac_cancel(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError] {
+    ro head = p_tok(p)
+    p_adv(p)
+    if !p_eat(p, "(") { return Ok(stmt_of([a_cancel_open("")])) }
+    ro key = p_tok(p)
+    if key.kind != TK_NAME || !t_is(p_ahead(p, 1), ":") { return Err(p_fail(p, "в скобках `${kw(cx.words, "action", "cancel_open")}` ожидается `${kw(cx.words, "action", "except")}: …` или `${kw(cx.words, "action", "party")}: …`")) }
+    p_adv(p)
+    p_adv(p)
+    if t_is_kw(key, cx.words, "action", "party") {
+        ro party = p_tok(p)
+        if party.kind != TK_NAME { return Err(p_fail(p, "ожидается имя стороны")) }
+        p_adv(p)
+        p_expect(p, ")")?
+        match pair_get(cx.env.parties, party.text) {
+            Some(en) => return Ok(stmt_of([a_cancel_open(en)]))
+            None => {
+                cx_error(cx, party, "name", "стороны `${party.text}` нет в таблице «Стороны»")
+                return Ok(stmt_none())
+            }
+        }
+    }
+    if t_is_kw(key, cx.words, "action", "except") {
+        ro names = ac_nested_list(p, cx)?
+        p_expect(p, ")")?
+        if names.len() == 0 { return Ok(stmt_of([a_cancel_open("")])) }
+        return Ok(stmt_of([a_cancel_open_except(names_list_json(names))]))
+    }
+    Err(p_fail(p, "в скобках `${kw(cx.words, "action", "cancel_open")}` ожидается `${kw(cx.words, "action", "except")}: …` или `${kw(cx.words, "action", "party")}: …`"))
+}
+
+// The list of the nested machines as the expression of a list of text literals (the names of the registry of the caller).
+fn names_list_json(names []str) -> TxJ {
+    mut items = []TxJ.new()
+    for n in names { items.push(x_lit(js(n))) }
+    x_list(items)
+}
+
+// A list of nested machines: `[a, b]` (the names of the registry) or the name of a parameter of a fragment (`вложенные`) that was given a list. An empty list gives no name.
+fn ac_nested_list(mut p TxP, mut cx TxCx) -> Result[[]str, TranslateError] {
+    mut out = []str.new()
+    if p_eat(p, "[") {
+        while !p_is(p, "]") {
+            ro item = p_tok(p)
+            if item.kind != TK_NAME { return Err(p_fail(p, "в списке ожидаются имена вложенных машин")) }
+            p_adv(p)
+            out.push(nested_name(cx, item))
+            if p_eat(p, ",") { continue }
+            break
+        }
+        p_expect(p, "]")?
+        return Ok(out)
+    }
+    ro n = p_tok(p)
+    if n.kind == TK_NAME {
+        p_adv(p)
+        if cx.env.empty_lists.contains(n.text) { return Ok(out) }
+        match pair_get(cx.env.nested_lists, n.text) {
+            Some(joined) => {
+                for one in joined.split(",") {
+                    if one != "" { out.push(one) }
+                }
+                return Ok(out)
+            }
+            None => ()
+        }
+    }
+    Err(p_fail(p, "ожидается список вложенных машин в скобках или параметр фрагмента"))
+}
+
+// `передать(вложенные, сигнал)`: the signal `stop`, `continue`, `halt` or `cancel` to the nested machines of the list; a pass to nobody is nothing.
+fn ac_pass(mut p TxP, mut cx TxCx) -> Result[TxStmt, TranslateError] {
+    p_adv(p)
+    p_adv(p)
+    ro names = ac_nested_list(p, cx)?
+    p_expect(p, ",")?
+    ro signal = p_tok(p)
+    if signal.kind != TK_NAME { return Err(p_fail(p, "ожидается имя сигнала: ${signal_words_ru(cx.words).join(", ")}")) }
+    p_adv(p)
+    p_expect(p, ")")?
+    mut key = ""
+    match kw_key(cx.words, "enum_value", signal.text) {
+        Some(k) => { key = k }
+        None => ()
+    }
+    if key != "stop" && key != "continue" && key != "halt" && key != "cancel" {
+        return Err(tx_err(signal.line, signal.col, "syntax", "сигнал: ${signal_words_ru(cx.words).join(", ")}, найдено: ${t_shown(signal)}"))
+    }
+    if names.len() == 0 { return Ok(stmt_none()) }
+    Ok(stmt_of([a_pass(names_list_json(names), key)]))
+}
+
+fn signal_words_ru(w TxWords) -> []str => kw_all(w, "enum_value", ["stop", "continue", "halt", "cancel"])

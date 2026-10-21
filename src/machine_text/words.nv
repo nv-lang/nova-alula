@@ -1,0 +1,121 @@
+// words.nv - the words of the language Portolan as data (task 113): the table of the methodology `keywords.tsv` (lines `kind<TAB>ru<TAB>en`, the closed list of the kinds of
+// section 1a of the specification) and the product layer `keywords_product.tsv` (the same form), read in the language of the file.
+//
+// The code never writes a word of the structure. It names a word by its KIND and its English word (the KEY: `expr` + `if`, `key` + `Idle term`, `section` + `Parties`) and asks
+// for the word of the language of the file: `if` in an English file, `если` in a Russian one. The other direction is asked too: which key is the word that stands in the file
+// (`Стороны` -> `Parties`), and does a word belong to the other language only (a foreign word is an error with its line, section 1a: the words are of one language).
+module alula.machine_text
+
+import std.text
+import std.collections.hash_map.{HashMap}
+
+/// TxWord: a line of the table of words.
+type TxWord { kind str, ru str, en str }
+
+/// TxWords: the table in one language. `file_of`: "kind, key" -> the word of the language of the file; `key_of`: "kind, word of the file" -> the key; `foreign_of`: "kind, word
+/// of the other language" -> the key (only the words that the file's language does not have).
+/// `cols` are the words of all the columns of the tables in the language of the file, in the form of the comparison (lower case): a row of cells that are all of them is a header of a table.
+type TxWords { lang str, rows []TxWord, file_of HashMap[str, str], key_of HashMap[str, str], foreign_of HashMap[str, str], cols []str }
+
+fn keywords_text() -> str => embed_str("keywords.tsv")
+
+fn keywords_product_text() -> str => embed_str("keywords_product.tsv")
+
+fn word_key(kind str, word str) -> str => "${kind}\t${word}"
+
+// The lines of one file of words; a comment `#` and the header line `kind ru en` are skipped.
+fn words_read(text str, mut rows []TxWord) -> () {
+    for raw in text.split("\n") {
+        ro line = raw.strip_suffix("\r") ?? raw
+        if line.byte_len() == 0 || line.starts_with("#") { continue }
+        ro parts = line.split("\t")
+        mut cells = []str.new()
+        for part in parts { cells.push(part) }
+        if cells.len() < 3 { continue }
+        if cells[0] == "kind" && cells[1] == "ru" { continue }
+        rows.push(TxWord { kind: cells[0], ru: cells[1], en: cells[2] })
+    }
+}
+
+/// The rows of the table of the methodology and of the product layer, in the order of the files.
+fn words_rows() -> []TxWord {
+    mut rows = []TxWord.new()
+    words_read(keywords_text(), rows)
+    words_read(keywords_product_text(), rows)
+    rows
+}
+
+/// The table of words in the language `lang` (`ru` or `en`).
+fn words_load(lang str) -> TxWords {
+    ro rows = words_rows()
+    mut file_of = HashMap[str, str].new()
+    mut key_of = HashMap[str, str].new()
+    mut foreign_of = HashMap[str, str].new()
+    for r in rows {
+        ro mine = if lang == "en" { r.en } else { r.ru }
+        ro other = if lang == "en" { r.ru } else { r.en }
+        ro old_file = file_of.insert(word_key(r.kind, r.en), mine)
+        ro old_key = key_of.insert(word_key(r.kind, mine), r.en)
+        if other != mine {
+            ro old_foreign = foreign_of.insert(word_key(r.kind, other), r.en)
+        }
+    }
+    mut cols = []str.new()
+    for r in rows {
+        if r.kind == "column" { cols.push(header_norm(if lang == "en" { r.en } else { r.ru })) }
+    }
+    TxWords { lang, rows, file_of, key_of, foreign_of, cols }
+}
+
+/// The word of the language of the file for a key of the kind (the key itself when the table has no such line).
+fn kw(w TxWords, kind str, key str) -> str {
+    match w.file_of.get(word_key(kind, key)) {
+        Some(x) => x
+        None => key
+    }
+}
+
+/// The key of a word that stands in the file, under a kind.
+fn kw_key(w TxWords, kind str, word str) -> Option[str] => w.key_of.get(word_key(kind, word))
+
+/// Is the word a word of the file's language under the kind?
+fn kw_has(w TxWords, kind str, word str) -> bool {
+    match w.key_of.get(word_key(kind, word)) {
+        Some(k) => true
+        None => false
+    }
+}
+
+/// The key of a word of the OTHER language under the kind (a word that the file's language does not have), else None.
+fn kw_foreign(w TxWords, kind str, word str) -> Option[str] {
+    match w.key_of.get(word_key(kind, word)) {
+        Some(k) => None
+        None => w.foreign_of.get(word_key(kind, word))
+    }
+}
+
+/// The first of the kinds under which the word is a word of the other language only.
+fn kw_foreign_any(w TxWords, kinds []str, word str) -> Option[str] {
+    for kind in kinds {
+        match kw_foreign(w, kind, word) {
+            Some(k) => return Some(k)
+            None => ()
+        }
+    }
+    None
+}
+
+/// The words of the file's language under a kind for the keys.
+fn kw_all(w TxWords, kind str, keys []str) -> []str {
+    mut out = []str.new()
+    for k in keys { out.push(kw(w, kind, k)) }
+    out
+}
+
+/// The name of the language for a message.
+fn lang_name(lang str) -> str => if lang == "en" { "английский" } else { "русский" }
+
+fn other_lang(lang str) -> str => if lang == "en" { "ru" } else { "en" }
+
+/// The kinds under which a foreign word is looked for in a name position (a word of an expression, an action, a type, an event, a destination, a catalog function).
+fn kinds_foreign_names() -> []str => ["expr", "action", "type", "event", "destination", "catalog", "readable", "enum_value", "kind_party", "kind_state"]

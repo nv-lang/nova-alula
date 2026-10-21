@@ -1,0 +1,299 @@
+// defs.nv - the files of definitions (format section 8): `# Определения: <имя>`, `definitions_version: N`, `format: 2.12`, the sections `## Типы`, `## Константы`,
+// `## Определения` (all three, an empty one is `—`), only pure definitions. A machine includes a file by the line `определения: <имя> версия <N> хеш <hex12>`; the hash is
+// the first twelve letters of the SHA-256 of the file after the normalization of the format (a BOM dropped, line feeds as LF, no spaces at the end of a line, one LF at
+// the end of the file), and the tree of the machine gets a copy of what the file brings (types, constants, definitions).
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import std.crypto.sha256.{Sha256}
+import alula.machine.{NamedText}
+
+/// The name of a file of definitions: the text of its first line after the colon (`# Определения: арифметика_цикла`, `# Definitions: cycle_arithmetic`).
+fn defs_name_of(text str) -> str {
+    for raw in text.split("\n") {
+        ro line = (raw.strip_suffix("\r") ?? raw).trim_ascii()
+        if line == "" { continue }
+        ro at = line.find(":") ?? -1
+        if at < 0 { return "" }
+        return line[at + 1..].trim_ascii()
+    }
+    ""
+}
+
+/// The registry of the files of definitions that come with the translator: the name of the include line (the name in the header of the file) and the text of the file. The arithmetic of the
+/// cycle is there in the Russian form and in the English one (the files of a definitions file are of either language, a machine includes either).
+fn defs_files() -> []NamedText {
+    mut out = []NamedText.new()
+    for source in [embed_str("defs/cycle-arithmetic.portolan.md"), embed_str("defs/cycle-arithmetic.en.portolan.md")] {
+        out.push(NamedText { name: defs_name_of(source), text: source })
+    }
+    out
+}
+
+/// The text of the file of definitions of the registry with the name; the empty text when there is none.
+export fn defs_file_text(name str) -> str {
+    for f in defs_files() {
+        if f.name == name { return f.text }
+    }
+    ""
+}
+
+// ---- the hash ----------------------------------------------------------------------------------------------------------------------------
+
+fn trim_end_blanks(line str) -> str {
+    mut end = line.byte_len()
+    while end > 0 && (tx_byte(line, end - 1) == 32 || tx_byte(line, end - 1) == 9) { end -= 1 }
+    line[..end]
+}
+
+/// The text of a file of definitions as it is hashed (section 8): no BOM, LF only, no spaces or tabs at the end of a line, one LF at the end.
+export fn normalize_definitions(text str) -> str {
+    // the byte order mark is U+FEFF, three bytes
+    ro body = if text.starts_with("\u{FEFF}") { text[3..] } else { text }
+    ro unified = body.replace("\r\n", "\n").replace("\r", "\n")
+    mut lines = []str.new()
+    for raw in unified.split("\n") { lines.push(trim_end_blanks(raw)) }
+    while lines.len() > 0 && lines[lines.len() - 1] == "" {
+        mut shorter = []str.new()
+        mut k = 0
+        while k < lines.len() - 1 {
+            shorter.push(lines[k])
+            k += 1
+        }
+        lines = shorter
+    }
+    "${lines.join("\n")}\n"
+}
+
+/// The hash of a file of definitions: twelve hexadecimal letters (section 8).
+export fn definitions_hash(text str) -> str {
+    ro full = Sha256.hash_str(normalize_definitions(text).bytes())
+    full[..12]
+}
+
+// ---- the file ----------------------------------------------------------------------------------------------------------------------------
+
+/// TxDefsDoc: what a file of definitions brings: its version and the JSON of its types, constants and definitions.
+type TxDefsDoc { version str, types TxTypes, constants []TxJ, definitions []TxJ }
+
+fn defs_header(entries []TxEntry, mut cx TxCx) -> str {
+    mut version = ""
+    mut format = ""
+    ro head_word = "${kw(cx.words, "header", "Definitions")}:"
+    if entries.len() == 0 || entries[0].kind != EN_HEAD || entries[0].level != 1 || !entries[0].text.starts_with(head_word) {
+        note(cx, struct_error(1, 1, "файл определений начинается со строки `# ${head_word} <имя>`"))
+    }
+    mut i = 1
+    while i < entries.len() && entries[i].kind != EN_HEAD {
+        ro e = entries[i]
+        if kv_colon(e) >= 0 {
+            ro line = kv_read(entries, i)
+            if line.key == "definitions_version" {
+                version = line.segs[0].text
+            } else if line.key == "format" {
+                format = line.segs[0].text
+            } else if line.key == "language" {
+                // read by the detection of the language
+                ()
+            } else {
+                note(cx, struct_error(e.line, 1, "в шапке файла определений бывают строки definitions_version, format, language"))
+            }
+            i += line.taken
+        } else {
+            note(cx, struct_error(e.line, e.indent + 1, "лишняя строка в шапке файла определений"))
+            i += 1
+        }
+    }
+    mut version_ok = false
+    match version.to_int() {
+        Ok(n) => { version_ok = true }
+        Err(err) => ()
+    }
+    if !version_ok { note(cx, struct_error(1, 1, "в шапке нет строки `definitions_version: <целое>`")) }
+    if !format_versions().contains(format) { note(cx, struct_error(1, 1, "формат файла определений должен быть ${format_versions().join(", ")}, найдено: ${format}")) }
+    version
+}
+
+fn names_in_order(sections []TxSection) -> bool {
+    mut want = ["Types", "Constants", "Definitions"]
+    if sections.len() != 3 { return false }
+    mut k = 0
+    while k < 3 {
+        if sections[k].name != want[k] { return false }
+        k += 1
+    }
+    true
+}
+
+// Does the text of the section call a primitive (`вызвать`)? A file of definitions has pure definitions only.
+fn section_calls(entries []TxEntry, sec TxSection, w TxWords) -> Option[TxEntry] {
+    mut i = sec.first
+    while i < sec.last {
+        ro e = entries[i]
+        if e.kind == EN_TEXT {
+            match tx_lex(e.text, e.line, e.indent + 1) {
+                Ok(tokens) => {
+                    for t in tokens {
+                        if t_is_kw(t, w, "action", "call") { return Some(e) }
+                    }
+                }
+                Err(err) => ()
+            }
+        }
+        i += 1
+    }
+    None
+}
+
+/// The file of definitions read: the version and the pieces of the JSON. The file is read in its own language (its header and the line `language`), the machine's names of definitions,
+/// types and constants come back into the machine's environment. The errors go to `cx` with the lines of the file.
+fn defs_read(file_text str, mut cx TxCx) -> TxDefsDoc {
+    ro lines = lines_of(file_text)
+    ro info = detect_language(lines)
+    mut dcx = cx_new_in(info.lang)
+    for e in info.errors { dcx.errors.push(e) }
+    ro classified = tx_classify_in(lines, dcx.words, info.strict, false)
+    for e in classified.errors { dcx.errors.push(e) }
+    ro entries = classified.entries
+    ro version = defs_header(entries, dcx)
+    ro sections = sections_of(entries, dcx)
+    if !names_in_order(sections) {
+        note(dcx, struct_error(1, 1, "в файле определений три раздела по порядку: ${kw_all(dcx.words, "section", ["Types", "Constants", "Definitions"]).join(", ")} (пустой раздел — `—`)"))
+    }
+    mut types = TxTypes { records: []TxJ.new(), variants: []TxJ.new() }
+    mut constants = []TxJ.new()
+    mut definitions = []TxJ.new()
+    match section_of(sections, "Types") {
+        Some(sec) => { types = decl_types(entries, sec, dcx) }
+        None => ()
+    }
+    match section_of(sections, "Constants") {
+        Some(sec) => { constants = decl_constants(entries, sec, dcx) }
+        None => ()
+    }
+    match section_of(sections, "Definitions") {
+        Some(sec) => {
+            match section_calls(entries, sec, dcx.words) {
+                Some(e) => note(dcx, struct_error(e.line, e.indent + 1, "в файле определений нет `${kw(dcx.words, "action", "call")}`: только чистые определения"))
+                None => ()
+            }
+            defs_register(entries, sec, dcx)
+            definitions = decl_definitions(entries, sec, dcx)
+        }
+        None => ()
+    }
+    for e in dcx.errors { cx.errors.push(e) }
+    cx.rows_total += dcx.rows_total
+    cx.rows_noted += dcx.rows_noted
+    for q in dcx.env.defs { if !pair_has(cx.env.defs, q.ru) { pair_add(cx.env.defs, q.ru, q.en) } }
+    for q in dcx.env.types { if !pair_has(cx.env.types, q.ru) { pair_add(cx.env.types, q.ru, q.en) } }
+    for q in dcx.env.cases { if !pair_has(cx.env.cases, q.ru) { pair_add(cx.env.cases, q.ru, q.en) } }
+    for q in dcx.env.globals { if !pair_has(cx.env.globals, q.ru) { pair_add(cx.env.globals, q.ru, q.en) } }
+    TxDefsDoc { version, types, constants, definitions }
+}
+
+// ---- the include lines --------------------------------------------------------------------------------------------------------------------
+
+/// TxDefsCall: a line `определения: имя версия N хеш H`.
+type TxDefsCall { name str, version str, hash str, line int, col int }
+
+fn defs_call_read(line TxKv, e TxEntry, w TxWords) -> Result[TxDefsCall, TranslateError] {
+    mut p = lex_segs(line.segs)?
+    ro n = p_tok(p)
+    if n.kind != TK_NAME { return Err(p_fail(p, "после `${kw(w, "key", "definitions")}:` ожидается имя файла")) }
+    p_adv(p)
+    p_expect_kw(p, w, "key", "version")?
+    ro v = p_tok(p)
+    if v.kind != TK_INT { return Err(p_fail(p, "после `${kw(w, "key", "version")}` ожидается целое число")) }
+    p_adv(p)
+    p_expect_kw(p, w, "key", "hash")?
+    // the hash can start with a digit: it is read from the text of the line, not from the words
+    ro raw = line.segs[0].text
+    ro hash_word = kw(w, "key", "hash")
+    ro at = raw.rfind(hash_word) ?? -1
+    mut hash = ""
+    if at >= 0 { hash = raw[at + hash_word.byte_len()..].trim_ascii() }
+    if hash.byte_len() != 12 || !is_hex(hash) { return Err(tx_err(e.line, line.segs[0].col, "syntax", "после `${hash_word}` ожидается 12 шестнадцатеричных знаков")) }
+    Ok(TxDefsCall { name: n.text, version: v.text, hash, line: e.line, col: n.col })
+}
+
+fn is_hex(s str) -> bool {
+    for c in s.chars() {
+        ro one = "${c}"
+        ro ok = (one >= "0" && one <= "9") || (one >= "a" && one <= "f")
+        if !ok { return false }
+    }
+    true
+}
+
+fn defs_file_named(name str, registry []NamedText) -> Option[NamedText] {
+    for f in registry {
+        if f.name == name { return Some(f) }
+    }
+    None
+}
+
+/// TxIncluded: the files of definitions included by a machine: the JSON of what they bring and the `includes` of the tree.
+type TxIncluded { types TxTypes, constants []TxJ, definitions []TxJ, includes []TxJ }
+
+/// The include lines of the section `## Подключения` against the registry: the file by the name, the version, the hash; the copy of what it brings.
+fn defs_includes(entries []TxEntry, sec TxSection, registry []NamedText, mut cx TxCx) -> TxIncluded {
+    mut records = []TxJ.new()
+    mut variants = []TxJ.new()
+    mut constants = []TxJ.new()
+    mut definitions = []TxJ.new()
+    mut includes = []TxJ.new()
+    mut names = []str.new()
+    mut i = sec.first
+    while i < sec.last {
+        ro e = entries[i]
+        if e.kind == EN_TEXT && kv_colon(e) >= 0 {
+            ro line = kv_read(entries, i)
+            if line.key == "definitions" {
+                match defs_call_read(line, e, cx.words) {
+                    Ok(call) => {
+                        match defs_file_named(call.name, registry) {
+                            None => note(cx, tx_err(call.line, call.col, "name", "файла определений `${call.name}` нет в реестре подключаемых файлов"))
+                            Some(file) => {
+                                if names.contains(call.name) { note(cx, tx_err(call.line, call.col, "structure", "файл определений `${call.name}` подключён дважды")) }
+                                names.push(call.name)
+                                ro before = cx.errors.len()
+                                ro doc = defs_read(file.text, cx)
+                                // the errors of the file belong to the line of the include
+                                mut kept = []TranslateError.new()
+                                mut k = 0
+                                for err in cx.errors {
+                                    if k < before {
+                                        kept.push(err)
+                                    } else {
+                                        kept.push(TranslateError { line: call.line, col: call.col, kind: err.kind, message: "в файле определений ${call.name}: ${err.message}", quote: "" })
+                                    }
+                                    k += 1
+                                }
+                                cx.errors = kept
+                                if doc.version != call.version {
+                                    note(cx, tx_err(call.line, call.col, "check", "версия файла ${call.name} — ${doc.version}, а в подключении ${call.version}"))
+                                }
+                                ro actual = definitions_hash(file.text)
+                                if actual != call.hash {
+                                    note(cx, tx_err(call.line, call.col, "check", "хеш файла ${call.name} — ${actual}, а в подключении ${call.hash}"))
+                                }
+                                for r in doc.types.records { records.push(r) }
+                                for v in doc.types.variants { variants.push(v) }
+                                for c in doc.constants { constants.push(c) }
+                                for d in doc.definitions { definitions.push(d) }
+                                includes.push(jobj([kv("name", js(call.name)), kv("version", js(call.version)), kv("hash", js(call.hash))]))
+                            }
+                        }
+                    }
+                    Err(err) => note(cx, err)
+                }
+            }
+            i += line.taken
+        } else {
+            i += 1
+        }
+    }
+    TxIncluded { types: TxTypes { records, variants }, constants, definitions, includes }
+}

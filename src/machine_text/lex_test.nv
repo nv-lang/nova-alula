@@ -1,0 +1,170 @@
+// lex_test.nv - the reader of lines, the tokens, the tree of the JSON, the table of names.
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+
+// The tokens as `kind:text` joined by a space; `ERR message` for a refused piece.
+fn toks(text str) -> str {
+    match tx_lex(text, 1, 1) {
+        Ok(tokens) => {
+            mut parts = []str.new()
+            for t in tokens { parts.push("${t.kind}:${t.text}") }
+            parts.join(" ")
+        }
+        Err(e) => "ERR ${e.message}"
+    }
+}
+
+test "lex names" {
+    assert(toks("a b_1 Имя") == "1:a 1:b_1 1:Имя")
+    assert(toks("число≥0") == "1:число 5:≥ 2:0")
+    assert(toks("ёж_Ё") == "1:ёж_Ё")
+    assert(toks("") == "")
+}
+
+test "lex numbers" {
+    assert(toks("12 0.5 3.25") == "2:12 3:0.5 3:3.25")
+    assert(toks("к.0") == "1:к 5:. 2:0")
+    assert(toks("a.1.2") == "1:a 5:. 3:1.2")
+}
+
+test "lex strings" {
+    assert(toks("\"ab\" \"\"") == "4:ab 4:")
+    assert(toks("\"a\\\"b\"") == "4:a\"b")
+    assert(toks("\"слово | и\"") == "4:слово | и")
+    assert(toks("\"open").starts_with("ERR"))
+}
+
+test "lex symbols" {
+    assert(toks("a == b != c <= d >= e += f ?? g -> h → i") == "1:a 5:== 1:b 5:!= 1:c 5:<= 1:d 5:>= 1:e 5:+= 1:f 5:?? 1:g 5:-> 1:h 5:→ 1:i")
+    assert(toks("{ ...x, y: 1 }") == "5:{ 5:... 1:x 5:, 1:y 5:: 2:1 5:}")
+    assert(toks("a \\| b | c") == "1:a 5:| 1:b 5:| 1:c")
+    assert(toks("x ∈ {1}") == "1:x 5:∈ 5:{ 2:1 5:}")
+    assert(toks("— ≤ …") == "5:— 5:≤ 5:…")
+    assert(toks("a # b").starts_with("ERR"))
+}
+
+test "lex comment" {
+    assert(toks("a // b c") == "1:a")
+    assert(toks("a / b") == "1:a 5:/ 1:b")
+    assert(toks("\"a // b\" c") == "4:a // b 1:c")
+}
+
+test "lex columns" {
+    match tx_lex("  ab  \"cd\" 12", 7, 3) {
+        Ok(tokens) => {
+            assert(tokens.len() == 3)
+            assert(tokens[0].col == 5 && tokens[0].line == 7)
+            assert(tokens[1].col == 9)
+            assert(tokens[2].col == 14)
+        }
+        Err(e) => assert(false)
+    }
+}
+
+// ---- the entries ---------------------------------------------------------------------------------------------------------------
+
+fn entries_of(text str) -> []TxEntry {
+    mut lines = []str.new()
+    for l in text.split("\n") { lines.push(l) }
+    tx_classify(lines)
+}
+
+fn cells_of(entry TxEntry) -> str {
+    mut parts = []str.new()
+    for c in entry.cells { parts.push("${c.col}:${c.text}") }
+    parts.join("|")
+}
+
+test "entries kinds" {
+    ro found = entries_of("# Машина: Чат\n\nmachine: Chat\n> a comment\n```\n## Данные\n| имя | тип |\n|---|---|\n| a | b |\n  continues\n")
+    assert(found.len() == 6)
+    assert(found[0].kind == EN_HEAD && found[0].level == 1 && found[0].text == "Машина: Чат" && found[0].line == 1)
+    assert(found[1].kind == EN_TEXT && found[1].text == "machine: Chat" && found[1].line == 3)
+    assert(found[2].kind == EN_HEAD && found[2].level == 2 && found[2].text == "Данные" && found[2].line == 6)
+    assert(found[3].kind == EN_ROW && found[3].line == 7)
+    assert(found[4].kind == EN_ROW && found[4].line == 9)
+    assert(found[5].kind == EN_TEXT && found[5].indent == 2 && found[5].text == "continues")
+}
+
+test "entries cells" {
+    ro found = entries_of("| 1 | ответ: Закончен(a) | — | x = 1; y = 2 | КОНЕЦ |")
+    assert(found.len() == 1)
+    assert(found[0].cells.len() == 5)
+    assert(cells_of(found[0]) == "3:1|7:ответ: Закончен(a)|28:—|32:x = 1; y = 2|47:КОНЕЦ")
+}
+
+test "entries pipes" {
+    ro found = entries_of("| имя | тип |\n| x | \"a\" \\| \"b\" |\n| y | \"p | q\" |\n| z |  |\n|| w |")
+    assert(cells_of(found[1]) == "3:x|7:\"a\" \\| \"b\"")
+    assert(cells_of(found[2]) == "3:y|7:\"p | q\"")
+    assert(found[3].cells.len() == 2 && found[3].cells[1].text == "")
+    assert(found[4].cells.len() == 2 && found[4].cells[0].text == "" && found[4].cells[1].text == "w")
+}
+
+test "entries crlf" {
+    ro found = entries_of("## A\r\n| a | b |\r\n")
+    assert(found.len() == 2)
+    assert(found[0].text == "A")
+    assert(found[1].cells.len() == 2 && found[1].cells[1].text == "b")
+}
+
+// ---- the tree of the JSON --------------------------------------------------------------------------------------------------
+
+test "tj text" {
+    assert(tx_text(x_name("a")) == "{\"op\":\"name\",\"name\":\"a\"}")
+    assert(tx_text(x_lit(TxRaw("12"))) == "{\"op\":\"lit\",\"value\":12}")
+    assert(tx_text(x_null()) == "{\"op\":\"lit\",\"value\":null}")
+    assert(tx_text(x_lit(js("a\"b\\c\n"))) == "{\"op\":\"lit\",\"value\":\"a\\\"b\\\\c\\n\"}")
+    assert(tx_text(x_lit(js("дом"))) == "{\"op\":\"lit\",\"value\":\"дом\"}")
+    assert(tx_text(TxArr([TxBool(true), TxBool(false), TxNull])) == "[true,false,null]")
+    assert(tx_text(TxObj([kv("a", jint(1)), kv("b", jstrs(["x", "y"]))])) == "{\"a\":1,\"b\":[\"x\",\"y\"]}")
+    assert(tx_text(TxArr([])) == "[]")
+    assert(tx_text(TxObj([])) == "{}")
+}
+
+test "tj nodes" {
+    assert(tx_text(x_bin("+", x_name("a"), x_lit(TxRaw("1")))) == "{\"op\":\"+\",\"left\":{\"op\":\"name\",\"name\":\"a\"},\"right\":{\"op\":\"lit\",\"value\":1}}")
+    assert(tx_text(x_variant("T", "C", [])) == "{\"op\":\"variant\",\"type\":\"T\",\"name\":\"C\"}")
+    assert(tx_text(x_variant("T", "C", [kv("f", x_null())])).contains("\"fields\":{\"f\":"))
+    assert(tx_text(x_arm([pat_any()], [], x_null())) == "{\"patterns\":[{\"kind\":\"any\"}],\"body\":{\"op\":\"lit\",\"value\":null}}")
+    assert(tx_text(x_arm([pat_any()], [x_name("g")], x_null())).contains("\"guard\":"))
+    assert(tx_text(pat_case("", "C", [])) == "{\"kind\":\"case\",\"name\":\"C\"}")
+    assert(tx_text(pat_case("T", "C", [kv("f", js("l"))])) == "{\"kind\":\"case\",\"type\":\"T\",\"name\":\"C\",\"bind\":{\"f\":\"l\"}}")
+}
+
+// ---- the names -------------------------------------------------------------------------------------------------------------
+
+test "names get" {
+    ro n = names_load()
+    assert(n.rows.len() > 1000)
+    assert(names_get(n, "data", "запрос_агента") == Some("agent_request"))
+    assert(names_get(n, "data", "расход") == Some("transport_usage"))
+    assert(names_get(n, "field", "расход") == Some("usage"))
+    assert(names_get(n, "type", "КодСбоя") == Some("FailCode"))
+    assert(names_get(n, "constant", "СРОК_БЕЗДЕЙСТВИЯ") == Some("IDLE_TERM"))
+    assert(names_get(n, "catalog", "обязательно") == Some("require"))
+    assert(names_get(n, "executor", "сторона") == Some("party"))
+    assert(names_get(n, "data", "нет_такого") == None)
+    assert(names_first(n, ["variable", "data"], "расход") == Some("transport_usage"))
+    assert(names_first(n, ["catalog", "function"], "есть") == Some("has"))
+}
+
+test "names hint" {
+    ro n = names_load()
+    assert(names_hint(n, ["data"], "запрос_агнта") == "; возможно, `запрос_агента`")
+    assert(names_hint(n, ["data"], "совсем_другое_слово_вообще") == "")
+    assert(tx_distance("abc", "abd") == 1)
+    assert(tx_distance("", "ab") == 2)
+    assert(tx_distance("ход", "ход") == 0)
+}
+
+test "names translit" {
+    assert(tx_translit("л") == "l")
+    assert(tx_translit("н") == "n")
+    assert(tx_translit("щука") == "shchuka")
+    assert(tx_translit("Ёж_2") == "yozh_2")
+    assert(tx_translit("abc") == "abc")
+    assert(tx_translit("ост") == "ost")
+}

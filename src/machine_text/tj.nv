@@ -1,0 +1,211 @@
+// tj.nv - the JSON tree that the translator builds (`TxJ`) and its text. Objects keep the order of insertion; the text has no spaces, one line, UTF-8 as it is.
+//
+// Why not `JsonValue` of the standard library: the translator needs only to build and to write, and the text must be the same on every run.
+// ORACLE-WORKAROUND(12, 13): the tree is plain data without generics (`TxJ`, a sum type, passed by plain functions and a mutable record): generic functions with inferred type arguments break the C; use generic helpers when items 12 and 13 are fixed
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+
+/// TxKV: a key and a value of an object.
+// ORACLE-WORKAROUND(44): the record is declared BEFORE the sum type `TxJ` that lists it (after it the C of a `match` on `TxObj(pairs)` is wrong); put it after `TxJ` when item 44 is fixed
+type TxKV { key str, value TxJ }
+
+/// TxJ: a JSON value. `TxRaw` is a number written as it is in the table (`12`, `0.5`).
+type TxJ enum
+    | TxNull
+    | TxBool(bool)
+    | TxRaw(str)
+    | TxStr(str)
+    | TxArr([]TxJ)
+    | TxObj([]TxKV)
+
+fn kv(key str, value TxJ) -> TxKV => { key, value }
+
+fn js(s str) -> TxJ => TxStr(s)
+
+fn jint(n int) -> TxJ => TxRaw("${n}")
+
+fn jarr_of(items []TxJ) -> TxJ => TxArr(items)
+
+fn jstrs(items []str) -> TxJ {
+    mut out = []TxJ.new()
+    for s in items { out.push(TxStr(s)) }
+    TxArr(out)
+}
+
+/// An object from its pairs.
+fn jobj(pairs []TxKV) -> TxJ => TxObj(pairs)
+
+/// The text of a string as a JSON string literal.
+fn tx_quote(s str) -> str {
+    mut out = []str.new()
+    out.push("\"")
+    for c in s.chars() {
+        ro one = "${c}"
+        if one == "\"" {
+            out.push("\\\"")
+        } else if one == "\\" {
+            out.push("\\\\")
+        } else if one == "\n" {
+            out.push("\\n")
+        } else if one == "\r" {
+            out.push("\\r")
+        } else if one == "\t" {
+            out.push("\\t")
+        } else {
+            out.push(one)
+        }
+    }
+    out.push("\"")
+    out.join("")
+}
+
+/// The JSON text of a tree.
+fn tx_text(j TxJ) -> str {
+    match j {
+        TxNull => "null"
+        TxBool(b) => if b { "true" } else { "false" }
+        TxRaw(r) => r
+        TxStr(s) => tx_quote(s)
+        TxArr(items) => {
+            mut parts = []str.new()
+            for item in items { parts.push(tx_text(item)) }
+            "[${parts.join(",")}]"
+        }
+        TxObj(pairs) => {
+            mut parts = []str.new()
+            for p in pairs { parts.push("${tx_quote(p.key)}:${tx_text(p.value)}") }
+            "{${parts.join(",")}}"
+        }
+    }
+}
+
+// ---- the nodes of an expression (src/machine/expr.nv) ---------------------------------------------------------------------------
+
+fn x_lit(v TxJ) -> TxJ => jobj([kv("op", js("lit")), kv("value", v)])
+
+fn x_null() -> TxJ => x_lit(TxNull)
+
+fn x_name(name str) -> TxJ => jobj([kv("op", js("name")), kv("name", js(name))])
+
+fn x_field(of TxJ, name str) -> TxJ => jobj([kv("op", js("field")), kv("of", of), kv("name", js(name))])
+
+fn x_index(of TxJ, index TxJ) -> TxJ => jobj([kv("op", js("index")), kv("of", of), kv("index", index)])
+
+fn x_call(fn_name str, args []TxJ) -> TxJ => jobj([kv("op", js("call")), kv("fn", js(fn_name)), kv("args", TxArr(args))])
+
+fn x_prim(name str, args []TxJ) -> TxJ => jobj([kv("op", js("primitive_call")), kv("name", js(name)), kv("args", TxArr(args))])
+
+fn x_bin(op str, left TxJ, right TxJ) -> TxJ => jobj([kv("op", js(op)), kv("left", left), kv("right", right)])
+
+fn x_un(op str, operand TxJ) -> TxJ => jobj([kv("op", js(op)), kv("operand", operand)])
+
+fn x_if(cond TxJ, then_branch TxJ, else_branch TxJ) -> TxJ => jobj([kv("op", js("if")), kv("cond", cond), kv("then", then_branch), kv("else", else_branch)])
+
+fn x_let(name str, value TxJ, body TxJ) -> TxJ => jobj([kv("op", js("let")), kv("name", js(name)), kv("value", value), kv("body", body)])
+
+fn x_lambda(params []str, body TxJ) -> TxJ => jobj([kv("op", js("lambda")), kv("params", jstrs(params)), kv("body", body)])
+
+fn x_list(items []TxJ) -> TxJ => jobj([kv("op", js("list")), kv("items", TxArr(items))])
+
+fn x_tuple(items []TxJ) -> TxJ => jobj([kv("op", js("tuple")), kv("items", TxArr(items))])
+
+fn x_dict(entries []TxJ) -> TxJ => jobj([kv("op", js("dict")), kv("entries", TxArr(entries))])
+
+fn x_entry(key TxJ, value TxJ) -> TxJ => jobj([kv("key", key), kv("value", value)])
+
+fn x_record(type_name str, fields []TxKV) -> TxJ => jobj([kv("op", js("record")), kv("type", js(type_name)), kv("fields", TxObj(fields))])
+
+fn x_with(of TxJ, fields []TxKV) -> TxJ => jobj([kv("op", js("with_field")), kv("of", of), kv("fields", TxObj(fields))])
+
+fn x_variant(type_name str, name str, fields []TxKV) -> TxJ {
+    mut pairs = [kv("op", js("variant")), kv("type", js(type_name)), kv("name", js(name))]
+    if fields.len() > 0 { pairs.push(kv("fields", TxObj(fields))) }
+    jobj(pairs)
+}
+
+fn x_match(on TxJ, arms []TxJ) -> TxJ => jobj([kv("op", js("match")), kv("on", on), kv("arms", TxArr(arms))])
+
+/// An arm of a `match`: the patterns, an optional guard, the body.
+fn x_arm(patterns []TxJ, guards []TxJ, body TxJ) -> TxJ {
+    mut pairs = [kv("patterns", TxArr(patterns))]
+    if guards.len() > 0 { pairs.push(kv("guard", guards[0])) }
+    pairs.push(kv("body", body))
+    jobj(pairs)
+}
+
+fn pat_any() -> TxJ => jobj([kv("kind", js("any"))])
+
+fn pat_lit(v TxJ) -> TxJ => jobj([kv("kind", js("lit")), kv("value", v)])
+
+/// A pattern of a case: the type when it is given, the name, the binds {field: local}.
+fn pat_case(type_name str, name str, binds []TxKV) -> TxJ {
+    mut pairs = [kv("kind", js("case"))]
+    if type_name != "" { pairs.push(kv("type", js(type_name))) }
+    pairs.push(kv("name", js(name)))
+    if binds.len() > 0 { pairs.push(kv("bind", TxObj(binds))) }
+    jobj(pairs)
+}
+
+// ---- the actions (src/machine_table/json.nv, `dec_action`) ------------------------------------------------------------------------------
+
+fn a_assign(target TxJ, value TxJ) -> TxJ => jobj([kv("do", js("assign")), kv("target", target), kv("value", value)])
+
+fn a_add(target TxJ, value TxJ) -> TxJ => jobj([kv("do", js("add")), kv("target", target), kv("value", value)])
+
+/// The target of an assignment: a plain datum is its name, a path is {"name", "path": [{"key": E} | {"field": "f"}]}.
+fn a_target(root str, steps []TxJ) -> TxJ {
+    if steps.len() == 0 { return js(root) }
+    jobj([kv("name", js(root)), kv("path", TxArr(steps))])
+}
+
+fn a_step_key(key TxJ) -> TxJ => jobj([kv("key", key)])
+
+fn a_step_field(name str) -> TxJ => jobj([kv("field", js(name))])
+
+fn a_params(params []TxKV) -> TxJ {
+    mut out = []TxJ.new()
+    for q in params { out.push(jobj([kv("name", js(q.key)), kv("value", q.value)])) }
+    TxArr(out)
+}
+
+fn a_journal(code str, params []TxKV) -> TxJ {
+    mut pairs = [kv("do", js("journal")), kv("code", js(code))]
+    if params.len() > 0 { pairs.push(kv("params", a_params(params))) }
+    jobj(pairs)
+}
+
+fn a_journal_value(value TxJ) -> TxJ => jobj([kv("do", js("journal_value")), kv("value", value)])
+
+fn a_journal_all() -> TxJ => jobj([kv("do", js("journal_all"))])
+
+fn a_for_each(var_name str, items_expr TxJ, body []TxJ) -> TxJ => jobj([kv("do", js("for_each")), kv("var", js(var_name)), kv("in", items_expr), kv("body", TxArr(body))])
+
+fn a_let(name str, value TxJ, body []TxJ) -> TxJ => jobj([kv("do", js("let")), kv("name", js(name)), kv("value", value), kv("body", TxArr(body))])
+
+fn a_bind(name str, value TxJ) -> TxJ => jobj([kv("do", js("bind")), kv("name", js(name)), kv("value", value)])
+
+fn a_if(cond TxJ, then_actions []TxJ, else_actions []TxJ) -> TxJ {
+    mut pairs = [kv("do", js("if")), kv("cond", cond), kv("then", TxArr(then_actions))]
+    if else_actions.len() > 0 { pairs.push(kv("else", TxArr(else_actions))) }
+    jobj(pairs)
+}
+
+fn a_call(primitive str, args []TxJ) -> TxJ => jobj([kv("do", js("call")), kv("primitive", js(primitive)), kv("args", TxArr(args))])
+
+fn a_machine_error(code str, params []TxKV) -> TxJ {
+    mut pairs = [kv("do", js("machine_error")), kv("code", js(code))]
+    if params.len() > 0 { pairs.push(kv("params", a_params(params))) }
+    jobj(pairs)
+}
+
+fn a_cancel_open_except(nested TxJ) -> TxJ => jobj([kv("do", js("cancel_open")), kv("except", TxArr([nested]))])
+
+fn a_pass(nested TxJ, signal str) -> TxJ => jobj([kv("do", js("pass")), kv("nested", nested), kv("signal", js(signal))])
+
+fn a_cancel_open(party str) -> TxJ {
+    mut pairs = [kv("do", js("cancel_open"))]
+    if party != "" { pairs.push(kv("party", js(party))) }
+    jobj(pairs)
+}

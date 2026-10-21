@@ -1,0 +1,289 @@
+// lex_unicode_test.nv - task 117: the lexer works on byte offsets and on `std.unicode`: names in any alphabet, the case of any alphabet that has one, the columns of the errors in letters
+// (not in bytes) after Cyrillic and four-byte letters, the entries of a file with such lines.
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+
+// The columns of the tokens of a text as `col:text` joined by a space; `ERR line:col message` for a refused piece.
+fn cols(text str, col0 int) -> str {
+    match tx_lex(text, 4, col0) {
+        Ok(tokens) => {
+            mut parts = []str.new()
+            for t in tokens { parts.push("${t.col}:${t.text}") }
+            parts.join(" ")
+        }
+        Err(e) => "ERR ${e.line}:${e.col} ${e.message}"
+    }
+}
+
+// ---- names in any alphabet ------------------------------------------------------------------------------------------------------
+
+test "unicode lex greek" {
+    assert(toks("δ δείγμα Δείγμα ΔΕΙΓΜΑ") == "1:δ 1:δείγμα 1:Δείγμα 1:ΔΕΙΓΜΑ")
+    assert(toks("λάθος_2") == "1:λάθος_2")
+    assert(toks("ο,ς") == "1:ο 5:, 1:ς")
+}
+
+test "unicode lex german" {
+    assert(toks("größe Größe GRÖSSE") == "1:größe 1:Größe 1:GRÖSSE")
+    assert(toks("über Ärger ÖL straße") == "1:über 1:Ärger 1:ÖL 1:straße")
+    assert(toks("größe2 ü_1") == "1:größe2 1:ü_1")
+}
+
+test "unicode lex chinese" {
+    assert(toks("数据 状态") == "1:数据 1:状态")
+    assert(toks("数据_1 名前2") == "1:数据_1 1:名前2")
+    assert(toks("数据≥0") == "1:数据 5:≥ 2:0")
+}
+
+test "unicode lex other alphabets" {
+    assert(toks("שלום") == "1:שלום")
+    assert(toks("नाम") == "1:नाम")
+    assert(toks("이름 名前 ชื่อ") == "1:이름 1:名前 1:ชื่อ")
+    assert(toks("ñandú çedilla") == "1:ñandú 1:çedilla")
+}
+
+test "unicode lex four byte letters" {
+    assert(toks("𝒜b 𝔞") == "1:𝒜b 1:𝔞")
+    assert(toks("a𝒜→b") == "1:a𝒜 5:→ 1:b")
+}
+
+test "unicode lex stops at a symbol" {
+    assert(toks("δ→δ") == "1:δ 5:→ 1:δ")
+    assert(toks("größe+1") == "1:größe 5:+ 2:1")
+    assert(toks("x ∈ {数据}") == "1:x 5:∈ 5:{ 1:数据 5:}")
+}
+
+test "unicode lex refuses a mark that is no letter" {
+    assert(toks("a # b").starts_with("ERR"))
+    assert(toks("δ ☃").starts_with("ERR"))
+    assert(toks("😀").starts_with("ERR"))
+}
+
+test "unicode lex spaces" {
+    // a no-break space and an ideographic space separate the words like a space
+    assert(toks("a\u{a0}b") == "1:a 1:b")
+    assert(toks("δ\u{3000}数据") == "1:δ 1:数据")
+    assert(toks("\ta  b") == "1:a 1:b")
+}
+
+// ---- the columns -----------------------------------------------------------------------------------------------------------------
+
+test "unicode columns after cyrillic" {
+    assert(cols("привет мир 12", 1) == "1:привет 8:мир 12:12")
+    assert(cols("привет мир 12", 5) == "5:привет 12:мир 16:12")
+}
+
+test "unicode columns after four byte letters" {
+    assert(cols("𝒜 b 𝔞c d", 1) == "1:𝒜 3:b 5:𝔞c 8:d")
+    assert(cols("😀", 1).starts_with("ERR 4:1"))
+}
+
+test "unicode column of an error after cyrillic" {
+    assert(cols("привет #", 1) == "ERR 4:8 недопустимый знак «#»")
+    assert(cols("привет #", 11) == "ERR 4:18 недопустимый знак «#»")
+}
+
+test "unicode column of an error after four byte letters in a string" {
+    assert(cols("\"😀я\" ?? #", 5) == "ERR 4:13 недопустимый знак «#»")
+    assert(cols("\"😀я\" #", 1) == "ERR 4:6 недопустимый знак «#»")
+}
+
+test "unicode column of an error after a four byte letter name" {
+    assert(cols("привет 𝒜 #", 1) == "ERR 4:10 недопустимый знак «#»")
+    assert(cols("𝒜𝒜 #", 3) == "ERR 4:6 недопустимый знак «#»")
+}
+
+test "unicode column of an open string" {
+    assert(cols("привет \"😀", 1) == "ERR 4:8 строка в кавычках не закрыта")
+}
+
+test "unicode columns of a string with escapes" {
+    assert(cols("\"я\\\"😀\" b", 1) == "1:я\"😀 8:b")
+    assert(toks("\"δ\\nх\"") == "4:δ\nх")
+}
+
+// ---- the case --------------------------------------------------------------------------------------------------------------------
+
+test "unicode type or constant latin" {
+    assert(looks_like_type("Использование"))
+    assert(looks_like_type("Usage"))
+    assert(!looks_like_type("ПРЕДЕЛ"))
+    assert(!looks_like_type("LIMIT_2"))
+    assert(!looks_like_type("limit"))
+}
+
+test "unicode type or constant german" {
+    assert(looks_like_type("Größe"))
+    assert(looks_like_type("Ärger"))
+    assert(looks_like_type("Übung"))
+    assert(!looks_like_type("ÄRGER"))
+    assert(!looks_like_type("ÜBUNG_2"))
+    assert(!looks_like_type("größe"))
+    assert(!looks_like_type("ärger"))
+}
+
+test "unicode type or constant greek" {
+    assert(looks_like_type("Δείγμα"))
+    assert(looks_like_type("Λάθος"))
+    assert(!looks_like_type("ΔΕΙΓΜΑ"))
+    assert(!looks_like_type("ΠΡΟΣΩΠΟ_1"))
+    assert(!looks_like_type("δείγμα"))
+}
+
+test "unicode type or constant cyrillic with yo" {
+    assert(looks_like_type("Ёжик"))
+    assert(!looks_like_type("ЁЖ"))
+    assert(!looks_like_type("ёжик"))
+}
+
+test "unicode name without case is neither" {
+    assert(!looks_like_type("数据"))
+    assert(!looks_like_type("数据_1"))
+    assert(!looks_like_type("名前"))
+    assert(!looks_like_type("שלום"))
+}
+
+test "unicode lower case of a letter" {
+    assert(tx_lower("A") == "a")
+    assert(tx_lower("Я") == "я")
+    assert(tx_lower("Ё") == "ё")
+    assert(tx_lower("Ä") == "ä")
+    assert(tx_lower("Ö") == "ö")
+    assert(tx_lower("Σ") == "σ")
+    assert(tx_lower("Δ") == "δ")
+    assert(tx_lower("ß") == "ß")
+    assert(tx_lower("数") == "数")
+    assert(tx_lower("_") == "_")
+    assert(tx_lower("7") == "7")
+}
+
+test "unicode translit keeps other alphabets" {
+    assert(tx_translit("δ") == "δ")
+    assert(tx_translit("Δείγμα") == "δείγμα")
+    assert(tx_translit("Größe") == "größe")
+    assert(tx_translit("数据") == "数据")
+    assert(tx_translit("щука_Δ") == "shchuka_δ")
+    assert(tx_translit("Ёж_2") == "yozh_2")
+}
+
+// ---- the entries -----------------------------------------------------------------------------------------------------------------
+
+test "unicode entries columns of cells" {
+    ro found = entries_of("| größe | 数据 | 😀 | Δ |")
+    assert(found.len() == 1)
+    assert(cells_of(found[0]) == "3:größe|11:数据|16:😀|20:Δ")
+}
+
+test "unicode entries cell with a no-break space" {
+    ro found = entries_of("|\u{a0}δ\u{a0}| b |")
+    assert(found.len() == 1)
+    assert(found[0].cells.len() == 2)
+    assert(found[0].cells[0].text == "δ" && found[0].cells[0].col == 3)
+}
+
+test "unicode entries indent in letters" {
+    ro found = entries_of("\u{3000}\u{3000}δ continues")
+    assert(found.len() == 1)
+    assert(found[0].indent == 2 && found[0].text == "δ continues")
+}
+
+test "unicode entries heading" {
+    ro found = entries_of("## Состояния δ\n### ÄNDERN — развилка (Change)")
+    assert(found.len() == 2)
+    assert(found[0].level == 2 && found[0].text == "Состояния δ")
+    assert(found[1].level == 3 && found[1].text == "ÄNDERN — развилка (Change)")
+}
+
+test "unicode entries key line" {
+    ro found = entries_of("Сторона: пользователь\n- Срок тишины: 30")
+    assert(found.len() == 2)
+    assert(found[0].key == "Party" && found[0].text == "Сторона: пользователь")
+    assert(found[1].key == "Idle term" && found[1].shift == 2)
+}
+
+test "unicode call start" {
+    assert(is_call_start("Имя(x)"))
+    assert(is_call_start("Δοκιμή(1)"))
+    assert(is_call_start("数据(1)"))
+    assert(is_call_start("Größe2(a)"))
+    assert(!is_call_start("δ ο(1)"))
+    assert(!is_call_start("1x(2)"))
+    assert(!is_call_start("名 前"))
+}
+
+// ---- the marks, the distance, the header, the hash, the JSON reader, the types ---------------------------------------------------------
+
+test "unicode lex a mark after a letter" {
+    // `o` and a combining diaeresis (U+0308), written apart, are one name; a mark alone is no name
+    assert(toks("gro\u{308}sse") == "1:gro\u{308}sse")
+    assert(cols("gro\u{308}sse x", 1) == "1:gro\u{308}sse 9:x")
+    assert(toks("\u{308}a").starts_with("ERR"))
+}
+
+test "unicode distance of words" {
+    assert(tx_distance("δείγμα", "δείγμα") == 0)
+    assert(tx_distance("größe", "grosse") == 3)
+    assert(tx_distance("数据", "数") == 1)
+    assert(tx_distance("😀a", "a") == 1)
+}
+
+test "unicode header line columns" {
+    ro plain = header_line("language: en")
+    assert(plain.key == "language" && plain.value == "en" && plain.col == 1)
+    ro item = header_line("-  machine_version: 3")
+    assert(item.key == "machine_version" && item.value == "3" && item.col == 4)
+    ro greek = header_line("- δ: 1")
+    assert(greek.key == "δ" && greek.value == "1" && greek.col == 3)
+    assert(header_line("- a b: 1").key == "")
+    assert(header_line("текст без ключа").key == "")
+}
+
+test "unicode hash text with a byte order mark" {
+    assert(normalize_definitions("\u{FEFF}a  \r\nδ\t\r\n\r\n") == "a\nδ\n")
+    assert(normalize_definitions("\u{FEFF}") == "\n")
+    assert(normalize_definitions("数据 ") == "数据\n")
+}
+
+test "unicode json reader keeps letters of any alphabet" {
+    match rj_parse("{\"имя\": \"δ数😀\", \"k\": [\"ö\n\", \"a\\\"b\"], \"n\": -1.5e3}") {
+        Ok(v) => {
+            assert(rj_gstr(v, "имя") == "δ数😀")
+            assert(rj_garr(v, "k").len() == 2)
+            assert(rj_str(rj_garr(v, "k")[0]) == "ö\n")
+            assert(rj_str(rj_garr(v, "k")[1]) == "a\"b")
+            assert(rj_gscalar(v, "n") == "-1.5e3")
+        }
+        Err(e) => assert(false)
+    }
+}
+
+test "unicode json reader errors" {
+    match rj_parse("{\"δ\" 1}") {
+        Ok(v) => assert(false)
+        Err(e) => assert(e.contains("`:` is expected"))
+    }
+    match rj_parse("[\"数据") {
+        Ok(v) => assert(false)
+        Err(e) => assert(e.contains("a string is not closed"))
+    }
+    match rj_parse("1 😀") {
+        Ok(v) => assert(false)
+        Err(e) => assert(e.contains("text after the value"))
+    }
+}
+
+test "unicode types with names of any alphabet" {
+    assert(render_type_in("?Δείγμα", "ru") == "?Δείγμα")
+    assert(render_type_in("[]数据", "en") == "[]数据")
+    assert(render_type_in("{Größe: int>=5}", "en") == "map[Größe, int>=5]")
+    assert(render_type_in("\"δ\" | \"数据\"", "ru") == "\"δ\" | \"数据\"")
+    assert(render_type_in("(Ärger, 𝒜)", "en") == "(Ärger, 𝒜)")
+}
+
+test "unicode field named by a digit" {
+    ro cx = rn_cx("en")
+    assert(rn_field_name(cx, "0") == "0")
+    assert(rn_field_name(cx, "12x") == "12x")
+}

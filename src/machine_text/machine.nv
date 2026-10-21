@@ -1,0 +1,498 @@
+// machine.nv - the translator of a file of a machine: `translate` (the Result), `translate_report` (the JSON and every note), the header of the file, the
+// order of the sections, the JSON of the machine.
+//
+// The order of the work is the order of the dependencies, not of the file: the names of the states, of the definitions are collected first (a row may
+// lead to a state that comes later), then the types, the constants, the parameters, the input, the data, the parties, the signals, the parts of an answer, the
+// definitions, the primitives, the common events, the states, the ends. Every error of every part is kept: the translation does not stop at the first.
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine.{NamedText}
+
+/// TranslateReport: what a translation gave. `json` is the machine (complete when `errors` is empty, else what could be translated); `errors` are all the
+/// notes of the translator, by place; `rows_total` is the number of the rows of the tables (and definitions) that were read, `rows_noted` the number of those
+/// that carry a note (an error or "not supported").
+export type TranslateReport { json str, errors []TranslateError, warnings []TranslateError, rows_total int, rows_noted int, places []TxPlace }
+
+/// The context of a translation of a file in the language `lang` (`ru` or `en`).
+fn cx_new_in(lang str) -> TxCx {
+    TxCx { errors: []TranslateError.new(), names: names_load_for(lang), env: env_new(), rows_total: 0, rows_noted: 0, places: []TxPlace.new(), words: words_load(lang) }
+}
+
+fn cx_new() -> TxCx => cx_new_in("ru")
+
+// ---- the header ------------------------------------------------------------------------------------------------------------------------------
+
+/// TxHeader: the title, the Latin name, the version of the machine.
+type TxHeader { title str, machine str, version str, format str }
+
+fn header_read(entries []TxEntry, mut cx TxCx) -> TxHeader {
+    mut title = ""
+    mut machine = ""
+    mut version = ""
+    mut format = ""
+    mut machine_line = 1
+    mut machine_col = 10
+    ro head_word = "${kw(cx.words, "header", "Machine")}:"
+    if entries.len() == 0 || entries[0].kind != EN_HEAD || entries[0].level != 1 || !entries[0].text.starts_with(head_word) {
+        note(cx, struct_error(1, 1, "файл машины начинается со строки `# ${head_word} <Имя>`"))
+    } else {
+        title = entries[0].text[head_word.byte_len()..].trim_ascii()
+    }
+    mut i = 1
+    while i < entries.len() && entries[i].kind != EN_HEAD {
+        ro e = entries[i]
+        if kv_colon(e) >= 0 {
+            ro line = kv_read(entries, i)
+            ro value = line.segs[0].text
+            if line.key == "machine" {
+                machine = value
+                machine_line = e.line
+                machine_col = 10 + e.shift
+            } else if line.key == "machine_version" {
+                version = value
+            } else if line.key == "format" {
+                format = value
+            } else if line.key == "language" {
+                // read by the detection of the language, before the translation
+                ()
+            } else {
+                note(cx, struct_error(e.line, 1, "в шапке бывают строки machine, machine_version, format, language"))
+            }
+            i += line.taken
+        } else {
+            note(cx, struct_error(e.line, e.indent + 1, "лишняя строка в шапке файла"))
+            i += 1
+        }
+    }
+    if machine == "" {
+        note(cx, struct_error(1, 1, "в шапке нет строки `machine: <латинское_имя>`"))
+    } else if !is_identifier_latin(machine) {
+        note(cx, struct_error(machine_line, machine_col, "имя машины — латинский идентификатор, найдено `${machine}`"))
+    }
+    if !format_versions().contains(format) {
+        ro shown = if format == "" { "не указан" } else { format }
+        note(cx, struct_error(1, 1, "формат ${shown}: версия не известна переводчику, он читает формат ${format_versions().join(", ")} (строка `format: 2.12`); переходного периода нет"))
+    }
+    TxHeader { title, machine, version, format }
+}
+
+// ---- sorting and quoting the errors ---------------------------------------------------------------------------------------------------------
+
+fn error_before(a TranslateError, b TranslateError) -> bool {
+    if a.line != b.line { return a.line < b.line }
+    a.col < b.col
+}
+
+// ORACLE-WORKAROUND(41): the list is called `errors_in`, not `errors`: the same name for lists of different types in two functions of a unit is mixed up by the code generator; use a plain name when item 41 is fixed
+fn errors_sorted(errors_in []TranslateError) -> []TranslateError {
+    mut out = []TranslateError.new()
+    for e in errors_in {
+        mut at = out.len()
+        while at > 0 && error_before(e, out[at - 1]) { at -= 1 }
+        mut next = []TranslateError.new()
+        mut k = 0
+        while k < out.len() {
+            if k == at { next.push(e) }
+            next.push(out[k])
+            k += 1
+        }
+        if at == out.len() { next.push(e) }
+        out = next
+    }
+    out
+}
+
+fn errors_quoted(errors_in []TranslateError, lines []str) -> []TranslateError {
+    mut out = []TranslateError.new()
+    for e in errors_in {
+        mut quote = e.quote
+        if quote == "" && e.line >= 1 && e.line <= lines.len() {
+            quote = lines[e.line - 1].trim_ascii()
+            if quote.chars().count() > 160 {
+                mut cut = []str.new()
+                mut k = 0
+                for c in quote.chars() {
+                    if k < 160 { cut.push("${c}") }
+                    k += 1
+                }
+                quote = "${cut.join("")}…"
+            }
+        }
+        out.push(TranslateError { line: e.line, col: e.col, kind: e.kind, message: e.message, quote })
+    }
+    out
+}
+
+// ---- fragments ----------------------------------------------------------------------------------------------------------------------------------
+
+/// TxFragRun: a fragment of a call, read: its entries and sections, and the blocks of its states.
+type TxFragRun { call TxCall, entries []TxEntry, sections []TxSection, blocks []TxBlock }
+
+// The notes made since `from` belong to the fragment: they are put at the line of its call and say so.
+fn cx_remap(mut cx TxCx, from int, call TxCall, places_from int) -> () {
+    mut errors = []TranslateError.new()
+    mut k = 0
+    for e in cx.errors {
+        if k < from {
+            errors.push(e)
+        } else {
+            errors.push(TranslateError { line: call.line, col: call.tok.col, kind: e.kind, message: "в фрагменте ${call.name}: ${e.message}", quote: "" })
+        }
+        k += 1
+    }
+    cx.errors = errors
+    mut places = []TxPlace.new()
+    mut j = 0
+    for pl in cx.places {
+        if j < places_from { places.push(pl) } else { places.push(TxPlace { path: pl.path, line: call.line }) }
+        j += 1
+    }
+    cx.places = places
+}
+
+// ---- the machine ------------------------------------------------------------------------------------------------------------------------------
+
+fn lines_of(text str) -> []str {
+    mut out = []str.new()
+    for raw in text.split("\n") { out.push(raw) }
+    out
+}
+
+fn party_json(row TxPartyRow, parts []TxPartItem) -> TxJ {
+    mut pairs = []TxKV.new()
+    for q in row.pairs { pairs.push(q) }
+    mut progress = []TxJ.new()
+    for part in parts {
+        if part.party_ru == row.ru { progress.push(part.item) }
+    }
+    if progress.len() > 0 { pairs.push(kv("progress", TxArr(progress))) }
+    jobj(pairs)
+}
+
+/// The translation of a file of a machine with every note. The files of definitions that a machine may include are those that come with the translator.
+export fn translate_report(file_text str) -> TranslateReport => translate_report_with(file_text, defs_files())
+
+/// The same with the registry of the files of definitions of the caller (the name, the text).
+export fn translate_report_with(file_text str, registry []NamedText) -> TranslateReport {
+    ro lines = lines_of(file_text)
+    ro info = detect_language(lines)
+    ro classified = tx_classify_in(lines, words_load(info.lang), info.strict, info.strict)
+    ro entries = classified.entries
+    mut cx = cx_new_in(info.lang)
+    for e in info.errors { cx.errors.push(e) }
+    for e in classified.errors { cx.errors.push(e) }
+    ro header = header_read(entries, cx)
+    ro sections = sections_of(entries, cx)
+
+    // the fragments: the calls, the texts with the parameters put in; the files of definitions
+    mut runs = []TxFragRun.new()
+    mut signals = []TxJ.new()
+    mut included = TxIncluded { types: TxTypes { records: []TxJ.new(), variants: []TxJ.new() }, constants: []TxJ.new(), definitions: []TxJ.new(), includes: []TxJ.new() }
+    mut connected = []str.new()
+    mut accepted_calls = []TxCall.new()
+    match section_of(sections, "Includes") {
+        Some(sec) => {
+            included = defs_includes(entries, sec, registry, cx)
+            for call in calls_read(entries, sec, cx) {
+                connected.push(call.name)
+                match fragment_text(call, cx) {
+                    Some(text) => {
+                        accepted_calls.push(call)
+                        ro fentries = tx_classify_in(lines_of(text), cx.words, false, false).entries
+                        ro before = cx.errors.len()
+                        ro fsections = sections_of(fentries, cx)
+                        mut fblocks = []TxBlock.new()
+                        match section_of(fsections, "States") {
+                            Some(fsec) => { fblocks = states_register(fentries, fsec, cx) }
+                            None => ()
+                        }
+                        cx_remap(cx, before, call, cx.places.len())
+                        runs.push(TxFragRun { call, entries: fentries, sections: fsections, blocks: fblocks })
+                        for sj in protocol_signals_json(cx) { signals.push(sj) }
+                    }
+                    None => ()
+                }
+            }
+        }
+        None => ()
+    }
+
+    // the names that the rows need before their declarations are read
+    mut blocks = []TxBlock.new()
+    match section_of(sections, "States") {
+        Some(sec) => { blocks = states_register(entries, sec, cx) }
+        None => note(cx, struct_error(1, 1, "нет раздела `## ${kw(cx.words, "section", "States")}`"))
+    }
+    match section_of(sections, "Definitions") {
+        Some(sec) => defs_register(entries, sec, cx)
+        None => ()
+    }
+
+    // the primitives are named before the parties, the data and the rows that call them (a profile, a parse and a check of `Правит` name them too)
+    mut primitives = []str.new()
+    match section_of(sections, "Primitives") {
+        Some(sec) => { primitives = decl_primitives(entries, sec, cx) }
+        None => ()
+    }
+
+    mut types = TxTypes { records: []TxJ.new(), variants: []TxJ.new() }
+    match section_of(sections, "Types") {
+        Some(sec) => { types = decl_types(entries, sec, cx) }
+        None => ()
+    }
+    mut constants = []TxJ.new()
+    match section_of(sections, "Constants") {
+        Some(sec) => { constants = decl_constants(entries, sec, cx) }
+        None => ()
+    }
+    mut params = []TxJ.new()
+    match section_of(sections, "Parameters") {
+        Some(sec) => { params = decl_params(entries, sec, cx) }
+        None => ()
+    }
+    mut input = TxInput { fields: []TxJ.new(), invariants: []TxJ.new(), scope: sc_empty() }
+    mut has_input = false
+    match section_of(sections, "Input") {
+        Some(sec) => {
+            input = decl_input(entries, sec, cx)
+            // a section that holds only `—` declares no input (the canonical file writes all eleven sections, an empty one as a dash)
+            has_input = input.fields.len() > 0 || input.invariants.len() > 0
+        }
+        None => ()
+    }
+    // the data: the data of the fragments first, then the data of the machine (the order of `все_данные`, format section 5)
+    mut data = []TxJ.new()
+    for run in runs {
+        match section_of(run.sections, "Data") {
+            Some(fsec) => {
+                ro before = cx.errors.len()
+                ro places_from = cx.places.len()
+                for d in decl_data(run.entries, fsec, cx) { data.push(d) }
+                cx_remap(cx, before, run.call, places_from)
+            }
+            None => ()
+        }
+    }
+    match section_of(sections, "Data") {
+        Some(sec) => {
+            for d in decl_data(entries, sec, cx) { data.push(d) }
+        }
+        None => ()
+    }
+    mut party_rows = []TxPartyRow.new()
+    mut request_limit = []TxJ.new()
+    match section_of(sections, "Parties") {
+        Some(sec) => {
+            party_rows = decl_parties(entries, sec, cx)
+            request_limit = decl_request_limit(entries, sec, cx)
+        }
+        None => ()
+    }
+    match section_of(sections, "Signals") {
+        Some(sec) => {
+            for sj in decl_signals(entries, sec, cx) { signals.push(sj) }
+        }
+        None => ()
+    }
+    mut parts = []TxPartItem.new()
+    match section_of(sections, "Response parts") {
+        Some(sec) => { parts = decl_parts(entries, sec, cx) }
+        None => ()
+    }
+    mut definitions = []TxJ.new()
+    match section_of(sections, "Definitions") {
+        Some(sec) => { definitions = decl_definitions(entries, sec, cx) }
+        None => ()
+    }
+    // what the included files bring comes before the machine's own
+    if included.includes.len() > 0 {
+        mut all_records = []TxJ.new()
+        for r in included.types.records { all_records.push(r) }
+        for r in types.records { all_records.push(r) }
+        mut all_variants = []TxJ.new()
+        for v in included.types.variants { all_variants.push(v) }
+        for v in types.variants { all_variants.push(v) }
+        types = TxTypes { records: all_records, variants: all_variants }
+        mut all_constants = []TxJ.new()
+        for c in included.constants { all_constants.push(c) }
+        for c in constants { all_constants.push(c) }
+        constants = all_constants
+        mut all_definitions = []TxJ.new()
+        for d in included.definitions { all_definitions.push(d) }
+        for d in definitions { all_definitions.push(d) }
+        definitions = all_definitions
+    }
+
+    // the states and the rows that lead between them
+    mut initial = ""
+    mut common = []TxJ.new()
+    for run in runs {
+        match section_of(run.sections, "Common events") {
+            Some(fsec) => {
+                ro before = cx.errors.len()
+                ro places_from = cx.places.len()
+                for r in common_events_at(run.entries, fsec, cx, common.len()) { common.push(r) }
+                cx_remap(cx, before, run.call, places_from)
+            }
+            None => ()
+        }
+    }
+    match section_of(sections, "Common events") {
+        Some(sec) => {
+            for r in common_events_at(entries, sec, cx, common.len()) { common.push(r) }
+        }
+        None => ()
+    }
+    mut states = []TxJ.new()
+    mut error_end = ""
+    ro error_name = match names_file_word(cx.names, "state", "Errored") {
+        Some(x) => x
+        None => "Errored"
+    }
+    match section_of(sections, "States") {
+        Some(sec) => {
+            initial = initial_state(entries, sec, cx)
+            for blk in blocks {
+                states.push(state_translate(entries, blk, states.len(), cx))
+                if (blk.ru == error_name || blk.latin == "Errored") && blk.kind == "end" { error_end = blk.latin }
+            }
+        }
+        None => ()
+    }
+    for run in runs {
+        for blk in run.blocks {
+            ro before = cx.errors.len()
+            ro places_from = cx.places.len()
+            states.push(state_translate(run.entries, blk, states.len(), cx))
+            cx_remap(cx, before, run.call, places_from)
+        }
+    }
+    mut ends = TxEnds { result: "", rows: []TxJ.new() }
+    match section_of(sections, "Ends") {
+        Some(sec) => { ends = decl_ends(entries, sec, cx) }
+        None => note(cx, struct_error(1, 1, "нет раздела `## ${kw(cx.words, "section", "Ends")}`"))
+    }
+    // the reference section of a fragment names a fragment that the machine includes (format 2.9, Я-17)
+    mut notes = []TranslateError.new()
+    for x in classified.expansions {
+        if !connected.contains(x.name) {
+            notes.push(tx_err(x.line, 4, "warning", "имя «${x.name}» в заголовке раздела не совпадает с именем подключённого фрагмента${connected_hint(connected)}"))
+        }
+    }
+
+    // the JSON
+    mut root = [kv("format", js("machine/2")), kv("portolan_version", js(if format_versions().contains(header.format) { header.format } else { "2.12" })), kv("machine", js(header.machine)), kv("version", js(header.version))]
+    if header.title != "" { root.push(kv("title", js(header.title))) }
+    if types.records.len() > 0 || types.variants.len() > 0 {
+        mut tp = []TxKV.new()
+        if types.records.len() > 0 { tp.push(kv("records", TxArr(types.records))) }
+        if types.variants.len() > 0 { tp.push(kv("variants", TxArr(types.variants))) }
+        root.push(kv("types", TxObj(tp)))
+    }
+    if constants.len() > 0 { root.push(kv("constants", TxArr(constants))) }
+    if params.len() > 0 { root.push(kv("params", TxArr(params))) }
+    if has_input {
+        mut ip = [kv("fields", TxArr(input.fields))]
+        if input.invariants.len() > 0 { ip.push(kv("invariants", TxArr(input.invariants))) }
+        root.push(kv("input", TxObj(ip)))
+    }
+    root.push(kv("data", TxArr(data)))
+    mut party_list = []TxJ.new()
+    for row in party_rows { party_list.push(party_json(row, parts)) }
+    root.push(kv("parties", TxArr(party_list)))
+    if request_limit.len() > 0 { root.push(kv("request_limit", request_limit[0])) }
+    if signals.len() > 0 { root.push(kv("signals", TxArr(signals))) }
+    if definitions.len() > 0 { root.push(kv("definitions", TxArr(definitions))) }
+    if included.includes.len() > 0 { root.push(kv("includes", TxArr(included.includes))) }
+    // the connections of the fragments with every argument (1b (m)): the fragment is in the tree substituted, the connection lets the generator write the line back
+    mut fragments = []TxJ.new()
+    for call in accepted_calls {
+        match fragment_use_json(call, cx) {
+            Some(j) => fragments.push(j)
+            None => ()
+        }
+    }
+    if fragments.len() > 0 { root.push(kv("fragments", TxArr(fragments))) }
+    root.push(kv("initial", js(initial)))
+    if error_end != "" { root.push(kv("error_end", js(error_end))) }
+    if common.len() > 0 { root.push(kv("common_events", TxArr(common))) }
+    root.push(kv("states", TxArr(states)))
+    root.push(kv("ends", jobj([kv("result", js(ends.result)), kv("rows", TxArr(ends.rows))])))
+    if primitives.len() > 0 { root.push(kv("primitives", jstrs(primitives))) }
+
+    ro sorted = errors_sorted(cx.errors)
+    TranslateReport { json: tx_text(jobj(root)), errors: errors_quoted(sorted, lines), warnings: errors_quoted(errors_sorted(warnings_all(classified.warnings, notes)), lines), rows_total: cx.rows_total, rows_noted: cx.rows_noted, places: cx.places }
+}
+
+fn warnings_all(first []TranslateError, second []TranslateError) -> []TranslateError {
+    mut out = []TranslateError.new()
+    for e in first { out.push(e) }
+    for e in second { out.push(e) }
+    out
+}
+
+fn connected_hint(connected []str) -> str {
+    if connected.len() == 0 { return " (фрагменты не подключены)" }
+    " (подключён: ${connected.join(", ")})"
+}
+
+/// The first line of the section `## Состояния`: `Начальное состояние: ИМЯ`.
+fn initial_state(entries []TxEntry, sec TxSection, mut cx TxCx) -> str {
+    mut i = sec.first
+    while i < sec.last && entries[i].kind != EN_HEAD {
+        if entries[i].kind == EN_TEXT && kv_colon(entries[i]) >= 0 {
+            ro line = kv_read(entries, i)
+            if line.key == "Initial state" {
+                match lex_segs(line.segs) {
+                    Ok(p0) => {
+                        mut p = p_copy(p0)
+                        ro t = p_tok(p)
+                        if t.kind == TK_NAME {
+                            match pair_get(cx.env.states, t.text) {
+                                Some(latin) => return latin
+                                None => {
+                                    cx_error(cx, t, "name", "состояния `${t.text}` нет в этой машине${state_hint(cx, t.text)}")
+                                    return t.text
+                                }
+                            }
+                        }
+                        note(cx, p_fail(p, "после `${kw(cx.words, "key", "Initial state")}:` ожидается имя состояния"))
+                    }
+                    Err(e) => note(cx, e)
+                }
+                return ""
+            }
+        }
+        i += 1
+    }
+    note(cx, struct_error(sec.line, 4, "в разделе `${sec.title}` первая строка — `${kw(cx.words, "key", "Initial state")}: ИМЯ`"))
+    ""
+}
+
+/// The section `## Общие события`: the rows of signals that are tried before the rows of a state. `already` rows are before them (the fragments').
+fn common_events_at(entries []TxEntry, sec TxSection, mut cx TxCx, already int) -> []TxJ {
+    mut out = []TxJ.new()
+    mut i = sec.first
+    while i < sec.last {
+        ro e = entries[i]
+        if e.kind == EN_ROW {
+            out = rows_read_from(entries, i, sec.last, "appeal", "$.common_events", already, cx, sc_empty())
+            i = tab_end(entries, i, sec.last, cx.words)
+        } else if e.kind == EN_TEXT && e.text == "—" {
+            i += 1
+        } else {
+            note(cx, struct_error(e.line, e.indent + 1, "лишняя строка в разделе `${sec.title}`"))
+            i += 1
+        }
+    }
+    out
+}
+
+/// The translation of a file of a machine: the JSON `machine/2` or every error with `line:column` and the quoted line.
+export fn translate(file_text str) -> Result[str, []TranslateError] {
+    ro report = translate_report(file_text)
+    if report.errors.len() > 0 { return Err(report.errors) }
+    Ok(report.json)
+}

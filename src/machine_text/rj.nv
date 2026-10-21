@@ -1,0 +1,247 @@
+// rj.nv - a reader of the JSON text of a machine for the reverse generator (task 113): it keeps the numbers as they are written (`0.0`, `1e-7`) and the order of the keys, which the
+// JsonValue of the standard library does not (a number is an int or a float there). The tree `machine/2` is plain JSON: objects, arrays, strings with the usual escapes, numbers,
+// `true`, `false`, `null`; a `\uXXXX` escape is not read (the translator never writes one).
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+
+/// RKV: a key and a value of an object, in the order of the text.
+// ORACLE-WORKAROUND(44): the record is declared BEFORE the sum type `RJ` that lists it (after it the C of a `match` on `ROb(pairs)` is wrong); put it after `RJ`, or inside it, when item 44 is fixed
+type RKV { key str, value RJ }
+
+/// RJ: a JSON value; `RNum` holds the number as its text.
+type RJ enum
+    | RNull
+    | RBool(bool)
+    | RNum(str)
+    | RStr(str)
+    | RArr([]RJ)
+    | ROb([]RKV)
+
+/// RjP: the place of the reader in the text; `pos` is a BYTE offset. The signs of JSON are ASCII, so a byte tells them from the rest; a string is cut at the signs
+/// (the borders of chars) and keeps its letters of any alphabet as they are.
+type RjP { text str, pos int }
+
+fn rj_end(p RjP) -> bool => p.pos >= p.text.byte_len()
+
+// The byte at the place of the reader as a number (0 at the end).
+fn rj_peek(p RjP) -> int {
+    if rj_end(p) { return 0 }
+    tx_byte(p.text, p.pos)
+}
+
+fn rj_ws(mut p RjP) -> () {
+    while !rj_end(p) && (rj_peek(p) == 32 || rj_peek(p) == 10 || rj_peek(p) == 9 || rj_peek(p) == 13) { p.pos += 1 }
+}
+
+fn rj_fail(p RjP, what str) -> str => "${what} at the byte ${p.pos}"
+
+fn rj_word(mut p RjP, word str) -> bool {
+    if !p.text[p.pos..].starts_with(word) { return false }
+    p.pos += word.byte_len()
+    true
+}
+
+fn rj_string(mut p RjP) -> Result[str, str] {
+    ro n = p.text.byte_len()
+    p.pos += 1
+    mut parts = []str.new()
+    mut run = p.pos
+    while p.pos < n {
+        ro b = rj_peek(p)
+        if b == 34 {
+            parts.push(p.text[run..p.pos])
+            p.pos += 1
+            return Ok(parts.join(""))
+        }
+        if b == 92 && p.pos + 1 < n {
+            parts.push(p.text[run..p.pos])
+            ro e = tx_at(p.text, p.pos + 1)
+            if e == 'n' {
+                parts.push("\n")
+            } else if e == 't' {
+                parts.push("\t")
+            } else if e == 'r' {
+                parts.push("\r")
+            } else if e == 'b' || e == 'f' {
+                parts.push(" ")
+            } else if e == 'u' {
+                return Err(rj_fail(p, "a \\u escape is not read"))
+            } else {
+                parts.push(p.text[p.pos + 1..p.pos + 1 + e.len_utf8()])
+            }
+            p.pos += 1 + e.len_utf8()
+            run = p.pos
+            continue
+        }
+        p.pos += 1
+    }
+    Err(rj_fail(p, "a string is not closed"))
+}
+
+fn rj_number_char(b int) -> bool => (b >= 48 && b <= 57) || b == 45 || b == 43 || b == 46 || b == 101 || b == 69
+
+fn rj_value(mut p RjP) -> Result[RJ, str] {
+    rj_ws(p)
+    if rj_end(p) { return Err(rj_fail(p, "the text ends")) }
+    ro c = rj_peek(p)
+    if c == 123 {
+        p.pos += 1
+        mut pairs = []RKV.new()
+        rj_ws(p)
+        if rj_peek(p) == 125 {
+            p.pos += 1
+            return Ok(ROb(pairs))
+        }
+        while true {
+            rj_ws(p)
+            if rj_end(p) || rj_peek(p) != 34 { return Err(rj_fail(p, "a key is expected")) }
+            ro key = rj_string(p)?
+            rj_ws(p)
+            if rj_end(p) || rj_peek(p) != 58 { return Err(rj_fail(p, "`:` is expected")) }
+            p.pos += 1
+            ro value = rj_value(p)?
+            pairs.push(RKV { key, value })
+            rj_ws(p)
+            if rj_peek(p) == 44 {
+                p.pos += 1
+                continue
+            }
+            if rj_peek(p) == 125 {
+                p.pos += 1
+                break
+            }
+            return Err(rj_fail(p, "`,` or `}` is expected"))
+        }
+        return Ok(ROb(pairs))
+    }
+    if c == 91 {
+        p.pos += 1
+        mut items = []RJ.new()
+        rj_ws(p)
+        if rj_peek(p) == 93 {
+            p.pos += 1
+            return Ok(RArr(items))
+        }
+        while true {
+            items.push(rj_value(p)?)
+            rj_ws(p)
+            if rj_peek(p) == 44 {
+                p.pos += 1
+                continue
+            }
+            if rj_peek(p) == 93 {
+                p.pos += 1
+                break
+            }
+            return Err(rj_fail(p, "`,` or `]` is expected"))
+        }
+        return Ok(RArr(items))
+    }
+    if c == 34 {
+        ro s = rj_string(p)?
+        return Ok(RStr(s))
+    }
+    if rj_word(p, "true") { return Ok(RBool(true)) }
+    if rj_word(p, "false") { return Ok(RBool(false)) }
+    if rj_word(p, "null") { return Ok(RNull) }
+    if rj_number_char(c) {
+        mut j = p.pos
+        while j < p.text.byte_len() && rj_number_char(tx_byte(p.text, j)) { j += 1 }
+        ro raw = p.text[p.pos..j]
+        p.pos = j
+        return Ok(RNum(raw))
+    }
+    Err(rj_fail(p, "a value is expected"))
+}
+
+/// The tree of a JSON text.
+fn rj_parse(text str) -> Result[RJ, str] {
+    mut p = RjP { text, pos: 0 }
+    ro v = rj_value(p)?
+    rj_ws(p)
+    if !rj_end(p) { return Err(rj_fail(p, "text after the value")) }
+    Ok(v)
+}
+
+/// The value of the key of an object.
+fn rj_get(v RJ, key str) -> Option[RJ] {
+    match v {
+        ROb(pairs) => {
+            for q in pairs {
+                if q.key == key { return Some(q.value) }
+            }
+            None
+        }
+        _ => None
+    }
+}
+
+fn rj_has(v RJ, key str) -> bool {
+    match rj_get(v, key) {
+        Some(x) => true
+        None => false
+    }
+}
+
+/// The text of a string value, "" for another value.
+fn rj_str(v RJ) -> str {
+    match v {
+        RStr(s) => s
+        _ => ""
+    }
+}
+
+/// The text of the string under a key, "" when none.
+fn rj_gstr(v RJ, key str) -> str {
+    match rj_get(v, key) {
+        Some(x) => rj_str(x)
+        None => ""
+    }
+}
+
+/// The items of an array value, none for another value.
+fn rj_items(v RJ) -> []RJ {
+    match v {
+        RArr(items) => items
+        _ => []RJ.new()
+    }
+}
+
+/// The items of the array under a key.
+fn rj_garr(v RJ, key str) -> []RJ {
+    match rj_get(v, key) {
+        Some(x) => rj_items(x)
+        None => []RJ.new()
+    }
+}
+
+/// The pairs of an object value.
+fn rj_pairs(v RJ) -> []RKV {
+    match v {
+        ROb(pairs) => pairs
+        _ => []RKV.new()
+    }
+}
+
+fn rj_is_null(v RJ) -> bool {
+    match v {
+        RNull => true
+        _ => false
+    }
+}
+
+/// The text of a number or a string under a key (a number as it is written), "" when none.
+fn rj_gscalar(v RJ, key str) -> str {
+    match rj_get(v, key) {
+        Some(x) => {
+            match x {
+                RNum(raw) => raw
+                RStr(s) => s
+                _ => ""
+            }
+        }
+        None => ""
+    }
+}

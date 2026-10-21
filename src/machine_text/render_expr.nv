@@ -1,0 +1,737 @@
+// render_expr.nv - the reverse generator, the pieces (task 113): the words of a language for a name of the JSON, the types, the expressions and the actions as the text of Portolan
+// (section 1b of the specification: the operators of the language, one writing, brackets only where the grammar of section 3 needs them).
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+
+/// RnCx: the context of one generation: the language, the words, the names, the notes about what the file cannot say, and the words that the file chose for the names it declared (a name is
+/// written the same way in every place: the declaration and the uses).
+type RnCx { lang str, words TxWords, names TxNames, notes []str, catalog []str, defs []TxPair, globals []TxPair, parties []TxPair, gate_words []TxPair, signal_words []TxPair, part_words []TxPair }
+
+fn rn_cx(lang str) -> RnCx {
+    mut catalog = []str.new()
+    for r in words_rows() {
+        if r.kind == "catalog" { catalog.push(r.en) }
+    }
+    RnCx {
+        lang, words: words_load(lang), names: names_load_for(lang), notes: []str.new(), catalog, defs: []TxPair.new(), globals: []TxPair.new(), parties: []TxPair.new(), gate_words: []TxPair.new(),
+        signal_words: []TxPair.new(), part_words: []TxPair.new()
+    }
+}
+
+// ORACLE-WORKAROUND(45): a copy of a `ro` list built by hand in a loop; `mut out = items` when item 45 is fixed (the same in `rn_with`)
+fn rn_copy(items []str) -> []str {
+    mut out = []str.new()
+    for i in items { out.push(i) }
+    out
+}
+
+fn rn_note(mut cx RnCx, text str) -> () {
+    cx.notes.push(text)
+}
+
+fn rn_kw(cx RnCx, kind str, key str) -> str => kw(cx.words, kind, key)
+
+/// The word of the file for a name of the JSON under the kinds of the table of names: the dictionary word that the reader would take back to the same Latin name, else the Latin name.
+fn rn_name(cx RnCx, kinds []str, en str) -> str {
+    if cx.lang == "en" { return en }
+    for kind in kinds {
+        match names_file_word(cx.names, kind, en) {
+            Some(w) => {
+                match names_first(cx.names, kinds, w) {
+                    Some(back) => {
+                        if back == en { return w }
+                    }
+                    None => ()
+                }
+            }
+            None => ()
+        }
+    }
+    en
+}
+
+fn rn_pair_ru(pairs_in []TxPair, en str) -> Option[str] {
+    for q in pairs_in {
+        if q.en == en { return Some(q.ru) }
+    }
+    None
+}
+
+/// A datum, a constant or a parameter: the word chosen at its declaration, else the dictionary.
+fn rn_global(cx RnCx, en str) -> str {
+    match rn_pair_ru(cx.globals, en) {
+        Some(w) => w
+        None => rn_name(cx, kinds_data(), en)
+    }
+}
+
+fn rn_type_name(cx RnCx, en str) -> str => rn_name(cx, kinds_type(), en)
+
+fn rn_case_name(cx RnCx, en str) -> str => rn_name(cx, kinds_case(), en)
+
+fn rn_field_name(cx RnCx, en str) -> str {
+    if en != "" && tx_is_digit(tx_at(en, 0)) { return en }
+    rn_name(cx, kinds_field(), en)
+}
+
+fn rn_arrow(cx RnCx) -> str => if cx.lang == "ru" { "→" } else { "->" }
+
+/// The text of a string literal: double quotes, `"` and `\` escaped, a line feed and a tab as `\n` and `\t`.
+fn rn_quote(s str) -> str {
+    mut out = []str.new()
+    out.push("\"")
+    for c in s.chars() {
+        ro one = "${c}"
+        if one == "\"" {
+            out.push("\\\"")
+        } else if one == "\\" {
+            out.push("\\\\")
+        } else if one == "\n" {
+            out.push("\\n")
+        } else if one == "\t" {
+            out.push("\\t")
+        } else {
+            out.push(one)
+        }
+    }
+    out.push("\"")
+    out.join("")
+}
+
+// ---- the types ---------------------------------------------------------------------------------------------------------------
+
+/// TyR: the reader of a type string of the JSON; `pos` is a BYTE offset in `text` and always the border of a char (the signs of a type are ASCII, a name may be of any alphabet).
+type RnTy { text str, pos int }
+
+fn rn_ty_end(t RnTy) -> bool => t.pos >= t.text.byte_len()
+
+// The char at the place of the reader (U+0000 at the end).
+fn rn_ty_peek(t RnTy) -> char => tx_at(t.text, t.pos)
+
+fn rn_ty_ws(mut t RnTy) -> () {
+    while !rn_ty_end(t) && rn_ty_peek(t) == ' ' { t.pos += 1 }
+}
+
+fn rn_ty_is(t RnTy, s str) -> bool => t.text[t.pos..].starts_with(s)
+
+// The reader steps over a sign `c` when it stands there.
+fn rn_ty_eat(mut t RnTy, c char) -> bool {
+    if !rn_ty_end(t) && rn_ty_peek(t) == c {
+        t.pos += 1
+        return true
+    }
+    false
+}
+
+// The type under `?` or `[]`: a set of literals is in brackets there.
+fn rn_ty_under(cx RnCx, mut t RnTy) -> str {
+    ro inner = rn_ty_read(cx, t)
+    if inner.starts_with("\"") { return "(${inner})" }
+    inner
+}
+
+fn rn_ty_read(cx RnCx, mut t RnTy) -> str {
+    rn_ty_ws(t)
+    if rn_ty_end(t) { return "" }
+    ro n = t.text.byte_len()
+    if rn_ty_peek(t) == '"' {
+        // a set of literals "a" | "b"
+        mut items = []str.new()
+        while true {
+            rn_ty_ws(t)
+            if rn_ty_end(t) || rn_ty_peek(t) != '"' { break }
+            mut j = t.pos + 1
+            mut parts = []str.new()
+            while j < n && tx_at(t.text, j) != '"' {
+                ro c = tx_at(t.text, j)
+                if c == '\\' && j + 1 < n {
+                    ro e = tx_at(t.text, j + 1)
+                    parts.push(t.text[j + 1..j + 1 + e.len_utf8()])
+                    j += 1 + e.len_utf8()
+                    continue
+                }
+                parts.push(t.text[j..j + c.len_utf8()])
+                j += c.len_utf8()
+            }
+            items.push(rn_quote(parts.join("")))
+            t.pos = if j < n { j + 1 } else { n }
+            rn_ty_ws(t)
+            if rn_ty_eat(t, '|') { continue }
+            break
+        }
+        return items.join(" | ")
+    }
+    if rn_ty_eat(t, '?') { return "?${rn_ty_under(cx, t)}" }
+    if rn_ty_is(t, "[]") {
+        t.pos += 2
+        return "[]${rn_ty_under(cx, t)}"
+    }
+    if rn_ty_eat(t, '(') {
+        mut items = []str.new()
+        while true {
+            items.push(rn_ty_read(cx, t))
+            rn_ty_ws(t)
+            if rn_ty_eat(t, ',') { continue }
+            break
+        }
+        rn_ty_eat(t, ')')
+        return "(${items.join(", ")})"
+    }
+    if rn_ty_is(t, "full {") || rn_ty_peek(t) == '{' {
+        ro full = rn_ty_is(t, "full {")
+        t.pos += if full { 6 } else { 1 }
+        ro key = rn_ty_read(cx, t)
+        rn_ty_ws(t)
+        rn_ty_eat(t, ':')
+        ro value = rn_ty_read(cx, t)
+        rn_ty_ws(t)
+        rn_ty_eat(t, '}')
+        ro word = if full { rn_kw(cx, "type", "full map") } else { rn_kw(cx, "type", "map") }
+        return "${word}[${key}, ${value}]"
+    }
+    mut j = t.pos
+    while j < n {
+        ro d = tx_at(t.text, j)
+        if !(tx_is_letter(d) || tx_is_digit(d)) { break }
+        j += d.len_utf8()
+    }
+    ro name = t.text[t.pos..j]
+    t.pos = j
+    if name == "int" {
+        if rn_ty_is(t, ">=") {
+            t.pos += 2
+            mut k = t.pos
+            while k < n && tx_is_digit(tx_at(t.text, k)) { k += 1 }
+            ro bound = t.text[t.pos..k]
+            t.pos = k
+            return if cx.lang == "ru" { "${rn_kw(cx, "type", "int")}≥${bound}" } else { "int>=${bound}" }
+        }
+        return rn_kw(cx, "type", "int")
+    }
+    if name == "float" || name == "text" || name == "bool" || name == "id" || name == "JournalEvent" || name == "State" || name == "Signal" { return rn_kw(cx, "type", name) }
+    if name == "" {
+        // a sign that no type starts with: it is stepped over, the whole char
+        t.pos += tx_at(t.text, t.pos).len_utf8()
+        return ""
+    }
+    rn_type_name(cx, name)
+}
+
+/// A type string of the JSON as the type of Portolan in the language: `int>=0` -> `число≥0` / `int>=0`.
+fn rn_type(cx RnCx, ty str) -> str {
+    mut t = RnTy { text: ty, pos: 0 }
+    rn_ty_read(cx, t)
+}
+
+/// A type string of the JSON as the type of Portolan in the language `lang` (`ru` or `en`).
+export fn render_type_in(ty str, lang str) -> str {
+    ro cx = rn_cx(lang)
+    rn_type(cx, ty)
+}
+
+// ---- the expressions -----------------------------------------------------------------------------------------------------------
+
+// How tight an expression binds: the operators of section 3.1 from `??` (1) to the postfix forms (10); `if`, `let`, `match` and a lambda (0) are bracketed when an operand.
+fn rn_prec(v RJ) -> int {
+    ro op = rj_gstr(v, "op")
+    if op == "??" { return 1 }
+    if op == "or" { return 2 }
+    if op == "and" { return 3 }
+    if op == "not" { return 4 }
+    if op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" { return 5 }
+    if op == "+" || op == "-" { return 6 }
+    if op == "*" || op == "/" || op == "%" { return 7 }
+    if op == "neg" { return 8 }
+    if op == "if" || op == "let" || op == "match" || op == "lambda" { return 0 }
+    if op == "lit" {
+        match rj_get(v, "value") {
+            Some(x) => {
+                match x {
+                    RNum(raw) => { if raw.starts_with("-") { return 8 } }
+                    _ => ()
+                }
+            }
+            None => ()
+        }
+    }
+    10
+}
+
+fn rn_sub(mut cx RnCx, v RJ, locals []str, min int) -> str {
+    ro text = rn_expr(cx, v, locals)
+    if rn_prec(v) < min { return "(${text})" }
+    text
+}
+
+// ORACLE-WORKAROUND(45): the list is copied by hand into a new one; `mut out = locals` when item 45 is fixed
+fn rn_with(locals []str, name str) -> []str {
+    mut out = []str.new()
+    for l in locals { out.push(l) }
+    out.push(name)
+    out
+}
+
+fn rn_fields(mut cx RnCx, fields RJ, locals []str) -> str {
+    mut parts = []str.new()
+    for q in rj_pairs(fields) { parts.push("${rn_field_name(cx, q.key)}: ${rn_expr(cx, q.value, locals)}") }
+    parts.join(", ")
+}
+
+fn rn_args(mut cx RnCx, args []RJ, locals []str) -> str {
+    mut parts = []str.new()
+    for a in args { parts.push(rn_expr(cx, a, locals)) }
+    parts.join(", ")
+}
+
+fn rn_lit(cx RnCx, v RJ) -> str {
+    match v {
+        RNull => rn_kw(cx, "expr", "none")
+        RBool(b) => if b { rn_kw(cx, "expr", "true") } else { rn_kw(cx, "expr", "false") }
+        RNum(raw) => raw
+        RStr(s) => rn_quote(s)
+        _ => "none"
+    }
+}
+
+fn rn_pattern(mut cx RnCx, pat RJ, locals []str) -> str {
+    ro kind = rj_gstr(pat, "kind")
+    if kind == "any" { return rn_kw(cx, "expr", "else") }
+    if kind == "lit" {
+        match rj_get(pat, "value") {
+            Some(x) => return rn_lit(cx, x)
+            None => return "none"
+        }
+    }
+    ro case_word = rn_case_name(cx, rj_gstr(pat, "name"))
+    ro ty = rj_gstr(pat, "type")
+    if ty != "" { return "${rn_type_name(cx, ty)}.${case_word}" }
+    match rj_get(pat, "bind") {
+        Some(b) => {
+            mut parts = []str.new()
+            for q in rj_pairs(b) {
+                ro local = rj_str(q.value)
+                ro field = rn_field_name(cx, q.key)
+                parts.push(if local == field { field } else { "${field}: ${local}" })
+            }
+            if parts.len() == 0 { return case_word }
+            "${case_word}(${parts.join(", ")})"
+        }
+        None => case_word
+    }
+}
+
+fn rn_bind_names(pat RJ) -> []str {
+    mut out = []str.new()
+    match rj_get(pat, "bind") {
+        Some(b) => {
+            for q in rj_pairs(b) { out.push(rj_str(q.value)) }
+        }
+        None => ()
+    }
+    out
+}
+
+fn rn_match(mut cx RnCx, v RJ, locals []str) -> str {
+    ro on = match rj_get(v, "on") {
+        Some(x) => rn_sub(cx, x, locals, 1)
+        None => "none"
+    }
+    mut arms = []str.new()
+    for arm in rj_garr(v, "arms") {
+        mut inner = rn_copy(locals)
+        mut alts = []str.new()
+        for pat in rj_garr(arm, "patterns") {
+            alts.push(rn_pattern(cx, pat, locals))
+            for b in rn_bind_names(pat) { inner = rn_with(inner, b) }
+        }
+        mut head = alts.join(" | ")
+        match rj_get(arm, "guard") {
+            Some(g) => { head = "${head} ${rn_kw(cx, "expr", "if")} ${rn_expr(cx, g, inner)}" }
+            None => ()
+        }
+        ro body = match rj_get(arm, "body") {
+            Some(x) => rn_expr(cx, x, inner)
+            None => "none"
+        }
+        arms.push("${head} ${rn_arrow(cx)} ${body}")
+    }
+    "${rn_kw(cx, "expr", "match")} ${on} { ${arms.join("; ")} }"
+}
+
+fn rn_call(mut cx RnCx, v RJ, locals []str) -> str {
+    ro fn_en = rj_gstr(v, "fn")
+    ro args = rj_garr(v, "args")
+    if fn_en == "journal_event" && args.len() > 0 {
+        mut parts = []str.new()
+        parts.push(rn_expr(cx, args[0], locals))
+        mut i = 1
+        while i + 1 < args.len() {
+            ro key = match rj_get(args[i], "value") {
+                Some(x) => rj_str(x)
+                None => ""
+            }
+            parts.push("${key}: ${rn_expr(cx, args[i + 1], locals)}")
+            i += 2
+        }
+        return "${rn_kw(cx, "catalog", "journal_event")}(${parts.join(", ")})"
+    }
+    ro declared = rn_pair_ru(cx.defs, fn_en)
+    ro word = if cx.catalog.contains(fn_en) { rn_kw(cx, "catalog", fn_en) } else {
+        match declared {
+            Some(w) => w
+            None => rn_name(cx, kinds_function(), fn_en)
+        }
+    }
+    "${word}(${rn_args(cx, args, locals)})"
+}
+
+/// The text of an expression of the JSON.
+fn rn_expr(mut cx RnCx, v RJ, locals []str) -> str {
+    ro op = rj_gstr(v, "op")
+    if op == "lit" {
+        match rj_get(v, "value") {
+            Some(x) => return rn_lit(cx, x)
+            None => return "none"
+        }
+    }
+    if op == "name" {
+        ro name = rj_gstr(v, "name")
+        if locals.contains(name) { return name }
+        if cx.lang == "ru" {
+            match names_file_word(cx.names, "executor", name) {
+                Some(w) => return w
+                None => ()
+            }
+        }
+        return rn_global(cx, name)
+    }
+    if op == "field" {
+        ro base = match rj_get(v, "of") {
+            Some(x) => rn_sub(cx, x, locals, 10)
+            None => "none"
+        }
+        return "${base}.${rn_field_name(cx, rj_gstr(v, "name"))}"
+    }
+    if op == "index" {
+        ro base = match rj_get(v, "of") {
+            Some(x) => rn_sub(cx, x, locals, 10)
+            None => "none"
+        }
+        ro at = match rj_get(v, "index") {
+            Some(x) => rn_expr(cx, x, locals)
+            None => "none"
+        }
+        return "${base}[${at}]"
+    }
+    if op == "call" { return rn_call(cx, v, locals) }
+    if op == "primitive_call" { return "${rn_kw(cx, "action", "call")}(${rn_prim_args(cx, rj_gstr(v, "name"), rj_garr(v, "args"), locals)})" }
+    if op == "not" {
+        ro inner = match rj_get(v, "operand") {
+            Some(x) => rn_sub(cx, x, locals, 4)
+            None => "none"
+        }
+        return "${rn_kw(cx, "expr", "not")} ${inner}"
+    }
+    if op == "neg" {
+        ro inner = match rj_get(v, "operand") {
+            Some(x) => rn_sub(cx, x, locals, 8)
+            None => "none"
+        }
+        return "-${inner}"
+    }
+    if op == "if" {
+        ro cond = match rj_get(v, "cond") {
+            Some(x) => rn_sub(cx, x, locals, 1)
+            None => "none"
+        }
+        ro then_text = match rj_get(v, "then") {
+            Some(x) => rn_sub(cx, x, locals, 1)
+            None => "none"
+        }
+        ro else_text = match rj_get(v, "else") {
+            Some(x) => rn_sub(cx, x, locals, 1)
+            None => "none"
+        }
+        return "${rn_kw(cx, "expr", "if")} ${cond} ${rn_kw(cx, "expr", "then")} ${then_text} ${rn_kw(cx, "expr", "else")} ${else_text}"
+    }
+    if op == "let" {
+        ro name = rj_gstr(v, "name")
+        ro value = match rj_get(v, "value") {
+            Some(x) => rn_sub(cx, x, locals, 1)
+            None => "none"
+        }
+        ro body = match rj_get(v, "body") {
+            Some(x) => rn_expr(cx, x, rn_with(locals, name))
+            None => "none"
+        }
+        return "${rn_kw(cx, "expr", "let")} ${name} = ${value} ${rn_kw(cx, "expr", "in")} ${body}"
+    }
+    if op == "lambda" {
+        mut names = []str.new()
+        mut inner = rn_copy(locals)
+        for p in rj_garr(v, "params") {
+            names.push(rj_str(p))
+            inner = rn_with(inner, rj_str(p))
+        }
+        ro head = if names.len() == 1 { names[0] } else { "(${names.join(", ")})" }
+        ro body = match rj_get(v, "body") {
+            Some(x) => rn_expr(cx, x, inner)
+            None => "none"
+        }
+        return "${head} ${rn_arrow(cx)} ${body}"
+    }
+    if op == "list" { return "[${rn_args(cx, rj_garr(v, "items"), locals)}]" }
+    if op == "tuple" { return "(${rn_args(cx, rj_garr(v, "items"), locals)})" }
+    if op == "dict" {
+        mut parts = []str.new()
+        for e in rj_garr(v, "entries") {
+            ro k = match rj_get(e, "key") {
+                Some(x) => rn_expr(cx, x, locals)
+                None => "none"
+            }
+            ro val = match rj_get(e, "value") {
+                Some(x) => rn_expr(cx, x, locals)
+                None => "none"
+            }
+            parts.push("${k}: ${val}")
+        }
+        if parts.len() == 0 { return "{}" }
+        return "{${parts.join(", ")}}"
+    }
+    if op == "record" {
+        ro fields = match rj_get(v, "fields") {
+            Some(x) => rn_fields(cx, x, locals)
+            None => ""
+        }
+        if fields == "" { return "${rn_type_name(cx, rj_gstr(v, "type"))} { }" }
+        return "${rn_type_name(cx, rj_gstr(v, "type"))} { ${fields} }"
+    }
+    if op == "variant" {
+        ro head = "${rn_type_name(cx, rj_gstr(v, "type"))}.${rn_case_name(cx, rj_gstr(v, "name"))}"
+        match rj_get(v, "fields") {
+            Some(x) => {
+                ro fields = rn_fields(cx, x, locals)
+                if fields == "" { return head }
+                return "${head} { ${fields} }"
+            }
+            None => return head
+        }
+    }
+    if op == "with_field" {
+        ro base = match rj_get(v, "of") {
+            Some(x) => rn_expr(cx, x, locals)
+            None => "none"
+        }
+        ro fields = match rj_get(v, "fields") {
+            Some(x) => rn_fields(cx, x, locals)
+            None => ""
+        }
+        if fields == "" { return "{ ...${base} }" }
+        return "{ ...${base}, ${fields} }"
+    }
+    if op == "match" { return rn_match(cx, v, locals) }
+    if op == "and" || op == "or" || op == "??" || op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" || op == "+" || op == "-" || op == "*" || op == "/" || op == "%" {
+        ro prec = rn_prec(v)
+        ro right_assoc = op == "??"
+        ro left = match rj_get(v, "left") {
+            Some(x) => rn_sub(cx, x, locals, if right_assoc { prec + 1 } else { prec })
+            None => "none"
+        }
+        ro right = match rj_get(v, "right") {
+            Some(x) => rn_sub(cx, x, locals, if right_assoc { prec } else { prec + 1 })
+            None => "none"
+        }
+        ro sign = if op == "and" { rn_kw(cx, "expr", "and") } else if op == "or" { rn_kw(cx, "expr", "or") } else { op }
+        return "${left} ${sign} ${right}"
+    }
+    rn_note(cx, "an expression of the kind `${op}` has no writing in Portolan")
+    "none"
+}
+
+// The arguments of a primitive call: the name of the primitive (as the registry writes it) and the arguments.
+// A list of nested machines: `[a, b]` with the names of the registry as the file writes them (the reader takes a name without quotes); a list that is computed is written as an expression.
+fn rn_nested_list(mut cx RnCx, v RJ, locals []str) -> str {
+    if rj_gstr(v, "op") == "list" {
+        mut names = []str.new()
+        mut plain = true
+        for item in rj_garr(v, "items") {
+            if rj_gstr(item, "op") == "lit" {
+                match rj_get(item, "value") {
+                    Some(x) => {
+                        match x {
+                            RStr(name) => names.push(rn_name(cx, ["machine"], name))
+                            _ => { plain = false }
+                        }
+                    }
+                    None => { plain = false }
+                }
+            } else {
+                plain = false
+            }
+        }
+        if plain { return "[${names.join(", ")}]" }
+    }
+    rn_expr(cx, v, locals)
+}
+
+fn rn_prim_args(mut cx RnCx, name str, args []RJ, locals []str) -> str {
+    if args.len() == 0 { return name }
+    "${name}, ${rn_args(cx, args, locals)}"
+}
+
+/// An expression given as a JSON text, in the language; `locals` are the names bound outside it (they stay as they are).
+export fn render_expression_in(json str, lang str, locals []str) -> str {
+    mut cx = rn_cx(lang)
+    match rj_parse(json) {
+        Ok(v) => rn_expr(cx, v, locals)
+        Err(e) => "not a JSON: ${e}"
+    }
+}
+
+// ---- the actions ---------------------------------------------------------------------------------------------------------------
+
+fn rn_target(mut cx RnCx, v RJ, locals []str) -> str {
+    match v {
+        RStr(root) => rn_global(cx, root)
+        _ => {
+            mut text = rn_global(cx, rj_gstr(v, "name"))
+            for step in rj_garr(v, "path") {
+                match rj_get(step, "key") {
+                    Some(k) => { text = "${text}[${rn_expr(cx, k, locals)}]" }
+                    None => { text = "${text}.${rn_field_name(cx, rj_gstr(step, "field"))}" }
+                }
+            }
+            text
+        }
+    }
+}
+
+fn rn_params(mut cx RnCx, v RJ, locals []str) -> str {
+    mut parts = []str.new()
+    for q in rj_garr(v, "params") {
+        ro value = match rj_get(q, "value") {
+            Some(x) => rn_expr(cx, x, locals)
+            None => "none"
+        }
+        parts.push(", ${rj_gstr(q, "name")}: ${value}")
+    }
+    parts.join("")
+}
+
+/// The group of actions as the body of `then`, `else`, `in`, `:`: one action stays as it is after `:`, brackets otherwise.
+fn rn_body(mut cx RnCx, items []RJ, locals []str, always_brackets bool) -> str {
+    ro text = rn_actions(cx, items, locals).text
+    if items.len() == 1 && !always_brackets { return text }
+    "(${text})"
+}
+
+/// RnActs: the text of a list of actions and the names that its `let` actions bind for what follows.
+type RnActs { text str, locals []str }
+
+fn rn_action(mut cx RnCx, a RJ, locals []str) -> str {
+    ro kind = rj_gstr(a, "do")
+    if kind == "assign" || kind == "add" {
+        ro target = match rj_get(a, "target") {
+            Some(x) => rn_target(cx, x, locals)
+            None => "none"
+        }
+        ro value = match rj_get(a, "value") {
+            Some(x) => rn_expr(cx, x, locals)
+            None => "none"
+        }
+        ro sign = if kind == "assign" { "=" } else { "+=" }
+        return "${target} ${sign} ${value}"
+    }
+    if kind == "journal" { return "${rn_kw(cx, "action", "journal")}(${rj_gstr(a, "code")}${rn_params(cx, a, locals)})" }
+    if kind == "journal_value" {
+        ro value = match rj_get(a, "value") {
+            Some(x) => rn_expr(cx, x, locals)
+            None => "none"
+        }
+        return "${rn_kw(cx, "action", "journal")}(${value})"
+    }
+    if kind == "journal_all" { return "${rn_kw(cx, "action", "journal")}(${rn_kw(cx, "readable", "all_data")})" }
+    if kind == "machine_error" { return "${rn_kw(cx, "action", "machine_error")}(${rn_quote(rj_gstr(a, "code"))}${rn_params(cx, a, locals)})" }
+    if kind == "pass" {
+        ro signal = rn_kw(cx, "enum_value", rj_gstr(a, "signal"))
+        ro list = match rj_get(a, "nested") {
+            Some(x) => rn_nested_list(cx, x, locals)
+            None => "[]"
+        }
+        return "${rn_kw(cx, "action", "pass")}(${list}, ${signal})"
+    }
+    if kind == "cancel_open" {
+        ro party = rj_gstr(a, "party")
+        ro except = rj_garr(a, "except")
+        if party == "" && except.len() > 0 { return "${rn_kw(cx, "action", "cancel_open")}(${rn_kw(cx, "action", "except")}: ${rn_nested_list(cx, except[0], locals)})" }
+        if party == "" { return rn_kw(cx, "action", "cancel_open") }
+        ro word = match rn_pair_ru(cx.parties, party) {
+            Some(w) => w
+            None => rn_name(cx, ["party", "type", "variable"], party)
+        }
+        return "${rn_kw(cx, "action", "cancel_open")}(${rn_kw(cx, "action", "party")}: ${word})"
+    }
+    if kind == "call" {
+        ro args = rj_garr(a, "args")
+        return "${rn_kw(cx, "action", "call")}(${rn_prim_args(cx, rj_gstr(a, "primitive"), args, locals)})"
+    }
+    if kind == "for_each" {
+        ro var = rj_gstr(a, "var")
+        ro items = match rj_get(a, "in") {
+            Some(x) => rn_expr(cx, x, locals)
+            None => "none"
+        }
+        ro body = rn_body(cx, rj_garr(a, "body"), rn_with(locals, var), false)
+        return "${rn_kw(cx, "action", "for each")} ${var} ${rn_kw(cx, "action", "in")} ${items}: ${body}"
+    }
+    if kind == "if" {
+        ro cond = match rj_get(a, "cond") {
+            Some(x) => rn_expr(cx, x, locals)
+            None => "none"
+        }
+        ro then_text = rn_body(cx, rj_garr(a, "then"), locals, true)
+        ro else_items = rj_garr(a, "else")
+        if else_items.len() == 0 { return "${rn_kw(cx, "action", "if")} ${cond} ${rn_kw(cx, "action", "then")} ${then_text}" }
+        return "${rn_kw(cx, "action", "if")} ${cond} ${rn_kw(cx, "action", "then")} ${then_text} ${rn_kw(cx, "action", "else")} ${rn_body(cx, else_items, locals, true)}"
+    }
+    if kind == "let" {
+        ro name = rj_gstr(a, "name")
+        ro value = match rj_get(a, "value") {
+            Some(x) => rn_expr(cx, x, locals)
+            None => "none"
+        }
+        return "${rn_kw(cx, "action", "let")} ${name} = ${value} ${rn_kw(cx, "action", "in")} ${rn_body(cx, rj_garr(a, "body"), rn_with(locals, name), true)}"
+    }
+    if kind == "bind" {
+        ro value = match rj_get(a, "value") {
+            Some(x) => rn_expr(cx, x, locals)
+            None => "none"
+        }
+        return "${rn_kw(cx, "action", "let")} ${rj_gstr(a, "name")} = ${value}"
+    }
+    rn_note(cx, "an action of the kind `${kind}` has no writing in Portolan")
+    "—"
+}
+
+/// The actions of a list, one after another with `; `; a `let` binds its name for the actions after it.
+fn rn_actions(mut cx RnCx, items []RJ, locals []str) -> RnActs {
+    if items.len() == 0 { return RnActs { text: "—", locals } }
+    mut parts = []str.new()
+    mut inner = rn_copy(locals)
+    for a in items {
+        parts.push(rn_action(cx, a, inner))
+        if rj_gstr(a, "do") == "bind" { inner = rn_with(inner, rj_gstr(a, "name")) }
+    }
+    RnActs { text: parts.join("; "), locals: inner }
+}
+
+/// A list of actions given as a JSON text, in the language.
+export fn render_actions_in(json str, lang str, locals []str) -> str {
+    mut cx = rn_cx(lang)
+    match rj_parse(json) {
+        Ok(v) => rn_actions(cx, rj_items(v), locals).text
+        Err(e) => "not a JSON: ${e}"
+    }
+}

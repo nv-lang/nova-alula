@@ -1,0 +1,629 @@
+// state.nv - the states (format section 4): the heading, the lines `Сторона:`, `Срок тишины:`, `Вход:`, `При входе:`, `Кроме:`, the tables of the input, of "On accept"
+// and of the rows, and the table "Ends" (4.7).
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+
+/// TxBlock: a state of the file: the heading and the entries [first, last) of its body.
+type TxBlock { ru str, kind str, latin str, line int, first int, last int }
+
+// The kind of a state by its word (`appeal`, `operation`, `fork`, `end` are the keys of the table of words and the names of the kinds in the JSON); "" when the word is none of them.
+fn kind_of_word(w TxWords, word str) -> str {
+    match kw_key(w, "kind_state", word) {
+        Some(k) => k
+        None => ""
+    }
+}
+
+/// The heading `### ИМЯ — вид (Latin_имя)`; the comment `// …` is cut by the reader. The name of the JSON in the brackets (format 2.9, Я-5) is written when it is not the name of the heading;
+/// a Latin name of the heading is the name of the JSON, and the brackets may repeat it.
+fn head_parse(entry TxEntry, mut cx TxCx) -> Result[TxBlock, TranslateError] {
+    ro words = cx.words
+    ro tokens = tx_lex(entry.text, entry.line, entry.level + 2)?
+    mut p = p_new(tokens, entry.line, entry.level + 2 + entry.text.chars().count())
+    ro n = p_tok(p)
+    if n.kind != TK_NAME { return Err(p_fail(p, "ожидается имя состояния")) }
+    p_adv(p)
+    p_expect(p, "—")?
+    ro k = p_tok(p)
+    if k.kind != TK_NAME || kind_of_word(words, k.text) == "" {
+        match foreign_find(cx, k, ["kind_state"]) {
+            Some(e) => return Err(e)
+            None => ()
+        }
+        return Err(p_fail(p, "вид состояния: ${kw_all(words, "kind_state", ["appeal", "operation", "fork", "end"]).join(", ")}"))
+    }
+    p_adv(p)
+    mut latin = n.text
+    if p_eat(p, "(") {
+        ro l = p_tok(p)
+        if l.kind != TK_NAME || !is_identifier_latin(l.text) { return Err(p_fail(p, "в скобках ожидается латинское имя состояния")) }
+        p_adv(p)
+        p_expect(p, ")")?
+        latin = l.text
+    } else if !is_identifier_latin(n.text) {
+        return Err(tx_err(n.line, n.col, "syntax", "у русского имени состояния `${n.text}` нет имени JSON: после вида пишется латинское имя в скобках, `(Имя)`"))
+    }
+    p_end(p)?
+    Ok(TxBlock { ru: n.text, kind: kind_of_word(words, k.text), latin, line: entry.line, first: 0, last: 0 })
+}
+
+fn is_identifier_latin(w str) -> bool {
+    if w.byte_len() == 0 { return false }
+    mut first = true
+    for c in w.chars() {
+        ro one = "${c}"
+        ro letter = (one >= "a" && one <= "z") || (one >= "A" && one <= "Z")
+        ro digit = one >= "0" && one <= "9"
+        if first && !letter { return false }
+        if !letter && !digit && one != "_" { return false }
+        first = false
+    }
+    true
+}
+
+/// The states of the section `## Состояния`: the headings read, the names put into the environment; the first line `Начальное состояние: ИМЯ` is read apart.
+fn states_register(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxBlock {
+    mut out = []TxBlock.new()
+    mut i = sec.first
+    while i < sec.last {
+        ro e = entries[i]
+        if e.kind == EN_HEAD && e.level == 3 {
+            mut last = i + 1
+            while last < sec.last && entries[last].kind != EN_HEAD { last += 1 }
+            match head_parse(e, cx) {
+                Ok(h) => {
+                    if pair_has(cx.env.states, h.ru) {
+                        note(cx, tx_err(e.line, 5, "name", "состояние `${h.ru}` объявлено дважды"))
+                    } else {
+                        pair_add(cx.env.states, h.ru, h.latin)
+                        out.push(TxBlock { ru: h.ru, kind: h.kind, latin: h.latin, line: h.line, first: i + 1, last })
+                    }
+                }
+                Err(err) => note(cx, err)
+            }
+            i = last
+        } else {
+            i += 1
+        }
+    }
+    // a state whose heading is its Latin JSON name (the canonical form, 1b) is also called by its word of the dictionary: the text of a fragment (`ОСТАНОВЛЕНО`, `ПАУЗА`) says so
+    for b in out {
+        match names_file_word(cx.names, "state", b.latin) {
+            Some(w) => {
+                if w != b.ru && !pair_has(cx.env.states, w) { pair_add(cx.env.states, w, b.latin) }
+            }
+            None => ()
+        }
+    }
+    out
+}
+
+// ---- the lines of a state -----------------------------------------------------------------------------------------------------------------------
+
+fn n_of_cell(cell TxCell, line int) -> Result[int, TranslateError] {
+    mut p = cell_p(cell, line)?
+    mut n = -1
+    while !p_done(p) {
+        if p_tok(p).kind == TK_INT { n = p_tok(p).text.to_int() ?? -1 }
+        p_adv(p)
+    }
+    if n < 0 { return Err(tx_err(line, cell.col, "syntax", "в столбце `№` ожидается номер строки")) }
+    Ok(n)
+}
+
+fn ac_cell(cell TxCell, line int, mut cx TxCx, sc TxScope) -> Result[TxActList, TranslateError] {
+    mut p = cell_p(cell, line)?
+    ro all = ac_list_scoped(p, cx, sc)?
+    p_end(p)?
+    Ok(all)
+}
+
+/// A row of transitions of a state of the kind `kind`; returns the JSON of the row.
+fn row_parse(r TxEntry, kind str, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    ro n = n_of_cell(r.cells[0], r.line)?
+    mut event_json = ev_json("now", [])
+    mut scope = sc_clone(sc)
+    mut at = 1
+    if kind != "fork" {
+        mut ep = cell_p(r.cells[1], r.line)?
+        ro ev = ev_parse(ep, cx, sc)?
+        p_end(ep)?
+        event_json = ev.json
+        scope = ev.scope
+        at = 2
+    }
+    mut cp = cell_p(r.cells[at], r.line)?
+    ro cond = cond_parse(cp, cx, scope)?
+    p_end(cp)?
+    ro acts = ac_cell(r.cells[at + 1], r.line, cx, scope)?
+    mut wp = cell_p(r.cells[at + 2], r.line)?
+    ro where = where_parse(wp, cx)?
+    p_end(wp)?
+    mut pairs = [kv("n", jint(n)), kv("event", event_json)]
+    if cond.has_expr { pairs.push(kv("cond", cond.expr)) }
+    if cond.is_else { pairs.push(kv("else", TxBool(true))) }
+    if acts.actions.len() > 0 { pairs.push(kv("actions", TxArr(acts.actions))) }
+    if where.to != "" { pairs.push(kv("to", js(where.to))) }
+    if where.restart { pairs.push(kv("restart", TxBool(true))) }
+    Ok(jobj(pairs))
+}
+
+fn is_transition_header(e TxEntry, w TxWords) -> bool => e.kind == EN_ROW && e.cells.len() > 0 && e.cells[0].text == kw(w, "column", "№")
+
+fn is_input_header(e TxEntry, w TxWords) -> bool => e.kind == EN_ROW && e.cells.len() > 0 && e.cells[0].text == kw(w, "column", "request_field")
+
+fn is_accept_header(e TxEntry, w TxWords) -> bool => e.kind == EN_ROW && e.cells.len() == 2 && e.cells[0].text == kw(w, "column", "event")
+
+/// The rows of a table of transitions that starts at the header `at`: the JSON rows, each placed at `path[k]`.
+fn rows_read(entries []TxEntry, at int, last int, kind str, path str, mut cx TxCx, sc TxScope) -> []TxJ {
+    rows_read_from(entries, at, last, kind, path, 0, cx, sc)
+}
+
+// The same, the numbers of the places start at `already`.
+fn rows_read_from(entries []TxEntry, at int, last int, kind str, path str, already int, mut cx TxCx, sc TxScope) -> []TxJ {
+    mut out = []TxJ.new()
+    ro expected = if kind == "fork" { ["№", "Condition", "Actions", "To"] } else { ["№", "Event", "Condition", "Actions", "To"] }
+    ro t = tab_read(entries, at, last, expected, cx)
+    for r in t.rows {
+        cx.rows_total += 1
+        ro before = cx.errors.len()
+        match row_parse(r, kind, cx, sc) {
+            Ok(j) => {
+                out.push(j)
+                cx_place(cx, "${path}[${already + out.len() - 1}]", r.line)
+            }
+            Err(err) => note(cx, err)
+        }
+        if cx.errors.len() > before { cx.rows_noted += 1 }
+    }
+    out
+}
+
+fn accept_read(entries []TxEntry, at int, last int, path str, mut cx TxCx, sc TxScope) -> []TxJ {
+    mut out = []TxJ.new()
+    ro t = tab_read(entries, at, last, ["event", "actions"], cx)
+    for r in t.rows {
+        cx.rows_total += 1
+        ro before = cx.errors.len()
+        match accept_row(r, cx, sc) {
+            Ok(j) => {
+                out.push(j)
+                cx_place(cx, "${path}[${out.len() - 1}]", r.line)
+            }
+            Err(err) => note(cx, err)
+        }
+        if cx.errors.len() > before { cx.rows_noted += 1 }
+    }
+    out
+}
+
+fn accept_row(r TxEntry, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    mut ep = cell_p(r.cells[0], r.line)?
+    ro ev = ev_parse(ep, cx, sc)?
+    p_end(ep)?
+    ro acts = ac_cell(r.cells[1], r.line, cx, ev.scope)?
+    mut pairs = [kv("event", ev.json)]
+    if acts.actions.len() > 0 { pairs.push(kv("actions", TxArr(acts.actions))) }
+    Ok(jobj(pairs))
+}
+
+fn input_read(entries []TxEntry, at int, last int, mut cx TxCx, sc TxScope) -> []TxJ {
+    mut out = []TxJ.new()
+    ro t = tab_read(entries, at, last, ["request_field", "expression", "reads"], cx)
+    for r in t.rows {
+        cx.rows_total += 1
+        ro before = cx.errors.len()
+        match input_row(r, cx, sc) {
+            Ok(j) => out.push(j)
+            Err(err) => note(cx, err)
+        }
+        if cx.errors.len() > before { cx.rows_noted += 1 }
+    }
+    out
+}
+
+fn input_row(r TxEntry, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    ro f = cell_name(r.cells[0], r.line)?
+    ro en = tr_field_name(cx, f)
+    ro value = cell_expr(r.cells[1], r.line, cx, sc)?
+    ro reads = r.cells[2].text
+    if reads != kw(cx.words, "enum_value", "party") && reads != kw(cx.words, "enum_value", "executor") {
+        return Err(tx_err(r.line, r.cells[2].col, "syntax", "в столбце `${kw(cx.words, "column", "reads")}` бывает `${kw(cx.words, "enum_value", "party")}` или `${kw(cx.words, "enum_value", "executor")}`"))
+    }
+    Ok(jobj([kv("field", js(en)), kv("value", value), kv("reads", js(if reads == kw(cx.words, "enum_value", "party") { "party" } else { "executor" }))]))
+}
+
+// ---- the state -----------------------------------------------------------------------------------------------------------------------------------
+
+// `Сторона: имя[; набор: выр]` -> the pairs "party" and "set".
+fn line_party(kvl TxKv, mut cx TxCx, sc TxScope) -> Result[[]TxKV, TranslateError] {
+    mut p = lex_segs(kvl.segs)?
+    ro n = p_tok(p)
+    if n.kind != TK_NAME { return Err(p_fail(p, "ожидается имя стороны")) }
+    p_adv(p)
+    mut pairs = []TxKV.new()
+    match pair_get(cx.env.parties, n.text) {
+        Some(en) => pairs.push(kv("party", js(en)))
+        None => {
+            cx_error(cx, n, "name", "стороны `${n.text}` нет в таблице «Стороны»")
+            pairs.push(kv("party", js(n.text)))
+        }
+    }
+    if p_eat(p, ";") {
+        p_expect_kw(p, cx.words, "key", "set")?
+        p_expect(p, ":")?
+        ro set = ex_expr(p, cx, sc)?
+        pairs.push(kv("set", set))
+    }
+    p_end(p)?
+    Ok(pairs)
+}
+
+// `Срок тишины: выр` or `—`.
+fn line_silence(kvl TxKv, mut cx TxCx, sc TxScope) -> Result[Option[TxJ], TranslateError] {
+    mut p = lex_segs(kvl.segs)?
+    if p_is(p, "—") {
+        p_adv(p)
+        p_end(p)?
+        return Ok(None)
+    }
+    ro e = ex_expr(p, cx, sc)?
+    p_end(p)?
+    Ok(Some(e))
+}
+
+// `Правит: данное; проверка: примитив` -> the datum and the primitive of the check (Latin).
+type TxEdits { datum str, check str }
+
+fn line_edits(kvl TxKv, mut cx TxCx) -> Result[TxEdits, TranslateError] {
+    mut p = lex_segs(kvl.segs)?
+    ro d = p_tok(p)
+    if d.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "key", "Edits")}:` ожидается имя данного")) }
+    p_adv(p)
+    ro datum = tr_global(cx, d)
+    p_expect(p, ";")?
+    if !p_eat_kw(p, cx.words, "key", "check") { return Err(p_fail(p, "после данного ожидается `${kw(cx.words, "key", "check")}: примитив`")) }
+    p_expect(p, ":")?
+    ro f = p_tok(p)
+    if f.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "key", "check")}:` ожидается имя примитива")) }
+    p_adv(p)
+    ro check = tr_primitive(cx, f)
+    p_end(p)?
+    Ok(TxEdits { datum, check })
+}
+
+// `Возвратов формы: N` -> N (a whole number, zero too).
+fn line_form_returns(kvl TxKv, mut cx TxCx) -> Result[int, TranslateError] {
+    mut p = lex_segs(kvl.segs)?
+    ro n = p_tok(p)
+    if n.kind != TK_INT { return Err(p_fail(p, "после `${kw(cx.words, "key", "Form returns")}:` ожидается целое число")) }
+    p_adv(p)
+    p_end(p)?
+    Ok(n.text.to_int() ?? 0)
+}
+
+// `Вход:` of an appeal (format 4.1, 4.2, 2.12, Ya-23): `нет` (or `—`) when the appeal has no field of the request, else nothing after the colon and a table below. Returns "none" or "table"; anything else is an error.
+fn line_appeal_input(kvl TxKv, mut cx TxCx) -> Result[str, TranslateError] {
+    mut p = lex_segs(kvl.segs)?
+    if p_done(p) { return Ok("table") }
+    if p_is_kw(p, cx.words, "enum_value", "none") || p_is(p, "—") {
+        p_adv(p)
+        p_end(p)?
+        return Ok("none")
+    }
+    Err(p_fail(p, "у обращения после `${kw(cx.words, "key", "Input")}:` пишется `${kw(cx.words, "enum_value", "none")}` или ничего, а ниже — таблица полей запроса"))
+}
+
+// `Вход: имя, имя | нет | все_данные` of a state that is not an appeal: the names and the mark "all".
+type TxReads { names []str, all bool }
+
+fn line_reads(kvl TxKv, mut cx TxCx) -> Result[TxReads, TranslateError] {
+    mut p = lex_segs(kvl.segs)?
+    mut names = []str.new()
+    if p_done(p) || p_is_kw(p, cx.words, "enum_value", "none") || p_is(p, "—") { return Ok(TxReads { names, all: false }) }
+    if p_is_kw(p, cx.words, "readable", "all_data") && p_ahead(p, 1).kind == TK_EOF { return Ok(TxReads { names, all: true }) }
+    while true {
+        ro n = p_tok(p)
+        if n.kind != TK_NAME { return Err(p_fail(p, "ожидается имя данного")) }
+        p_adv(p)
+        names.push(tr_global(cx, n))
+        if p_eat(p, ",") { continue }
+        break
+    }
+    p_end(p)?
+    Ok(TxReads { names, all: false })
+}
+
+// `Кроме: поле ∈ {"…", …}` -> {"field", "values"}.
+fn line_except(kvl TxKv, mut cx TxCx) -> Result[TxJ, TranslateError] {
+    mut p = lex_segs(kvl.segs)?
+    ro f = p_tok(p)
+    if f.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "key", "Except")}:` ожидается имя данного")) }
+    p_adv(p)
+    ro en = tr_global(cx, f)
+    if !is_member_sign(p, cx.words) { return Err(p_fail(p, "ожидается `∈`")) }
+    p_adv(p)
+    p_expect(p, "{")?
+    mut values = []str.new()
+    while !p_is(p, "}") {
+        ro v = p_tok(p)
+        if v.kind != TK_STR { return Err(p_fail(p, "ожидается значение в кавычках")) }
+        p_adv(p)
+        values.push(v.text)
+        if p_eat(p, ",") { continue }
+        break
+    }
+    p_expect(p, "}")?
+    p_end(p)?
+    Ok(jobj([kv("field", js(en)), kv("values", jstrs(values))]))
+}
+
+// `При входе: действия`.
+fn line_entry(kvl TxKv, mut cx TxCx, sc TxScope) -> Result[TxActList, TranslateError] {
+    mut p = lex_segs(kvl.segs)?
+    ro all = ac_list_scoped(p, cx, sc)?
+    p_end(p)?
+    Ok(all)
+}
+
+/// The JSON of the state of the block. `index` is its place in `states`.
+fn state_translate(entries []TxEntry, blk TxBlock, index int, mut cx TxCx) -> TxJ {
+    ro path = "$.states[${index}]"
+    cx_place(cx, path, blk.line)
+    mut pairs = [kv("name", js(blk.latin)), kv("kind", js(blk.kind))]
+    mut party_pairs = []TxKV.new()
+    mut silence = TxNull
+    mut has_silence = false
+    mut inputs = []TxJ.new()
+    mut accept = []TxJ.new()
+    mut rows = []TxJ.new()
+    mut entry_actions = []TxJ.new()
+    mut entry_scope = sc_empty()
+    mut reads_names = []str.new()
+    mut reads_all = false
+    mut has_reads_line = false
+    mut except_json = TxNull
+    mut has_except = false
+    mut edits_datum = ""
+    mut edits_check = ""
+    mut form_returns = 0
+    mut input_at = -1
+    mut appeal_input = ""
+    mut accept_at = -1
+    mut rows_at = -1
+    mut sc = sc_empty()
+    ro rows_path = "${path}.rows"
+    mut i = blk.first
+    // first pass: the lines (they give the scope of the tables)
+    while i < blk.last {
+        ro e = entries[i]
+        if e.kind == EN_TEXT && kv_colon(e) >= 0 {
+            ro line = kv_read(entries, i)
+            ro key = line.key
+            if key == "Party" && blk.kind == "appeal" {
+                match line_party(line, cx, sc) {
+                    Ok(ps) => { party_pairs = ps }
+                    Err(err) => note(cx, err)
+                }
+            } else if key == "Idle term" && blk.kind == "appeal" {
+                match line_silence(line, cx, sc) {
+                    Ok(o) => {
+                        match o {
+                            Some(j) => {
+                                silence = j
+                                has_silence = true
+                            }
+                            None => ()
+                        }
+                    }
+                    Err(err) => note(cx, err)
+                }
+            } else if key == "Edits" && blk.kind == "appeal" {
+                match line_edits(line, cx) {
+                    Ok(ed) => {
+                        edits_datum = ed.datum
+                        edits_check = ed.check
+                    }
+                    Err(err) => note(cx, err)
+                }
+            } else if key == "Form returns" && blk.kind == "appeal" {
+                match line_form_returns(line, cx) {
+                    Ok(count) => { form_returns = count }
+                    Err(err) => note(cx, err)
+                }
+            } else if key == "Input" {
+                if blk.kind == "appeal" {
+                    has_reads_line = true
+                    match line_appeal_input(line, cx) {
+                        Ok(how) => { appeal_input = how }
+                        Err(err) => note(cx, err)
+                    }
+                } else {
+                    match line_reads(line, cx) {
+                        Ok(r) => {
+                            reads_names = r.names
+                            reads_all = r.all
+                            has_reads_line = true
+                        }
+                        Err(err) => note(cx, err)
+                    }
+                }
+            } else if key == "On entry" && blk.kind != "appeal" {
+                match line_entry(line, cx, sc) {
+                    Ok(all) => {
+                        entry_actions = all.actions
+                        entry_scope = all.scope
+                        sc = all.scope
+                    }
+                    Err(err) => note(cx, err)
+                }
+            } else if key == "Except" && blk.kind == "end" {
+                match line_except(line, cx) {
+                    Ok(j) => {
+                        except_json = j
+                        has_except = true
+                    }
+                    Err(err) => note(cx, err)
+                }
+            } else if key == "On accept" && blk.kind == "appeal" {
+                ()
+            } else {
+                note(cx, struct_error(e.line, 1, "строка `${kw(cx.words, "key", key)}:` здесь не бывает (состояние вида ${blk.kind})"))
+            }
+            i += line.taken
+        } else if e.kind == EN_ROW {
+            if is_input_header(e, cx.words) {
+                input_at = i
+            } else if is_accept_header(e, cx.words) {
+                accept_at = i
+            } else if is_transition_header(e, cx.words) {
+                rows_at = i
+            } else if !(i > blk.first && entries[i - 1].kind == EN_ROW) {
+                note(cx, struct_error(e.line, 1, "таблица начинается с заголовка: `${kw(cx.words, "column", "request_field")}`, `${kw(cx.words, "column", "event")}` или `№`"))
+            }
+            i = tab_end(entries, i, blk.last, cx.words)
+        } else if e.kind == EN_TEXT && e.text == "—" {
+            i += 1
+        } else {
+            note(cx, struct_error(e.line, e.indent + 1, "лишняя строка в состоянии `${blk.ru}`"))
+            i += 1
+        }
+    }
+    // the tables
+    if input_at >= 0 {
+        if blk.kind != "appeal" { note(cx, struct_error(entries[input_at].line, 1, "таблица `Вход` есть только у обращения")) }
+        if blk.kind == "appeal" && appeal_input == "none" {
+            note(cx, struct_error(entries[input_at].line, 1, "у обращения `${blk.ru}` `${kw(cx.words, "key", "Input")}: ${kw(cx.words, "enum_value", "none")}` и таблица полей запроса вместе: нужно одно из двух"))
+        }
+        inputs = input_read(entries, input_at, blk.last, cx, sc)
+    } else if blk.kind == "appeal" && has_reads_line && appeal_input == "table" {
+        note(cx, struct_error(blk.line, 1, "у обращения `${blk.ru}` после `${kw(cx.words, "key", "Input")}:` нет таблицы полей запроса; если полей нет, пишется `${kw(cx.words, "key", "Input")}: ${kw(cx.words, "enum_value", "none")}`"))
+    }
+    if accept_at >= 0 {
+        accept = accept_read(entries, accept_at, blk.last, "${path}.accept", cx, sc)
+    }
+    if rows_at >= 0 {
+        rows = rows_read(entries, rows_at, blk.last, blk.kind, rows_path, cx, entry_scope)
+    }
+    if blk.kind == "end" {
+        if rows_at >= 0 { note(cx, struct_error(entries[rows_at].line, 1, "у конца строк переходов нет")) }
+    } else if rows_at < 0 {
+        note(cx, struct_error(blk.line, 1, "у состояния `${blk.ru}` нет таблицы строк `№ | …`"))
+    }
+    if blk.kind == "appeal" {
+        if !has_reads_line { note(cx, struct_error(blk.line, 1, "у обращения `${blk.ru}` нет строки `${kw(cx.words, "key", "Input")}:` (правило 11): таблица полей запроса или `${kw(cx.words, "enum_value", "none")}`")) }
+        for q in party_pairs { pairs.push(q) }
+        if party_pairs.len() == 0 { note(cx, struct_error(blk.line, 1, "у обращения `${blk.ru}` нет строки `Сторона:`")) }
+        if has_silence { pairs.push(kv("silence", silence)) }
+        if edits_datum != "" {
+            pairs.push(kv("edits", js(edits_datum)))
+            pairs.push(kv("edit_check", js(edits_check)))
+        }
+        if form_returns > 0 { pairs.push(kv("form_returns", jint(form_returns))) }
+        if inputs.len() > 0 { pairs.push(kv("inputs", TxArr(inputs))) }
+        if accept.len() > 0 { pairs.push(kv("accept", TxArr(accept))) }
+        pairs.push(kv("rows", TxArr(rows)))
+    } else {
+        if !has_reads_line { note(cx, struct_error(blk.line, 1, "у состояния `${blk.ru}` нет строки `Вход:` (правило 11)")) }
+        if reads_all {
+            pairs.push(kv("reads_all", TxBool(true)))
+        } else {
+            pairs.push(kv("reads", jstrs(reads_names)))
+        }
+        if entry_actions.len() > 0 { pairs.push(kv("entry", TxArr(entry_actions))) }
+        if blk.kind != "end" { pairs.push(kv("rows", TxArr(rows))) }
+        if has_except { pairs.push(kv("except", except_json)) }
+    }
+    jobj(pairs)
+}
+
+// ---- the table "Ends" -------------------------------------------------------------------------------------------------------------------------
+
+/// The answer of an end: `Ответ(выр)` or `Отказ(код, текст)`.
+fn end_answer(cell TxCell, line int, mut cx TxCx) -> Result[TxJ, TranslateError] {
+    mut p = cell_p(cell, line)?
+    ro head = p_tok(p)
+    ro words = cx.words
+    if !(t_is_kw(head, words, "expr", "Response") || t_is_kw(head, words, "expr", "Refusal")) {
+        return Err(p_fail(p, "в столбце `${kw(words, "column", "response")}` бывает `${kw(words, "expr", "Response")}(…)` или `${kw(words, "expr", "Refusal")}(код, текст)`"))
+    }
+    p_adv(p)
+    ro args = ex_args(p, cx, sc_empty())?
+    p_end(p)?
+    if t_is_kw(head, words, "expr", "Response") {
+        if args.positional.len() != 1 || args.named.len() > 0 { return Err(tx_err(head.line, head.col, "syntax", "`${head.text}(…)` берёт одно значение")) }
+        return Ok(jobj([kv("kind", js("answer")), kv("value", args.positional[0])]))
+    }
+    if args.positional.len() != 2 || args.named.len() > 0 { return Err(tx_err(head.line, head.col, "syntax", "`${head.text}(…)` берёт код сбоя и текст")) }
+    Ok(jobj([kv("kind", js("refusal")), kv("code", args.positional[0]), kv("text", args.positional[1])]))
+}
+
+fn end_row(r TxEntry, mut cx TxCx) -> Result[TxJ, TranslateError] {
+    ro s = cell_name(r.cells[0], r.line)?
+    mut state_en = s.text
+    match pair_get(cx.env.states, s.text) {
+        Some(x) => { state_en = x }
+        None => { cx_error(cx, s, "name", "состояния `${s.text}` нет в этой машине${state_hint(cx, s.text)}") }
+    }
+    ro n = n_of_cell(r.cells[1], r.line)?
+    ro when = cell_expr(r.cells[2], r.line, cx, sc_empty())?
+    ro answer = end_answer(r.cells[3], r.line, cx)?
+    Ok(jobj([kv("state", js(state_en)), kv("n", jint(n)), kv("when", when), kv("answer", answer)]))
+}
+
+/// TxEnds: the result type and the rows of the table "Ends".
+type TxEnds { result str, rows []TxJ }
+
+fn decl_ends(entries []TxEntry, sec TxSection, mut cx TxCx) -> TxEnds {
+    mut result = ""
+    mut rows = []TxJ.new()
+    mut i = sec.first
+    while i < sec.last {
+        ro e = entries[i]
+        if e.kind == EN_ROW {
+            ro t = tab_read(entries, i, sec.last, ["end", "№", "when", "response"], cx)
+            for r in t.rows {
+                cx.rows_total += 1
+                ro before = cx.errors.len()
+                match end_row(r, cx) {
+                    Ok(j) => {
+                        rows.push(j)
+                        cx_place(cx, "$.ends.rows[${rows.len() - 1}]", r.line)
+                    }
+                    Err(err) => note(cx, err)
+                }
+                if cx.errors.len() > before { cx.rows_noted += 1 }
+            }
+            i = tab_end(entries, i, sec.last, cx.words)
+        } else if e.kind == EN_TEXT && kv_colon(e) >= 0 {
+            ro line = kv_read(entries, i)
+            if line.key == "Result" {
+                match lex_segs(line.segs) {
+                    Ok(p0) => {
+                        mut p = p_copy(p0)
+                        match ty_parse(p, cx) {
+                            Ok(t) => {
+                                result = t
+                                match p_end(p) {
+                                    Ok(u) => ()
+                                    Err(err) => note(cx, err)
+                                }
+                            }
+                            Err(err) => note(cx, err)
+                        }
+                    }
+                    Err(err) => note(cx, err)
+                }
+            } else {
+                note(cx, struct_error(e.line, 1, "в разделе `Концы` бывает строка `Результат: …` и таблица"))
+            }
+            i += line.taken
+        } else {
+            note(cx, struct_error(e.line, e.indent + 1, "лишняя строка в разделе `Концы`"))
+            i += 1
+        }
+    }
+    TxEnds { result, rows }
+}

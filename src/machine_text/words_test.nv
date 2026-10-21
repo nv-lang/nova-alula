@@ -1,0 +1,530 @@
+// words_test.nv - task 113: the table of words as data (`keywords.tsv` of the methodology, `keywords_product.tsv` of the product), the reading of a word by its kind and its key in the
+// language of the file, the language of a file (`- language: ru|en`), the names of an English file. Every word that the code asks for is in the table; the code of the translator has no
+// Cyrillic word of the structure (only the messages of the errors and the letters of the alphabet).
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+
+fn all_kinds() -> []str => ["header", "section", "column", "kind_state", "key", "kind_party", "event", "destination", "decl", "type", "expr", "action", "operator", "readable", "enum_value", "catalog"]
+
+fn method_rows() -> []TxWord {
+    mut rows = []TxWord.new()
+    words_read(keywords_text(), rows)
+    rows
+}
+
+fn product_rows() -> []TxWord {
+    mut rows = []TxWord.new()
+    words_read(keywords_product_text(), rows)
+    rows
+}
+
+fn kind_count(rows []TxWord, kind str) -> int {
+    mut n = 0
+    for r in rows {
+        if r.kind == kind { n += 1 }
+    }
+    n
+}
+
+fn has_row(rows []TxWord, kind str, key str) -> bool {
+    for r in rows {
+        if r.kind == kind && r.en == key { return true }
+    }
+    false
+}
+
+// ---- the table of the methodology -----------------------------------------------------------------------------------------
+
+test "wt table shape" {
+    ro rows = method_rows()
+    assert(rows.len() == 219)
+    for k in all_kinds() { assert(kind_count(rows, k) > 0) }
+    for r in rows {
+        assert(all_kinds().contains(r.kind))
+        assert(r.ru != "" && r.en != "")
+    }
+    assert(kind_count(rows, "operator") == 8)
+    assert(kind_count(rows, "catalog") == 26)
+}
+
+test "wt table unique" {
+    ro rows = method_rows()
+    mut seen_ru = []str.new()
+    mut seen_en = []str.new()
+    for r in rows {
+        ro a = "${r.kind}/${r.ru}"
+        ro b = "${r.kind}/${r.en}"
+        assert(!seen_ru.contains(a))
+        assert(!seen_en.contains(b))
+        seen_ru.push(a)
+        seen_en.push(b)
+    }
+}
+
+test "wt product layer" {
+    ro rows = product_rows()
+    assert(rows.len() == 14)
+    ro method = method_rows()
+    for r in rows {
+        assert(all_kinds().contains(r.kind) || r.kind == "fragment" || r.kind == "fragment_param")
+        for m in method {
+            if m.kind == r.kind {
+                assert(m.ru != r.ru)
+                assert(m.en != r.en)
+            }
+        }
+    }
+    assert(has_row(rows, "section", "Signals"))
+    assert(has_row(rows, "section", "Response parts"))
+    assert(has_row(rows, "event", "deadline"))
+    assert(has_row(rows, "event", "part"))
+    assert(kind_count(rows, "fragment_param") == 6)
+}
+
+test "wt all rows loaded" {
+    assert(words_rows().len() == 233)
+}
+
+// ---- reading a word -----------------------------------------------------------------------------------------------------
+
+test "wt kw ru" {
+    ro w = words_load("ru")
+    assert(kw(w, "section", "Parties") == "Стороны")
+    assert(kw(w, "section", "Signals") == "Сигналы")
+    assert(kw(w, "key", "Idle term") == "Срок тишины")
+    assert(kw(w, "key", "Initial state") == "Начальное состояние")
+    assert(kw(w, "expr", "if") == "если")
+    assert(kw(w, "expr", "else") == "иначе")
+    assert(kw(w, "action", "for each") == "для каждого")
+    assert(kw(w, "type", "bool") == "да/нет")
+    assert(kw(w, "type", "full map") == "полный словарь")
+    assert(kw(w, "kind_party", "human or agent by setting") == "human или agent по настройке")
+    assert(kw(w, "destination", "same") == "то же")
+    assert(kw(w, "destination", "rerun") == "запуск заново")
+    assert(kw(w, "enum_value", "none") == "нет")
+    assert(kw(w, "fragment", "Pause") == "Пауза")
+    assert(kw(w, "fragment_param", "halt_word") == "слово_остановки")
+    assert(kw(w, "column", "№") == "№")
+    assert(kw(w, "header", "machine") == "machine")
+}
+
+test "wt kw en" {
+    ro w = words_load("en")
+    assert(kw(w, "section", "Parties") == "Parties")
+    assert(kw(w, "key", "Idle term") == "Idle term")
+    assert(kw(w, "expr", "if") == "if")
+    assert(kw(w, "action", "for each") == "for each")
+    assert(kw(w, "type", "bool") == "bool")
+    assert(kw(w, "enum_value", "none") == "none")
+    assert(kw(w, "fragment", "Pause") == "Pause")
+    assert(kw(w, "nothing", "x") == "x")
+}
+
+test "wt key of" {
+    ro ru = words_load("ru")
+    ro en = words_load("en")
+    assert(kw_key(ru, "section", "Стороны") == Some("Parties"))
+    assert(kw_key(ru, "section", "Parties") == None)
+    assert(kw_key(en, "section", "Parties") == Some("Parties"))
+    assert(kw_key(en, "section", "Стороны") == None)
+    assert(kw_has(ru, "expr", "если"))
+    assert(!kw_has(ru, "expr", "if"))
+    assert(kw_key(ru, "event", "срок") == Some("deadline"))
+    assert(kw_key(en, "event", "deadline") == Some("deadline"))
+}
+
+test "wt foreign" {
+    ro ru = words_load("ru")
+    ro en = words_load("en")
+    assert(kw_foreign(ru, "section", "Parties") == Some("Parties"))
+    assert(kw_foreign(ru, "section", "Стороны") == None)
+    assert(kw_foreign(en, "section", "Стороны") == Some("Parties"))
+    assert(kw_foreign(ru, "header", "machine") == None)
+    assert(kw_foreign(ru, "kind_party", "agent") == None)
+    assert(kw_foreign_any(ru, ["action", "expr"], "journal") == Some("journal"))
+    assert(kw_foreign_any(en, ["action", "expr"], "журнал") == Some("journal"))
+    assert(kw_foreign_any(ru, ["action", "expr"], "незнакомое") == None)
+}
+
+test "wt cols" {
+    ro ru = words_load("ru")
+    ro en = words_load("en")
+    assert(ru.cols.contains("имя"))
+    assert(ru.cols.contains("событие"))
+    assert(en.cols.contains("name"))
+    assert(en.cols.contains("non_decreasing"))
+    assert(!en.cols.contains("имя"))
+}
+
+test "wt phrases" {
+    ro ru = words_load("ru")
+    ro en = words_load("en")
+    ro toks = match tx_lex("для каждого х в y", 1, 1) {
+        Ok(t) => t
+        Err(e) => []TxTok.new()
+    }
+    ro p = p_new(toks, 1, 1)
+    assert(p_phrase_len(p, "для каждого") == 2)
+    assert(p_phrase_len(p, "для") == 1)
+    assert(p_phrase_len(p, "для некоторого") == 0)
+    assert(p_is_kw(p, ru, "action", "for each"))
+    assert(!p_is_kw(p, en, "action", "for each"))
+    ro bool_toks = match tx_lex("да/нет", 1, 1) {
+        Ok(t) => t
+        Err(e) => []TxTok.new()
+    }
+    assert(p_phrase_len(p_new(bool_toks, 1, 1), "да/нет") == 3)
+}
+
+test "wt reserved" {
+    ro ru = words_load("ru")
+    ro en = words_load("en")
+    assert(is_keyword(ru, "если"))
+    assert(is_keyword(ru, "каждого"))
+    assert(!is_keyword(ru, "if"))
+    assert(is_keyword(en, "if"))
+    assert(is_keyword(en, "each"))
+    assert(!is_keyword(en, "если"))
+    assert(tx_keywords(ru).len() == 15)
+    assert(tx_keywords(en).len() == 15)
+}
+
+// ---- every word that the code asks for is in the table --------------------------------------------------------------------
+
+fn source_files() -> []NamedText2 => [
+    NamedText2 { name: "action.nv", text: embed_str("action.nv") },
+    NamedText2 { name: "decl.nv", text: embed_str("decl.nv") },
+    NamedText2 { name: "defs.nv", text: embed_str("defs.nv") },
+    NamedText2 { name: "doc.nv", text: embed_str("doc.nv") },
+    NamedText2 { name: "event.nv", text: embed_str("event.nv") },
+    NamedText2 { name: "frag.nv", text: embed_str("frag.nv") },
+    NamedText2 { name: "include.nv", text: embed_str("include.nv") },
+    NamedText2 { name: "lang.nv", text: embed_str("lang.nv") },
+    NamedText2 { name: "lex.nv", text: embed_str("lex.nv") },
+    NamedText2 { name: "machine.nv", text: embed_str("machine.nv") },
+    NamedText2 { name: "names.nv", text: embed_str("names.nv") },
+    NamedText2 { name: "parse.nv", text: embed_str("parse.nv") },
+    NamedText2 { name: "render.nv", text: embed_str("render.nv") },
+    NamedText2 { name: "render_expr.nv", text: embed_str("render_expr.nv") },
+    NamedText2 { name: "render_states.nv", text: embed_str("render_states.nv") },
+    NamedText2 { name: "rj.nv", text: embed_str("rj.nv") },
+    NamedText2 { name: "party.nv", text: embed_str("party.nv") },
+    NamedText2 { name: "state.nv", text: embed_str("state.nv") },
+    NamedText2 { name: "words.nv", text: embed_str("words.nv") }
+]
+
+type NamedText2 { name str, text str }
+
+fn word_user_marks() -> []str => ["kw(", "p_is_kw(", "p_eat_kw(", "p_expect_kw(", "t_is_kw(", "kw_key(", "kw_foreign("]
+
+// The literals of a line, the content of each "…" without the escapes read.
+fn line_literals(line str) -> []str {
+    mut out = []str.new()
+    ro n = line.byte_len()
+    mut i = 0
+    while i < n {
+        ro c = tx_at(line, i)
+        if c == '/' && line[i + 1..].starts_with("/") { break }
+        if c == '"' {
+            mut j = i + 1
+            mut parts = []str.new()
+            while j < n && tx_at(line, j) != '"' {
+                ro d = tx_at(line, j)
+                if d == '\\' && j + 1 < n {
+                    ro e = tx_at(line, j + 1)
+                    parts.push(line[j + 1..j + 1 + e.len_utf8()])
+                    j += 1 + e.len_utf8()
+                    continue
+                }
+                parts.push(line[j..j + d.len_utf8()])
+                j += d.len_utf8()
+            }
+            out.push(parts.join(""))
+            i = j + 1
+            continue
+        }
+        i += c.len_utf8()
+    }
+    out
+}
+
+fn is_cyrillic_text(s str) -> bool {
+    for c in s.chars() {
+        ro cp = c as int
+        if cp >= 1024 && cp <= 1279 { return true }
+    }
+    false
+}
+
+test "wt asked words exist" {
+    ro rows = words_rows()
+    mut asked = 0
+    for f in source_files() {
+        for line in f.text.split("\n") {
+            mut uses = false
+            for m in word_user_marks() {
+                if line.contains(m) { uses = true }
+            }
+            if !uses || line.trim_ascii().starts_with("//") { continue }
+            ro lits = line_literals(line)
+            mut i = 0
+            while i + 1 < lits.len() {
+                if all_kinds().contains(lits[i]) || lits[i] == "fragment" || lits[i] == "fragment_param" {
+                    // `"kind", "key"`: the pair is looked up; a list `"kind", [...]` is read by kw_all below
+                    if has_row(rows, lits[i], lits[i + 1]) {
+                        asked += 1
+                        i += 1
+                    }
+                }
+                i += 1
+            }
+        }
+    }
+    assert(asked > 60)
+}
+
+test "wt every key listed" {
+    ro rows = words_rows()
+    for k in line_keys() { assert(has_row(rows, "key", k)) }
+    for k in header_keys() { assert(has_row(rows, "header", k)) }
+    for k in section_keys() { assert(has_row(rows, "section", k)) }
+    for k in pause_param_keys() { assert(has_row(rows, "fragment_param", k)) }
+    for k in ["rows", "mechanics", "rows_and_mechanics", "fragment", "rows_and_fragment", "party", "executor", "yes", "none", "nothing", "requests_from_to_send", "without_return_to_send", "stop_transport_turn"] {
+        assert(has_row(rows, "enum_value", k))
+    }
+    for k in ["column"] { assert(kind_count(rows, k) > 0) }
+    for k in ["№", "Event", "Condition", "Actions", "To", "event", "actions", "request_field", "expression", "reads", "end", "response", "when", "name", "type", "value", "default", "project_override", "note", "initial", "non_decreasing", "writes", "id", "kind", "profile", "gate_words", "counter", "parameters", "result", "class", "fields", "party"] {
+        assert(has_row(rows, "column", k))
+    }
+}
+
+// ---- no Cyrillic word of the structure in the code of the translator -----------------------------------------------
+
+// A line may hold a Cyrillic literal when the literal is (a piece of) the message of an error, or a letter of the alphabet.
+fn allowed_marks() -> []str => [
+    "p_fail(", "tx_err(", "struct_error(", "cx_error(", "cx_unsupported(", "unsupported(", "note(", "cls_flush(", "foreign_error(", "Err(", "message:",
+    "decl_name(", "tr_word(", "tr_word_f(", "decl_name_phrase(", "decl_name_phrase_in(", "ro message =", "ro why =", "ro shown =", "возможно", "конец текста", "строку", "фрагменты не подключены", "подключён:",
+    "английский", "русский", "найдено", "\"а=a\"", "\"ф=f\""
+]
+
+fn cyrillic_offenders() -> []str {
+    mut out = []str.new()
+    for f in source_files() {
+        mut no = 0
+        for line in f.text.split("\n") {
+            no += 1
+            if line.trim_ascii().starts_with("//") { continue }
+            mut cyr = false
+            for lit in line_literals(line) {
+                if is_cyrillic_text(lit) { cyr = true }
+            }
+            if !cyr { continue }
+            mut ok = false
+            for m in allowed_marks() {
+                if line.contains(m) { ok = true }
+            }
+            if !ok { out.push("${f.name}:${no}: ${line.trim_ascii()}") }
+        }
+    }
+    out
+}
+
+test "wt no cyrillic words" {
+    ro bad = cyrillic_offenders()
+    if bad.len() > 0 { panic(bad[0]) }
+    assert(bad.len() == 0)
+}
+
+test "wt lint sees a word" {
+    assert(is_cyrillic_text("если"))
+    assert(!is_cyrillic_text("if"))
+    assert(line_literals("ro w = \"если\" // \"нет\"").len() == 1)
+    assert(line_literals("f(\"a\", \"b\\\"c\")").len() == 2)
+}
+
+// ---- the names of an English file -------------------------------------------------------------------------------------------
+
+test "wt names en" {
+    ro n = names_load_for("en")
+    assert(names_get(n, "executor", "input") == Some("input"))
+    assert(names_get(n, "executor", "вход") == None)
+    assert(names_get(n, "catalog", "has") == Some("has"))
+    assert(names_get(n, "catalog", "есть") == None)
+    assert(names_get(n, "data", "agent_request") == Some("agent_request"))
+    assert(names_get(n, "data", "запрос_агента") == Some("agent_request"))
+    assert(names_get(n, "field", "transport_usage") == Some("usage"))
+    assert(names_get(n, "variable", "elevated_attention_executor") == Some("attention_executor"))
+}
+
+test "wt names ru" {
+    ro n = names_load()
+    assert(names_get(n, "field", "transport_usage") == None)
+    assert(names_get(n, "data", "agent_request") == None)
+    assert(names_get(n, "data", "запрос_агента") == Some("agent_request"))
+    assert(names_file_word(n, "state", "Errored") == Some("ОШИБКА"))
+    assert(names_file_word(n, "signal", "human_stop") == Some("стоп человека"))
+    assert(names_file_word(names_load_for("en"), "signal", "human_stop") == Some("human_stop"))
+}
+
+// ---- the language of a file -----------------------------------------------------------------------------------------------
+
+fn lines_in(text str) -> []str => lines_of(text)
+
+test "wt lang default" {
+    ro info = detect_language(lines_in("# Машина: М\n\n- machine: m\n- format: 2.12\n\n## Типы\n—\n"))
+    assert(info.lang == "ru")
+    assert(info.version == "2.12")
+    assert(info.strict)
+    assert(info.errors.len() == 0)
+    assert(!detect_language(lines_in("# Машина: М\n\nmachine: m\nformat: 2.5\n")).strict)
+}
+
+test "wt lang declared" {
+    ro en = detect_language(lines_in("# Machine: M\n\n- machine: m\n- format: 2.12\n- language: en\n\n## Types\n—\n"))
+    assert(en.lang == "en")
+    assert(en.errors.len() == 0)
+    assert(en.strict)
+    ro ru = detect_language(lines_in("# Машина: М\n\n- machine: m\n- format: 2.12\n- language: ru\n"))
+    assert(ru.lang == "ru")
+    assert(ru.errors.len() == 0)
+    ro defs = detect_language(lines_in("# Definitions: d\n\n- definitions_version: 1\n- format: 2.12\n- language: en\n"))
+    assert(defs.lang == "en" && defs.errors.len() == 0)
+    ro frag = detect_language(lines_in("# Fragment: Pause\n\n- fragment: Pause\n- format: 2.12\n- language: en\n"))
+    assert(frag.lang == "en" && frag.errors.len() == 0)
+}
+
+test "wt lang english undeclared" {
+    ro info = detect_language(lines_in("\n# Machine: M\n\n- machine: m\n- format: 2.12\n"))
+    assert(info.errors.len() == 1)
+    assert(info.errors[0].kind == "language")
+    assert(info.errors[0].line == 2)
+    assert(info.errors[0].message.contains("язык шапки английский, а language не объявлен"))
+    assert(info.lang == "en")
+}
+
+test "wt lang header mismatch" {
+    ro a = detect_language(lines_in("# Machine: M\n\n- machine: m\n- language: ru\n"))
+    assert(a.errors.len() == 1)
+    assert(a.errors[0].line == 1)
+    assert(a.errors[0].message.contains("а в строке language объявлен ru"))
+    ro b = detect_language(lines_in("# Машина: М\n\n- machine: m\n- format: 2.12\n- language: en\n"))
+    assert(b.errors.len() == 1)
+    assert(b.errors[0].line == 5)
+    assert(b.errors[0].message.contains("язык шапки русский"))
+    assert(b.lang == "ru")
+}
+
+test "wt lang bad value" {
+    ro info = detect_language(lines_in("# Машина: М\n\n- machine: m\n- language: de\n"))
+    assert(info.errors.len() == 1)
+    assert(info.errors[0].line == 4)
+    assert(info.errors[0].kind == "language")
+    assert(info.errors[0].message.contains("`ru` или `en`"))
+    assert(info.lang == "ru")
+}
+
+test "wt lang inside fence" {
+    ro info = detect_language(lines_in("# Машина: М\n\n- machine: m\n\n## Типы\n\n```\n- language: en\n```\n"))
+    assert(info.lang == "ru")
+    assert(info.errors.len() == 0)
+}
+
+test "wt versions" {
+    assert(format_versions() == ["2.12"])
+    assert(version_strict("2.12"))
+    assert(!version_strict("2.11") && !version_strict("2.10") && !version_strict("2.9") && !version_strict(""))
+}
+
+// ---- the classification of the lines ---------------------------------------------------------------------------------------
+
+fn classify_en(text str, strict bool) -> TxClassified => tx_classify_in(lines_in(text), words_load("en"), strict, strict)
+
+fn classify_ru(text str, strict bool) -> TxClassified => tx_classify_in(lines_in(text), words_load("ru"), strict, strict)
+
+test "wt key lines en" {
+    ro c = classify_en("## States\n\n- Party: agent\n- Idle term: 0\n- Input: none\nInitial state: Start\n", false)
+    assert(c.entries.len() == 5)
+    assert(c.entries[1].key == "Party" && c.entries[1].colon == 5 && c.entries[1].shift == 2)
+    assert(c.entries[2].key == "Idle term")
+    assert(c.entries[3].key == "Input")
+    assert(c.entries[4].key == "Initial state")
+    assert(c.errors.len() == 0)
+}
+
+test "wt key lines ru" {
+    ro c = classify_ru("## Состояния\n\n- Сторона: агент\n- Срок тишины: 0\nНачальное состояние: ЖДАТЬ\nmachine: x\n", false)
+    assert(c.entries[1].key == "Party")
+    assert(c.entries[2].key == "Idle term")
+    assert(c.entries[3].key == "Initial state")
+    assert(c.entries[4].key == "machine")
+}
+
+test "wt key foreign" {
+    ro c = classify_ru("## Состояния\n\n- Party: агент\nInput: нет\n", false)
+    assert(c.errors.len() == 2)
+    assert(c.errors[0].line == 3 && c.errors[0].kind == "language")
+    assert(c.errors[0].message.contains("`Party`"))
+    assert(c.errors[0].message.contains("`Сторона`"))
+    assert(c.errors[1].line == 4 && c.errors[1].col == 1)
+    ro e = classify_en("## States\n\n- Сторона: agent\n", false)
+    assert(e.errors.len() == 1)
+    assert(e.errors[0].message.contains("`Party`"))
+}
+
+test "wt touching strict" {
+    ro text = "## Data\n\nA paragraph that touches the table\n| name | type |\n| a | b |\n\nA comment\n\n| name | type |\n"
+    ro strict = classify_en(text, true)
+    assert(strict.warnings.len() == 1)
+    assert(strict.warnings[0].line == 3)
+    assert(strict.warnings[0].message.contains("вплотную к таблице"))
+    assert(strict.entries[1].kind == EN_TEXT && strict.entries[1].text == "A paragraph that touches the table")
+    ro loose = classify_en(text, false)
+    assert(loose.warnings.len() == 0)
+    assert(loose.entries.len() == 4)
+}
+
+test "wt touching heading and list" {
+    ro c = classify_en("## Data\n\nA line\n## States\n\nAnother\n- Party: agent\n", true)
+    assert(c.warnings.len() == 2)
+    assert(c.warnings[0].message.contains("заголовку"))
+    assert(c.warnings[1].message.contains("элементу списка"))
+}
+
+test "wt paragraph comment" {
+    ro c = classify_en("## Data\n\nA comment line one\nline two\n\n| name | type |\n", true)
+    assert(c.warnings.len() == 0)
+    assert(c.entries.len() == 2)
+}
+
+test "wt declaration outside" {
+    ro text = "## Types\n\ntype T { a int }\nmore\n\n```\ntype U { b int }\n```\n"
+    ro strict = classify_en(text, true)
+    assert(strict.warnings.len() == 1)
+    assert(strict.warnings[0].line == 3)
+    assert(strict.warnings[0].message.contains("объявление вне блока кода"))
+    assert(strict.entries.len() == 2)
+    assert(strict.entries[1].text == "type U { b int }")
+    ro loose = classify_en(text, false)
+    assert(loose.warnings.len() == 0)
+    assert(loose.entries.len() == 4)
+    ro fenced_only = tx_classify_in(lines_in(text), words_load("en"), true, false)
+    assert(fenced_only.entries.len() == 4)
+}
+
+test "wt prose key where" {
+    ro c = classify_en("## States\n\nParty without a colon\n\nTo somewhere\n", true)
+    assert(c.warnings.len() == 1)
+    assert(c.warnings[0].line == 3)
+    assert(c.warnings[0].message.contains("«Party»"))
+}
+
+test "wt expansion sections" {
+    ro ru = classify_ru("## Типы\n—\n\n## Раскрытие фрагмента «Пауза»\n\n### x\n| a |\n\n## Состояния\n", true)
+    assert(ru.expansions.len() == 1)
+    assert(ru.expansions[0].line == 4 && ru.expansions[0].name == "Пауза")
+    ro en = classify_en("## Types\n—\n\n## Fragment expansion \"Pause\"\n\n## States\n", true)
+    assert(en.expansions.len() == 1 && en.expansions[0].name == "Pause")
+    assert(en.entries.len() == 4)
+}

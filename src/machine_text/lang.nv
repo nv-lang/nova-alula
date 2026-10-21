@@ -1,0 +1,116 @@
+// lang.nv - the language of a file (task 113, format 2.8, section 1a): `- language: ru` or `- language: en` in the header, `ru` by default. The translator does not guess and does not
+// switch: the language is the line `language` or the default; a file whose header is in the other language is an error, and a word of the other language in the body is an error at its line.
+module alula.machine_text
+
+import std.text
+
+/// TxLangInfo: the language of a file (`ru` or `en`), the version of the format that its header gives (`format: …`, "" when there is none), whether the reading is strict (format 2.9 and later:
+/// a paragraph pressed against a table is no paragraph, a declaration outside a block of code is a comment) and the errors of the language of the header.
+type TxLangInfo { lang str, version str, strict bool, errors []TranslateError }
+
+/// The versions of the format that this translator reads: one (task 125: there is no transition period, the word of the owner, 2026-10-20).
+fn format_versions() -> []str => ["2.12"]
+
+/// Is the version one from which the reading is strict (2.9 and later; the only version that is read is strict)?
+fn version_strict(version str) -> bool => version == "2.12"
+
+// The key and the value of a header line `- key: value` or `key: value`; the key is empty for another line.
+type TxHeaderLine { key str, value str, col int }
+
+fn header_line(line str) -> TxHeaderLine {
+    ro s = line.strip_suffix("\r") ?? line
+    ro n = s.byte_len()
+    mut at = 0
+    mut at_col = 0
+    if n > 1 && s.starts_with("-") && tx_is_space(tx_at(s, 1)) {
+        ro (after, skipped) = skip_spaces(s, 1)
+        at = after
+        at_col = 1 + skipped
+    }
+    mut colon = -1
+    mut i = at
+    while i < n && colon < 0 {
+        ro c = tx_at(s, i)
+        if c == ':' { colon = i }
+        if !tx_is_name_char(c) && c != ':' { return TxHeaderLine { key: "", value: "", col: 0 } }
+        i += c.len_utf8()
+    }
+    if colon < 0 { return TxHeaderLine { key: "", value: "", col: 0 } }
+    TxHeaderLine { key: s[at..colon].trim_ascii(), value: s[colon + 1..].trim_ascii(), col: at_col + 1 }
+}
+
+// The language of the word of the header of the first line (`Машина`, `Machine`, `Определения`, `Definitions`, `Фрагмент`, `Fragment`): "ru", "en", or "" when the line is none of them.
+fn header_title_lang(first_line str) -> str {
+    ro text = first_line.strip_suffix("\r") ?? first_line
+    if !text.starts_with("# ") { return "" }
+    ro rest = text[2..]
+    ro at = rest.find(":") ?? -1
+    if at < 0 { return "" }
+    ro word = rest[..at].trim_ascii()
+    ro ru_has = kw_has(words_load("ru"), "header", word)
+    ro en_has = kw_has(words_load("en"), "header", word)
+    if ru_has && !en_has { return "ru" }
+    if en_has && !ru_has { return "en" }
+    ""
+}
+
+/// The language and the version of a file by its header: the first line `# Машина: …` / `# Machine: …` (also `Определения`/`Definitions`, `Фрагмент`/`Fragment`) and the list lines before the first
+/// section. A header in the language that the line `language` does not declare is an error (the language is not guessed), a value other than `ru`, `en` is an error.
+fn detect_language(lines []str) -> TxLangInfo {
+    mut errors = []TranslateError.new()
+    mut first_no = 0
+    mut first_line = ""
+    mut no = 0
+    for raw in lines {
+        no += 1
+        ro t = (raw.strip_suffix("\r") ?? raw).trim_ascii()
+        if t != "" {
+            first_no = no
+            first_line = raw
+            break
+        }
+    }
+    ro head_lang = header_title_lang(first_line)
+    mut declared = ""
+    mut declared_no = 0
+    mut declared_col = 1
+    mut version = ""
+    mut in_fence = false
+    no = 0
+    for raw in lines {
+        no += 1
+        if no <= first_no { continue }
+        ro line = raw.strip_suffix("\r") ?? raw
+        if line.starts_with("```") {
+            in_fence = !in_fence
+            continue
+        }
+        if in_fence { continue }
+        if line.starts_with("## ") { break }
+        ro h = header_line(line)
+        if h.key == "language" && declared == "" {
+            declared = h.value
+            declared_no = no
+            declared_col = h.col
+        }
+        if h.key == "format" && version == "" { version = h.value }
+    }
+    mut lang = "ru"
+    if declared != "" {
+        if declared == "ru" || declared == "en" {
+            lang = declared
+        } else {
+            errors.push(tx_err(declared_no, declared_col, "language", "в строке `language` бывает `ru` или `en`, найдено `${declared}`"))
+            declared = ""
+        }
+    }
+    if head_lang == "en" && lang != "en" {
+        ro why = if declared == "" { "а language не объявлен (нужна строка `- language: en`)" } else { "а в строке language объявлен ${declared}" }
+        errors.push(tx_err(if first_no > 0 { first_no } else { 1 }, 1, "language", "язык шапки английский, ${why}; язык файла берётся только из строки `language` или по умолчанию (`ru`), он не угадывается"))
+        lang = "en"
+    } else if head_lang == "ru" && declared == "en" {
+        errors.push(tx_err(declared_no, declared_col, "language", "язык шапки русский, а в строке language объявлен en; язык файла берётся только из строки `language`"))
+        lang = "ru"
+    }
+    TxLangInfo { lang, version, strict: version_strict(version), errors }
+}

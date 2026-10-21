@@ -1,0 +1,141 @@
+// frag.nv - fragments of a table translated alone: a type, an expression, a list of actions. They are the pieces of the translator that the examples of the
+// format (sections 2-9 are fragments) and the tests use; a machine is translated by `translate` (machine.nv), which uses the same pieces.
+module alula.machine_text
+
+import std.text
+
+// The context for a fragment: the table of names and the Russian names of the data that the fragment may read (their Latin words by the dictionary).
+fn frag_cx(data []str, lang str) -> TxCx {
+    mut cx = cx_new_in(lang)
+    for ru in data {
+        match names_first(cx.names, kinds_data(), ru) {
+            Some(en) => pair_add(cx.env.globals, ru, en)
+            None => pair_add(cx.env.globals, ru, if is_identifier_latin(ru) { ru } else { tx_translit(ru) })
+        }
+    }
+    cx
+}
+
+fn frag_errors(cx TxCx, hard Option[TranslateError], text str) -> []TranslateError {
+    mut out = []TranslateError.new()
+    for e in cx.errors { out.push(TranslateError { line: e.line, col: e.col, kind: e.kind, message: e.message, quote: text }) }
+    match hard {
+        Some(e) => out.push(TranslateError { line: e.line, col: e.col, kind: e.kind, message: e.message, quote: text })
+        None => ()
+    }
+    out
+}
+
+/// A type of the format as the type string of the JSON: `число≥0` -> `int>=0`.
+export fn translate_type(text str) -> Result[str, []TranslateError] => translate_type_in(text, "ru")
+
+/// The same for a text in the language `lang` (`ru` or `en`).
+export fn translate_type_in(text str, lang str) -> Result[str, []TranslateError] {
+    mut cx = frag_cx([], lang)
+    match tx_lex(text, 1, 1) {
+        Ok(toks) => {
+            mut p = p_new(toks, 1, text.chars().count() + 1)
+            match ty_parse(p, cx) {
+                Ok(t) => {
+                    match p_end(p) {
+                        Ok(u) => ()
+                        Err(e) => return Err(frag_errors(cx, Some(e), text))
+                    }
+                    if cx.errors.len() > 0 { return Err(frag_errors(cx, None, text)) }
+                    Ok(t)
+                }
+                Err(e) => Err(frag_errors(cx, Some(e), text))
+            }
+        }
+        Err(e) => Err(frag_errors(cx, Some(e), text))
+    }
+}
+
+/// An expression of the format as the JSON tree of the core. `data` are the Russian names of the data, the constants and the parameters in scope.
+export fn translate_expression(text str, data []str) -> Result[str, []TranslateError] => translate_expression_in(text, data, "ru")
+
+/// The same for a text in the language `lang`.
+export fn translate_expression_in(text str, data []str, lang str) -> Result[str, []TranslateError] {
+    mut cx = frag_cx(data, lang)
+    match tx_lex(text, 1, 1) {
+        Ok(toks) => {
+            mut p = p_new(toks, 1, text.chars().count() + 1)
+            match ex_expr(p, cx, sc_empty()) {
+                Ok(j) => {
+                    match p_end(p) {
+                        Ok(u) => ()
+                        Err(e) => return Err(frag_errors(cx, Some(e), text))
+                    }
+                    if cx.errors.len() > 0 { return Err(frag_errors(cx, None, text)) }
+                    Ok(tx_text(j))
+                }
+                Err(e) => Err(frag_errors(cx, Some(e), text))
+            }
+        }
+        Err(e) => Err(frag_errors(cx, Some(e), text))
+    }
+}
+
+/// A list of actions of the format as the JSON array of the actions. `data` as in `translate_expression`; `parties` are the Russian names of the parties
+/// (their Latin words by the table of names) and `empty_lists` the names that stand for an empty list of nested machines.
+export fn translate_actions(text str, data []str, parties []str, empty_lists []str) -> Result[str, []TranslateError] => translate_actions_in(text, data, parties, empty_lists, "ru")
+
+/// The same for a text in the language `lang`.
+export fn translate_actions_in(text str, data []str, parties []str, empty_lists []str, lang str) -> Result[str, []TranslateError] {
+    mut cx = frag_cx(data, lang)
+    for ru in parties {
+        match names_first(cx.names, ["party", "type", "variable"], ru) {
+            Some(en) => pair_add(cx.env.parties, ru, en)
+            None => pair_add(cx.env.parties, ru, if is_identifier_latin(ru) { ru } else { tx_translit(ru) })
+        }
+    }
+    for n in empty_lists { cx.env.empty_lists.push(n) }
+    match tx_lex(text, 1, 1) {
+        Ok(toks) => {
+            mut p = p_new(toks, 1, text.chars().count() + 1)
+            match ac_list(p, cx, sc_empty()) {
+                Ok(actions) => {
+                    match p_end(p) {
+                        Ok(u) => ()
+                        Err(e) => return Err(frag_errors(cx, Some(e), text))
+                    }
+                    if cx.errors.len() > 0 { return Err(frag_errors(cx, None, text)) }
+                    Ok(tx_text(TxArr(actions)))
+                }
+                Err(e) => Err(frag_errors(cx, Some(e), text))
+            }
+        }
+        Err(e) => Err(frag_errors(cx, Some(e), text))
+    }
+}
+
+/// The declarations of types (the text of the section `## Типы`) as the JSON object {"records", "variants"}.
+export fn translate_types(text str) -> Result[str, []TranslateError] => translate_types_in(text, "ru")
+
+/// The same for a text in the language `lang`.
+export fn translate_types_in(text str, lang str) -> Result[str, []TranslateError] {
+    mut cx = frag_cx([], lang)
+    ro entries = tx_classify_in(lines_of(text), cx.words, false, false).entries
+    ro sec = TxSection { name: "Types", title: kw(cx.words, "section", "Types"), line: 1, first: 0, last: entries.len() }
+    ro types = decl_types(entries, sec, cx)
+    if cx.errors.len() > 0 { return Err(frag_errors(cx, None, "")) }
+    mut pairs = []TxKV.new()
+    pairs.push(kv("records", TxArr(types.records)))
+    pairs.push(kv("variants", TxArr(types.variants)))
+    Ok(tx_text(jobj(pairs)))
+}
+
+/// DefsReport: the translation of a file of definitions: its version, its hash (section 8), the JSON {"types", "constants", "definitions"} and the notes.
+export type DefsReport { version str, hash str, json str, errors []TranslateError, rows_total int, rows_noted int }
+
+/// A file of definitions (format section 8) translated alone.
+export fn translate_definitions(file_text str) -> DefsReport {
+    mut cx = cx_new()
+    ro doc = defs_read(file_text, cx)
+    mut tp = []TxKV.new()
+    tp.push(kv("records", TxArr(doc.types.records)))
+    tp.push(kv("variants", TxArr(doc.types.variants)))
+    ro json = tx_text(jobj([kv("types", TxObj(tp)), kv("constants", TxArr(doc.constants)), kv("definitions", TxArr(doc.definitions))]))
+    ro sorted = errors_sorted(cx.errors)
+    DefsReport { version: doc.version, hash: definitions_hash(file_text), json, errors: errors_quoted(sorted, lines_of(file_text)), rows_total: cx.rows_total, rows_noted: cx.rows_noted }
+}
