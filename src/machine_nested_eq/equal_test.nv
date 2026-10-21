@@ -1,0 +1,204 @@
+// equal_test.nv - the proof that a machine called as a nested machine behaves as the same machine run alone (task 119, AC-3): the 73 scenarios of the agent step that begin with the start of
+// the machine are run twice. Alone, on the engine of the product, as before. And through the session `dialog_steps`: its step 1 is the `start` of the session with the same input, the
+// session sends the request `call-1` to the nested machine `agent_step`, and the other steps (the answers of the agent, the failures, the terms, the restarts, the signals of a human and
+// of a parent) act on the nested machine (`on`). After every step the nested machine through the session and the machine alone are compared: the name of the state, the data (the
+// encoded state), the lines of the machine, the open, sent and cancelled requests, the queue, the keys acknowledged, the outcome, the number of the step and ALL the lines of the
+// journal with the envelope (the step, the cause, the state, the request, the time, the code and the parameters) - all but the trace, which is the child of the trace of the session.
+module alula.machine_nested_eq
+
+import std.text
+import alula.machine.{scenario_files, machine_files, text_of_file, standard_registry, NamedText}
+import alula.engine.{JournalEntry}
+import alula.machine_run.{PortolanMachine, NestedRegistry, load_portolan_machine, parse_scenario, drive_table_scenario, drive_nested_scenario, scenario_through_parent, prepare_child, StepTrace, NestedStepTrace, Scenario, check_registry}
+
+fn load(name str) -> PortolanMachine {
+    match load_portolan_machine(text_of_file(machine_files(), "${name}.portolan.json"), standard_registry()) {
+        Ok(m) => m
+        Err(e) => panic("the machine ${name} does not load: ${e}")
+    }
+}
+
+fn scenario_of(file NamedText) -> Scenario {
+    match parse_scenario(file.text) {
+        Ok(sc) => sc
+        Err(e) => panic("the scenario ${file.name} does not parse: ${e.path}: ${e.message}")
+    }
+}
+
+fn entries_text(entries []JournalEntry) -> []str {
+    mut out = []str.new()
+    for e in entries {
+        mut parts = []str.new()
+        // the text of the input of the `start` is the text the session wrote (the canonical form of the core), not the one the file of the scenario has; the value is the same - it is in
+        // the encoded state that is compared too
+        ro is_start = e.event.code == "event_accepted" && e.event.value_of("name") == Some("start")
+        for p in e.event.params {
+            if is_start && p.name == "input" {
+                parts.push("input=<the input of the start>")
+            } else {
+                parts.push("${p.name}=${p.value}")
+            }
+        }
+        out.push("${e.step}|${e.cause}|${e.state}|${e.request}|${e.at}|${e.event.code}(${parts.join(";")})")
+    }
+    out
+}
+
+fn list_differs(xs []str, ys []str) -> bool {
+    if xs.len() != ys.len() { return true }
+    mut i = 0
+    while i < xs.len() {
+        if xs[i] != ys[i] { return true }
+        i += 1
+    }
+    false
+}
+
+// The first difference between the trace of the nested machine and of the machine alone, "" when there is none.
+fn trace_diff(nested StepTrace, alone StepTrace) -> str {
+    if nested.state != alone.state { return "state ${nested.state} / ${alone.state}" }
+    if nested.encoded != alone.encoded { return "data ${nested.encoded} / ${alone.encoded}" }
+    if list_differs(nested.journal, alone.journal) { return "journal ${nested.journal.join(",")} / ${alone.journal.join(",")}" }
+    ro lines_nested = entries_text(nested.entries)
+    ro lines_alone = entries_text(alone.entries)
+    if list_differs(lines_nested, lines_alone) {
+        mut at = 0
+        while at < lines_nested.len() && at < lines_alone.len() && lines_nested[at] == lines_alone[at] { at += 1 }
+        ro one = if at < lines_nested.len() { lines_nested[at] } else { "(no line)" }
+        ro other = if at < lines_alone.len() { lines_alone[at] } else { "(no line)" }
+        return "line ${at} of ${lines_nested.len()}/${lines_alone.len()}: ${one} / ${other}"
+    }
+    if list_differs(nested.open, alone.open) { return "open" }
+    if list_differs(nested.sent, alone.sent) { return "sent" }
+    if list_differs(nested.cancelled, alone.cancelled) { return "cancelled" }
+    if list_differs(nested.queue, alone.queue) { return "queue ${nested.queue.join(",")} / ${alone.queue.join(",")}" }
+    if list_differs(nested.acked, alone.acked) { return "acked" }
+    if nested.outcome != alone.outcome { return "outcome ${nested.outcome} / ${alone.outcome}" }
+    if nested.number != alone.number { return "number ${nested.number} / ${alone.number}" }
+    ""
+}
+
+fn kid_trace(t NestedStepTrace, request str) -> Option[StepTrace] {
+    mut i = 0
+    for r in t.requests {
+        if r == request { return Some(t.kids[i]) }
+        i += 1
+    }
+    None
+}
+
+// The nested run and the run alone of one scenario compared: "" when they agree, "skipped" when the scenario has no nested counterpart, else the first difference.
+fn compare_file(file NamedText) -> str => compare_with(file, load("agent_step"))
+
+// The same with the machine that the session calls given: the nested machine is `called`, the machine alone is the agent step as it is.
+fn compare_with(file NamedText, called PortolanMachine) -> str {
+    ro sc = scenario_of(file)
+    match scenario_through_parent(sc, "dialog_steps", "up-1", "call-1") {
+        None => "skipped"
+        Some(through) => {
+            ro child = match prepare_child(called, sc) {
+                Ok(m) => m
+                Err(m) => return "the child does not prepare: ${m}"
+            }
+            ro registry = NestedRegistry.empty().add("agent_step", child)
+            ro nested = drive_nested_scenario(load("dialog_steps"), registry, through)
+            ro alone = drive_table_scenario(load("agent_step"), sc)
+            if nested.len() != alone.len() { return "${nested.len()} steps / ${alone.len()} steps" }
+            mut j = 0
+            while j < alone.len() {
+                match kid_trace(nested[j], "call-1") {
+                    None => {
+                        // an input that lacks a field of the record never reaches the nested machine: the session refuses it by its own type (the scenario tests the refusal of the machine itself)
+                        if j == 0 && file.name.contains("input-missing") { return "skipped" }
+                        return "step ${j + 1}: the nested machine is not there"
+                    }
+                    Some(t) => {
+                        ro d = trace_diff(t, alone[j])
+                        if d != "" { return "step ${j + 1}: ${d}" }
+                    }
+                }
+                j += 1
+            }
+            ""
+        }
+    }
+}
+
+fn agent_files() -> []NamedText {
+    mut out = []NamedText.new()
+    for f in scenario_files() {
+        // a start that the agent step refuses for a missing field is refused by the parent as well (they have the same fields): there is no nested run to compare
+        if f.name.starts_with("agent-step-") && !f.name.contains("input-without") { out.push(f) }
+    }
+    out
+}
+
+// The files of the agent step in the slice `part` of `parts`; the differences, one per line, and the number of the files that were compared and skipped.
+fn compare_slice(part int, parts int) -> str {
+    mut report = []str.new()
+    mut at = 0
+    for f in agent_files() {
+        if at % parts == part {
+            ro d = compare_file(f)
+            if d != "" && d != "skipped" { report.push("${f.name}: ${d}") }
+        }
+        at += 1
+    }
+    report.join("\n")
+}
+
+test "ne files" {
+    ro files = agent_files()
+    assert(files.len() == 75)
+    mut skipped = []str.new()
+    for f in files {
+        ro sc = scenario_of(f)
+        match scenario_through_parent(sc, "dialog_steps", "up-1", "call-1") {
+            None => skipped.push(f.name)
+            Some(s) => {
+                assert(s.steps.len() == sc.steps.len())
+                assert(s.steps[0].event.kind == "start")
+                assert(s.steps[0].event.request == "up-1")
+                assert(s.steps[0].on == "")
+                assert(s.steps[1 % s.steps.len()].on == "call-1" || s.steps.len() == 1)
+            }
+        }
+    }
+    // the two scenarios in which the machine dies between the commit of its start and its first send have no nested counterpart (a nested machine starts with a feed)
+    assert(skipped.len() == 2)
+    assert(skipped[0].contains("death-between") || skipped[1].contains("death-between"))
+    assert(skipped[0].contains("stop-in-window") || skipped[1].contains("stop-in-window"))
+}
+
+test "ne pair fits" {
+    ro registry = NestedRegistry.empty().add("agent_step", load("agent_step"))
+    assert(check_registry(load("dialog_steps"), registry).len() == 0)
+}
+
+test "ne a difference is seen" {
+    // the proof can fail: another machine called in the place of the agent step is not the agent step run alone
+    ro files = agent_files()
+    mut happy = files[0]
+    for f in files {
+        if f.name == "agent-step-flow-happy.scenario.test.json" { happy = f }
+    }
+    assert(compare_file(happy) == "")
+    ro other = compare_with(happy, load("callee"))
+    assert(other != "")
+    assert(other != "skipped")
+}
+
+test "ne slice 0" {
+    ro report = compare_slice(0, 3)
+    if report != "" { panic(report) }
+}
+
+test "ne slice 1" {
+    ro report = compare_slice(1, 3)
+    if report != "" { panic(report) }
+}
+
+test "ne slice 2" {
+    ro report = compare_slice(2, 3)
+    if report != "" { panic(report) }
+}

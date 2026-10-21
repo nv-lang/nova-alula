@@ -1,0 +1,254 @@
+// check_test.nv - the checks of the table for nested machines (task 119, format sections 1, 4.2, 5, 10): the idle term of a call, the fields of the request, the profile, `Правит`,
+// `Возвратов формы`, `разбор`, `передать`, the counters of a set, and the check of a pair against the machine that is called.
+module alula.machine_nested
+
+import std.text
+import alula.machine_table.{check_nested, parse_machine, NestedProblem}
+
+// The tree of the meeting examples with a piece of its JSON replaced (the tree is the compact output of the translator).
+fn m_with(old str, new str) -> str {
+    ro json = meeting_json()
+    if !json.contains(old) { panic("the tree has no ${old}") }
+    json.replace(old, new)
+}
+
+// The tree of the small parent with a piece replaced.
+fn b_with(old str, new str) -> str {
+    ro json = json_of(boss_text())
+    if !json.contains(old) { panic("the tree has no ${old}") }
+    json.replace(old, new)
+}
+
+fn issue_count(json str) -> int => issues_of(json).len()
+
+// ---- the idle term of a call ---------------------------------------------------------------------------------------------------------
+
+test "ck clean" {
+    assert(issue_count(json_of(boss_text())) == 0)
+    assert(issue_count(meeting_json()) == 0)
+}
+
+test "ck silence" {
+    ro json = b_with("\"party\":\"child\",", "\"party\":\"child\",\"silence\":{\"op\":\"lit\",\"value\":5000},")
+    assert(issue_says(json, "idle term"))
+    assert(issue_says(json, "rule 35"))
+}
+
+test "ck silence zero" {
+    // `0` and `—` are no term: they stay allowed
+    assert(issue_count(b_with("\"party\":\"child\",", "\"party\":\"child\",\"silence\":{\"op\":\"lit\",\"value\":0},")) == 0)
+}
+
+// ---- the request: the fields of the input type ----------------------------------------------------------------------------------------
+
+test "ck field extra" {
+    ro json = b_with("\"field\":\"count\"", "\"field\":\"nope\"")
+    assert(issue_says(json, "nope"))
+    assert(issue_says(json, "input type"))
+}
+
+test "ck field missing" {
+    ro text = boss_with("| count | 1 | сторона |\n", "")
+    assert(note_says(text, "input type"))
+}
+
+test "ck field executor" {
+    // a name the rows read is no field of the request
+    assert(issue_count(json_of(boss_with("| count | 1 | сторона |\n", "| count | 1 | сторона |\n| inside | 2 | исполнитель |\n"))) == 0)
+}
+
+test "ck input type" {
+    // the type of the input of a nested machine is a record of the machine
+    ro json = b_with("\"input_type\":\"CallInput\"", "\"input_type\":\"text\"")
+    assert(issue_says(json, "record"))
+    ro unknown = b_with("\"input_type\":\"CallInput\"", "\"input_type\":\"Nowhere\"")
+    assert(issue_count(unknown) >= 1)
+}
+
+test "ck nested name" {
+    assert(issue_says(b_with("\"nested\":\"callee\"", "\"nested\":\"\""), "names the machine"))
+}
+
+// ---- the profile ------------------------------------------------------------------------------------------------------------------------
+
+test "ck profile table" {
+    // the field `профиль` is the column of the table of the parties: a row of the table "Input" with that name is an error (T3)
+    ro text = meeting_examples().replace("| вид_диалога | \"main\" | сторона |\n| контекст | вызвать(контекст_роли, КонтекстРоли.Линза { предложение: предложение, ответы_свидетеля: пусто })", "| вид_диалога | \"main\" | сторона |\n| профиль | вызвать(профиль_стороны, \"author\") | сторона |\n| контекст | вызвать(контекст_роли, КонтекстРоли.Линза { предложение: предложение, ответы_свидетеля: пусто })")
+    assert(note_says(text, "profile"))
+}
+
+test "ck profile missing" {
+    // a profile in the column, and the input type has no field `профиль`
+    ro json = m_with("\"profile\":{\"op\":\"primitive_call\",\"name\":\"party_profile\",\"args\":[{\"op\":\"lit\",\"value\":\"author\"}]},", "")
+    assert(issue_says(json, "profile"))
+}
+
+test "ck profile read" {
+    // a writing primitive may not stand in the profile
+    ro json = m_with("\"name\":\"party_profile\",\"args\":[{\"op\":\"lit\",\"value\":\"author\"}]", "\"name\":\"close_for_writing\",\"args\":[{\"op\":\"lit\",\"value\":\"x\"}]")
+    assert(issue_says(json, "close_for_writing"))
+}
+
+// ---- Edits, form returns, parse ---------------------------------------------------------------------------------------------------------
+
+test "ck edits datum" {
+    assert(issue_says(m_with("\"edits\":\"proposal\"", "\"edits\":\"nothing_here\""), "nothing_here"))
+}
+
+test "ck edits unwritten" {
+    // the datum of `Правит` must be written in "On accept" of the state
+    ro json = m_with("\"edits\":\"proposal\"", "\"edits\":\"author_guidance\"")
+    assert(issue_says(json, "On accept"))
+}
+
+test "ck edits check" {
+    assert(issue_says(m_with("\"edit_check\":\"proposal_changed_since_attempt\"", "\"edit_check\":\"close_for_writing\""), "close_for_writing"))
+    assert(issue_says(m_with("\"edit_check\":\"proposal_changed_since_attempt\"", "\"edit_check\":\"unknown_thing\""), "unknown_thing"))
+    assert(issue_says(m_with("\"edit_check\":\"proposal_changed_since_attempt\"", "\"edit_check\":\"call_trace\""), "bool"))
+}
+
+test "ck edits alone" {
+    ro json = m_with(",\"edit_check\":\"proposal_changed_since_attempt\"", "")
+    assert(issue_says(json, "edit_check"))
+}
+
+test "ck form returns" {
+    // `Возвратов формы` above zero needs a party whose answer is checked by `разбор`
+    ro json = b_with("\"party\":\"child\",", "\"party\":\"child\",\"form_returns\":2,")
+    assert(issue_says(json, "Form returns"))
+}
+
+test "ck parse class" {
+    ro json = m_with("\"primitive\":\"parse_agent_reply\",\"role\":\"witness\"", "\"primitive\":\"close_for_writing\",\"role\":\"witness\"")
+    assert(issue_says(json, "close_for_writing"))
+    assert(issue_says(m_with("\"primitive\":\"parse_agent_reply\",\"role\":\"witness\"", "\"primitive\":\"no_such\",\"role\":\"witness\""), "no_such"))
+}
+
+test "ck parse role" {
+    // the second parameter of the primitive is the role: a primitive of one parameter takes no role
+    ro json = m_with("\"primitive\":\"parse_agent_reply\",\"role\":\"witness\"", "\"primitive\":\"call_trace\",\"role\":\"witness\"")
+    assert(issue_says(json, "role"))
+}
+
+test "ck parse first" {
+    // the first parameter of `разбор` is the result type of the party
+    ro json = m_with("\"primitive\":\"parse_agent_reply\",\"role\":\"witness\"", "\"primitive\":\"role_context\",\"role\":\"witness\"")
+    assert(issue_count(json) >= 1)
+}
+
+// ---- pass and cancel_open ----------------------------------------------------------------------------------------------------------------
+
+test "ck pass names" {
+    ro text = boss_with("| 2 | сбой | — | — | DONE |", "| 2 | сбой | — | передать([callee], стоп) | DONE |")
+    ro json = json_of(text)
+    assert(issue_count(json) == 0)
+    assert(issue_says(json.replace("\"op\":\"lit\",\"value\":\"callee\"", "\"op\":\"lit\",\"value\":\"other\""), "other"))
+}
+
+test "ck pass signal" {
+    ro text = boss_with("| 2 | сбой | — | — | DONE |", "| 2 | сбой | — | передать([callee], стоп) | DONE |")
+    assert(issue_says(json_of(text).replace("\"signal\":\"stop\"", "\"signal\":\"jump\""), "signal"))
+}
+
+test "ck pass no party" {
+    // a pass to nested machines needs a party of the kind machine
+    ro text = tiny_agent().replace("| 2 | сбой | — | — | DONE |", "| 2 | сбой | — | передать([callee], стоп) | DONE |")
+    assert(notes(text).len() >= 1)
+}
+
+test "ck cancel except" {
+    ro text = boss_with("| 2 | сбой | — | — | DONE |", "| 2 | сбой | — | отменить_открытые(кроме: [callee]) | DONE |")
+    ro json = json_of(text)
+    assert(issue_count(json) == 0)
+    assert(issue_says(json.replace("\"op\":\"lit\",\"value\":\"callee\"", "\"op\":\"lit\",\"value\":\"other\""), "other"))
+}
+
+// ---- the counters of a set ----------------------------------------------------------------------------------------------------------------
+
+test "ck set clean" {
+    assert(issue_count(json_of(fan_text())) == 0)
+}
+
+test "ck set counter" {
+    // the counter of a set party is a path datum of the dict of its elements
+    ro json = json_of(fan_text()).replace("\"counter\":\"lenses[*].attempt\"", "\"counter\":\"lenses[*].missing\"")
+    assert(issue_says(json, "lenses[*].missing"))
+}
+
+test "ck set counter writes" {
+    ro json = m_with("\"name\":\"lenses[*].attempt\",\"type\":\"int>=0\",\"monotonic\":true,\"writes\":\"mechanics\"", "\"name\":\"lenses[*].attempt\",\"type\":\"int>=0\",\"monotonic\":true,\"writes\":\"rows\"")
+    assert(issue_says(json, "mechanics"))
+}
+
+test "ck set limit" {
+    assert(meeting_json().contains("\"request_limit\""))
+    assert(issue_count(meeting_json()) == 0)
+}
+
+// ---- the pair: the check against the machine that is called -------------------------------------------------------------------------------
+
+fn callee_tree() -> str => `{"format":"machine/2","machine":"Callee","version":"1","input":{"fields":[{"name":"label","type":"text"},{"name":"count","type":"int>=0"}]},"types":{"records":[{"name":"CallOutput","fields":[{"name":"answer","type":"text"},{"name":"score","type":"int>=0"}]}]},"data":[{"name":"n","type":"int>=0","initial":{"expr":{"op":"lit","value":0}}}],"initial":"Done","states":[{"name":"Done","kind":"end","reads":["n"]}],"ends":{"result":"CallOutput","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"record","type":"CallOutput","fields":{"answer":{"op":"lit","value":"x"},"score":{"op":"name","name":"n"}}}}}]}}`
+
+fn parent_tree(input_fields str, output_fields str) -> str => `{"format":"machine/2","machine":"P","version":"1","types":{"records":[{"name":"CallInput","fields":[${input_fields}]},{"name":"CallOutput","fields":[${output_fields}]}]},"data":[{"name":"c","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}],"parties":[{"name":"child","id":"child","kind":"machine","nested":"callee","input_type":"CallInput","result":"CallOutput","counter":"c"}],"initial":"Done","states":[{"name":"Done","kind":"end","reads":[]}],"ends":{"result":"int","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"lit","value":1}}}]}}`
+
+fn label_count() -> str => `{"name":"label","type":"text"},{"name":"count","type":"int>=0"}`
+
+fn answer_score() -> str => `{"name":"answer","type":"text"},{"name":"score","type":"int>=0"}`
+
+fn pair_texts(parent str, child str) -> []str {
+    ro p = match parse_machine(parent) {
+        Ok(def) => def
+        Err(e) => panic("parent: ${e.path}: ${e.message}")
+    }
+    ro c = match parse_machine(child) {
+        Ok(def) => def
+        Err(e) => panic("child: ${e.path}: ${e.message}")
+    }
+    mut out = []str.new()
+    for q in check_nested(p, "callee", c) { out.push("${q.path}: ${q.message}") }
+    out
+}
+
+fn pair_says(parent str, needle str) -> bool {
+    for line in pair_texts(parent, callee_tree()) {
+        if line.contains(needle) { return true }
+    }
+    false
+}
+
+test "ck pair ok" {
+    assert(pair_texts(parent_tree(label_count(), answer_score()), callee_tree()).len() == 0)
+}
+
+test "ck pair boss" {
+    // the small parent of the tests fits the callee tree
+    assert(pair_texts(json_of(boss_text()), callee_tree()).len() == 0)
+}
+
+test "ck pair result" {
+    ro parent = parent_tree(label_count(), `{"name":"answer","type":"text"}`)
+    assert(pair_says(parent, "result"))
+}
+
+test "ck pair result type" {
+    ro parent = parent_tree(label_count(), `{"name":"answer","type":"text"},{"name":"score","type":"int"}`)
+    assert(pair_says(parent, "result"))
+}
+
+test "ck pair input" {
+    assert(pair_says(parent_tree(`{"name":"label","type":"text"}`, answer_score()), "count"))
+}
+
+test "ck pair extra" {
+    assert(pair_says(parent_tree(`${label_count()},{"name":"more","type":"text"}`, answer_score()), "more"))
+}
+
+test "ck pair field type" {
+    assert(pair_says(parent_tree(`{"name":"label","type":"text"},{"name":"count","type":"text"}`, answer_score()), "count"))
+}
+
+test "ck pair other name" {
+    // a party of another nested machine is not checked against this one
+    ro parent = parent_tree(label_count(), answer_score()).replace("\"nested\":\"callee\"", "\"nested\":\"elsewhere\"")
+    assert(pair_texts(parent, callee_tree()).len() == 0)
+}

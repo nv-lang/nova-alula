@@ -1,0 +1,508 @@
+// translate_test.nv - the constructions of nested machines in the translator (task 119): the party of the kind `machine`, the profile of a party, `Правит`, `Возвратов формы`,
+// `передать`, `отменить_открытые(кроме: …)`, the fragment "Pause" with nested machines, the counters of the elements of a set, `Состояние` and `Сигнал`.
+module alula.machine_nested
+
+import std.text
+import alula.machine.{TextType, IntMin, ListType, RecordType, TextSet, OptionalType, VariantType}
+import alula.machine_table.{MachineDef, MachineParty, PassAct, CancelOpenAct, AgentParty, find_party, find_state}
+import alula.machine_text.{render}
+
+// ---- the party of the kind machine ---------------------------------------------------------------------------------------------------
+
+test "nm clean" {
+    ro report = checked(boss_text())
+    if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
+    assert(report.errors.len() == 0)
+    assert(report.json.contains("\"nested\":\"callee\""))
+}
+
+test "nm party fields" {
+    ro def = def_of(boss_text())
+    ro at = find_party(def, "child")
+    assert(at >= 0)
+    ro p = def.parties[at]
+    assert(p.kind == MachineParty)
+    assert(p.nested == "callee")
+    assert(p.id == "child")
+    assert(p.counter == "child_attempt")
+    assert(p.input_spec.len() == 1)
+    assert(p.input_spec[0] == RecordType("CallInput"))
+    assert(p.result_spec.len() == 1)
+    assert(p.parse.len() == 0)
+    assert(p.profile.len() == 0)
+}
+
+test "nm no parse" {
+    ro text = boss_text()
+    assert(!checked(text).json.contains("\"parse\""))
+}
+
+test "nm parse" {
+    ro text = with_prims(boss_with("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput); разбор: parse_agent_reply -> CallOutput | — |"), ["parse_agent_reply"])
+    ro report = checked(text)
+    assert(report.json.contains("\"parse\":{\"primitive\":\"parse_agent_reply\""))
+}
+
+test "nm parse role" {
+    ro text = with_prims(boss_with("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput); разбор: parse_agent_reply(\"witness\") -> CallOutput | — |"), ["parse_agent_reply"])
+    ro report = checked(text)
+    assert(report.json.contains("\"role\":\"witness\""))
+    assert(report.json.contains("\"type\":"))
+}
+
+test "nm no result" {
+    assert(count_kind(boss_with("machine callee(вход CallInput, итог CallOutput)", "machine callee(вход CallInput)"), "syntax") >= 1)
+    assert(count_kind(boss_with("machine callee(вход CallInput, итог CallOutput)", "machine callee(вход CallInput, CallOutput)"), "syntax") >= 1)
+}
+
+test "nm no input" {
+    assert(note_says(boss_with("machine callee(вход CallInput, итог CallOutput)", "machine callee(итог CallOutput)"), "вход"))
+}
+
+test "nm no name" {
+    assert(note_says(boss_with("machine callee(вход CallInput, итог CallOutput)", "machine (вход CallInput, итог CallOutput)"), "имя"))
+}
+
+test "nm unknown type" {
+    assert(count_kind(boss_with("machine callee(вход CallInput, итог CallOutput)", "machine callee(вход Неизвестный, итог CallOutput)"), "name") + count_kind(boss_with("machine callee(вход CallInput, итог CallOutput)", "machine callee(вход Неизвестный, итог CallOutput)"), "check") >= 1)
+}
+
+test "nm parse bad" {
+    ro text = boss_with("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput); разбор: parse_agent_reply(\"witness\" CallOutput | — |")
+    assert(count_kind(text, "syntax") >= 1)
+}
+
+test "nm no unsupported" {
+    assert(count_kind(boss_text(), "unsupported") == 0)
+    assert(count_kind(boss_with("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput) | \"fast\" |"), "unsupported") == 0)
+}
+
+test "nm english" {
+    ro en = `# Machine: Boss
+
+- machine: Boss
+- machine_version: 1
+- format: 2.12
+- language: en
+
+## Types
+
+${ticks()}
+type CallInput { label text, count int>=0 }
+type CallOutput { answer text, score int>=0 }
+${ticks()}
+
+## Data
+
+| name | type | initial | non_decreasing | writes |
+|---|---|---|---|---|
+| reply | ?CallOutput | none | — | rows |
+| child_attempt | int>=0 | 0 | yes | mechanics |
+
+## Parties
+
+| name | id | kind | profile | gate_words | counter |
+|---|---|---|---|---|---|
+| child | child | machine callee(input CallInput, result CallOutput) | — | — | child_attempt |
+
+## States
+
+Initial state: CALL
+
+### CALL — appeal
+- Party: child
+- Idle term: —
+- Input:
+
+| request_field | expression | reads |
+|---|---|---|
+| label | "m" | party |
+| count | 1 | party |
+
+| № | Event | Condition | Actions | To |
+|---|---|---|---|---|
+| 1 | response(out) | — | reply = out | DONE |
+| 2 | failure | — | — | DONE |
+
+### DONE — end
+- Input: reply
+
+## Ends
+
+- Result: ?CallOutput
+
+| end | № | when | response |
+|---|---|---|---|
+| DONE | 1 | true | Response(reply) |
+`
+    ro report = checked(en)
+    if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
+    assert(report.json.contains("\"kind\":\"machine\""))
+    assert(report.json.contains("\"nested\":\"callee\""))
+    assert(report.json.contains("\"input_type\":\"CallInput\""))
+}
+
+// ---- the profile of a party -------------------------------------------------------------------------------------------------------------
+
+test "nm profile" {
+    ro text = boss_with("| machine callee(вход CallInput, итог CallOutput) | — | — |", "| machine callee(вход CallInput, итог CallOutput) | \"fast\" | — |")
+    ro report = checked(text)
+    assert(report.json.contains("\"profile\":{\"op\":\"lit\",\"value\":\"fast\"}"))
+    assert(count_kind(text, "unsupported") == 0)
+}
+
+test "nm profile call" {
+    ro text = with_prims(boss_with("| machine callee(вход CallInput, итог CallOutput) | — | — |", "| machine callee(вход CallInput, итог CallOutput) | вызвать(party_profile, \"witness\") | — |"), ["party_profile"])
+    ro report = checked(text)
+    assert(report.json.contains("\"op\":\"primitive_call\""))
+    assert(count_kind(text, "unsupported") == 0)
+}
+
+test "nm profile agent" {
+    // a profile of an agent party stands in the table too
+    ro text = tiny_agent().replace("| agent | agent(итог текст) | — |", "| agent | agent(итог текст) | \"p\" |")
+    assert(count_kind(text, "unsupported") == 0)
+    assert(checked(text).json.contains("\"profile\":{\"op\":\"lit\",\"value\":\"p\"}"))
+}
+
+test "nm profile input" {
+    // the field `профиль` of the request is the column of the table of the parties (T3): a row of the table "Input" with that field is an error
+    ro text = boss_with("| count | 1 | сторона |", "| count | 1 | сторона |\n| профиль | \"x\" | сторона |")
+    assert(note_says(text, "profile"))
+}
+
+test "nm profile read" {
+    // a profile may not write: a writing call is not allowed in the profile of a party
+    ro text = with_prims(boss_with("| machine callee(вход CallInput, итог CallOutput) | — | — |", "| machine callee(вход CallInput, итог CallOutput) | вызвать(close_for_writing, \"x\") | — |"), ["close_for_writing"])
+    assert(note_says(text, "close_for_writing"))
+}
+
+// A small machine with one agent party, to give the profile and the other constructions a home.
+fn tiny_agent() -> str => `# Машина: Малая
+
+- machine: TinyAgent
+- machine_version: 1
+- format: 2.12
+
+## Данные
+
+| имя | тип | начальное | не убывает | пишет |
+|---|---|---|---|---|
+| text_reply | текст | "" | — | строки |
+| agent_attempt | число≥0 | 0 | да | механика |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | слова ворот | счётчик |
+|---|---|---|---|---|---|
+| agent | agent | agent(итог текст) | — | — | agent_attempt |
+
+## Состояния
+
+Начальное состояние: ASK
+
+### ASK — обращение
+- Сторона: agent
+- Срок тишины: —
+- Вход:
+
+| поле запроса | выражение | читает |
+|---|---|---|
+| подсказка | text_reply | сторона |
+
+| № | Событие | Условие | Действия | Куда |
+|---|---|---|---|---|
+| 1 | ответ(ответ) | — | text_reply = ответ | DONE |
+| 2 | сбой | — | — | DONE |
+
+### DONE — конец
+- Вход: text_reply
+
+## Концы
+
+- Результат: текст
+
+| конец | № | когда | ответ |
+|---|---|---|---|
+| DONE | 1 | истина | Ответ(text_reply) |
+`
+
+// ---- Edits and form returns ----------------------------------------------------------------------------------------------------------------
+
+
+test "nm edits" {
+    ro text = tiny_agent().replace("- Срок тишины: —", "- Срок тишины: —\n- Правит: text_reply; проверка: proposal_changed_since_attempt").replace("- Вход:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| подсказка | text_reply | сторона |\n", "- Вход:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| подсказка | text_reply | сторона |\n\n- При приёме:\n\n| событие | действия |\n|---|---|\n| ответ(ответ) | text_reply = ответ |\n")
+    ro report = checked(text)
+    assert(count_kind(text, "unsupported") == 0)
+    assert(report.json.contains("\"edits\":\"text_reply\""))
+    assert(report.json.contains("\"edit_check\":\"proposal_changed_since_attempt\""))
+}
+
+test "nm form returns" {
+    ro text = tiny_agent().replace("- Срок тишины: —", "- Срок тишины: —\n- Возвратов формы: 2")
+    ro report = checked(text)
+    assert(count_kind(text, "unsupported") == 0)
+    assert(report.json.contains("\"form_returns\":2"))
+}
+
+test "nm form zero" {
+    ro text = tiny_agent().replace("- Срок тишины: —", "- Срок тишины: —\n- Возвратов формы: 0")
+    assert(!checked(text).json.contains("form_returns"))
+    assert(count_kind(text, "unsupported") == 0)
+}
+
+test "nm form bad" {
+    ro text = tiny_agent().replace("- Срок тишины: —", "- Срок тишины: —\n- Возвратов формы: два")
+    assert(count_kind(text, "syntax") >= 1)
+}
+
+test "nm edits bad" {
+    ro text = tiny_agent().replace("- Срок тишины: —", "- Срок тишины: —\n- Правит: text_reply")
+    assert(count_kind(text, "syntax") >= 1)
+}
+
+// ---- pass, cancel, the fragment -----------------------------------------------------------------------------------------------------------
+
+test "nm pass" {
+    // `передать` outside a fragment: a list of the nested machines and a signal
+    ro text = boss_with("| 2 | сбой | — | — | DONE |", "| 2 | сбой | — | передать([callee], стоп) | DONE |")
+    ro report = checked(text)
+    assert(count_kind(text, "unsupported") == 0)
+    assert(report.json.contains("\"do\":\"pass\""))
+    assert(report.json.contains("\"signal\":\"stop\""))
+}
+
+test "nm pass signals" {
+    // ORACLE-WORKAROUND(52): two parallel lists instead of `for s in [["стоп", "stop"], …]`, an array literal of arrays does not compile; use the list of pairs when item 52 is fixed
+    ro words = ["стоп", "продолжить", "остановить", "отмена"]
+    ro keys = ["stop", "continue", "halt", "cancel"]
+    mut i = 0
+    while i < words.len() {
+        ro text = boss_with("| 2 | сбой | — | — | DONE |", "| 2 | сбой | — | передать([callee], ${words[i]}) | DONE |")
+        assert(checked(text).json.contains("\"signal\":\"${keys[i]}\""))
+        i += 1
+    }
+}
+
+test "nm pass bad" {
+    assert(count_kind(boss_with("| 2 | сбой | — | — | DONE |", "| 2 | сбой | — | передать([callee], прыжок) | DONE |"), "syntax") >= 1)
+    assert(count_kind(boss_with("| 2 | сбой | — | — | DONE |", "| 2 | сбой | — | передать([callee]) | DONE |"), "syntax") >= 1)
+}
+
+test "nm cancel except" {
+    ro text = boss_with("| 2 | сбой | — | — | DONE |", "| 2 | сбой | — | отменить_открытые(кроме: [callee]) | DONE |")
+    ro report = checked(text)
+    assert(count_kind(text, "unsupported") == 0)
+    assert(report.json.contains("\"do\":\"cancel_open\""))
+    assert(report.json.contains("\"except\":["))
+}
+
+test "nm pass empty" {
+    // to nobody: still nothing
+    ro text = boss_with("| 2 | сбой | — | — | DONE |", "| 2 | сбой | — | передать([], стоп) | DONE |")
+    assert(!checked(text).json.contains("\"do\":\"pass\""))
+    assert(count_kind(text, "unsupported") == 0)
+}
+
+// ---- the set of parties and the counters of its elements ----------------------------------------------------------------------------
+
+fn fan_text() -> str => `# Машина: Веер
+
+- machine: Fan
+- machine_version: 1
+- format: 2.12
+
+## Типы
+
+${ticks()}
+тип Линза { идентификатор текст, попытка число≥0 }
+тип LensInput { label текст }
+${ticks()}
+
+## Константы
+
+| имя | тип | значение |
+|---|---|---|
+| LIMIT | число≥1 | 2 |
+
+## Вход
+
+| имя | тип | примечание |
+|---|---|---|
+| order | []текст | идентификаторы |
+
+## Данные
+
+| имя | тип | начальное | не убывает | пишет |
+|---|---|---|---|---|
+| order | []текст | вход.order | — | строки |
+| to_send | []текст | [] | — | строки и механика |
+| lenses | словарь[текст, Линза] | словарь(вход.order, л → л, л → Линза { идентификатор: л, попытка: 0 }) | — | строки |
+| lenses[*].attempt | число≥0 | — | да | механика |
+| answered | число≥0 | 0 | да | строки |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | слова ворот | счётчик |
+|---|---|---|---|---|---|
+| lens | — | machine callee(вход LensInput, итог текст) | — | — | lenses[*].attempt |
+
+- Предел запросов: LIMIT
+
+## Состояния
+
+Начальное состояние: PREPARE
+
+### PREPARE — операция
+- Вход: order
+
+| № | Событие | Условие | Действия | Куда |
+|---|---|---|---|---|
+| 1 | сразу | — | to_send = order | ASK |
+
+### ASK — обращение
+- Сторона: lens; набор: order
+- Срок тишины: —
+- Вход:
+
+| поле запроса | выражение | читает |
+|---|---|---|
+| label | сторона | сторона |
+
+| № | Событие | Условие | Действия | Куда |
+|---|---|---|---|---|
+| 1 | ответ | — | answered += 1 | JOIN |
+| 2 | сбой | — | answered += 1 | JOIN |
+
+### JOIN — развилка
+- Вход: answered, order
+
+| № | Условие | Действия | Куда |
+|---|---|---|---|
+| 1 | answered >= длина(order) | — | DONE |
+| 2 | иначе | — | ASK |
+
+### DONE — конец
+- Вход: answered
+
+## Концы
+
+- Результат: число
+
+| конец | № | когда | ответ |
+|---|---|---|---|
+| DONE | 1 | истина | Ответ(answered) |
+`
+
+test "nm set clean" {
+    ro text = fan_text()
+    ro report = checked(text)
+    if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
+    assert(count_kind(text, "unsupported") == 0)
+}
+
+test "nm set counter" {
+    ro text = fan_text()
+    ro def = def_of(text)
+    ro at = find_party(def, "lens")
+    assert(at >= 0)
+    assert(def.parties[at].id == "")
+    assert(def.parties[at].counter == "lenses[*].attempt")
+    assert(def.request_limit.len() == 1)
+}
+
+// ---- State and Signal ------------------------------------------------------------------------------------------------------------------------
+
+test "nm state type" {
+    ro text = tiny_agent().replace("| agent_attempt | число≥0 | 0 | да | механика |", "| agent_attempt | число≥0 | 0 | да | механика |\n| last | ?Состояние | пусто | — | строки |")
+    ro report = checked(text)
+    if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
+    assert(report.json.contains("\"type\":\"?State\""))
+}
+
+test "nm signal type" {
+    ro text = tiny_agent().replace("| agent_attempt | число≥0 | 0 | да | механика |", "| agent_attempt | число≥0 | 0 | да | механика |\n| last_signal | ?Сигнал | пусто | — | строки |")
+    ro report = checked(text)
+    if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
+    assert(report.json.contains("\"type\":\"?Signal\""))
+}
+
+test "nm state value" {
+    // a literal of the type State is the name of a state
+    ro text = tiny_agent().replace("| agent_attempt | число≥0 | 0 | да | механика |", "| agent_attempt | число≥0 | 0 | да | механика |\n| last | ?Состояние | пусто | — | строки |").replace("| 1 | ответ(ответ) | — | text_reply = ответ | DONE |", "| 1 | ответ(ответ) | — | text_reply = ответ; last = состояние | DONE |")
+    ro def = def_of(text)
+    assert(find_state(def, "ASK") >= 0)
+}
+
+test "nm state bad" {
+    ro text = tiny_agent().replace("| agent_attempt | число≥0 | 0 | да | механика |", "| agent_attempt | число≥0 | 0 | да | механика |\n| last | ?Состояние | \"NOPE\" | — | строки |")
+    assert(notes(text).len() >= 1)
+}
+
+// ---- the meeting examples: every construction in one file ---------------------------------------------------------------------------------
+
+test "nm meeting clean" {
+    ro report = checked(meeting_examples())
+    if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
+    assert(report.errors.len() == 0)
+    assert(report.rows_noted == 0)
+    assert(report.rows_total > 40)
+}
+
+test "nm meeting parties" {
+    ro def = def_of(meeting_examples())
+    ro w = find_party(def, "witness")
+    ro a = find_party(def, "author")
+    ro l = find_party(def, "lens")
+    assert(w >= 0 && a >= 0 && l >= 0)
+    for i in [w, a, l] {
+        assert(def.parties[i].kind == MachineParty)
+        assert(def.parties[i].nested == "agent_step")
+        assert(def.parties[i].profile.len() == 1)
+        assert(def.parties[i].parse.len() == 1)
+        assert(def.parties[i].parse[0].primitive == "parse_agent_reply")
+    }
+    assert(def.parties[w].parse[0].role == "witness")
+    assert(def.parties[a].parse[0].role == "author")
+    assert(def.parties[l].parse[0].role == "lens")
+    assert(def.parties[l].id == "")
+    assert(def.parties[l].counter == "lenses[*].attempt")
+    assert(def.request_limit.len() == 1)
+}
+
+test "nm meeting author" {
+    ro def = def_of(meeting_examples())
+    ro at = find_state(def, "AuthorFix")
+    assert(at >= 0)
+    assert(def.states[at].edits == "proposal")
+    assert(def.states[at].edit_check == "proposal_changed_since_attempt")
+    assert(def.states[at].form_returns == 2)
+}
+
+test "nm meeting fragment" {
+    ro json = meeting_json()
+    assert(json.contains("\"do\":\"pass\",\"nested\":{\"op\":\"list\",\"items\":[{\"op\":\"lit\",\"value\":\"agent_step\"}]},\"signal\":\"stop\""))
+    assert(json.contains("\"signal\":\"halt\""))
+    assert(json.contains("\"signal\":\"continue\""))
+    assert(json.contains("\"signal\":\"cancel\""))
+    assert(json.contains("\"do\":\"cancel_open\",\"except\":[{\"op\":\"list\",\"items\":[{\"op\":\"lit\",\"value\":\"agent_step\"}]}]"))
+}
+
+test "nm fragment names" {
+    // `вложенные` takes the names of machines; a name that no party calls is a check of the pair
+    ro text = meeting_examples().replace("вложенные: [шаг_агента]", "вложенные: [чужая]")
+    assert(notes(text).len() >= 1)
+}
+
+test "nm fragment empty" {
+    ro text = meeting_examples().replace("вложенные: [шаг_агента]", "вложенные: []")
+    ro report = checked(text)
+    assert(!report.json.contains("\"do\":\"pass\""))
+}
+
+test "nm english meeting" {
+    ro en = render(meeting_json(), "en")
+    ro report = checked(en)
+    if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
+    assert(report.errors.len() == 0)
+}

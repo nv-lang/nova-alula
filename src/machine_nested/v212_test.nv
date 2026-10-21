@@ -1,0 +1,460 @@
+// v212_test.nv - task 125: Portolan 2.12 for the nested machines and the fragment "Pause": the line of connection of the fragment in the tree (`fragments`, Ya-32) and in the file written by the
+// reverse generator, `Вход: нет` of an appeal, a pure primitive called as a function in a condition (Ya-29), a field of the request that is named as a datum (Ya-28), the table "by role" of the parse (Ya-33).
+module alula.machine_nested
+
+import std.text
+import alula.machine.{standard_registry, Registry, Primitive, ParamSpec, TextType, IntType, BoolType, RecordType, ListType, Reading, Pure, register, add_role}
+import alula.machine_text.{translate_checked, render, render_machine, TranslateReport}
+
+// A file at 2.12 (the fixtures of the older tasks are migrated by the same replace).
+fn at212(text str) -> str => text.replace("- format: 2.11\n", "- format: 2.12\n")
+
+fn meeting212() -> str => at212(meeting_examples())
+
+fn boss212() -> str => at212(boss_text())
+
+fn agent212() -> str => at212(tiny_agent())
+
+fn tree_of(text str) -> str => json_of(text)
+
+// The text between the marker and the next quote.
+fn after_marker(json str, marker str) -> str {
+    ro at = json.find(marker) ?? -1
+    if at < 0 { return "" }
+    ro rest = json[at + marker.byte_len()..]
+    ro end = rest.find("\"") ?? -1
+    if end < 0 { return "" }
+    rest[..end]
+}
+
+// ---- the line of connection of the fragment (Ya-32) -----------------------------------------------------------------------------------
+
+test "v212 meeting reads" {
+    ro report = checked(meeting212())
+    if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
+    assert(report.errors.len() == 0)
+    assert(report.json.contains("\"portolan_version\":\"2.12\""))
+}
+
+test "v212 fragments key" {
+    assert(tree_of(meeting212()).contains("\"fragments\":[{\"name\":\"Pause\",\"args\":{"))
+}
+
+test "v212 fragments halt word" {
+    ro json = tree_of(meeting212())
+    ro word = after_marker(json, "\"halt_word\":{\"op\":\"lit\",\"value\":\"")
+    assert(word != "")
+    // the word is a gate word of the party `enhanced`
+    assert(json.contains("{\"name\":\"${word}\"") )
+}
+
+test "v212 fragments args" {
+    ro json = tree_of(meeting212())
+    assert(json.contains("\"halt_code\":{\"op\":\"lit\",\"value\":\"Witness_halt_meeting\"}"))
+    assert(json.contains("\"nested\":{\"op\":\"list\",\"items\":[{\"op\":\"lit\",\"value\":\"agent_step\"}]}"))
+    assert(json.contains("\"cancel_requests\":{\"op\":\"lit\",\"value\":\"without_return_to_send\"}"))
+    assert(json.contains("\"reenter\":{\"op\":\"lit\",\"value\":\"requests_from_to_send\"}"))
+    assert(json.contains("\"write_right\":{\"op\":\"lit\",\"value\":\"право записи на предложение: закрытое в окне проверки линз остаётся закрытым\"}"))
+}
+
+test "v212 fragments order of the args" {
+    ro json = tree_of(meeting212())
+    ro a = json.find("\"halt_word\"") ?? -1
+    ro b = json.find("\"halt_code\"") ?? -1
+    ro c = json.find("\"nested\":{\"op\":\"list\"") ?? -1
+    ro d = json.find("\"cancel_requests\"") ?? -1
+    ro e = json.find("\"reenter\"") ?? -1
+    ro f = json.find("\"write_right\"") ?? -1
+    assert(a > 0 && a < b && b < c && c < d && d < e && e < f)
+}
+
+test "v212 fragments place" {
+    // after the definitions and the files of definitions, before the initial state
+    ro json = tree_of(meeting212())
+    ro at = json.find("\"fragments\"") ?? -1
+    assert(at > 0)
+    assert(at > (json.find("\"signals\"") ?? 0))
+    assert(at < (json.find(",\"initial\":\"") ?? 0))
+}
+
+test "v212 fragments none without a call" {
+    assert(!tree_of(boss212()).contains("\"fragments\""))
+}
+
+test "v212 fragments empty nested" {
+    ro text = meeting212().replace("вложенные: [шаг_агента]", "вложенные: []")
+    assert(tree_of(text).contains("\"nested\":{\"op\":\"list\",\"items\":[]}"))
+}
+
+test "v212 fragments en equals ru" {
+    ro ru = tree_of(meeting212())
+    ro en = tree_of(render(ru, "en"))
+    ro ru_part = ru[(ru.find("\"fragments\"") ?? 0)..]
+    ro en_part = en[(en.find("\"fragments\"") ?? 0)..]
+    assert(ru_part.starts_with("\"fragments\""))
+    assert(ru_part[..(ru_part.find(",\"initial\":\"") ?? 0)] == en_part[..(en_part.find(",\"initial\":\"") ?? 0)])
+}
+
+// ---- the file written by the generator: one line of connection --------------------------------------------------------------------------
+
+fn line_of_pause(text str) -> str {
+    for line in text.split("\n") {
+        if line.starts_with("Пауза(") || line.starts_with("Pause(") { return line }
+    }
+    ""
+}
+
+test "v212 render one line" {
+    ro text = render(tree_of(meeting212()), "ru")
+    ro line = line_of_pause(text)
+    assert(line != "")
+    assert(line.contains("слово_остановки: остановить совещание"))
+    assert(line.contains("код_остановки: \"Witness_halt_meeting\""))
+    assert(line.contains("вложенные: [шаг_агента]"))
+    assert(line.contains("отмена_запросов: без_возврата_в_к_отправке"))
+    assert(line.contains("вход_заново: запросы_из_к_отправке"))
+    assert(line.contains("право_записи: \"право записи на предложение: закрытое в окне проверки линз остаётся закрытым\")"))
+}
+
+test "v212 render order of the params" {
+    ro line = line_of_pause(render(tree_of(meeting212()), "ru"))
+    ro a = line.find("слово_остановки") ?? -1
+    ro b = line.find("код_остановки") ?? -1
+    ro c = line.find("вложенные") ?? -1
+    ro d = line.find("отмена_запросов") ?? -1
+    ro e = line.find("вход_заново") ?? -1
+    ro f = line.find("право_записи") ?? -1
+    assert(a >= 0 && a < b && b < c && c < d && d < e && e < f)
+}
+
+test "v212 render en line" {
+    ro line = line_of_pause(render(tree_of(meeting212()), "en"))
+    assert(line.starts_with("Pause("))
+    assert(line.contains("halt_word: "))
+    assert(line.contains("cancel_requests: without_return_to_send"))
+    assert(line.contains("reenter: requests_from_to_send"))
+}
+
+test "v212 render skips the states of the fragment" {
+    ro text = render(tree_of(meeting212()), "ru")
+    assert(!text.contains("### Pause"))
+    assert(!text.contains("### ПАУЗА"))
+}
+
+test "v212 render skips the data of the fragment" {
+    ro text = render(tree_of(meeting212()), "ru")
+    assert(!text.contains("| открытые_запросы |"))
+    assert(!text.contains("| предыдущее |"))
+    assert(!text.contains("| запрос_вызова |"))
+}
+
+test "v212 render skips the common events of the fragment" {
+    ro text = render(tree_of(meeting212()), "ru")
+    assert(!text.contains("стоп человека"))
+    assert(!text.contains("pause_by_parent_stop"))
+}
+
+test "v212 render skips the signals of the fragment" {
+    ro text = render(tree_of(meeting212()), "ru")
+    assert(!text.contains("## Сигналы"))
+}
+
+test "v212 render keeps the own data" {
+    ro text = render(tree_of(meeting212()), "ru")
+    assert(text.contains("| попытка_вратаря |"))
+}
+
+test "v212 circle ru" {
+    ro tree = tree_of(meeting212())
+    assert(tree.contains("\"fragments\""))
+    assert(circle(tree, "ru") == "")
+}
+
+test "v212 circle en" {
+    ro tree = tree_of(meeting212())
+    assert(tree.contains("\"fragments\""))
+    assert(circle(tree, "en") == "")
+}
+
+test "v212 circle ru en ru" {
+    ro tree = tree_of(meeting212())
+    ro en = render(tree, "en")
+    ro back = translate_checked(en, standard_registry())
+    assert(back.errors.len() == 0)
+    ro ru_again = render(back.json, "ru")
+    assert(ru_again == render(tree, "ru"))
+}
+
+test "v212 render is a fixed point" {
+    ro first = render(tree_of(meeting212()), "ru")
+    ro second = render(tree_of(first), "ru")
+    assert(first == second)
+    ro en_first = render(tree_of(meeting212()), "en")
+    assert(render(tree_of(en_first), "en") == en_first)
+}
+
+test "v212 circle other behaviors" {
+    ro text = meeting212().replace("отмена_запросов: без_возврата_в_к_отправке", "отмена_запросов: прекратить_ход_транспорта").replace("вход_заново: запросы_из_к_отправке", "вход_заново: ничего")
+    ro tree = tree_of(text)
+    assert(tree.contains("\"value\":\"stop_transport_turn\""))
+    assert(tree.contains("\"reenter\":{\"op\":\"lit\",\"value\":\"nothing\"}"))
+    assert(circle(tree, "ru") == "")
+    assert(circle(tree, "en") == "")
+    assert(line_of_pause(render(tree, "ru")).contains("отмена_запросов: прекратить_ход_транспорта, вход_заново: ничего"))
+}
+
+test "v212 circle mechanics" {
+    ro text = meeting212().replace("отмена_запросов: без_возврата_в_к_отправке", "отмена_запросов: механика")
+    ro tree = tree_of(text)
+    assert(circle(tree, "ru") == "")
+    assert(line_of_pause(render(tree, "ru")).contains("отмена_запросов: механика"))
+}
+
+test "v212 circle empty nested" {
+    ro tree = tree_of(meeting212().replace("вложенные: [шаг_агента]", "вложенные: []"))
+    assert(circle(tree, "ru") == "")
+    assert(line_of_pause(render(tree, "ru")).contains("вложенные: []"))
+}
+
+test "v212 render keeps no fragment states for an old tree" {
+    // a hand-written tree with no `fragments` has the states of the fragment as its own, and the generator writes them as it did
+    ro tree = tree_of(meeting212())
+    ro cut = tree[..(tree.find("\"fragments\"") ?? 0)] + tree[(tree.find("\"initial\":\"") ?? 0)..]
+    ro text = render(cut, "ru")
+    assert(line_of_pause(text) == "")
+    assert(text.contains("### Pause"))
+}
+
+// ---- the fragment is one call -----------------------------------------------------------------------------------------------------------
+
+test "v212 pause call twice" {
+    ro line = "Пауза(слово_остановки: остановить совещание, код_остановки: \"Witness_halt_meeting\", вложенные: [шаг_агента],\n      отмена_запросов: без_возврата_в_к_отправке, вход_заново: запросы_из_к_отправке,\n      право_записи: \"право записи на предложение: закрытое в окне проверки линз остаётся закрытым\")"
+    ro text = meeting212().replace(line, "${line}\n${line}")
+    assert(!is_clean_text(text))
+}
+
+fn is_clean_text(text str) -> bool => checked(text).errors.len() == 0
+
+test "v212 pause call missing parameter" {
+    assert(note_says(meeting212().replace("вход_заново: запросы_из_к_отправке,\n", ""), "не назван параметр `вход_заново`"))
+}
+
+// ---- Вход: нет of an appeal (Ya-23) ---------------------------------------------------------------------------------------------------------
+
+fn no_request() -> str => agent212().replace("- Вход:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| подсказка | text_reply | сторона |\n", "- Вход: нет\n")
+
+test "v212 appeal without a request" {
+    ro report = checked(no_request())
+    if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
+    assert(!report.json.contains("\"inputs\""))
+}
+
+test "v212 appeal without a request, a table too" {
+    assert(!is_clean_text(no_request().replace("- Вход: нет\n", "- Вход: нет\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| подсказка | text_reply | сторона |\n")))
+}
+
+test "v212 appeal with an empty input" {
+    assert(!is_clean_text(no_request().replace("- Вход: нет\n", "- Вход:\n")))
+}
+
+test "v212 appeal without a request reads no datum" {
+    assert(note_says(no_request().replace("| 1 | ответ(ответ) | — | text_reply = ответ | DONE |", "| 1 | ответ(ответ) | — | text_reply = текст(text_reply) | DONE |"), "text_reply"))
+}
+
+test "v212 render writes the none" {
+    ro text = render(tree_of(no_request()), "ru")
+    assert(text.contains("- Вход: нет\n"))
+    ro en = render(tree_of(no_request()), "en")
+    assert(en.contains("- Input: none\n"))
+}
+
+test "v212 render circle without a request" {
+    assert(circle(tree_of(no_request()), "ru") == "")
+    assert(circle(tree_of(no_request()), "en") == "")
+}
+
+test "v212 call without the fields it needs" {
+    // a party of the kind machine with the fields of the input type needs them: `Вход: нет` leaves two fields unsaid
+    ro text = boss212().replace("- Вход:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| label | \"m\" | сторона |\n| count | 1 | сторона |\n", "- Вход: нет\n")
+    assert(note_says(text, "label"))
+    assert(note_says(text, "count"))
+}
+
+// ---- a pure primitive in a condition (Ya-29) --------------------------------------------------------------------------------------------
+
+fn pure_registry() -> Registry {
+    mut reg = standard_registry()
+    ro p = Primitive { name: "big", params: [ParamSpec { name: "n", spec: IntType }], result: BoolType, class: Pure, reads: []str.new(), writes: []str.new() }
+    ro r = register(reg, p)
+    reg
+}
+
+fn fork_text(condition str) -> str {
+    ro with_fork = boss212().replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | reply = итог | CHECK |").replace("### DONE — конец", "### CHECK — развилка\n- Вход: reply\n\n| № | Условие | Действия | Куда |\n|---|---|---|---|\n| 1 | ${condition} | — | DONE |\n| 2 | иначе | — | DONE |\n\n### DONE — конец")
+    with_prims(with_fork, ["big", "time_now"])
+}
+
+fn checked_pure(text str) -> TranslateReport => translate_checked(text, pure_registry())
+
+test "v212 pure call as a function" {
+    ro report = checked_pure(fork_text("big(2)"))
+    if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
+    assert(report.json.contains("\"op\":\"primitive_call\",\"name\":\"big\""))
+}
+
+test "v212 pure call as a function equals the call word" {
+    ro a = checked_pure(fork_text("big(2)"))
+    ro b = checked_pure(fork_text("вызвать(big, 2)"))
+    assert(a.errors.len() == 0)
+    assert(b.errors.len() == 0)
+    assert(a.json == b.json)
+}
+
+test "v212 pure call inside an expression" {
+    ro report = checked_pure(fork_text("не big(1) и big(2)"))
+    assert(report.errors.len() == 0)
+}
+
+test "v212 reading call as a function in a condition" {
+    ro text = fork_text("time_now() > 0")
+    ro report = checked_pure(text)
+    assert(report.errors.len() > 0)
+    assert(note_says_in(report, "reading"))
+    assert(note_says_in(report, "time_now"))
+}
+
+test "v212 reading call word in a condition" {
+    ro report = checked_pure(fork_text("вызвать(time_now) > 0"))
+    assert(report.errors.len() > 0)
+    assert(note_says_in(report, "time_now"))
+}
+
+test "v212 unknown function still refused" {
+    ro report = checked_pure(fork_text("nothing(2)"))
+    assert(report.errors.len() > 0)
+}
+
+test "v212 undeclared primitive refused" {
+    ro report = checked_pure(boss212().replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | reply = итог | CHECK |").replace("### DONE — конец", "### CHECK — развилка\n- Вход: reply\n\n| № | Условие | Действия | Куда |\n|---|---|---|---|\n| 1 | big(2) | — | DONE |\n| 2 | иначе | — | DONE |\n\n### DONE — конец"))
+    assert(report.errors.len() > 0)
+}
+
+test "v212 pure call circle" {
+    ro report = checked_pure(fork_text("big(2)"))
+    assert(report.errors.len() == 0)
+    assert(circle_with(report.json, "ru", pure_registry()) == "")
+    assert(circle_with(report.json, "en", pure_registry()) == "")
+}
+
+fn note_says_in(report TranslateReport, needle str) -> bool {
+    for e in report.errors {
+        if "${e.kind} ${e.message}".contains(needle) { return true }
+    }
+    false
+}
+
+// ---- a field of the request that is named as a datum (Ya-28) --------------------------------------------------------------------------
+
+fn named_as_datum() -> str => boss212().replace("| reply | ?CallOutput | пусто | — | строки |", "| reply | ?CallOutput | пусто | — | строки |\n| label | текст | \"\" | — | строки |").replace("| label | \"m\" | сторона |", "| label | если reply == пусто то \"first\" иначе \"again\" | сторона |").replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | reply = итог; label = \"seen\" | DONE |")
+
+test "v212 field named as a datum with an if" {
+    ro report = checked(named_as_datum())
+    if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
+    assert(report.errors.len() == 0)
+    assert(report.json.contains("\"field\":\"label\",\"value\":{\"op\":\"if\""))
+}
+
+test "v212 field named as a datum with a call" {
+    ro text = with_prims(boss212().replace("| count | 1 | сторона |", "| count | вызвать(call_step) | сторона |"), ["call_step"])
+    ro report = checked(text)
+    if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
+    assert(report.json.contains("\"op\":\"primitive_call\",\"name\":\"call_step\""))
+}
+
+test "v212 field named as a datum read by the rows" {
+    // the rows read the datum, the field is the party's
+    ro text = named_as_datum().replace("reply = итог; label = \"seen\"", "reply = итог; label = label")
+    ro report = checked(text)
+    assert(report.errors.len() == 0)
+}
+
+// ---- the table "by role" of the parse (Ya-33) ---------------------------------------------------------------------------------------------
+
+fn roles_registry() -> Registry {
+    mut reg = standard_registry()
+    ro answer = ParamSpec { name: "answer", spec: RecordType("CallOutput") }
+    ro role = ParamSpec { name: "role", spec: TextType }
+    ro p = Primitive { name: "read_by_role", params: [answer, role], result: RecordType("CallOutput"), class: Reading, reads: []str.new(), writes: []str.new() }
+    ro r1 = register(reg, p)
+    ro r2 = add_role(reg, "read_by_role", "author", RecordType("CallOutput"), []str.new())
+    ro r3 = add_role(reg, "read_by_role", "witness", ListType(TextType), ["reply"])
+    reg
+}
+
+fn role_text(role str, result str) -> str => with_prims(boss212().replace("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput); разбор: read_by_role(\"${role}\") -> ${result} | — |"), ["read_by_role"])
+
+fn checked_roles(text str) -> TranslateReport => translate_checked(text, roles_registry())
+
+test "v212 role of the table" {
+    ro report = checked_roles(role_text("author", "CallOutput"))
+    if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
+    assert(report.json.contains("\"role\":\"author\""))
+}
+
+test "v212 role result does not fit" {
+    ro report = checked_roles(role_text("author", "[]текст"))
+    assert(report.errors.len() > 0)
+    assert(note_says_in(report, "author"))
+    assert(note_says_in(report, "role"))
+}
+
+test "v212 role unknown" {
+    ro report = checked_roles(role_text("judge", "CallOutput"))
+    assert(report.errors.len() > 0)
+    assert(note_says_in(report, "judge"))
+}
+
+test "v212 role without a literal" {
+    ro text = with_prims(boss212().replace("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput); разбор: read_by_role -> CallOutput | — |"), ["read_by_role"])
+    assert(checked_roles(text).errors.len() > 0)
+}
+
+test "v212 role reads join the input" {
+    // the datum `reply` is read by the parse for the role `witness`: the rows of the state read it without a line of the table "Input"
+    ro witness = role_text("witness", "[]текст").replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | seen = reply | DONE |").replace("| reply | ?CallOutput | пусто | — | строки |", "| reply | ?CallOutput | пусто | — | строки |\n| seen | ?CallOutput | пусто | — | строки |")
+    ro author = witness.replace("read_by_role(\"witness\") -> []текст", "read_by_role(\"author\") -> CallOutput")
+    ro good = checked_roles(witness)
+    if good.errors.len() > 0 { panic(notes_of(good).join(" ## ")) }
+    assert(good.errors.len() == 0)
+    ro report = checked_roles(author)
+    assert(report.errors.len() > 0)
+    assert(note_says_in(report, "reply"))
+}
+
+test "v212 role circle" {
+    ro report = checked_roles(role_text("author", "CallOutput"))
+    assert(report.errors.len() == 0)
+    assert(circle_with(report.json, "ru", roles_registry()) == "")
+    assert(circle_with(report.json, "en", roles_registry()) == "")
+}
+
+// ---- the bindings of the rows of the fragment against the data of the machine (Ya-26) ---------------------------------------------------------------------
+
+fn meeting_with_datum(name str) -> str => meeting212().replace("| попытка_вратаря | число≥0 | 0 | да | механика |", "| попытка_вратаря | число≥0 | 0 | да | механика |\n| ${name} | текст | \"\" | — | строки |")
+
+test "v212 a datum named as a binding of the fragment" {
+    // the rows of the fragment Pause bind `слово_человека`, `автор`, `источник`, `идентификатор_запроса`: after the fragment is put in they are bindings of the machine, a datum may not have such a name
+    assert(is_clean_text(meeting_with_datum("extra_note")))
+    assert(note_says(meeting_with_datum("источник"), "no shadowing"))
+    assert(note_says(meeting_with_datum("автор"), "no shadowing"))
+}
+
+test "v212 a datum named as the other binding of the fragment" {
+    assert(note_says(meeting_with_datum("идентификатор_запроса"), "no shadowing"))
+    assert(note_says(meeting_with_datum("слово_человека"), "no shadowing"))
+}
+
+test "v212 the launch source is no binding" {
+    // `источник_запуска` is `launch_source` (the dictionary, version 10): it does not shadow the binding `source`
+    assert(is_clean_text(meeting_with_datum("источник_запуска")))
+}

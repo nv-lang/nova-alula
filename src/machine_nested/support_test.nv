@@ -1,0 +1,275 @@
+// support_test.nv - helpers and fixtures of the tests of the nested machines (task 119): a small parent machine in Russian that calls a nested machine, and the
+// way to read what the translator and the checks say. A translation costs about 0.15 s, so a test translates a text ONCE and asks the report.
+module alula.machine_nested
+
+import std.text
+import std.encoding.json.{Json, JsonValue, JsonObject}
+import alula.machine.{standard_registry, Registry, Primitive, ParamSpec, TextType, RecordType, Reading, register}
+import alula.machine_text.{translate_checked, translate_report, TranslateReport, TranslateError, error_text, render_machine, RenderReport}
+import alula.machine_table.{load_machine, parse_machine, MachineDef, LoadError, issue_text}
+
+// Three backticks: a block of code. A raw string cannot hold them, so they are put in.
+// ORACLE-WORKAROUND(43): the helper is `ticks`, not `fence`: a user function `fence` clashes with the C function of the runtime; rename to `fence` when item 43 is fixed
+fn ticks() -> str => "```"
+
+// A parent machine: one call of a nested machine `callee` (the party `child`), the answer is kept, the failure ends the machine. The names are Latin: the JSON has them as they are.
+fn boss_text() -> str => `# Машина: Босс
+
+- machine: Boss
+- machine_version: 1
+- format: 2.12
+
+## Типы
+
+${ticks()}
+тип CallInput { label текст, count число≥0 }
+тип CallOutput { answer текст, score число≥0 }
+${ticks()}
+
+## Данные
+
+| имя | тип | начальное | не убывает | пишет |
+|---|---|---|---|---|
+| reply | ?CallOutput | пусто | — | строки |
+| child_attempt | число≥0 | 0 | да | механика |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | слова ворот | счётчик |
+|---|---|---|---|---|---|
+| child | child | machine callee(вход CallInput, итог CallOutput) | — | — | child_attempt |
+
+## Состояния
+
+Начальное состояние: CALL
+
+### CALL — обращение
+- Сторона: child
+- Срок тишины: —
+- Вход:
+
+| поле запроса | выражение | читает |
+|---|---|---|
+| label | "m" | сторона |
+| count | 1 | сторона |
+
+| № | Событие | Условие | Действия | Куда |
+|---|---|---|---|---|
+| 1 | ответ(итог) | — | reply = итог | DONE |
+| 2 | сбой | — | — | DONE |
+
+### DONE — конец
+- Вход: reply
+
+## Концы
+
+- Результат: ?CallOutput
+
+| конец | № | когда | ответ |
+|---|---|---|---|
+| DONE | 1 | истина | Ответ(reply) |
+`
+
+// The parent with a profile in the column of the party and the field `профиль` in the input type of the nested machine.
+fn profiled_text() -> str => boss_text().replace("тип CallInput { label текст, count число≥0 }", "тип CallInput { label текст, count число≥0, профиль текст }").replace("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput) | \"fast\" |")
+
+// The tree of the meeting examples (a whole file with every construction of nested machines).
+fn meeting_json() -> str => json_of(meeting_examples())
+
+// The section of the primitives of the host for a text: the names are listed (the translator wants them named), the classes are the registry's.
+fn with_prims(text str, names []str) -> str {
+    mut rows = []str.new()
+    for n in names { rows.push("| ${n} | — | — | reading | — | — |") }
+    ro table = rows.join("\n")
+    text.replace("## Концы", "## Примитивы\n\n| имя | параметры | результат | класс | читает | пишет |\n|---|---|---|---|---|---|\n${table}\n\n## Концы")
+}
+
+// The same machine with a piece replaced.
+fn boss_with(old str, new str) -> str => boss_text().replace(old, new)
+
+fn checked(text str) -> TranslateReport => translate_checked(text, standard_registry())
+
+fn notes_of(report TranslateReport) -> []str {
+    mut out = []str.new()
+    for e in report.errors { out.push("${e.line}:${e.col} ${e.kind} ${e.message}") }
+    out
+}
+
+fn notes(text str) -> []str => notes_of(checked(text))
+
+fn note_says(text str, needle str) -> bool {
+    for line in notes(text) {
+        if line.contains(needle) { return true }
+    }
+    false
+}
+
+fn first_note(text str) -> str {
+    ro all = notes(text)
+    if all.len() == 0 { return "ok" }
+    all[0]
+}
+
+fn count_kind(text str, kind str) -> int {
+    mut n = 0
+    for e in checked(text).errors {
+        if e.kind == kind { n += 1 }
+    }
+    n
+}
+
+// The JSON of a translation that must be clean.
+fn json_of(text str) -> str {
+    ro report = checked(text)
+    if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
+    report.json
+}
+
+// The decoded machine of a text that must be clean.
+fn def_of(text str) -> MachineDef {
+    match parse_machine(json_of(text)) {
+        Ok(def) => def
+        Err(e) => panic("${e.path}: ${e.message}")
+    }
+}
+
+// The issues of the checks of a JSON tree, as lines.
+fn issues_of(json str) -> []str {
+    mut out = []str.new()
+    match load_machine(json, standard_registry()) {
+        Ok(def) => ()
+        Err(list) => {
+            for e in list { out.push(issue_text(e)) }
+        }
+    }
+    out
+}
+
+fn issue_says(json str, needle str) -> bool {
+    for line in issues_of(json) {
+        if line.contains(needle) { return true }
+    }
+    false
+}
+
+// ---- trees -----------------------------------------------------------------------------------------------------------------------------
+
+fn kind_of(v JsonValue) -> str {
+    if v.is_null() { return "null" }
+    if v.is_bool() { return "bool" }
+    if v.is_num() { return "num" }
+    if v.is_str() { return "str" }
+    if v.is_array() { return "array" }
+    "object"
+}
+
+fn is_empty_list(v JsonValue) -> bool {
+    match v.array() {
+        Some(xs) => xs.len() == 0
+        None => false
+    }
+}
+
+fn sval(o JsonObject, key str) -> str {
+    match o.get(key) {
+        Some(v) => v.str() ?? ""
+        None => ""
+    }
+}
+
+// The keys that a circle does not keep: the title (the header of the canonical file holds the Latin name of the machine, 1b (а)) and the version of the language of the tree.
+fn dropped_keys() -> []str => ["title", "portolan_version"]
+
+// Where two trees differ: the place and the two pieces, or "" when they are equal.
+fn first_difference(left JsonValue, right JsonValue, place str) -> str {
+    if kind_of(left) != kind_of(right) { return "${place}: ${kind_of(left)} / ${kind_of(right)}" }
+    match left.array() {
+        Some(xs) => {
+            ro ys = right.array() ?? []JsonValue.new()
+            if xs.len() != ys.len() { return "${place}: ${xs.len()} items / ${ys.len()} items" }
+            mut i = 0
+            while i < xs.len() {
+                ro d = first_difference(xs[i], ys[i], "${place}[${i}]")
+                if d != "" { return d }
+                i += 1
+            }
+            return ""
+        }
+        None => ()
+    }
+    match left.object() {
+        Some(xo) => {
+            ro yo = right.object() ?? JsonObject.new()
+            for k in xo.keys() {
+                if place == "$" && dropped_keys().contains(k) { continue }
+                match yo.get(k) {
+                    Some(yv) => {
+                        ro d = first_difference(xo.get(k) ?? JsonValue.null(), yv, "${place}.${k}")
+                        if d != "" { return d }
+                    }
+                    None => {
+                        if !(k == "writes" && sval(xo, k) == "rows") && !is_empty_list(xo.get(k) ?? JsonValue.null()) { return "${place}.${k}: missing in the second tree" }
+                    }
+                }
+            }
+            for k in yo.keys() {
+                if place == "$" && dropped_keys().contains(k) { continue }
+                if !xo.contains(k) {
+                    if !(k == "writes" && sval(yo, k) == "rows") && !is_empty_list(yo.get(k) ?? JsonValue.null()) { return "${place}.${k}: missing in the first tree" }
+                }
+            }
+            return ""
+        }
+        None => ()
+    }
+    if left.to_str() != right.to_str() { return "${place}: ${left.to_str()} / ${right.to_str()}" }
+    ""
+}
+
+fn tree_diff(a str, b str) -> str {
+    ro x = match Json.parse(a) {
+        Ok(j) => j
+        Err(e) => return "the first tree is not JSON"
+    }
+    ro y = match Json.parse(b) {
+        Ok(j) => j
+        Err(e) => return "the second tree is not JSON"
+    }
+    first_difference(x, y, "$")
+}
+
+// The circle tree -> file -> tree in a language: "" when the second tree equals the first.
+fn circle(json str, lang str) -> str {
+    ro made = render_machine(json, lang)
+    if made.notes.len() > 0 { return "render: ${made.notes.join(" ## ")}" }
+    ro again = translate_checked(made.text, standard_registry())
+    if again.errors.len() > 0 { return "translate: ${notes_of(again).join(" ## ")}" }
+    tree_diff(json, again.json)
+}
+
+// The standard registry with two parses of the type CallOutput of the small parent: `parse_call` takes the answer, `parse_call_role` the answer and the role.
+fn parse_registry() -> Registry {
+    mut reg = standard_registry()
+    ro answer = ParamSpec { name: "answer", spec: RecordType("CallOutput") }
+    ro role = ParamSpec { name: "role", spec: TextType }
+    ro plain = Primitive { name: "parse_call", params: [answer], result: RecordType("CallOutput"), class: Reading, reads: []str.new(), writes: []str.new() }
+    ro with_role = Primitive { name: "parse_call_role", params: [answer, role], result: RecordType("CallOutput"), class: Reading, reads: []str.new(), writes: []str.new() }
+    ro first = register(reg, plain)
+    ro second = register(reg, with_role)
+    reg
+}
+
+// The circle with a registry.
+fn circle_with(json str, lang str, reg Registry) -> str {
+    ro made = render_machine(json, lang)
+    if made.notes.len() > 0 { return "render: ${made.notes.join(" ## ")}" }
+    ro again = translate_checked(made.text, reg)
+    if again.errors.len() > 0 { return "translate: ${notes_of(again).join(" ## ")}" }
+    tree_diff(json, again.json)
+}
+
+// The tree of the small parent with a parse of the party.
+fn parse_tree(primitive str, role str) -> str {
+    ro role_pair = if role == "" { "" } else { "\"role\":\"${role}\"," }
+    json_of(boss_text()).replace("\"nested\":\"callee\",", "\"nested\":\"callee\",\"parse\":{\"primitive\":\"${primitive}\",${role_pair}\"type\":\"CallOutput\"},").replace("\"initial\":\"CALL\"", "\"primitives\":[\"${primitive}\"],\"initial\":\"CALL\"")
+}

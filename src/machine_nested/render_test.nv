@@ -1,0 +1,108 @@
+// render_test.nv - the reverse generator for nested machines (task 119): a tree with a party of the kind `machine`, a profile, `Правит`, `Возвратов формы`, `передать`,
+// `отменить_открытые(кроме: …)` and a set is written as a file of Portolan in both languages and read back to the same tree.
+module alula.machine_nested
+
+import std.text
+import alula.machine.{standard_registry}
+import alula.machine_text.{translate_checked, render, render_machine}
+
+test "rn boss ru" {
+    assert(circle(json_of(boss_text()), "ru") == "")
+}
+
+test "rn boss en" {
+    assert(circle(json_of(boss_text()), "en") == "")
+}
+
+test "rn boss words" {
+    ro ru = render(json_of(boss_text()), "ru")
+    assert(ru.contains("machine callee(вход "))
+    assert(ru.contains(", итог "))
+    ro en = render(json_of(boss_text()), "en")
+    assert(en.contains("machine callee(input "))
+    assert(en.contains(", result "))
+}
+
+test "rn no note" {
+    assert(render_machine(json_of(boss_text()), "ru").notes.len() == 0)
+    assert(render_machine(json_of(fan_text()), "en").notes.len() == 0)
+}
+
+test "rn parse ru" {
+    ro tree = parse_tree("parse_call_role", "witness")
+    ro text = render(tree, "ru")
+    assert(text.contains("; разбор: parse_call_role(\"witness\") -> "))
+    assert(circle_with(tree, "ru", parse_registry()) == "")
+    assert(circle_with(tree, "en", parse_registry()) == "")
+}
+
+test "rn parse plain" {
+    ro tree = parse_tree("parse_call", "")
+    assert(render(tree, "ru").contains("; разбор: parse_call -> "))
+    assert(render(tree, "en").contains("; parse: parse_call -> "))
+    assert(circle_with(tree, "ru", parse_registry()) == "")
+}
+
+test "rn profile" {
+    ro text = profiled_text()
+    ro json = json_of(text)
+    assert(render(json, "ru").contains("| \"fast\" |"))
+    assert(circle(json, "ru") == "")
+    assert(circle(json, "en") == "")
+}
+
+test "rn edits form" {
+    ro json = json_of(boss_text()).replace("\"party\":\"child\",", "\"party\":\"child\",\"edits\":\"reply\",\"edit_check\":\"proposal_changed_since_attempt\",\"form_returns\":2,")
+    ro text = render(json, "ru")
+    assert(text.contains("- Правит: "))
+    assert(text.contains("; проверка: proposal_changed_since_attempt"))
+    assert(text.contains("- Возвратов формы: 2"))
+    ro en = render(json, "en")
+    assert(en.contains("- Edits: reply; check: proposal_changed_since_attempt"))
+    assert(en.contains("- Form returns: 2"))
+}
+
+test "rn pass" {
+    ro text = boss_with("| 2 | сбой | — | — | DONE |", "| 2 | сбой | — | передать([callee], стоп); отменить_открытые(кроме: [callee]) | DONE |")
+    ro json = json_of(text)
+    ro ru = render(json, "ru")
+    assert(ru.contains("передать([callee], стоп)"))
+    assert(ru.contains("отменить_открытые(кроме: [callee])"))
+    assert(render(json, "en").contains("pass([callee], stop)"))
+    assert(circle(json, "ru") == "")
+    assert(circle(json, "en") == "")
+}
+
+test "rn set" {
+    ro json = json_of(fan_text())
+    assert(render(json, "ru").contains("[*]."))
+    assert(render(json, "en").contains("lenses[*].attempt"))
+    assert(render(json, "ru").contains("- Предел запросов: LIMIT"))
+    assert(circle(json, "ru") == "")
+    assert(circle(json, "en") == "")
+}
+
+test "rn state type" {
+    ro json = json_of(tiny_agent().replace("| agent_attempt | число≥0 | 0 | да | механика |", "| agent_attempt | число≥0 | 0 | да | механика |\n| last | ?Состояние | пусто | — | строки |\n| sig | ?Сигнал | пусто | — | строки |"))
+    ro ru = render(json, "ru")
+    assert(ru.contains("?Состояние"))
+    assert(ru.contains("?Сигнал"))
+    assert(circle(json, "ru") == "")
+    assert(circle(json, "en") == "")
+}
+
+test "rn meeting ru" {
+    assert(circle(meeting_json(), "ru") == "")
+}
+
+test "rn meeting en" {
+    assert(circle(meeting_json(), "en") == "")
+}
+
+test "rn meeting same" {
+    // the generated file is the canonical form: a second pass gives the same file
+    ro first = render(meeting_json(), "ru")
+    ro again = translate_checked(first, standard_registry())
+    assert(again.errors.len() == 0)
+    assert(render(again.json, "ru") == first)
+}
