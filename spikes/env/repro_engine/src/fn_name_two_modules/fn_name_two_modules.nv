@@ -1,0 +1,15 @@
+module repro_engine.fn_name_two_modules
+
+// Oracle 0.1.0 (task 114): a PRIVATE generic function `begin[T]` of one module and a function `begin(n int)` of another module of the same program: the call `begin(2)` of this
+// module is resolved to the generic one of the other module - "cannot infer type argument `T` for generic function `begin` (returned only - turbofish required)". Function names
+// are global to the program even when the function is private (the family of items 9, 14, 21, 39, 43 of the README). The hub renamed its `begin_engine` to `begin_session_engine`.
+// Expected: PASS. Actual: CODEGEN-FAIL.
+
+import repro_engine.fn_name_two_modules_def.{count_of}
+
+fn begin(n int) -> int => n + 1
+
+test "a function begin next to a private generic begin of another module" {
+    assert(begin(2) == 3)
+    assert(count_of(1) == 1)
+}

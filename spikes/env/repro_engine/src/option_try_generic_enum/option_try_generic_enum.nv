@@ -1,0 +1,24 @@
+module repro_engine.option_try_generic_enum
+
+// Oracle 0.1.0: the operator `?` on an Option whose payload is a sum type, in a generic function instantiated with that type
+// (the engine's `decode_snapshot[S, M Machine[S]]` did `ro state = machine.decode_state(text)?`), breaks the C: the local is
+// declared with the type name `Nova_Mode_p`, which does not exist.
+// Expected: PASS. Actual: CC-FAIL "unknown type name 'Nova_Mode_p'".
+// Workaround: `match value { None => ..., Some(inner) => ... }` instead of `?` (the engine does that).
+
+type Mode enum
+    | Calm
+    | Busy(int)
+
+fn pick[S](value Option[S]) -> Option[S] {
+    ro inner = value?
+    Some(inner)
+}
+
+test "question mark on an Option of a sum type in a generic function" {
+    ro r = pick[Mode](Some(Calm))
+    match r {
+        Some(m) => assert(true)
+        None => assert(false)
+    }
+}

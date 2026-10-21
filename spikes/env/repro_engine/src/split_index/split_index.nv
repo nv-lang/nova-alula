@@ -1,0 +1,12 @@
+module repro_engine.split_index
+
+// Oracle 0.1.0: the result of `str.split(sep)` is an iterator; indexing it (`parts[0]`) passes the checker and the code generator stops with an internal panic
+// ("[INTERNAL-PANIC] [E_CODEGEN_TYPE_UNKNOWN] Index element type unknown for obj_ty="NovaValue_SplitIter""), not with a message at the line. The result is read with
+// `for part in text.split(sep)` and pushed to a list. Task 109 met it in a test. Expected: PASS. Actual: CODEGEN-FAIL.
+
+import std.text
+
+test "an index of the result of split" {
+    ro parts = "a:b:c".split(":")
+    assert(parts[0] == "a")
+}

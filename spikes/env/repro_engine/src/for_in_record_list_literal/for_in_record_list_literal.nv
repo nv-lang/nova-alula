@@ -1,0 +1,16 @@
+module repro_engine.for_in_record_list_literal
+
+// Oracle 0.1.0: `for` over an array literal whose items are records produced by calls (`[make(1), make(2)]`) does not compile: CODEGEN-FAIL
+// "for-in: cannot resolve iterator type for expression of C-type 'nova_unit'" (the same family as for_in_enum_literal). Binding the list first
+// (`ro all = [make(1), make(2)]`, `for s in all`) is fine.
+// Expected: PASS. Actual: CODEGEN-FAIL.
+
+type Chunk { n int, label str }
+
+fn make(n int) -> Chunk => { n, label: "s" }
+
+test "for over a literal list of records" {
+    mut total = 0
+    for s in [make(1), make(2)] { total += s.n }
+    assert(total == 3)
+}

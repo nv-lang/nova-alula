@@ -1,0 +1,31 @@
+module repro_engine.same_name_other_type
+
+// Oracle 0.1.0: a parameter named `list` of the type `[]Pair` in one function and a name `list` bound by a pattern (`Err(list)`) to a `[]Problem` in a test of the same
+// module: the generated C reads the field of the second as a field of the first ("no member named 'code' in 'struct Nova_Pair'"). The two names are in different
+// functions; a rename of one of them (`problems`) makes the program compile. Found by task 108 (the translator of tables: `list` in `pair_get` and `Err(list)` in its tests).
+// Expected: PASS. Actual: CC-FAIL.
+
+type Pair { ru str, en str }
+
+type Problem { code int, text str }
+
+fn pair_get(list []Pair, ru str) -> Option[str] {
+    for p in list {
+        if p.ru == ru { return Some(p.en) }
+    }
+    None
+}
+
+fn failures(n int) -> Result[int, []Problem] {
+    if n > 0 { return Ok(n) }
+    Err([Problem { code: 7, text: "no" }])
+}
+
+test "a name bound to another type" {
+    ro found = pair_get([Pair { ru: "a", en: "b" }], "a")
+    assert(found == Some("b"))
+    match failures(0) {
+        Ok(n) => assert(false)
+        Err(list) => assert(list[0].code == 7)
+    }
+}

@@ -1,0 +1,15 @@
+module repro_engine.for_in_list_of_lists
+
+// Oracle 0.1.0: `for` over an array literal whose items are arrays of text (`[["a"], ["b", "c"]]`) does not compile: CODEGEN-FAIL "for-in: cannot resolve iterator type
+// for expression of C-type 'nova_unit'" (the family of items 29 and 36). In a unit that imports `std.encoding.json` the same loop is read as an iteration over a JSON object:
+// the C code calls `JsonObject.iter` (CC-FAIL "passing '_NovaTuple_2_..._Nova_JsonValue_p' to parameter of incompatible type 'Nova_Vec____nova_str *'"). Binding the list first
+// (`ro all = [["a"], ["b", "c"]]`, `for item in all`) is fine.
+// Expected: PASS. Actual: CODEGEN-FAIL.
+
+fn count(items []str) -> int => items.len()
+
+test "for over a literal list of lists" {
+    mut total = 0
+    for item in [["a"], ["b", "c"]] { total += count(item) }
+    assert(total == 3)
+}

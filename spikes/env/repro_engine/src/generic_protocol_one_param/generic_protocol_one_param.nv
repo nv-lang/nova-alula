@@ -1,0 +1,37 @@
+module repro_engine.generic_protocol_one_param
+
+// Oracle 0.1.0: the same defect as `generic_protocol_inference` with ONE type parameter: a generic function bounded by
+// `Machine[S]` and called with `S` to be inferred produces C with an undeclared variable (here the sum type `Mode` is the state).
+// Expected: PASS. Actual: CC-FAIL "use of undeclared identifier 'e'".
+// Workaround: a protocol without type parameters over concrete types (the state crosses it as text).
+
+type Mode enum
+    | Idle
+    | Busy(int)
+
+type Machine[S] protocol {
+    @initial() -> S
+    @encode(state S) -> str
+}
+
+type Counter { n int }
+
+fn Counter @initial() -> Mode => Idle
+fn Counter @encode(state Mode) -> str => match state {
+    Idle => "idle"
+    Busy(k) => "busy"
+}
+
+type Engine[M, S] { machine M, state S, saved str }
+
+fn Engine[M Machine[S], S] mut @save() -> () {
+    @saved = @machine.encode(@state)
+}
+
+fn start[S, M Machine[S]](m M) -> Engine[M, S] => { machine: m, state: m.initial(), saved: "" }
+
+test "generic record with an enum state" {
+    mut e = start(Counter { n: 0 })
+    e.save()
+    assert(e.saved == "idle")
+}

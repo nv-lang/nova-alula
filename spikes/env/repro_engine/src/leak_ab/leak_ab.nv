@@ -1,0 +1,14 @@
+module repro_engine.leak_ab
+
+import repro_engine.leak_ab_def.{make}
+
+// Oracle 0.1.0: a unit that imports a module whose TEST FILE has a function with parameters `a`, `b` of a record type (`fn same_item(a Item, b Item)`), and that embeds a file (`embed_str`, so the
+// prelude method `EmbeddedDir.merge` is compiled into the program), gets the C of `merge` wrong: its local `b` takes the type of the parameter `b` of the test file ("no member named 'path' in 'struct
+// Nova_Item'" at `b[j].path`). The test files of an imported module are not part of the unit, yet their names leak into the standard library. Rename the parameters (task 113: `ta`, `tb`). NOT reproduced in this small program (a working sample, PASS); it fails in the unit `src/machine_text_render` (imports `machine_text_eq`, whose `eq_test.nv` has `trace_diff(a StepTrace, b StepTrace)`).
+
+fn note() -> str => embed_str("note.txt")
+
+test "an imported module with a test file that has the parameters a and b" {
+    assert(note().byte_len() > 3)
+    assert(make("x").size == 1)
+}

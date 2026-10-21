@@ -1,0 +1,27 @@
+module repro_engine.nested_generic_pattern
+
+// Oracle 0.1.0: a nested pattern `Some(Answer(reply))` over a generic payload `Reply[R]` binds `reply` to a NULL
+// pointer in the generated C: the program does not link.
+// Expected: PASS. Actual: lld-link "undefined symbol: Nova_str_method_eq" (the C is `Nova_str_method_eq(*(nova_str*)(NULL), ...)`).
+// Workaround: two nested `match`es, one level each.
+
+type Reply[R] { result R }
+
+type Response[R] enum
+    | Answer(Reply[R])
+    | Refusal(str)
+
+fn make() -> Option[Response[str]] {
+    ro reply = Reply { result: "ok" }
+    ro response Response[str] = Answer(reply)
+    Some(response)
+}
+
+test "nested pattern over generic payload" {
+    match make() {
+        Some(Answer(reply)) => {
+            assert(reply.result == "ok")
+        }
+        _ => assert(false)
+    }
+}

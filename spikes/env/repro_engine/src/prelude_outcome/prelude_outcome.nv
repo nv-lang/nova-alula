@@ -1,0 +1,16 @@
+module repro_engine.prelude_outcome
+
+// Oracle 0.1.0: an imported user type named like a prelude type (`Outcome`, prelude: `Outcome[T]` of `supervised`)
+// passes the checker, but the generated C has two `Nova_Outcome` and the C compiler stops.
+// (Inside the single module that declares it the clash does not show; it shows in the module that imports it.)
+// Expected: PASS (or a checker error that names the clash). Actual: CC-FAIL "typedef redefinition ... Nova_Outcome_Tag".
+
+import repro_engine.prelude_outcome_def.{Outcome, make}
+
+test "imported type named Outcome" {
+    ro o = make()
+    match o {
+        Answer(n) => assert(n == 1)
+        Refusal(t) => assert(false)
+    }
+}

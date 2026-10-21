@@ -1,0 +1,21 @@
+module repro_engine.match_record_literal_arg
+
+// Oracle 0.1.0 (task 114): a record literal inside a list literal that is an argument of the call in the scrutinee of a `match`:
+//   match load([Item { key: "a", n: 1 }]) { ... }
+// is a syntax error ("expected `,` or `]` in array literal, got `{`"; a record literal as a direct argument, `match f(R { ... })`, is refused too, task 110): the parser takes the `{` for the
+// block of the `match`. Bind the value with `ro` first. The same literal outside the scrutinee compiles.
+// Expected: PASS. Actual: CODEGEN-FAIL (syntax error).
+
+type Item { key str, n int }
+
+fn load(items []Item) -> Result[int, str] {
+    if items.len() == 0 { return Err("none") }
+    Ok(items[0].n)
+}
+
+test "a record literal in a list in the scrutinee of a match" {
+    match load([Item { key: "a", n: 1 }]) {
+        Ok(n) => assert(n == 1)
+        Err(e) => assert(false)
+    }
+}

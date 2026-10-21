@@ -1,0 +1,21 @@
+module repro_engine.protocol_typed_field
+
+// Oracle 0.1.0: a value whose static type is a protocol cannot be stored in a record field and called through it.
+// Expected: PASS. Actual: CC-FAIL "passing 'NovaBox_Machine' to parameter of incompatible type 'Nova_Counter *'".
+// Workaround: make the record generic over the machine type: `Engine[M]` with `M Machine`.
+
+type Machine protocol {
+    @initial() -> str
+}
+
+type Counter { n int }
+
+fn Counter @initial() -> str => "0"
+
+type Engine { machine Machine, count int }
+
+test "protocol typed field" {
+    ro c = Counter { n: 0 }
+    ro e = Engine { machine: c, count: 0 }
+    assert(e.machine.initial() == "0")
+}

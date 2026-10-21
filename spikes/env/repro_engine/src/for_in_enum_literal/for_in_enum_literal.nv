@@ -1,0 +1,23 @@
+module repro_engine.for_in_enum_literal
+
+// Oracle 0.1.0: `for` over an array literal whose items are variants of a user enum without payload (`[Pure, Writing]`) does
+// not compile: CODEGEN-FAIL "for-in: cannot resolve iterator type for expression of C-type 'nova_unit'". The same list returned
+// by a function (`-> []Class`) and iterated is fine, as is a literal list of texts or ints.
+// Expected: PASS. Actual: CODEGEN-FAIL.
+
+type Class enum
+    | Pure
+    | Writing
+
+fn flag(c Class) -> bool => match c {
+    Pure => false
+    Writing => true
+}
+
+test "for over a literal list of enum values" {
+    mut n = 0
+    for c in [Pure, Writing] {
+        if flag(c) { n += 1 }
+    }
+    assert(n == 1)
+}

@@ -1,0 +1,29 @@
+module repro_engine.option_enum_named_variants
+
+// Oracle 0.1.0: an enum `Expr` with a variant with NAMED fields (`FieldOf { target, name }`) and a variant that holds records which
+// have a field `Option[Expr]` (`MatchOn { subject, arms []Arm }`, `Arm { extra Option[Expr], ... }`) does not compile: the generated
+// equality of the enum (`nova_struct_eq_Expr`, pulled in by the equality of `Option[Expr]`) reads the payload of `FieldOf` as
+// `payload.FieldOf._0`, but the struct has the members `target`, `name` (CC-FAIL "no member named '_0'"). With `extra []Expr`
+// (an empty list or one item) in its place it compiles, and so it does when `Arm` is declared AFTER the enum (checked): the order of the
+// declarations decides. The evaluator of task 106 keeps `MatchArm.guard []Expr` (an empty list or one item) because of it.
+// Expected: PASS. Actual: CC-FAIL.
+
+type Arm { extra Option[Expr], body Expr }
+
+type Expr enum
+    | Lit(int)
+    | FieldOf { target Expr, name str }
+    | MatchOn { subject Expr, arms []Arm }
+
+fn depth(e Expr) -> int {
+    match e {
+        Lit(v) => 1
+        FieldOf { target, name } => 1 + depth(target)
+        MatchOn { subject, arms } => 1 + depth(subject)
+    }
+}
+
+test "an Option[Expr] field of a record held by the enum" {
+    assert(depth(Lit(1)) == 1)
+    assert(depth(FieldOf { target: Lit(1), name: "x" }) == 2)
+}

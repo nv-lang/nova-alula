@@ -1,0 +1,19 @@
+module repro_engine.user_type_child
+
+// Oracle 0.1.0: a user record named `Child` (a node of a tree: the part of an expression with its place) next to any import of `std.os`, which has the consume
+// record `Child` of a child process, breaks the compile of the STANDARD library: "E_MISSING_FIELD_IN_LITERAL record literal `Child{ ... }` does not initialise
+// field: handle" at the user file, then "E_FIELD_MODULE_PRIVATE cannot initialize module-private field `Child.handle`" at std/src/os/proc.nv. The checker does not
+// report the clash at the declaration (compare std_os_output, user_type_next: the table of type names is one for the whole program).
+// Task 108 found it when the command `src/machine_translate.nv` (it imports `std.os` for `args`) was built together with the core `src/machine`, whose record was
+// named `Child`; the record is `ExprChild` now. Expected: PASS. Actual: CODEGEN-FAIL.
+
+import std.os.{args}
+
+type Child { seg str, n int }
+
+test "a record named Child with std.os" {
+    ro c = Child { seg: "a", n: 1 }
+    ro argv = args()
+    assert(c.n == 1)
+    assert(argv.len() >= 0)
+}

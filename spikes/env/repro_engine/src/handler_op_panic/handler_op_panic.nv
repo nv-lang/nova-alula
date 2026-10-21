@@ -1,0 +1,26 @@
+module repro_engine.handler_op_panic
+
+// Oracle 0.1.0: the body of an operation of an effect handler is only `panic(...)` and the operation returns a value
+// (`Option[int]`): the generated C returns `(nova_int)0` from a function that returns the option, and the C compiler stops:
+//   error: returning 'nova_int' from a function with incompatible result type 'NovaOpt_nova_int'.
+// A `panic` in a `match` arm of the same body, or after another statement, compiles. A plain function
+// (`fn f() -> Option[int] { panic("x") }`) is not affected (checked).
+// Expected: PASS. Actual: CC-FAIL.
+
+type Shelf effect {
+    fn take(id str) -> Option[int]
+}
+
+fn broken_shelf() -> Effect[Shelf] {
+    effect Shelf {
+        take(id) -> Option[int] {
+            panic("the shelf is broken")
+        }
+    }
+}
+
+test "a handler operation that only panics" {
+    ro ok = true
+    assert(ok)
+    ro handler = broken_shelf()
+}

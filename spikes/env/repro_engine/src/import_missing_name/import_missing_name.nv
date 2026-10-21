@@ -1,0 +1,14 @@
+module repro_engine.import_missing_name
+
+// Oracle 0.1.0: `import m.{Name}` of a name that module `m` does not have is not an error. A rename of a type then leaves the old name
+// in every import list and the build stays green (task 102: the red probe "put the old name in an import" did not turn red, a use did).
+// Expected: the checker refuses the import (the name does not exist). Actual: PASS.
+// Consequence: after a rename, search the import lists by hand (rename.mjs does, by word boundaries).
+
+import std.collections.hash_map.{HashMap, NoSuchNameAnywhere}
+
+test "an import of a name that does not exist is accepted" {
+    mut m = HashMap[str, int].new()
+    m.insert("a", 1)
+    assert(m.len() == 1)
+}

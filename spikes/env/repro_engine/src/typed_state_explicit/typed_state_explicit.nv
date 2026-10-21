@@ -1,0 +1,147 @@
+module repro_engine.typed_state_explicit
+
+// Oracle 0.1.0: the WORKING form of a typed state (task 102). A protocol with a type parameter (`Machine[S]`), a record generic over the
+// machine and the state (`Engine[M, S]`, `EngineState[S]`) with a sum type `S` that has payloads, a generic sum type `Transition[S]`, a protocol
+// parameter that records orders (`mut environment Environment`) - all compile and run IF the type arguments of the free functions are written
+// out (`start_engine[Mode, Chat](...)`, `resume_engine[Mode, Chat](...)`). The same functions with the arguments left to be inferred are the
+// defects `generic_protocol_inference` and `generic_protocol_one_param` (items 12, 13). Expected: PASS (and it does).
+
+import std.collections.hash_map.{HashMap}
+
+type Snapshot { step int, data str }
+
+type Store effect {
+    fn save(id str, snapshot Snapshot) -> ()
+    fn load(id str) -> Option[Snapshot]
+}
+
+type Code enum
+    | A
+    | B
+
+type Mode enum
+    | Idle
+    | Busy { user str, n int }
+    | Failed { code Code }
+
+type Ev { name str, input str }
+
+type Transition[S] enum
+    | Go(S)
+    | Stay
+
+type Environment protocol {
+    mut @write(text str)
+}
+
+type Machine[S] protocol {
+    @name() -> str
+    @initial() -> S
+    @state_name(state S) -> str
+    @step(current S, event Ev, mut environment Environment) -> Transition[S]
+    @capture(state S) -> str
+    @restore(data str) -> Option[S]
+}
+
+type Recorder { lines []str }
+fn Recorder mut @write(text str) -> () { @lines.push(text) }
+
+type Chat { party str }
+
+fn Chat @name() -> str => "Chat"
+fn Chat @initial() -> Mode => Idle
+fn Chat @state_name(state Mode) -> str => match state {
+    Idle => "Idle"
+    Busy { user, n } => "Busy"
+    Failed { code } => "Failed"
+}
+fn Chat @step(current Mode, event Ev, mut environment Environment) -> Transition[Mode] {
+    environment.write("got ${event.name}")
+    match current {
+        Idle => Go(Busy { user: event.input, n: 1 })
+        Busy { user, n } => if event.name == "fail" { Go(Failed { code: B }) } else { Go(Busy { user, n: n + 1 }) }
+        Failed { code } => Stay
+    }
+}
+fn Chat @capture(state Mode) -> str => match state {
+    Idle => "idle"
+    Busy { user, n } => "busy:${user}:${n}"
+    Failed { code } => "failed"
+}
+fn Chat @restore(data str) -> Option[Mode] {
+    if data == "idle" { return Some(Idle) }
+    if data.starts_with("busy:") { return Some(Busy { user: "u", n: 7 }) }
+    None
+}
+
+type EngineState[S] { step int, state S, open []str }
+
+type Engine[M, S] { machine M, id str, state EngineState[S], to_send []str }
+
+fn start_engine[S, M Machine[S]](machine M, id str) Store -> Engine[M, S] {
+    mut e Engine[M, S] = { machine, id, state: EngineState { step: 0, state: machine.initial(), open: []str.new() }, to_send: []str.new() }
+    e.commit(1)
+    e
+}
+
+fn Engine[M Machine[S], S] mut @commit(step int) Store -> () {
+    @state.step = step
+    Store.save(@id, Snapshot { step, data: @machine.capture(@state.state) })
+}
+
+fn Engine[M Machine[S], S] mut @accept(event Ev) Store -> () {
+    mut rec = Recorder { lines: []str.new() }
+    ro t = @machine.step(@state.state, event, rec)
+    match t {
+        Go(s) => { @state.state = s }
+        Stay => ()
+    }
+    @commit(@state.step + 1)
+}
+
+fn resume_engine[S, M Machine[S]](machine M, id str) Store -> Option[Engine[M, S]] {
+    match Store.load(id) {
+        None => None
+        Some(snapshot) => match machine.restore(snapshot.data) {
+            None => None
+            Some(s) => {
+                ro e Engine[M, S] = { machine, id, state: EngineState { step: snapshot.step, state: s, open: []str.new() }, to_send: []str.new() }
+                Some(e)
+            }
+        }
+    }
+}
+
+fn mem_store(mut snaps HashMap[str, Snapshot]) -> Effect[Store] {
+    effect Store {
+        save(id, snapshot) -> () { snaps.insert(id, snapshot) }
+        load(id) -> Option[Snapshot] => snaps.get(id)
+    }
+}
+
+test "typed state engine" {
+    mut snaps = HashMap[str, Snapshot].new()
+    with Store = mem_store(snaps) {
+        mut e = start_engine[Mode, Chat](Chat { party: "p" }, "s1")
+        e.accept(Ev { name: "x", input: "hello" })
+        e.accept(Ev { name: "y", input: "" })
+        match e.state.state {
+            Busy { user, n } => {
+                assert(user == "hello")
+                assert(n == 2)
+            }
+            _ => assert(false)
+        }
+        ro chat = Chat { party: "p" }
+        match resume_engine[Mode, Chat](chat, "s1") {
+            None => assert(false)
+            Some(r) => {
+                assert(r.state.step == 3)
+                match r.state.state {
+                    Busy { user, n } => assert(n == 7)
+                    _ => assert(false)
+                }
+            }
+        }
+    }
+}

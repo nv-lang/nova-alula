@@ -1,0 +1,12 @@
+module repro_engine.user_fn_fence
+
+// Oracle 0.1.0: a user function named `fence` is generated as the C function `nova_fn_fence`, which the runtime header already declares (an atomic fence with the
+// argument `ord`); the checker says nothing at the declaration and the C compiler stops: "conflicting types for 'nova_fn_fence'" and "too few arguments to function
+// call, single argument 'ord' was not specified" (the family of items 9, 14, 21, 29, 37-40: names of the program against names of the runtime). Task 110 named a
+// helper of its tests `fence` (it returned three backticks) and found out from the C error; the helper is `ticks` there. Expected: PASS. Actual: CC-FAIL.
+
+fn fence() -> str => "```"
+
+test "a function named like a function of the runtime" {
+    assert(fence() == "```")
+}

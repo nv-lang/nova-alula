@@ -1,0 +1,24 @@
+module repro_engine.handler_op_vec_new
+
+// Oracle 0.1.0: `return []T.new()` as a statement inside the body of an effect handler operation: the code generator takes
+// `cap` for a variable captured by the handler, writes `ctx->cap = cap` in the function that makes the handler, and the C
+// compiler stops: error: use of undeclared identifier 'cap'. The same body written as `mut out = []T.new()` and then `out`
+// (as the file handlers of CrewHarness do) compiles.
+// Expected: PASS. Actual: CC-FAIL.
+
+type Shelf effect {
+    fn all() -> []int
+}
+
+fn empty_shelf() -> Effect[Shelf] {
+    effect Shelf {
+        all() -> []int {
+            return []int.new()
+        }
+    }
+}
+
+test "a handler operation that returns an empty vec" {
+    ro handler = empty_shelf()
+    assert(true)
+}

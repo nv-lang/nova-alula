@@ -1,0 +1,30 @@
+module repro_engine.record_after_enum_list
+
+// Oracle 0.1.0: a sum type with a variant that holds a list of a record, the record declared AFTER the sum type (and holding the sum type itself), breaks the C of a `match` on it:
+// the payload bound by the pattern (`JsObj(pairs)`) is a `Vec<nova_int>` and `for q in pairs { q.key }` is "member reference base type 'nova_int' is not a structure or union"
+// (CC-FAIL). The record declared BEFORE the sum type compiles (the translator's `TxJ` and `TxKV` do it that way; item 34 is the same family from the other side).
+// Task 113 found it in the reader of JSON of the reverse generator (`RJ`, `RKV`). Expected: PASS. Actual: CC-FAIL.
+
+type Js enum
+    | JsNull
+    | JsStr(str)
+    | JsObj([]Pair)
+
+type Pair { key str, value Js }
+
+fn count_keys(v Js) -> int {
+    match v {
+        JsObj(pairs) => {
+            mut n = 0
+            for q in pairs {
+                if q.key != "" { n += 1 }
+            }
+            n
+        }
+        _ => 0
+    }
+}
+
+test "a record declared after the sum type that lists it" {
+    assert(count_keys(JsObj([Pair { key: "a", value: JsNull }])) == 1)
+}

@@ -1,0 +1,22 @@
+module repro_engine.same_fn_name_two_modules
+
+// Oracle 0.1.0: two modules of one program that each declare a PRIVATE function with the same name (`scan` here and in `same_fn_name_def`) are not isolated under
+// `--strict-effects`: the call of `scan` inside the other module is checked against THIS module's `scan`, which has the effect `Fs`:
+// "E_UNDECLARED_TRANSITIVE_EFFECT: call to `scan` requires effect `Fs`", reported at a line of a file that did not change. Function names are global to the program
+// (the family of items 37-39 for types). Run: `nova test src/same_fn_name_two_modules --strict-effects`. Met in task 116 (`collect_names` of the registry and of the folder scan). Rename one of them.
+// Expected: PASS. Actual: CODEGEN-FAIL under --strict-effects.
+
+import std.fs.{Fs, Path, read_dir}
+import repro_engine.same_fn_name_def.{total}
+
+fn scan(dir str) Fs -> int {
+    match read_dir(Path.from_bytes(dir.bytes())) {
+        Ok(entries) => entries.len()
+        Err(e) => 0
+    }
+}
+
+test "two private functions named scan" {
+    assert(total(1) == 2)
+    assert(scan("no-such-folder-here") == 0)
+}

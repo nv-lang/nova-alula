@@ -1,0 +1,15 @@
+module repro_engine.mut_of_ro_param
+
+// Oracle 0.1.0: `mut out = items` with `items` a parameter without `mut` (or a `ro` binding) that holds a list is E_READONLY_COERCE ("the source is bound as `ro`, the declared type is mutable"): a copy
+// has to be built by hand (`for x in items { out.push(x) }`). The code of the translator does it in `sc_clone`, `p_copy`, `rn_copy`, `rn_with`. A plain copy of a value would be natural.
+// Expected: PASS. Actual: CODEGEN-FAIL E_READONLY_COERCE.
+
+fn extend(items []str, extra str) -> []str {
+    mut out = items
+    out.push(extra)
+    out
+}
+
+test "a mutable copy of a list parameter" {
+    assert(extend(["a"], "b").len() == 2)
+}

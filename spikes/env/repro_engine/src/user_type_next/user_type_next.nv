@@ -1,0 +1,15 @@
+module repro_engine.user_type_next
+
+// Oracle 0.1.0: a user record named `Next` (the "where a row leads" of a table) breaks the compile of the STANDARD library, which has a protocol `Next`
+// in `vec_iter`: "E_BOUND_NOT_PROTOCOL `Next` is a record, not a protocol - generic bounds must be protocol-types" at std/src/collections/vec_iter/core.nv.
+// The checker does not report the clash at the declaration (compare prelude_outcome). Task 107 calls the record `Goto`.
+// Expected: PASS. Actual: CODEGEN-FAIL.
+
+type Next { target str, restart bool }
+
+test "a record named Next" {
+    ro n = Next { target: "Done", restart: false }
+    ro items = [1, 2, 3]
+    assert(n.target == "Done")
+    assert(items.len() == 3)
+}

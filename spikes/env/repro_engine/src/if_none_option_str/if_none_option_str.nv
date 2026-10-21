@@ -1,0 +1,25 @@
+module repro_engine.if_none_option_str
+
+// Oracle 0.1.0 (task 126): an `if` whose one branch is `None` and the other is `Some` of a text, bound by `ro` without a type, is typed by the code generator as `Option[int]` in the `None`
+// branch and `Option[str]` in the other: CC-FAIL "assigning to 'NovaOpt_nova_int' from incompatible type 'NovaOpt_nova_str'". A way round: bind the variable with its type first,
+// `mut request Option[str] = None`, and assign `Some(...)` in an `if`.
+// Expected: PASS. Actual: CC-FAIL.
+
+type Ev { name str, request Option[str] }
+
+fn make(flag bool) -> Ev {
+    ro request = if flag { None } else { Some("agent-1") }
+    Ev { name: "x", request }
+}
+
+fn size(e Ev) -> int {
+    match e.request {
+        Some(r) => r.byte_len()
+        None => 0
+    }
+}
+
+test "an if that gives None or Some of a text" {
+    assert(size(make(true)) == 0)
+    assert(size(make(false)) == 7)
+}

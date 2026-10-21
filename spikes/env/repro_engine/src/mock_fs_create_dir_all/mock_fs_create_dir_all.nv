@@ -1,0 +1,18 @@
+module repro_engine.mock_fs_create_dir_all
+
+// Oracle 0.1.0: `create_dir_all` on the memory file system (`mock_fs`) makes only the LAST folder of the path: after `create_dir_all("/a/b/c")` the folder `/a/b` is not there (`try_exists` is false, `read_dir`
+// of it works). On the real file system every folder above is made. A test that puts a file at `/a/b/c/f.txt` into the memory file system makes the folders one by one first. Met in task 116.
+// Expected: PASS. Actual: RUN-FAIL (the assert).
+
+import std.fs.{Path, MemFs, mock_fs, Fs, create_dir_all, try_exists}
+
+test "create_dir_all on the memory file system makes the folders above" {
+    mut memory = MemFs.new()
+    with Fs = mock_fs(memory) {
+        ro made = create_dir_all(Path.posix("/a/b/c"))
+        match try_exists(Path.posix("/a/b")) {
+            Ok(there) => assert(there)
+            Err(e) => assert(false)
+        }
+    }
+}

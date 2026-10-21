@@ -1,0 +1,15 @@
+module repro_engine.nested_module.inner
+
+// Oracle 0.1.0: a module in a folder two levels under the source root, with no `.nv` file in the middle folder
+// (`src/nested_module/inner/inner.nv`, the middle folder `nested_module` has none). The declaration is the path from the
+// source root with the package prefix, which the diagnostic itself lists as the "rev-1 legacy" form, and the unit is still
+// refused: E_D78_MODULE_PATH_MISMATCH, declares `repro_engine.nested_module.inner`, expected (rev-1 legacy)
+// `repro_engine.nested_module.inner`. The expected text equals the declared text. CrewHarness keeps its modules one level
+// under `src/` because of it (`src/pgdb`, not `src/pg/db`).
+// Expected: PASS. Actual: CODEGEN-FAIL E_D78_MODULE_PATH_MISMATCH.
+
+export fn answer() -> int => 42
+
+test "a module two folders deep" {
+    assert(answer() == 42)
+}

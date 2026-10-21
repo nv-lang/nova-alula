@@ -1,0 +1,23 @@
+module repro_engine.none_arg_generic_option
+
+// Oracle 0.1.0 (task 119): a literal `None` or `Some(Two)` as the argument of a parameter of the type `Option[Wrap[str]]`, where `Wrap` is a generic sum type, is typed wrong by the code generator:
+// `None` as `Option[int]`, `Some(Two)` as an `Option` of the sum type without its argument: CC-FAIL "passing 'NovaOpt_nova_int' to parameter of incompatible type
+// 'NovaOpt_Nova_Wrap____nova_str_p'". `None` for `Option[str]` is fine (the engine passes `None` for `Option[str]` everywhere). A way round: bind the value with its type first,
+// `ro nothing Option[Wrap[str]] = None`, and pass `nothing`.
+// Expected: PASS. Actual: CC-FAIL.
+
+type Wrap[T] enum
+    | One(T)
+    | Two
+
+fn weigh(x Option[Wrap[str]]) -> int {
+    match x {
+        Some(w) => 1
+        None => 0
+    }
+}
+
+test "None for a generic option" {
+    assert(weigh(None) == 0)
+    assert(weigh(Some(Two)) == 1)
+}

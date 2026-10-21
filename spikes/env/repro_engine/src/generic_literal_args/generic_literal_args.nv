@@ -1,0 +1,12 @@
+module repro_engine.generic_literal_args
+
+// Oracle 0.1.0: a record literal of a generic record with its type arguments written (`Holder[str] { id: "a", input: "b" }`) is a syntax error: E_STMT_SEP_MISSING ("two statements on the same line must be
+// separated by `;`", at the `{`): the parser reads `Holder[str]` as a complete expression. The literal has to be anonymous and typed by its context: `ro h Holder[str] = { id: "a", input: "b" }`, or the value is made by a
+// function that returns it (`-> Holder[str] => { id, input }`). Met in task 091 (the engine makes its `PartyRequest[str]` and `Reply[str]` by `request_of` and `reply_of`). Expected: PASS. Actual: CODEGEN-FAIL.
+
+type Holder[T] { id str, input T }
+
+test "a generic record literal with type arguments" {
+    ro h = Holder[str] { id: "a", input: "b" }
+    assert(h.id == "a")
+}

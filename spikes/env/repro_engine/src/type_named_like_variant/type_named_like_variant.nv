@@ -1,0 +1,26 @@
+module repro_engine.type_named_like_variant
+
+// Oracle 0.1.0: a user type that has the name of a CASE of an enum of another module (`type Reading enum | Ready | Waiting` here, `Class.Reading` in
+// `type_named_like_variant_def`) turns every use of that case in the other module into "E7330 `Reading` is a sum type, not a value" - an error in a file
+// that the user did not touch. Type names and case names share one table for the whole program. Met in task 107 (`type Reading` in the interpreter
+// against `PrimitiveClass.Reading` in the core).
+// Expected: PASS. Actual: the error is reported in type_named_like_variant_def.nv (nova check).
+
+import repro_engine.type_named_like_variant_def.{reading_class}
+
+type Reading enum
+    | Ready
+    | Waiting
+
+test "a case named like a user type" {
+    ro c = reading_class()
+    ro r Reading = Ready
+    match r {
+        Ready => assert(true)
+        Waiting => assert(false)
+    }
+    match c {
+        Pure => assert(false)
+        _ => assert(true)
+    }
+}

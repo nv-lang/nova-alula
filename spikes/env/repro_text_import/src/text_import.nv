@@ -1,0 +1,23 @@
+module repro_text_import.text_import
+
+// Oracle 0.1.0 (task 099): `import std.text` in ONE module of a program makes a variable named `text`, bound by a record PATTERN (`Garbage { text }`) in ANOTHER
+// module, mean the module `std.text`: `text.byte_len()` is "no function `byte_len` in module `text`" (in CrewHarness: acp/client.nv, the
+// arm `RpcGarbage { text } => ... text.byte_len()`, once the session server imported `std.text`). A parameter named `text` is not affected.
+// The import is needed in `nova build` for `[]str.join` (a `nova test` build has it already, so a test does not show the problem).
+//   nova build src/text_import.nv      Expected: builds and prints "a,b 2". Actual: error [E7401] no function `byte_len` in module `text`.
+import repro_text_import.text_def.{joined}
+
+type Line enum
+    | Garbage { text str }
+    | Empty
+
+fn length_of(line Line) -> int {
+    match line {
+        Garbage { text } => text.byte_len()
+        Empty => 0
+    }
+}
+
+fn main() {
+    println("${joined(["a", "b"])} ${length_of(Garbage { text: "xy" })}")
+}

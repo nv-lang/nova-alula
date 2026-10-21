@@ -1,0 +1,11 @@
+module repro_engine.fn_name_two_modules_def
+
+/// A private generic function `begin` of this module (the type argument is only in the result), and an exported one that uses it.
+fn begin[T](n int) -> []T {
+    []T.new()
+}
+
+export fn count_of(n int) -> int {
+    ro items = begin[int](n)
+    items.len() + n
+}

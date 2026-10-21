@@ -1,0 +1,12 @@
+module repro_engine.result_display
+
+// Oracle 0.1.0: a `Result` put into a string interpolation (`"${r}"`) passes the checker and fails at LINK time:
+// "undefined symbol: Nova_Result_method_display" (for `"5".to_int()`, a `Result[int, ParseIntError]`). The checker should refuse
+// a value that has no `display`, or the runtime should have one.
+// Expected: a type error or PASS. Actual: lld-link undefined symbol.
+
+test "a result in an interpolation" {
+    ro r = "5".to_int()
+    ro text = "${r}"
+    assert(text.byte_len() > 0)
+}

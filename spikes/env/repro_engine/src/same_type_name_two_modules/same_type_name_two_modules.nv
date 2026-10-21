@@ -1,0 +1,18 @@
+module repro_engine.same_type_name_two_modules
+
+// Oracle 0.1.0: two modules of one program that each declare a record with the same name (`Pair` here and in `same_type_name_def`) are not isolated:
+// a record literal of this module's `Pair { first, second }` is checked against the fields of the OTHER module's `Pair` - "E_MISSING_FIELD_IN_LITERAL
+// record literal `Pair{ ... }` does not initialise fields", reported inside a file that only declares its own type. Type names are global to the program.
+// Met in task 107 (`Pair` of the interpreter and of a test unit). Rename one of them.
+// Expected: PASS. Actual: CODEGEN-FAIL.
+
+import repro_engine.same_type_name_def.{made}
+
+type Pair { first int, second int }
+
+test "two records named Pair" {
+    ro mine = Pair { first: 1, second: 2 }
+    ro other = made()
+    assert(mine.first == 1)
+    assert(other.name == "a")
+}

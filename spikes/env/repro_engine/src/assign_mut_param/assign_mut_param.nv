@@ -1,0 +1,14 @@
+module repro_engine.assign_mut_param
+
+// Oracle 0.1.0: assigning a new list to a `mut` PARAMETER of a heap type (`items = []str.new()`) changes only the local name (the compiler warns); the caller's list stays as it was. The code of the
+// translator keeps its lists in a field of a `mut` record and assigns the field (`st.para = []TxParaLine.new()` in `cls_flush`). Expected: PASS. Actual: FAIL (the list is not emptied).
+
+fn clear_list(mut items []str) -> () {
+    items = []str.new()
+}
+
+test "a mutable list parameter is emptied by an assignment" {
+    mut xs = ["a", "b"]
+    clear_list(xs)
+    assert(xs.len() == 0)
+}

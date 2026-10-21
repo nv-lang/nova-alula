@@ -1,0 +1,19 @@
+module repro_engine.enum_str_payload
+
+// Oracle 0.1.0: a generic sum type with a `str` payload variant does not compile.
+// Expected: PASS. Actual: CC-FAIL "passing 'void *' to parameter of incompatible type 'nova_str'".
+// (With a record payload, `Log(Rec)`, or a non-generic enum it compiles.)
+
+type Output[I] enum
+    | Send(I)
+    | Log(str)
+    | Save
+
+fn make() -> Output[int] => Log("x")
+
+test "generic enum with a str variant" {
+    match make() {
+        Log(s) => assert(s == "x")
+        _ => assert(false)
+    }
+}

@@ -1,0 +1,7 @@
+module repro_engine.same_fn_name_def
+
+// The helper module of same_fn_name_two_modules: an exported function that calls its own PRIVATE function `scan` (no effect).
+fn scan(n int) -> int => n + 1
+
+/// Calls the private `scan` of this module.
+export fn total(n int) -> int => scan(n)

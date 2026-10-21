@@ -1,0 +1,26 @@
+module repro_engine.generic_protocol_inference
+
+// Oracle 0.1.0: a generic function bounded by a protocol with several type parameters, called with the parameters
+// to be inferred, produces C with an undeclared variable.
+// Expected: PASS. Actual: CC-FAIL "use of undeclared identifier 'r'".
+// Workaround: a protocol without type parameters over concrete types (the state crosses it as text).
+
+type Event[B] { id str, body B }
+type StepResult[S] { state S, count int }
+
+type Machine[S, B] protocol {
+    @initial() -> S
+    @step(state S, event Event[B]) -> StepResult[S]
+}
+
+type Counter { n int }
+
+fn Counter @initial() -> int => 0
+fn Counter @step(state int, event Event[int]) -> StepResult[int] => { state: state + event.body, count: 1 }
+
+fn run_once[S, B, M Machine[S, B]](m M, ev Event[B]) -> StepResult[S] => m.step(m.initial(), ev)
+
+test "protocol with two type parameters" {
+    ro r = run_once(Counter { n: 0 }, Event { id: "e", body: 3 })
+    assert(r.state == 3)
+}

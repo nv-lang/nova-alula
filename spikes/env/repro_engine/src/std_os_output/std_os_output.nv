@@ -1,0 +1,29 @@
+module repro_engine.std_os_output
+
+// Oracle 0.1.0: a user type named `Output` (the engine of CrewHarness has one) and the module `std.os` in the SAME program:
+// `std.os` exports a value type `Output` (the result of a process), and the code generator takes the user's `Output` in a
+// function result and in `Output.Log(...)` for the std one. Here the checker stops: E_NO_STATIC_METHOD "the type `Output` is
+// declared in this module and has no static method `Log`"; in the real engine (the enum is imported into another module, with
+// peers around) the same clash got to the C compiler: "returning 'Nova_Output *' from a function with incompatible result type
+// 'NovaValue_Output'". Without the `std.os` import (and without the `Os` use) the test passes. Same family as `prelude_outcome`
+// (a user type with the name of a library type), here the clash is with `std.os`, not with the prelude. The engine of
+// CrewHarness avoids it in task 095 by renaming its `Output` to `StepOutput`.
+// Expected: PASS. Actual: CODEGEN-FAIL E_NO_STATIC_METHOD.
+
+import repro_engine.std_os_output_def.{Output, LogNote}
+import std.os.{Os, real_os, env}
+
+fn note(text str) -> Output => Output.Log(LogNote { text })
+
+fn home() -> str {
+    ro value = with Os = real_os() { env("HOME") }
+    value ?? "-"
+}
+
+test "a user enum named Output next to std.os" {
+    match note("x") {
+        Log(n) => assert(n.text == "x")
+        Save => assert(false)
+    }
+    assert(home().byte_len() >= 0)
+}
