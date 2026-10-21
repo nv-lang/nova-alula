@@ -1,0 +1,63 @@
+// spec_test.nv - the types as the format writes them: read, written back, refused.
+module alula.machine_table
+
+import alula.machine.{TypeDefs, RecordDef, VariantDef, EnumWord, CaseDef, FieldDef, TextType, spec_text, empty_type_defs}
+
+fn sdefs() -> TypeDefs {
+    ro finding = RecordDef { name: "Finding", fields: [FieldDef { name: "evidence", spec: TextType }] }
+    ro severity = VariantDef { name: "Severity", cases: [CaseDef { name: "Critical", fields: []FieldDef.new() }], words: []EnumWord.new() }
+    TypeDefs { records: [finding], variants: [severity] }
+}
+
+// The type read and printed again, or the error.
+fn sp(text str) -> str {
+    match parse_spec(text, sdefs()) {
+        Ok(spec) => spec_text(spec)
+        Err(message) => "ERR ${message}"
+    }
+}
+
+fn sp_err(text str) -> bool => sp(text).starts_with("ERR")
+
+test "spec base" {
+    for t in ["int", "int>=0", "int>=-5", "float", "text", "bool", "nothing"] { assert(sp(t) == t) }
+}
+
+test "spec sets" {
+    assert(sp("\"first\" | \"retry\"") == "\"first\" | \"retry\"")
+    assert(sp("\"\" | \"a\"") == "\"\" | \"a\"")
+    assert(sp("?(\"allow\" | \"deny\")") == "?(\"allow\" | \"deny\")")
+    assert(sp("\"слово\" | \"другое\"") == "\"слово\" | \"другое\"")
+}
+
+test "spec compound" {
+    for t in ["?text", "[]Finding", "{text: int}", "full {Severity: text}", "(text, int)", "[]?{text: []int}", "?(int, text)"] { assert(sp(t) == t) }
+    assert(sp("[]  Finding") == "[]Finding")
+    assert(sp("{ text : int }") == "{text: int}")
+    assert(sp("(int,text,bool)") == "(int, text, bool)")
+}
+
+test "spec names" {
+    assert(sp("Finding") == "Finding")
+    assert(sp("Severity") == "Severity")
+    assert(sp("?Severity") == "?Severity")
+    assert(sp_err("Nope"))
+    assert(sp_err("[]Nope"))
+}
+
+test "spec refused" {
+    for t in ["", "int>=", "{text int}", "{text: int", "(text)", "(int,", "text from {\"a\", \"b\"}", "\"a\"", "text from", "[]", "?", "int int", "full text", "int>=x"] {
+        assert(sp_err(t))
+    }
+}
+
+test "spec no defs" {
+    match parse_spec("Finding", empty_type_defs()) {
+        Ok(s) => assert(false)
+        Err(m) => assert(m.contains("not declared"))
+    }
+    match parse_spec("[]int", empty_type_defs()) {
+        Ok(s) => assert(spec_text(s) == "[]int")
+        Err(m) => assert(false)
+    }
+}

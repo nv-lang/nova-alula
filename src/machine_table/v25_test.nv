@@ -1,0 +1,241 @@
+// v25_test.nv - format 2.5 on the interpreter side: the set of literals `"a" | "b"`, the built-in type `id`, the primitive `new_id`,
+// the tuple fields from zero, the key `portolan_version`. Every check is red on the broken table and green on the good one.
+// ORACLE-WORKAROUND(20): these tests live in this unit because the unit of the core is near the limit of 4 KB of output (a test binary blocks on a stdout that nobody reads); join them to the tests of the core when item 20 is fixed
+module alula.machine_table
+
+import alula.machine.{Value, IdType, IntType, TextType, TextSet, OptionalType, ListType, DictType, FullDictType, TupleType, Text, Int, Null}
+import alula.machine.{spec_text, check_value, empty_type_defs, make_tuple, standard_registry, find_primitive, Reading, record_get, Record, machine_files, text_of_file}
+import std.text
+
+fn uuid_ok() -> str => "0192f3a0-7c1e-7b2a-9d4e-5a6b7c8d9e0f"
+
+fn id_fits(v Value) -> bool {
+    match check_value(IdType, v, empty_type_defs()) {
+        Ok(u) => true
+        Err(e) => false
+    }
+}
+
+fn sp5(text str) -> str {
+    match parse_spec(text, empty_type_defs()) {
+        Ok(spec) => spec_text(spec)
+        Err(message) => "ERR ${message}"
+    }
+}
+
+test "v25 id type" {
+    assert(spec_text(IdType) == "id")
+    assert(spec_text(OptionalType(IdType)) == "?id")
+    assert(sp5("id") == "id")
+    assert(sp5("?id") == "?id")
+    assert(sp5("[]id") == "[]id")
+    assert(sp5("{text: id}") == "{text: id}")
+    assert(sp5("(id, int)") == "(id, int)")
+}
+
+test "v25 id values" {
+    assert(id_fits(Text(uuid_ok())))
+    assert(id_fits(Text("00000000-0000-0000-0000-000000000000")))
+    assert(!id_fits(Text("0192F3A0-7C1E-7B2A-9D4E-5A6B7C8D9E0F")))
+    assert(!id_fits(Text("0192f3a07c1e7b2a9d4e5a6b7c8d9e0f")))
+    assert(!id_fits(Text("0192f3a0-7c1e-7b2a-9d4e-5a6b7c8d9e0")))
+    assert(!id_fits(Text("0192f3a0-7c1e-7b2a-9d4e-5a6b7c8d9e0fa")))
+    assert(!id_fits(Text("0192f3a0-7c1e-7b2a-9d4e-5a6b7c8d9e0g")))
+    assert(!id_fits(Text("0192f3a0_7c1e_7b2a_9d4e_5a6b7c8d9e0f")))
+    assert(!id_fits(Text(" 0192f3a0-7c1e-7b2a-9d4e-5a6b7c8d9e0f")))
+    assert(!id_fits(Text("")))
+    assert(!id_fits(Int(5)))
+    assert(!id_fits(Null))
+}
+
+test "v25 set spec" {
+    assert(sp5("\"a\" | \"b\"") == "\"a\" | \"b\"")
+    assert(sp5("\"\" | \"no_result\" | \"max_tokens\"") == "\"\" | \"no_result\" | \"max_tokens\"")
+    assert(sp5("?(\"allow\" | \"deny\")") == "?(\"allow\" | \"deny\")")
+    assert(sp5("[](\"a\" | \"b\")") == "[](\"a\" | \"b\")")
+    assert(sp5("{text: \"a\" | \"b\"}") == "{text: \"a\" | \"b\"}")
+    assert(sp5("full {text: \"a\" | \"b\"}") == "full {text: \"a\" | \"b\"}")
+    assert(sp5("(\"a\" | \"b\", int)") == "(\"a\" | \"b\", int)")
+    assert(sp5("(\"a\" | \"b\")") == "\"a\" | \"b\"")
+    assert(sp5("\"слово\" | \"другое\"") == "\"слово\" | \"другое\"")
+    assert(sp5("  \"a\"|\"b\"  ") == "\"a\" | \"b\"")
+}
+
+test "v25 set refused" {
+    for t in ["\"a\"", "\"a\" |", "\"a\" | b", "| \"a\"", "text from {\"a\", \"b\"}", "?\"a\" | \"b\"", "[]\"a\" | \"b\"", "(\"a\" | \"b\"", "\"a\" | \"b\" | ", "\"a\" \"b\"", "\"a\" | \"b\" int", "id id"] {
+        assert(sp5(t).starts_with("ERR"))
+    }
+}
+
+test "v25 set value" {
+    ro spec = TextSet(["a", "b"])
+    assert(spec_text(spec) == "\"a\" | \"b\"")
+    assert(spec_text(OptionalType(spec)) == "?(\"a\" | \"b\")")
+    assert(spec_text(ListType(spec)) == "[](\"a\" | \"b\")")
+    assert(spec_text(DictType { key: TextType, value: spec }) == "{text: \"a\" | \"b\"}")
+    assert(spec_text(FullDictType { key: TextType, value: spec }) == "full {text: \"a\" | \"b\"}")
+    assert(spec_text(TupleType([spec, IntType])) == "(\"a\" | \"b\", int)")
+    match check_value(spec, Text("c"), empty_type_defs()) {
+        Ok(u) => assert(false)
+        Err(e) => assert(e.message.contains("\"c\" is not in \"a\" | \"b\""))
+    }
+    match check_value(spec, Text("a"), empty_type_defs()) {
+        Ok(u) => assert(true)
+        Err(e) => assert(false)
+    }
+}
+
+test "v25 new_id reg" {
+    match find_primitive(standard_registry(), "new_id") {
+        Some(p) => {
+            assert(p.class == Reading)
+            assert(p.params.len() == 0)
+            assert(spec_text(p.result) == "id")
+            assert(p.reads.len() == 0 && p.writes.len() == 0)
+        }
+        None => assert(false)
+    }
+}
+
+test "v25 tuple zero" {
+    match make_tuple([Int(7), Text("b"), Null]) {
+        Record { name, fields } => {
+            assert(name == "")
+            assert(fields[0].name == "0" && fields[1].name == "1" && fields[2].name == "2")
+            match record_get(fields, "1") {
+                Some(v) => assert(v == Text("b"))
+                None => assert(false)
+            }
+            match record_get(fields, "3") {
+                Some(v) => assert(false)
+                None => assert(true)
+            }
+        }
+        _ => assert(false)
+    }
+}
+
+// ---- the checks of a table ---------------------------------------------------------------------------------------------------
+
+fn lit_null() -> str => jl("null")
+
+fn data_sid(type_text str, initial str) -> str => `,{"name":"sid","type":${jstr(type_text)},"initial":{"expr":${initial}}}`
+
+fn open_state(value str, row_actions str, to str) -> str {
+    ro entry = `[{"do":"bind","name":"fresh","value":${value}}]`
+    `,{"name":"Open","kind":"operation","reads":[],"entry":${entry},"rows":[{"n":1,"event":{"kind":"now"},"actions":[${row_actions}],"to":"${to}"}]}`
+}
+
+fn go_to_open() -> str {
+    ro inc = jassign("n", jb("+", jn("n"), jl("1")))
+    ro a = jassign("stop", jl(jstr("a")))
+    ro go = `{"n":1,"event":{"kind":"word","word":"go"},"actions":[${inc}],"to":"Open"}`
+    ro halt = `{"n":2,"event":{"kind":"word","word":"halt"},"actions":[${a}],"to":"Stopped"}`
+    "${go},${halt}"
+}
+
+fn keep_sid() -> str => jassign("sid", jn("fresh"))
+
+fn listed(text str) -> str => text.replace("\"parties\":", "\"primitives\":[\"new_id\"],\"parties\":")
+
+fn with_open(value str, row_actions str) -> str {
+    listed(tiny_with(data_sid("?id", lit_null()), open_state(value, row_actions, "Decide"), go_to_open(), tiny_ends_rows()))
+}
+
+test "v25 new_id ok" {
+    assert(ok_text(with_open(jprim("new_id", ""), keep_sid())))
+    assert(ok_text(with_open(jprim("new_id", ""), "${keep_sid()},${jassign("n", jl("5"))}")))
+}
+
+test "v25 new_id red" {
+    assert(says(with_open(jprim("new_id", ""), ""), "new_id"))
+    assert(says(with_open(jprim("new_id", ""), jassign("n", jl("1"))), "is not written to the data"))
+    ro in_cond = with_open(jprim("new_id", ""), keep_sid()).replace(jb(">=", jn("n"), jl("2")), jb("==", jprim("new_id", ""), jl(jstr("x"))))
+    assert(says(in_cond, "new_id may stand only"))
+    ro in_action = with_open(jprim("new_id", ""), jassign("sid", jprim("new_id", "")))
+    assert(says(in_action, "new_id may stand only"))
+    ro in_input = tiny().replace("\"inputs\":[{\"field\":\"n\"", "\"inputs\":[{\"field\":\"k\",\"value\":${jprim("new_id", "")},\"reads\":\"party\"},{\"field\":\"n\"")
+    assert(says(in_input, "new_id may stand only"))
+    ro in_fork = with_open(jprim("new_id", ""), keep_sid()).replace("\"name\":\"Decide\",\"kind\":\"fork\",\"reads\":[\"n\"],", "\"name\":\"Decide\",\"kind\":\"fork\",\"reads\":[\"n\"],\"entry\":[{\"do\":\"bind\",\"name\":\"z\",\"value\":${jprim("new_id", "")}}],")
+    assert(says(in_fork, "new_id may stand only"))
+}
+
+test "v25 new_id nested" {
+    ro nested = jcall("text", jprim("new_id", ""))
+    assert(ok_text(with_open(nested, jassign("sid", jn("fresh")))))
+    ro in_end = tiny_with(data_sid("?id", lit_null()), "", tiny_wait_rows(), tiny_ends_rows()).replace("{\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[\"n\"]}", "{\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[\"n\"],\"entry\":[{\"do\":\"bind\",\"name\":\"q\",\"value\":${jprim("new_id", "")}}]}")
+    assert(says(in_end, "new_id may stand only"))
+}
+
+fn data_mode(initial str) -> str => `,{"name":"mode","type":${jstr("?(\"a\" | \"b\")")},"initial":{"expr":${initial}}}`
+
+fn rows_mode(value str) -> str {
+    ro inc = jassign("n", jb("+", jn("n"), jl("1")))
+    ro set = jassign("mode", jl(jstr(value)))
+    ro go = `{"n":1,"event":{"kind":"word","word":"go"},"actions":[${inc},${set}],"to":"Decide"}`
+    ro halt = `{"n":2,"event":{"kind":"word","word":"halt"},"actions":[${jassign("stop", jl(jstr("a")))}],"to":"Stopped"}`
+    "${go},${halt}"
+}
+
+test "v25 set literal" {
+    ro bad_assign = tiny().replace(jassign("stop", jl(jstr("a"))), jassign("stop", jl(jstr("zzz"))))
+    assert(says(bad_assign, "\"zzz\" is not in \"\" | \"a\" | \"b\""))
+    ro bad_initial = tiny().replace(jl(jstr("")), jl(jstr("q")))
+    assert(says(bad_initial, "is not in"))
+    assert(ok_text(tiny()))
+    assert(ok_text(tiny_with(data_mode(lit_null()), "", rows_mode("b"), tiny_ends_rows())))
+    assert(says(tiny_with(data_mode(lit_null()), "", rows_mode("c"), tiny_ends_rows()), "\"c\" is not in \"a\" | \"b\""))
+    assert(says(tiny_with(data_mode(jl(jstr("c"))), "", rows_mode("a"), tiny_ends_rows()), "\"c\" is not in"))
+}
+
+test "v25 id literal" {
+    assert(ok_text(tiny_with(data_sid("id", jl(jstr(uuid_ok()))), "", tiny_wait_rows(), tiny_ends_rows())))
+    assert(says(tiny_with(data_sid("id", jl(jstr("not-an-id"))), "", tiny_wait_rows(), tiny_ends_rows()), "is not an id"))
+    assert(says(tiny_with(data_sid("?id", jl(jstr("0192F3A0-7C1E-7B2A-9D4E-5A6B7C8D9E0F"))), "", tiny_wait_rows(), tiny_ends_rows()), "is not an id"))
+    assert(ok_text(tiny_with(data_sid("?id", lit_null()), "", tiny_wait_rows(), tiny_ends_rows())))
+}
+
+test "v25 table format" {
+    ro text = tiny().replace("\"machine\":\"Tiny\"", "\"portolan_version\":\"2.12\",\"machine\":\"Tiny\"")
+    assert(ok_text(text))
+    assert(says(tiny().replace("\"machine\":\"Tiny\"", "\"portolan_version\":\"2.5\",\"machine\":\"Tiny\""), "must be 2.12"))
+    ro old = tiny().replace("\"machine\":\"Tiny\"", "\"portolan_version\":\"2.2\",\"machine\":\"Tiny\"")
+    assert(says(old, "portolan_version"))
+    ro number = tiny().replace("\"machine\":\"Tiny\"", "\"portolan_version\":2.5,\"machine\":\"Tiny\"")
+    assert(says(number, "portolan_version"))
+    ro former = tiny().replace("\"machine\":\"Tiny\"", "\"table_format\":\"2.5\",\"machine\":\"Tiny\"")
+    assert(says(former, "table_format"))
+}
+
+// ---- the common events of a fragment (format section 9) and the built-in record JournalEvent --------------------------------------------------------
+
+fn gate_text() -> str => text_of_file(machine_files(), "gate.portolan.json")
+
+test "v25 fragment reads" {
+    assert(ok_text(gate_text()))
+    ro rows_datum = gate_text().replace("\"left\": { \"op\": \"name\", \"name\": \"state\" }, \"right\": { \"op\": \"lit\", \"value\": \"Pause\" }", "\"left\": { \"op\": \"name\", \"name\": \"turns\" }, \"right\": { \"op\": \"lit\", \"value\": 0 }")
+    assert(says(rows_datum, "the datum turns is read but is not in the Input of the state (rule 11)"))
+    ro fragment_datum = gate_text().replace("\"left\": { \"op\": \"name\", \"name\": \"state\" }, \"right\": { \"op\": \"lit\", \"value\": \"Pause\" }", "\"left\": { \"op\": \"name\", \"name\": \"agent_attempt\" }, \"right\": { \"op\": \"lit\", \"value\": 0 }")
+    assert(ok_text(fragment_datum))
+}
+
+test "v25 fragment writes" {
+    ro to_rows = gate_text().replace("\"do\": \"assign\", \"target\": \"previous\"", "\"do\": \"assign\", \"target\": \"turns\"")
+    assert(ok_text(to_rows))
+    ro to_mechanics = gate_text().replace("\"do\": \"assign\", \"target\": \"previous\"", "\"do\": \"assign\", \"target\": \"agent_attempt\"")
+    assert(says(to_mechanics, "the datum agent_attempt is written by mechanics, not by rows or a fragment"))
+}
+
+test "v25 journal event" {
+    ro def = "\"definitions\":[{\"name\":\"ev\",\"params\":[],\"result\":\"JournalEvent\",\"body\":${jcall("journal_event", jl(jstr("c")))}}],"
+    assert(ok_text(tiny().replace("\"initial\":\"Wait\"", "${def}\"initial\":\"Wait\"")))
+    assert(says(tiny().replace("\"initial\":\"Wait\"", "${def.replace("JournalEvent", "Nope")}\"initial\":\"Wait\""), "Nope"))
+}
+
+test "v25 include names" {
+    ro inc = tiny().replace("\"data\":[", "\"includes\":[{\"name\":\"арифметика_цикла\",\"version\":\"1\",\"hash\":\"fb15ba5656e3\"}],\"data\":[")
+    assert(ok_text(inc))
+    assert(says(inc.replace("арифметика_цикла", "dir/cycle"), "a name of the registry"))
+    assert(says(inc.replace("арифметика_цикла", "cycle.md"), "a name of the registry"))
+    assert(says(inc.replace("арифметика_цикла", ""), "a name of the registry"))
+}

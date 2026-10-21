@@ -1,0 +1,2293 @@
+// check.nv - the checks of a table (format 2.1, section 10) on a decoded machine.
+//
+// What is checked: the names (unique, the right shape, no shadowing), the structure of every kind of a state, the events against the
+// words, the signals and the progress of the parties, the targets ("Where"), the reads against the "Input" of the state (rule 11 of the
+// specification), the writes against the data of the machine and their `writes` mark, the class of every primitive in the place of its call,
+// the reachability of the states, the exhaustiveness of the "Ends", the definitions (no recursion), the journal codes, the bounds and the
+// includes. `check_machine` returns every issue it finds, each with its place in the JSON, in a fixed order; an empty list is a table that
+// the interpreter takes.
+module alula.machine_table
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine.{Expr, TypeDefs, FieldDef, Bind, DefFn, Registry, Position, check_expr_positions, check_call_position, find_primitive, primitive_names, class_word, journal_find, find_role, has_roles}
+import alula.machine.{ConditionPos, InputPos, ProfilePos, ForkEntryPos, OperationEntryPos, EndEntryPos, AcceptPos, ActionPos}
+import alula.machine.{Pure, Reading, Value, Text, TypeSpec, TextSet, IdType, OptionalType, spec_text, is_uuid}
+
+// ---- the places of expressions ------------------------------------------------------------------------------------------
+
+// Where an expression stands: in a global place (constants, parameters, definitions, the initial values, the invariants of the input),
+// in the table "Input" of an appeal (with `silence`, `set` and the profile of the party), or in the body of a state.
+type Site { place str, expr Expr, pos Position, area int, state int, bound []str }
+
+fn area_global() -> int => 0
+fn area_input() -> int => 1
+fn area_body() -> int => 2
+fn area_party() -> int => 3
+
+type Checker { def MachineDef, registry Registry, issues []LoadError, sites []Site }
+
+fn cx_issue(mut cx Checker, path str, message str) -> () {
+    cx.issues.push(LoadError { path, message })
+}
+
+fn names_with(bound []str, name str) -> []str {
+    // ORACLE-WORKAROUND(45): a copy of a `ro` list (`bound`) built by hand in a loop; write `mut out = bound` when item 45 is fixed
+    mut out = []str.new()
+    for b in bound { out.push(b) }
+    out.push(name)
+    out
+}
+
+fn names_with_all(bound []str, more []str) -> []str {
+    // ORACLE-WORKAROUND(45): a copy of a `ro` list (`bound`) built by hand in a loop; write `mut out = bound` when item 45 is fixed
+    mut out = []str.new()
+    for b in bound { out.push(b) }
+    for m in more { out.push(m) }
+    out
+}
+
+fn is_identifier(s str) -> bool {
+    if s.byte_len() == 0 { return false }
+    mut first = true
+    for c in s.chars() {
+        ro one = "${c}"
+        ro letter = (one >= "a" && one <= "z") || (one >= "A" && one <= "Z")
+        ro digit = one >= "0" && one <= "9"
+        if first && !letter { return false }
+        if !letter && !digit && one != "_" { return false }
+        first = false
+    }
+    true
+}
+
+// A code of the journal or a name of its parameter: latin lower letters, digits and underscores, starts with a letter.
+fn is_snake(s str) -> bool {
+    if s.byte_len() == 0 { return false }
+    mut first = true
+    for c in s.chars() {
+        ro one = "${c}"
+        ro letter = one >= "a" && one <= "z"
+        ro digit = one >= "0" && one <= "9"
+        if first && !letter { return false }
+        if !letter && !digit && one != "_" { return false }
+        first = false
+    }
+    true
+}
+
+fn catalog_names() -> []str => [
+    "filter", "map", "any", "all", "count", "first_where", "fold", "dict", "range", "keys", "values", "length", "has", "require",
+    "remove", "without_key", "text", "float", "int", "max", "min", "record_text", "non_empty", "journal_event"
+]
+
+fn macro_names() -> []str => ["filter", "map", "any", "all", "count", "first_where", "fold", "dict"]
+
+// ---- walks over an expression ---------------------------------------------------------------------------------------------
+
+fn kids(e Expr) -> []Expr {
+    match e {
+        Lit(v) => []Expr.new()
+        Name(n) => []Expr.new()
+        FieldOf { target, name } => [target]
+        IndexOf { target, index } => [target, index]
+        CallFn { name, args } => args
+        Lambda { params, body } => [body]
+        CallPrimitive { name, args } => args
+        MatchOn { subject, arms } => {
+            mut out = [subject]
+            for a in arms {
+                for g in a.guard { out.push(g) }
+                out.push(a.body)
+            }
+            out
+        }
+        LetIn { name, value, body } => [value, body]
+        IfElse { cond, then_branch, else_branch } => [cond, then_branch, else_branch]
+        RecordLit { type_name, fields } => field_values(fields)
+        WithFields { base, fields } => {
+            mut out = [base]
+            for v in field_values(fields) { out.push(v) }
+            out
+        }
+        VariantLit { type_name, name, fields } => field_values(fields)
+        ListLit(items) => items
+        TupleLit(items) => items
+        DictLit(entries) => {
+            mut out = []Expr.new()
+            for en in entries {
+                out.push(en.key)
+                out.push(en.value)
+            }
+            out
+        }
+        Binary { op, left, right } => [left, right]
+        Not(x) => [x]
+        Negate(x) => [x]
+    }
+}
+
+fn field_values(fields []FieldExpr) -> []Expr {
+    mut out = []Expr.new()
+    for f in fields { out.push(f.value) }
+    out
+}
+
+fn push_unique(mut out []str, name str) -> () {
+    if !out.contains(name) { out.push(name) }
+}
+
+// The names an expression reads (the free ones: not bound by a lambda, a `let` or an arm of a `match` inside it).
+fn free_names(e Expr, bound []str, mut out []str) -> () {
+    match e {
+        Name(n) => {
+            if !bound.contains(n) { push_unique(out, n) }
+        }
+        Lambda { params, body } => free_names(body, names_with_all(bound, params), out)
+        LetIn { name, value, body } => {
+            free_names(value, bound, out)
+            free_names(body, names_with(bound, name), out)
+        }
+        MatchOn { subject, arms } => {
+            free_names(subject, bound, out)
+            for a in arms {
+                mut inner = names_with_all(bound, []str.new())
+                for p in a.patterns {
+                    match p {
+                        CasePattern { type_name, name, binds } => {
+                            for b in binds { inner.push(b.name) }
+                        }
+                        _ => ()
+                    }
+                }
+                for g in a.guard { free_names(g, inner, out) }
+                free_names(a.body, inner, out)
+            }
+        }
+        _ => {
+            for k in kids(e) { free_names(k, bound, out) }
+        }
+    }
+}
+
+fn expr_free(e Expr, bound []str) -> []str {
+    mut out = []str.new()
+    free_names(e, bound, out)
+    out
+}
+
+// The names of the functions an expression calls (a definition or the catalog).
+fn called_names(e Expr, mut out []str) -> () {
+    match e {
+        CallFn { name, args } => push_unique(out, name)
+        _ => ()
+    }
+    for k in kids(e) { called_names(k, out) }
+}
+
+fn call_nodes(e Expr, path str, mut out []CallSeen) -> () {
+    match e {
+        CallFn { name, args } => out.push(CallSeen { place: path, name, count: args.len() })
+        _ => ()
+    }
+    mut i = 0
+    for k in kids(e) {
+        call_nodes(k, "${path}.${i}", out)
+        i += 1
+    }
+}
+
+type CallSeen { place str, name str, count int }
+
+// `if` inside a branch of another `if` (format 3.3): the path of the inner one, or "".
+fn nested_if(e Expr, inside bool, path str) -> str {
+    match e {
+        IfElse { cond, then_branch, else_branch } => {
+            if inside { return path }
+            ro from_cond = nested_if(cond, inside, "${path}.cond")
+            if from_cond != "" { return from_cond }
+            ro from_then = nested_if(then_branch, true, "${path}.then")
+            if from_then != "" { return from_then }
+            nested_if(else_branch, true, "${path}.else")
+        }
+        _ => {
+            mut i = 0
+            for k in kids(e) {
+                ro r = nested_if(k, inside, "${path}.${i}")
+                if r != "" { return r }
+                i += 1
+            }
+            ""
+        }
+    }
+}
+
+// ---- the sites ----------------------------------------------------------------------------------------------------------------
+
+fn add_site(mut cx Checker, path str, e Expr, pos Position, area int, state int, bound []str) -> () {
+    cx.sites.push(Site { place: path, expr: e, pos, area, state, bound })
+}
+
+fn bind_names_of(ev EventPat) -> []str {
+    mut out = []str.new()
+    match ev {
+        AnswerEv { bind } => {
+            if bind != "" { out.push(bind) }
+        }
+        AnswerVariantEv { variant, binds } => {
+            for b in binds { out.push(b.name) }
+        }
+        FailureEv { reasons, bind } => {
+            if bind != "" { out.push(bind) }
+        }
+        ProgressEv { name, binds } => {
+            for b in binds { out.push(b.name) }
+        }
+        WordEv { word, binds } => {
+            for b in binds { out.push(b.name) }
+        }
+        SignalEv { name, binds } => {
+            for b in binds { out.push(b.name) }
+        }
+        _ => ()
+    }
+    out
+}
+
+// The sites of a list of actions. `entry` is the position of the bindings and the calls of an "On entry" (or accept) block.
+fn sites_of_actions(mut cx Checker, actions []Action, path str, entry Position, state int, bound []str) -> () {
+    mut scope = names_with_all(bound, []str.new())
+    mut i = 0
+    for a in actions {
+        ro p = "${path}[${i}]"
+        match a {
+            AssignAct { target, value } => {
+                add_site(cx, "${p}.value", value, ActionPos, area_body(), state, scope)
+                sites_of_lvalue(cx, target, p, state, scope)
+            }
+            AddAct { target, value } => {
+                add_site(cx, "${p}.value", value, ActionPos, area_body(), state, scope)
+                sites_of_lvalue(cx, target, p, state, scope)
+            }
+            JournalAct { code, params } => {
+                for q in params { add_site(cx, "${p}.params.${q.name}", q.value, ActionPos, area_body(), state, scope) }
+            }
+            JournalValueAct(value) => add_site(cx, "${p}.value", value, ActionPos, area_body(), state, scope)
+            JournalAllAct => ()
+            ForEachAct { var, list, body } => {
+                add_site(cx, "${p}.in", list, ActionPos, area_body(), state, scope)
+                sites_of_actions(cx, body, "${p}.body", entry, state, names_with(scope, var))
+            }
+            LetAct { name, value, body } => {
+                add_site(cx, "${p}.value", value, entry, area_body(), state, scope)
+                sites_of_actions(cx, body, "${p}.body", entry, state, names_with(scope, name))
+            }
+            BindAct { name, value } => {
+                add_site(cx, "${p}.value", value, entry, area_body(), state, scope)
+                scope = names_with(scope, name)
+            }
+            IfAct { cond, then_actions, else_actions } => {
+                add_site(cx, "${p}.cond", cond, ConditionPos, area_body(), state, scope)
+                sites_of_actions(cx, then_actions, "${p}.then", entry, state, scope)
+                sites_of_actions(cx, else_actions, "${p}.else", entry, state, scope)
+            }
+            CallAct { name, args } => {
+                mut k = 0
+                for arg in args {
+                    add_site(cx, "${p}.args[${k}]", arg, ActionPos, area_body(), state, scope)
+                    k += 1
+                }
+            }
+            MachineErrorAct { code, params } => {
+                for q in params { add_site(cx, "${p}.params.${q.name}", q.value, ActionPos, area_body(), state, scope) }
+            }
+            CancelOpenAct { party, except } => {
+                mut k = 0
+                for x in except {
+                    add_site(cx, "${p}.except[${k}]", x, ActionPos, area_body(), state, scope)
+                    k += 1
+                }
+            }
+            PassAct { nested, signal } => add_site(cx, "${p}.nested", nested, ActionPos, area_body(), state, scope)
+        }
+        i += 1
+    }
+}
+
+fn sites_of_lvalue(mut cx Checker, target LValue, path str, state int, bound []str) -> () {
+    mut k = 0
+    for s in target.steps {
+        match s {
+            KeyStep(e) => add_site(cx, "${path}.target.path[${k}].key", e, ActionPos, area_body(), state, bound)
+            FieldStep(f) => ()
+        }
+        k += 1
+    }
+}
+
+fn collect_sites(mut cx Checker) -> () {
+    ro none = []str.new()
+    mut i = 0
+    for c in cx.def.constants {
+        add_site(cx, "$.constants[${i}].value", c.value, ConditionPos, area_global(), -1, none)
+        i += 1
+    }
+    i = 0
+    for p in cx.def.params {
+        add_site(cx, "$.params[${i}].default", p.default_value, ConditionPos, area_global(), -1, none)
+        i += 1
+    }
+    i = 0
+    for d in cx.def.definitions {
+        add_site(cx, "$.definitions[${i}].body", d.body, ConditionPos, area_global(), -1, d.params)
+        i += 1
+    }
+    i = 0
+    for inv in cx.def.input.invariants {
+        add_site(cx, "$.input.invariants[${i}]", inv, ConditionPos, area_global(), -1, field_names(cx.def.input.fields))
+        i += 1
+    }
+    i = 0
+    for d in cx.def.data {
+        match d.initial {
+            InitialExpr(e) => add_site(cx, "$.data[${i}].initial.expr", e, ConditionPos, area_global(), -1, none)
+            _ => ()
+        }
+        for b in d.monotonic.bound { add_site(cx, "$.data[${i}].monotonic.bound", b, ConditionPos, area_global(), -1, none) }
+        i += 1
+    }
+    for e in cx.def.request_limit { add_site(cx, "$.request_limit", e, ConditionPos, area_global(), -1, none) }
+    // the profile of a party stands in the table of the parties: it reads the data, the constants, the parameters, `input` and (a set) `party`; rule 11 does not apply to it (ША4)
+    i = 0
+    for pt in cx.def.parties {
+        for e in pt.profile { add_site(cx, "$.parties[${i}].profile", e, ProfilePos, area_party(), -1, none) }
+        i += 1
+    }
+    i = 0
+    for r in cx.def.common {
+        sites_of_row(cx, r, "$.common_events[${i}]", -1, none)
+        i += 1
+    }
+    i = 0
+    for st in cx.def.states {
+        sites_of_state(cx, st, "$.states[${i}]", i)
+        i += 1
+    }
+    i = 0
+    for er in cx.def.end_rows {
+        ro p = "$.ends.rows[${i}]"
+        ro at = find_state(cx.def, er.state)
+        add_site(cx, "${p}.when", er.when, ConditionPos, area_body(), at, none)
+        match er.answer {
+            AnswerValue(v) => add_site(cx, "${p}.answer.value", v, ActionPos, area_body(), at, none)
+            RefusalValue { code, text } => {
+                add_site(cx, "${p}.answer.code", code, ActionPos, area_body(), at, none)
+                add_site(cx, "${p}.answer.text", text, ActionPos, area_body(), at, none)
+            }
+        }
+        i += 1
+    }
+}
+
+fn field_names(fields []FieldDef) -> []str {
+    mut out = []str.new()
+    for f in fields { out.push(f.name) }
+    out
+}
+
+fn sites_of_row(mut cx Checker, r TableRow, path str, state int, bound []str) -> () {
+    ro scope = names_with_all(bound, bind_names_of(r.event))
+    for c in r.cond { add_site(cx, "${path}.cond", c, ConditionPos, area_body(), state, scope) }
+    sites_of_actions(cx, r.actions, "${path}.actions", ActionPos, state, scope)
+}
+
+fn entry_position(kind StateKind) -> Position {
+    match kind {
+        OperationKind => OperationEntryPos
+        ForkKind => ForkEntryPos
+        EndKind => EndEntryPos
+        AppealKind => ActionPos
+    }
+}
+
+fn sites_of_state(mut cx Checker, st StateDef, path str, ix int) -> () {
+    ro none = []str.new()
+    mut k = 0
+    for f in st.inputs {
+        add_site(cx, "${path}.inputs[${k}].value", f.value, InputPos, area_input(), ix, none)
+        k += 1
+    }
+    for e in st.silence { add_site(cx, "${path}.silence", e, ConditionPos, area_input(), ix, none) }
+    for e in st.set { add_site(cx, "${path}.set", e, ConditionPos, area_input(), ix, none) }
+    k = 0
+    for a in st.accept {
+        ro scope = bind_names_of(a.event)
+        sites_of_actions(cx, a.actions, "${path}.accept[${k}].actions", AcceptPos, ix, scope)
+        k += 1
+    }
+    ro entry_scope = none
+    sites_of_actions(cx, st.entry, "${path}.entry", entry_position(st.kind), ix, entry_scope)
+    k = 0
+    for r in st.rows {
+        // the bindings of the "On entry" are visible to the rows: they are the names bound by the entry bindings
+        sites_of_row(cx, r, "${path}.rows[${k}]", ix, entry_binds(st))
+        k += 1
+    }
+}
+
+// The names that the `bind` actions at the top of the "On entry" of a state bind (they live for the rows of the state).
+fn entry_binds(st StateDef) -> []str {
+    mut out = []str.new()
+    for a in st.entry {
+        match a {
+            BindAct { name, value } => out.push(name)
+            _ => ()
+        }
+    }
+    out
+}
+
+// ---- the names ------------------------------------------------------------------------------------------------------------
+
+fn data_roots(def MachineDef) -> []str {
+    mut out = []str.new()
+    for d in def.data {
+        if !d.name.contains("[") { out.push(d.name) }
+    }
+    out
+}
+
+fn check_names(mut cx Checker) -> () {
+    ro def = cx.def
+    if !is_identifier(def.name) { cx_issue(cx, "$.machine", "the name of the machine must be a latin identifier") }
+    mut seen = []str.new()
+    mut i = 0
+    for st in def.states {
+        ro p = "$.states[${i}].name"
+        if !is_identifier(st.name) { cx_issue(cx, p, "the name of a state must be a latin identifier, got ${st.name}") }
+        if seen.contains(st.name) { cx_issue(cx, p, "the state ${st.name} is declared twice") }
+        seen.push(st.name)
+        i += 1
+    }
+    mut globals = []str.new()
+    for b in builtin_names() { globals.push(b) }
+    i = 0
+    for c in def.constants {
+        ro p = "$.constants[${i}].name"
+        if !is_identifier(c.name) { cx_issue(cx, p, "the name ${c.name} is not an identifier") }
+        if globals.contains(c.name) { cx_issue(cx, p, "the name ${c.name} is taken (a constant, a parameter, a datum or a name of the executor)") }
+        globals.push(c.name)
+        i += 1
+    }
+    i = 0
+    for pr in def.params {
+        ro p = "$.params[${i}].name"
+        if !is_identifier(pr.name) { cx_issue(cx, p, "the name ${pr.name} is not an identifier") }
+        if globals.contains(pr.name) { cx_issue(cx, p, "the name ${pr.name} is taken (a constant, a parameter, a datum or a name of the executor)") }
+        globals.push(pr.name)
+        i += 1
+    }
+    i = 0
+    for d in def.data {
+        ro p = "$.data[${i}].name"
+        if d.name.contains("[") {
+            // a path into a dict: `name[*].field`
+            if !path_entry_ok(d.name) { cx_issue(cx, p, "a path datum must look like name[*].field, got ${d.name}") }
+            else {
+                ro root = path_root(d.name)
+                if !data_roots(def).contains(root) { cx_issue(cx, p, "the path ${d.name} names a datum that is not declared") }
+            }
+        } else {
+            if !is_identifier(d.name) { cx_issue(cx, p, "the name ${d.name} is not an identifier") }
+            if globals.contains(d.name) { cx_issue(cx, p, "the name ${d.name} is taken (a constant, a parameter, a datum or a name of the executor)") }
+            globals.push(d.name)
+        }
+        i += 1
+    }
+    mut fns = []str.new()
+    i = 0
+    for d in def.definitions {
+        ro p = "$.definitions[${i}].name"
+        if !is_identifier(d.name) { cx_issue(cx, p, "the name ${d.name} is not an identifier") }
+        if catalog_names().contains(d.name) || d.name == "end" { cx_issue(cx, p, "the name ${d.name} is a function of the catalog") }
+        if fns.contains(d.name) { cx_issue(cx, p, "the definition ${d.name} is declared twice") }
+        fns.push(d.name)
+        i += 1
+    }
+    mut party_names = []str.new()
+    mut ids = []str.new()
+    i = 0
+    for pt in def.parties {
+        ro p = "$.parties[${i}]"
+        if !is_identifier(pt.name) { cx_issue(cx, "${p}.name", "the name of a party must be a latin identifier, got ${pt.name}") }
+        if party_names.contains(pt.name) { cx_issue(cx, "${p}.name", "the party ${pt.name} is declared twice") }
+        party_names.push(pt.name)
+        if pt.id == "" {
+            if !used_with_set(def, pt.name) { cx_issue(cx, "${p}.id", "a party needs a latin id (the id is empty only for a party used with a set)") }
+        } else {
+            if !is_snake(pt.id) { cx_issue(cx, "${p}.id", "the id of a party must be lower case latin, got ${pt.id}") }
+            if ids.contains(pt.id) { cx_issue(cx, "${p}.id", "the id ${pt.id} is used by two parties") }
+            ids.push(pt.id)
+        }
+        i += 1
+    }
+}
+
+fn used_with_set(def MachineDef, party str) -> bool {
+    for st in def.states {
+        if st.party == party && st.set.len() > 0 { return true }
+    }
+    false
+}
+
+fn path_entry_ok(name str) -> bool {
+    match name.find("[*].") {
+        Some(at) => at > 0 && at + 4 < name.byte_len()
+        None => false
+    }
+}
+
+fn path_root(name str) -> str {
+    match name.find("[") {
+        Some(at) => name[..at]
+        None => name
+    }
+}
+
+// ---- structure ----------------------------------------------------------------------------------------------------------------
+
+fn event_label(ev EventPat) -> str {
+    match ev {
+        AnswerEv { bind } => "answer"
+        AnswerVariantEv { variant, binds } => "answer_variant"
+        FailureEv { reasons, bind } => "failure"
+        TimeoutEv => "timeout"
+        ProgressEv { name, binds } => "progress"
+        WordEv { word, binds } => "word"
+        SignalEv { name, binds } => "signal"
+        NowEv => "now"
+    }
+}
+
+fn is_now(ev EventPat) -> bool {
+    match ev {
+        NowEv => true
+        _ => false
+    }
+}
+
+fn check_structure(mut cx Checker) -> () {
+    ro def = cx.def
+    if find_state(def, def.initial) < 0 { cx_issue(cx, "$.initial", "the initial state ${def.initial} is not a state of the machine") }
+    if def.states.len() == 0 { cx_issue(cx, "$.states", "a machine needs a state") }
+    if def.error_end != "" {
+        ro at = find_state(def, def.error_end)
+        if at < 0 {
+            cx_issue(cx, "$.error_end", "the end ${def.error_end} is not a state")
+        } else if def.states[at].kind != EndKind {
+            cx_issue(cx, "$.error_end", "${def.error_end} must be a state of the kind end")
+        }
+    }
+    mut i = 0
+    for st in def.states {
+        check_state_shape(cx, st, "$.states[${i}]")
+        i += 1
+    }
+    mut ci = 0
+    mut cn = []int.new()
+    for r in def.common {
+        ro p = "$.common_events[${ci}]"
+        if !is_signal(r.event) { cx_issue(cx, "${p}.event", "a common event is a signal") }
+        if cn.contains(r.n) { cx_issue(cx, "${p}.n", "the number ${r.n} is used twice among the common events") }
+        cn.push(r.n)
+        ci += 1
+    }
+    // ends
+    if def.result_spec.len() == 0 { cx_issue(cx, "$.ends.result", "the machine needs the type of its result") }
+    mut k = 0
+    mut seen = []str.new()
+    for er in def.end_rows {
+        ro p = "$.ends.rows[${k}]"
+        ro at = find_state(def, er.state)
+        if at < 0 {
+            cx_issue(cx, "${p}.state", "${er.state} is not a state")
+        } else if def.states[at].kind != EndKind {
+            cx_issue(cx, "${p}.state", "${er.state} is not an end")
+        }
+        ro key = "${er.state}/${er.n}"
+        if seen.contains(key) { cx_issue(cx, "${p}.n", "the end ${er.state} has the row ${er.n} twice") }
+        seen.push(key)
+        k += 1
+    }
+    i = 0
+    for st in def.states {
+        if st.kind == EndKind {
+            mut has = false
+            for er in def.end_rows {
+                if er.state == st.name { has = true }
+            }
+            if !has { cx_issue(cx, "$.states[${i}]", "the end ${st.name} has no row in the table Ends") }
+        }
+        i += 1
+    }
+}
+
+fn is_signal(ev EventPat) -> bool {
+    match ev {
+        SignalEv { name, binds } => true
+        _ => false
+    }
+}
+
+fn check_state_shape(mut cx Checker, st StateDef, path str) -> () {
+    ro def = cx.def
+    match st.kind {
+        AppealKind => {
+            if st.party == "" {
+                cx_issue(cx, path, "an appeal needs a party")
+            } else if find_party(def, st.party) < 0 {
+                cx_issue(cx, "${path}.party", "the party ${st.party} is not declared")
+            }
+            if st.rows.len() == 0 { cx_issue(cx, "${path}.rows", "an appeal needs a row") }
+            mut k = 0
+            for r in st.rows {
+                if is_now(r.event) { cx_issue(cx, "${path}.rows[${k}].event", "an appeal does not have the event now (only an operation does)") }
+                if r.cond.len() > 0 && !is_signal(r.event) {
+                    cx_issue(cx, "${path}.rows[${k}].cond", "a row of an appeal has no condition (only the signals have)")
+                }
+                if r.is_else && !is_signal(r.event) { cx_issue(cx, "${path}.rows[${k}].else", "else is for the rows of a signal") }
+                k += 1
+            }
+            if st.edits != "" && find_data(def, st.edits) < 0 { cx_issue(cx, "${path}.edits", "the datum ${st.edits} is not declared") }
+            if st.edit_check != "" {
+                match find_primitive(cx.registry, st.edit_check) {
+                    Some(p) => {
+                        if p.class != Reading || p.params.len() != 0 { cx_issue(cx, "${path}.edit_check", "the check must be a reading primitive without parameters") }
+                    }
+                    None => cx_issue(cx, "${path}.edit_check", "the primitive ${st.edit_check} is not registered")
+                }
+            }
+        }
+        OperationKind => {
+            if st.rows.len() == 0 { cx_issue(cx, "${path}.rows", "an operation needs the row now") }
+            mut k = 0
+            for r in st.rows {
+                if !is_now(r.event) { cx_issue(cx, "${path}.rows[${k}].event", "the only event of an operation is now") }
+                if r.cond.len() > 0 { cx_issue(cx, "${path}.rows[${k}].cond", "a row of an operation has no condition") }
+                k += 1
+            }
+            if st.rows.len() > 1 { cx_issue(cx, "${path}.rows", "an operation has one row") }
+        }
+        ForkKind => {
+            mut k = 0
+            for r in st.rows {
+                if !is_now(r.event) { cx_issue(cx, "${path}.rows[${k}].event", "a row of a fork has the event now") }
+                if r.is_else && k != st.rows.len() - 1 { cx_issue(cx, "${path}.rows[${k}].else", "the row else is the last one") }
+                k += 1
+            }
+            if st.rows.len() == 0 { cx_issue(cx, "${path}.rows", "a fork needs a row") }
+            for a in st.entry {
+                match a {
+                    BindAct { name, value } => ()
+                    _ => cx_issue(cx, "${path}.entry", "the entry of a fork has only bindings")
+                }
+            }
+        }
+        EndKind => {
+            if st.rows.len() > 0 { cx_issue(cx, "${path}.rows", "an end has no rows") }
+            if st.inputs.len() > 0 || st.accept.len() > 0 { cx_issue(cx, path, "an end has no table Input and no On accept") }
+        }
+    }
+    mut seen = []int.new()
+    mut k = 0
+    for r in st.rows {
+        if r.n < 1 { cx_issue(cx, "${path}.rows[${k}].n", "the number of a row starts with 1") }
+        if seen.contains(r.n) { cx_issue(cx, "${path}.rows[${k}].n", "the number ${r.n} is used twice in ${st.name}") }
+        seen.push(r.n)
+        k += 1
+    }
+    if st.kind != EndKind {
+        if st.except_field != "" { cx_issue(cx, "${path}.except", "only an end has except") }
+    } else if st.except_field != "" {
+        ro at = find_data(def, st.except_field)
+        if at < 0 {
+            cx_issue(cx, "${path}.except.field", "the datum ${st.except_field} is not declared")
+        } else {
+            match def.data[at].spec {
+                TextSet(words) => {
+                    for v in st.except_values {
+                        if !words.contains(v) { cx_issue(cx, "${path}.except.values", "\"${v}\" is not in the set of ${st.except_field}") }
+                    }
+                }
+                _ => cx_issue(cx, "${path}.except.field", "${st.except_field} must be a text from a closed set")
+            }
+        }
+    }
+}
+
+// ---- events, words, targets -----------------------------------------------------------------------------------------------
+
+fn word_decl(words []WordDef, name str) -> int {
+    mut i = 0
+    while i < words.len() {
+        if words[i].name == name { return i }
+        i += 1
+    }
+    -1
+}
+
+fn variant_case_fields(types TypeDefs, variant str, case_name str) -> int {
+    // the number of fields of the case, -1 when there is no such case
+    for v in types.variants {
+        if v.name == variant {
+            for c in v.cases {
+                if c.name == case_name { return c.fields.len() }
+            }
+        }
+    }
+    -1
+}
+
+fn check_binds(mut cx Checker, binds []Bind, fields []FieldDef, path str) -> () {
+    mut used = []str.new()
+    for b in binds {
+        mut known = false
+        for f in fields {
+            if f.name == b.field { known = true }
+        }
+        if !known { cx_issue(cx, path, "the event has no field ${b.field}") }
+        if used.contains(b.name) { cx_issue(cx, path, "the name ${b.name} is bound twice") }
+        used.push(b.name)
+    }
+}
+
+fn check_bind_shadow(mut cx Checker, ev EventPat, path str) -> () {
+    ro globals = data_roots(cx.def)
+    for n in bind_names_of(ev) {
+        if globals.contains(n) { cx_issue(cx, path, "the binding ${n} has the name of a datum (no shadowing)") }
+        for c in cx.def.constants {
+            if c.name == n { cx_issue(cx, path, "the binding ${n} has the name of a constant") }
+        }
+        for p in cx.def.params {
+            if p.name == n { cx_issue(cx, path, "the binding ${n} has the name of a parameter") }
+        }
+    }
+}
+
+fn sends_requests(kind PartyKind) -> bool {
+    match kind {
+        AgentParty => true
+        MachineParty => true
+        _ => false
+    }
+}
+
+fn check_event_for(mut cx Checker, ev EventPat, party_ix int, path str, mut used_words []str) -> () {
+    ro def = cx.def
+    check_bind_shadow(cx, ev, path)
+    match ev {
+        WordEv { word, binds } => {
+            if party_ix < 0 {
+                cx_issue(cx, path, "a word is for the rows of an appeal")
+                return
+            }
+            ro party = def.parties[party_ix]
+            ro at = word_decl(party.words, word)
+            if at < 0 {
+                cx_issue(cx, path, "the word ${word} is not a word of the party ${party.name}")
+            } else {
+                check_binds(cx, binds, party.words[at].fields, path)
+                used_words.push("${party.name}/${word}")
+            }
+        }
+        SignalEv { name, binds } => {
+            ro at = word_decl(def.signals, name)
+            if at < 0 { cx_issue(cx, path, "the signal ${name} is not declared in signals") } else { check_binds(cx, binds, def.signals[at].fields, path) }
+        }
+        ProgressEv { name, binds } => {
+            if party_ix < 0 || !sends_requests(def.parties[party_ix].kind) {
+                cx_issue(cx, path, "a part of an answer comes from a party that gets requests")
+                return
+            }
+            ro party = def.parties[party_ix]
+            ro at = word_decl(party.progress, name)
+            if at < 0 { cx_issue(cx, path, "${name} is not a progress event of the party ${party.name}") } else { check_binds(cx, binds, party.progress[at].fields, path) }
+        }
+        AnswerEv { bind } => check_answer_party(cx, party_ix, path)
+        AnswerVariantEv { variant, binds } => {
+            check_answer_party(cx, party_ix, path)
+            if party_ix >= 0 {
+                ro party = def.parties[party_ix]
+                ro answer_spec = answer_spec_of(party)
+                if answer_spec.len() == 0 {
+                    cx_issue(cx, path, "the party ${party.name} has no result type, answer_variant needs a variant")
+                } else {
+                    match answer_spec[0] {
+                        VariantType(vname) => {
+                            if variant_case_fields(def.types, vname, variant) < 0 {
+                                cx_issue(cx, path, "${vname} has no case ${variant}")
+                            } else {
+                                for v in def.types.variants {
+                                    if v.name == vname {
+                                        for c in v.cases {
+                                            if c.name == variant { check_binds(cx, binds, c.fields, path) }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => cx_issue(cx, path, "the result of the party ${party.name} must be a variant")
+                    }
+                }
+            }
+        }
+        FailureEv { reasons, bind } => {
+            check_answer_party(cx, party_ix, path)
+            for r in reasons {
+                if !fail_code_names().contains(r) { cx_issue(cx, path, "${r} is not a failure code") }
+            }
+        }
+        TimeoutEv => check_answer_party(cx, party_ix, path)
+        NowEv => ()
+    }
+}
+
+// The type of the value of the answer of a party: the result of its parse when it has one (format 1, `разбор`), else its result.
+fn answer_spec_of(party PartyDef) -> []TypeSpec {
+    if party.parse.len() > 0 { return [party.parse[0].result] }
+    party.result_spec
+}
+
+fn check_answer_party(mut cx Checker, party_ix int, path str) -> () {
+    if party_ix < 0 || !sends_requests(cx.def.parties[party_ix].kind) {
+        cx_issue(cx, path, "an answer, a failure and a timeout come from a party that gets requests (agent or machine)")
+    }
+}
+
+fn check_events(mut cx Checker) -> () {
+    ro def = cx.def
+    mut used_words = []str.new()
+    mut i = 0
+    for st in def.states {
+        ro p = "$.states[${i}]"
+        ro party_ix = if st.kind == AppealKind { find_party(def, st.party) } else { -1 }
+        if st.kind == AppealKind {
+            mut k = 0
+            for r in st.rows {
+                check_event_for(cx, r.event, party_ix, "${p}.rows[${k}].event", used_words)
+                check_targets_of_row(cx, r, "${p}.rows[${k}]", true)
+                k += 1
+            }
+            k = 0
+            for a in st.accept {
+                check_event_for(cx, a.event, party_ix, "${p}.accept[${k}].event", used_words)
+                match a.event {
+                    AnswerEv { bind } => ()
+                    AnswerVariantEv { variant, binds } => ()
+                    FailureEv { reasons, bind } => ()
+                    TimeoutEv => ()
+                    _ => cx_issue(cx, "${p}.accept[${k}].event", "On accept takes an answer, a failure or a timeout")
+                }
+                k += 1
+            }
+        } else {
+            mut k = 0
+            for r in st.rows {
+                check_targets_of_row(cx, r, "${p}.rows[${k}]", false)
+                k += 1
+            }
+        }
+        i += 1
+    }
+    mut ci = 0
+    for r in def.common {
+        check_event_for(cx, r.event, -1, "$.common_events[${ci}].event", used_words)
+        check_targets_of_row(cx, r, "$.common_events[${ci}]", true)
+        ci += 1
+    }
+    // every word of a party is used by a row (format 4.3)
+    mut pi = 0
+    for pt in def.parties {
+        for w in pt.words {
+            if !used_words.contains("${pt.name}/${w.name}") && !word_used_in_signal(def, w.name) {
+                cx_issue(cx, "$.parties[${pi}].words", "the word ${w.name} of the party ${pt.name} is used by no row")
+            }
+        }
+        pi += 1
+    }
+}
+
+// A word that stands in the rows of a state of another party as a signal is used.
+fn word_used_in_signal(def MachineDef, word str) -> bool {
+    for st in def.states {
+        for r in st.rows {
+            match r.event {
+                SignalEv { name, binds } => {
+                    if name == word { return true }
+                }
+                _ => ()
+            }
+        }
+    }
+    for r in def.common {
+        match r.event {
+            SignalEv { name, binds } => {
+                if name == word { return true }
+            }
+            _ => ()
+        }
+    }
+    false
+}
+
+fn check_targets_of_row(mut cx Checker, r TableRow, path str, may_stay bool) -> () {
+    ro def = cx.def
+    match r.next.target {
+        ToState(n) => {
+            if find_state(def, n) < 0 { cx_issue(cx, "${path}.to", "${n} is not a state") }
+        }
+        ToPrevious => {
+            ro at = find_data(def, "previous")
+            if at < 0 { cx_issue(cx, "${path}.to", "@previous needs the datum previous (the fragment Pause brings it)") }
+        }
+        ToPrepareReturn => {
+            ro at = find_data(def, "preparation_return")
+            if at < 0 { cx_issue(cx, "${path}.to", "@prepare_return needs the datum preparation_return (the preparation of the executor writes it, rule 24)") }
+        }
+        ToSame => {
+            if !may_stay { cx_issue(cx, "${path}.to", "@same is for the rows of an appeal and the common events") }
+        }
+        ToNothing => {
+            if !ends_in_machine_error(r.actions) { cx_issue(cx, "${path}.to", "a row without a target ends in machine_error") }
+        }
+    }
+}
+
+fn ends_in_machine_error(actions []Action) -> bool {
+    if actions.len() == 0 { return false }
+    match actions[actions.len() - 1] {
+        MachineErrorAct { code, params } => true
+        _ => false
+    }
+}
+
+// ---- reads and writes ---------------------------------------------------------------------------------------------------------
+
+fn const_names(def MachineDef) -> []str {
+    mut out = []str.new()
+    for c in def.constants { out.push(c.name) }
+    for p in def.params { out.push(p.name) }
+    out
+}
+
+// The names a state reads (its "Input"): the table of an appeal, the line `Input:` of the other kinds.
+fn state_input_names(def MachineDef, st StateDef) -> []str {
+    mut out = []str.new()
+    if st.reads_all {
+        for d in data_roots(def) { out.push(d) }
+        return out
+    }
+    for f in st.inputs {
+        push_unique(out, f.field)
+        free_names(f.value, []str.new(), out)
+    }
+    for r in st.reads { push_unique(out, r) }
+    for e in st.set { free_names(e, []str.new(), out) }
+    out
+}
+
+// The names a state reads with what the parse of its party reads for the role (the table "by role", 2.12, Ya-33): the hidden reads of the primitive join the Input of the state (rule 11).
+fn state_names_with_roles(cx Checker, st StateDef) -> []str {
+    mut out = state_input_names(cx.def, st)
+    if st.kind != AppealKind { return out }
+    ro pi = find_party(cx.def, st.party)
+    if pi < 0 { return out }
+    for pr in cx.def.parties[pi].parse {
+        match find_role(cx.registry, pr.primitive, pr.role) {
+            Some(row) => {
+                for r in row.reads { push_unique(out, r) }
+            }
+            None => ()
+        }
+    }
+    out
+}
+
+fn primitive_reads(cx Checker, e Expr) -> []str {
+    mut out = []str.new()
+    for pn in primitive_names(e) {
+        match find_primitive(cx.registry, pn) {
+            Some(p) => {
+                for r in p.reads { push_unique(out, r) }
+            }
+            None => ()
+        }
+    }
+    out
+}
+
+fn is_data_root(def MachineDef, name str) -> bool => data_roots(def).contains(name)
+
+// The data of a fragment (the marks `fragment`, `rows and fragment`, `mechanics`): the common events read them without an Input (format section 9).
+fn fragment_data_names(def MachineDef) -> []str {
+    mut out = []str.new()
+    for d in def.data {
+        if d.name.contains("[") { continue }
+        match d.writes {
+            FragmentWrite => out.push(d.name)
+            RowsAndFragment => out.push(d.name)
+            MechanicsWrite => out.push(d.name)
+            _ => ()
+        }
+    }
+    out
+}
+
+fn check_reads(mut cx Checker) -> () {
+    ro def = cx.def
+    ro consts = const_names(def)
+    ro roots = data_roots(def)
+    mut fn_names = []str.new()
+    for d in def.definitions { fn_names.push(d.name) }
+    // the names of the executor and where they stand
+    for s in cx.sites {
+        ro free = expr_free(s.expr, s.bound)
+        ro allowed = if s.state >= 0 { state_names_with_roles(cx, def.states[s.state]) } else if s.area == area_body() { fragment_data_names(def) } else { []str.new() }
+        for n in free {
+            if consts.contains(n) { continue }
+            if roots.contains(n) {
+                if s.area == area_global() {
+                    cx_issue(cx, s.place, "a constant, a definition or an initial value does not read the datum ${n}")
+                } else if s.area == area_body() && !allowed.contains(n) {
+                    cx_issue(cx, s.place, "the datum ${n} is read but is not in the Input of the state (rule 11)")
+                } else if s.area == area_input() && s.state >= 0 && !state_names_with_roles(cx, def.states[s.state]).contains(n) {
+                    cx_issue(cx, s.place, "the datum ${n} is read but is not in the Input of the state (rule 11)")
+                }
+                continue
+            }
+            if !builtin_names().contains(n) {
+                cx_issue(cx, s.place, "the name ${n} is not a datum, a constant, a parameter or a binding")
+                continue
+            }
+            if s.area == area_party() && n != "input" && n != "party" {
+                cx_issue(cx, s.place, "the profile of a party reads the data, the constants, the parameters, input and party; ${n} is not allowed")
+                continue
+            }
+            if n == "input" && s.area == area_body() { cx_issue(cx, s.place, "input is read in the table Input, the initial values and the invariants only") }
+            if n == "all_data" && !(s.state >= 0 && def.states[s.state].reads_all) { cx_issue(cx, s.place, "all_data is read by a state whose Input is all the data (the error end)") }
+            if n == "transition_note" && !(s.state >= 0 && def.states[s.state].name == def.error_end) {
+                cx_issue(cx, s.place, "transition_note is defined in the error end only (A4)")
+            }
+            if (n == "trace" || n == "step") && !trace_allowed(def, s) { cx_issue(cx, s.place, "${n} is read in the Input of a nested machine only") }
+            if (n == "event" || n == "party") && s.area == area_global() { cx_issue(cx, s.place, "${n} is not defined here") }
+            if n == "state" && s.area == area_global() { cx_issue(cx, s.place, "state is not defined here") }
+        }
+        // the hidden reads of the primitives named in the registry join the Input
+        if s.area == area_body() && s.state >= 0 {
+            for hidden in primitive_reads(cx, s.expr) {
+                if roots.contains(hidden) && !allowed.contains(hidden) {
+                    cx_issue(cx, s.place, "the primitive reads ${hidden} which is not in the Input of the state (rule 11)")
+                }
+            }
+        }
+    }
+    // calls: a function is a catalog function or a definition
+    for s in cx.sites {
+        mut seen = []CallSeen.new()
+        call_nodes(s.expr, s.place, seen)
+        for c in seen {
+            if fn_names.contains(c.name) {
+                for d in def.definitions {
+                    if d.name == c.name && d.params.len() != c.count {
+                        cx_issue(cx, c.place, "${c.name} takes ${d.params.len()} arguments, got ${c.count}")
+                    }
+                }
+            } else if !catalog_names().contains(c.name) && c.name != "end" {
+                cx_issue(cx, c.place, "no function ${c.name}")
+            }
+        }
+        ro bad = nested_if(s.expr, false, s.place)
+        if bad != "" { cx_issue(cx, bad, "an if does not nest in a branch of another if (format 3.3)") }
+    }
+}
+
+fn trace_allowed(def MachineDef, s Site) -> bool {
+    if s.area != area_input() || s.state < 0 { return false }
+    ro pi = find_party(def, def.states[s.state].party)
+    pi >= 0 && def.parties[pi].kind == MachineParty
+}
+
+fn check_writes_in(mut cx Checker, actions []Action, path str, accept bool, fragment bool) -> () {
+    ro def = cx.def
+    mut i = 0
+    for a in actions {
+        ro p = "${path}[${i}]"
+        match a {
+            AssignAct { target, value } => {
+                check_target(cx, target, "${p}.target", fragment)
+                check_literal_target(cx, target, value, "${p}.value")
+            }
+            AddAct { target, value } => check_target(cx, target, "${p}.target", fragment)
+            ForEachAct { var, list, body } => check_writes_in(cx, body, "${p}.body", accept, fragment)
+            LetAct { name, value, body } => check_writes_in(cx, body, "${p}.body", accept, fragment)
+            IfAct { cond, then_actions, else_actions } => {
+                check_writes_in(cx, then_actions, "${p}.then", accept, fragment)
+                check_writes_in(cx, else_actions, "${p}.else", accept, fragment)
+            }
+            JournalAct { code, params } => {
+                if accept { cx_issue(cx, p, "On accept has no journal (format 4.4)") }
+            }
+            JournalValueAct(v) => {
+                if accept { cx_issue(cx, p, "On accept has no journal (format 4.4)") }
+            }
+            JournalAllAct => {
+                if accept { cx_issue(cx, p, "On accept has no journal (format 4.4)") }
+            }
+            MachineErrorAct { code, params } => {
+                if accept { cx_issue(cx, p, "On accept has no machine_error (format 4.4)") }
+            }
+            CallAct { name, args } => {
+                if accept { cx_issue(cx, p, "On accept has no call of a writing primitive (format 4.4)") }
+            }
+            CancelOpenAct { party, except } => {
+                if party != "" && find_party(def, party) < 0 { cx_issue(cx, p, "the party ${party} is not declared") }
+            }
+            _ => ()
+        }
+        i += 1
+    }
+}
+
+// ---- the literals against the closed sets and the type id (format 2.5, sections 2 and 10) ----------------------------------------------------
+
+// The problem of a text literal against a type: "" when it fits (a set of literals, an id; under `?` the inner type counts).
+fn text_problem(spec TypeSpec, s str) -> str {
+    match spec {
+        TextSet(words) => {
+            if words.contains(s) { return "" }
+            "\"${s}\" is not in ${spec_text(spec)}"
+        }
+        IdType => {
+            if is_uuid(s) { return "" }
+            "\"${s}\" is not an id (8-4-4-4-12 lower case hexadecimal digits)"
+        }
+        OptionalType(inner) => text_problem(inner, s)
+        _ => ""
+    }
+}
+
+// The problem of an expression that is a text literal against a type.
+fn literal_problem(spec TypeSpec, e Expr) -> str {
+    match e {
+        Lit(v) => match v {
+            Text(s) => text_problem(spec, s)
+            _ => ""
+        }
+        _ => ""
+    }
+}
+
+// An assignment of a literal to a plain datum: the literal must be in the set of the datum, an id must be an id.
+fn check_literal_target(mut cx Checker, target LValue, value Expr, path str) -> () {
+    if target.steps.len() > 0 { return }
+    ro at = find_data(cx.def, target.root)
+    if at < 0 { return }
+    ro problem = literal_problem(cx.def.data[at].spec, value)
+    if problem != "" { cx_issue(cx, path, problem) }
+}
+
+fn fragment_may_write(kind WriteKind) -> bool {
+    match kind {
+        FragmentWrite => true
+        RowsAndFragment => true
+        _ => rows_may_write(kind)
+    }
+}
+
+fn check_target(mut cx Checker, target LValue, path str, fragment bool) -> () {
+    ro def = cx.def
+    ro at = find_data(def, target.root)
+    if at < 0 {
+        cx_issue(cx, path, "${target.root} is not a datum of the machine")
+        return
+    }
+    ro d = def.data[at]
+    ro may = if fragment { fragment_may_write(d.writes) } else { rows_may_write(d.writes) }
+    ro who = if fragment { "rows or a fragment" } else { "rows" }
+    if !may { cx_issue(cx, path, "the datum ${target.root} is written by ${write_kind_word(d.writes)}, not by ${who}") }
+    // a path `name[key].field` against the marks of `name[*].field`
+    if target.steps.len() == 2 {
+        match target.steps[1] {
+            FieldStep(f) => {
+                ro meta = find_data(def, "${target.root}[*].${f}")
+                if meta >= 0 && !rows_may_write(def.data[meta].writes) {
+                    cx_issue(cx, path, "the field ${f} of ${target.root} is written by ${write_kind_word(def.data[meta].writes)}, not by rows")
+                }
+            }
+            KeyStep(k) => ()
+        }
+    }
+}
+
+fn check_all_writes(mut cx Checker) -> () {
+    ro def = cx.def
+    mut i = 0
+    for st in def.states {
+        ro p = "$.states[${i}]"
+        mut k = 0
+        for r in st.rows {
+            check_writes_in(cx, r.actions, "${p}.rows[${k}].actions", false, false)
+            k += 1
+        }
+        k = 0
+        for a in st.accept {
+            check_writes_in(cx, a.actions, "${p}.accept[${k}].actions", true, false)
+            k += 1
+        }
+        check_writes_in(cx, st.entry, "${p}.entry", false, false)
+        if st.kind != EndKind {
+            // the entry of an operation changes no data (rule 29): the changes are in the row
+            check_no_data_writes(cx, st.entry, "${p}.entry")
+        } else {
+            check_no_data_writes(cx, st.entry, "${p}.entry")
+        }
+        i += 1
+    }
+    i = 0
+    for r in def.common {
+        check_writes_in(cx, r.actions, "$.common_events[${i}].actions", false, true)
+        i += 1
+    }
+}
+
+fn check_no_data_writes(mut cx Checker, actions []Action, path str) -> () {
+    mut i = 0
+    for a in actions {
+        match a {
+            AssignAct { target, value } => cx_issue(cx, "${path}[${i}]", "the entry of a state changes no data (rule 29): put the change in the row")
+            AddAct { target, value } => cx_issue(cx, "${path}[${i}]", "the entry of a state changes no data (rule 29): put the change in the row")
+            ForEachAct { var, list, body } => check_no_data_writes(cx, body, "${path}[${i}].body")
+            LetAct { name, value, body } => check_no_data_writes(cx, body, "${path}[${i}].body")
+            IfAct { cond, then_actions, else_actions } => {
+                check_no_data_writes(cx, then_actions, "${path}[${i}].then")
+                check_no_data_writes(cx, else_actions, "${path}[${i}].else")
+            }
+            _ => ()
+        }
+        i += 1
+    }
+}
+
+// ---- the classes of the primitives ---------------------------------------------------------------------------------------------
+
+fn check_positions(mut cx Checker) -> () {
+    for s in cx.sites {
+        match check_expr_positions(cx.registry, s.expr, s.pos) {
+            Ok(u) => ()
+            Err(x) => cx_issue(cx, "${s.place}${x.path[1..]}", x.message)
+        }
+    }
+    // the primitive calls that stand as actions
+    ro def = cx.def
+    mut i = 0
+    for st in def.states {
+        mut k = 0
+        for r in st.rows {
+            check_call_actions(cx, r.actions, "$.states[${i}].rows[${k}].actions", ActionPos)
+            k += 1
+        }
+        check_call_actions(cx, st.entry, "$.states[${i}].entry", entry_position(st.kind))
+        i += 1
+    }
+    i = 0
+    for r in def.common {
+        check_call_actions(cx, r.actions, "$.common_events[${i}].actions", ActionPos)
+        i += 1
+    }
+    // the primitives in the section Primitives
+    for pn in def.primitives {
+        match find_primitive(cx.registry, pn) {
+            Some(p) => ()
+            None => cx_issue(cx, "$.primitives", "the primitive ${pn} is not registered")
+        }
+    }
+    mut used = []str.new()
+    for s in cx.sites {
+        for pn in primitive_names(s.expr) { push_unique(used, pn) }
+    }
+    collect_call_names(def, used)
+    for pn in used {
+        if !def.primitives.contains(pn) { cx_issue(cx, "$.primitives", "the primitive ${pn} is called but not listed in primitives") }
+    }
+}
+
+// ---- the primitive new_id (format 2.5, sections 7 and 10) -------------------------------------------------------------------------------------
+//
+// It may stand only in a binding of the entry of an operation (`let fresh = call(new_id)`), and the binding must be written to the data by the
+// row `now` of that state: the value is fixed in the step, a repeated step takes it from the saved event (rules 12 and 13).
+
+fn reads_name_in_actions(actions []Action, name str) -> bool {
+    for a in actions {
+        match a {
+            AssignAct { target, value } => {
+                if expr_free(value, []str.new()).contains(name) { return true }
+            }
+            AddAct { target, value } => {
+                if expr_free(value, []str.new()).contains(name) { return true }
+            }
+            JournalAct { code, params } => {
+                for q in params {
+                    if expr_free(q.value, []str.new()).contains(name) { return true }
+                }
+            }
+            ForEachAct { var, list, body } => {
+                if reads_name_in_actions(body, name) { return true }
+            }
+            LetAct { name: bound, value, body } => {
+                if reads_name_in_actions(body, name) { return true }
+            }
+            IfAct { cond, then_actions, else_actions } => {
+                if reads_name_in_actions(then_actions, name) || reads_name_in_actions(else_actions, name) { return true }
+            }
+            _ => ()
+        }
+    }
+    false
+}
+
+fn uses_new_id(e Expr) -> bool => primitive_names(e).contains("new_id")
+
+fn check_new_id(mut cx Checker) -> () {
+    ro def = cx.def
+    // the allowed places: the values of the bindings in the entry of an operation
+    mut allowed = []str.new()
+    mut i = 0
+    for st in def.states {
+        if st.kind == OperationKind {
+            mut k = 0
+            for a in st.entry {
+                match a {
+                    BindAct { name, value } => {
+                        if uses_new_id(value) {
+                            allowed.push("$.states[${i}].entry[${k}].value")
+                            mut written = false
+                            for r in st.rows {
+                                if reads_name_in_actions(r.actions, name) { written = true }
+                            }
+                            if !written { cx_issue(cx, "$.states[${i}].entry[${k}]", "the binding ${name} of new_id is not written to the data by a row of the state (format 2.5, section 7)") }
+                        }
+                    }
+                    _ => ()
+                }
+                k += 1
+            }
+        }
+        i += 1
+    }
+    for s in cx.sites {
+        if uses_new_id(s.expr) && !allowed.contains(s.place) {
+            cx_issue(cx, s.place, "new_id may stand only in a binding of the entry of an operation (format 2.5, section 7)")
+        }
+    }
+}
+
+fn collect_call_names(def MachineDef, mut used []str) -> () {
+    for st in def.states {
+        for r in st.rows { collect_calls_in(r.actions, used) }
+        collect_calls_in(st.entry, used)
+    }
+    for r in def.common { collect_calls_in(r.actions, used) }
+}
+
+fn collect_calls_in(actions []Action, mut used []str) -> () {
+    for a in actions {
+        match a {
+            CallAct { name, args } => push_unique(used, name)
+            ForEachAct { var, list, body } => collect_calls_in(body, used)
+            LetAct { name, value, body } => collect_calls_in(body, used)
+            IfAct { cond, then_actions, else_actions } => {
+                collect_calls_in(then_actions, used)
+                collect_calls_in(else_actions, used)
+            }
+            _ => ()
+        }
+    }
+}
+
+fn check_call_actions(mut cx Checker, actions []Action, path str, pos Position) -> () {
+    mut i = 0
+    for a in actions {
+        ro p = "${path}[${i}]"
+        match a {
+            CallAct { name, args } => {
+                match check_call_position(cx.registry, name, pos) {
+                    Ok(u) => {
+                        match find_primitive(cx.registry, name) {
+                            Some(prim) => {
+                                if prim.class == Reading || prim.class == Pure {
+                                    cx_issue(cx, p, "the call of the ${class_word(prim.class)} primitive ${name} as an action has no effect: bind its result with a binding")
+                                }
+                                if prim.params.len() != args.len() { cx_issue(cx, p, "${name} takes ${prim.params.len()} arguments, got ${args.len()}") }
+                            }
+                            None => ()
+                        }
+                    }
+                    Err(x) => cx_issue(cx, p, x.message)
+                }
+                if pos == ForkEntryPos { cx_issue(cx, p, "a fork has no calls in its entry") }
+            }
+            ForEachAct { var, list, body } => check_call_actions(cx, body, "${p}.body", pos)
+            LetAct { name, value, body } => check_call_actions(cx, body, "${p}.body", pos)
+            IfAct { cond, then_actions, else_actions } => {
+                check_call_actions(cx, then_actions, "${p}.then", pos)
+                check_call_actions(cx, else_actions, "${p}.else", pos)
+            }
+            _ => ()
+        }
+        i += 1
+    }
+}
+
+// ---- reachability -------------------------------------------------------------------------------------------------------------
+
+fn targets_of_actions_row(r TableRow, mut out []str) -> () {
+    match r.next.target {
+        ToState(n) => push_unique(out, n)
+        _ => ()
+    }
+}
+
+fn check_reachable(mut cx Checker) -> () {
+    ro def = cx.def
+    if find_state(def, def.initial) < 0 { return }
+    mut seen = []str.new()
+    mut queue = [def.initial]
+    mut has_previous_target = false
+    while queue.len() > 0 {
+        ro name = match queue.pop() {
+            Some(n) => n
+            None => ""
+        }
+        if seen.contains(name) { continue }
+        seen.push(name)
+        ro at = find_state(def, name)
+        if at < 0 { continue }
+        mut next = []str.new()
+        for r in def.states[at].rows {
+            targets_of_actions_row(r, next)
+            match r.next.target {
+                ToPrevious => { has_previous_target = true }
+                _ => ()
+            }
+        }
+        for r in def.common {
+            targets_of_actions_row(r, next)
+            match r.next.target {
+                ToPrevious => { has_previous_target = true }
+                _ => ()
+            }
+        }
+        for n in next {
+            if !seen.contains(n) { queue.push(n) }
+        }
+        // a return to the previous state reaches every state that can be saved as previous: any state that waits for an event
+        if has_previous_target {
+            for st in def.states {
+                if st.kind == AppealKind && !seen.contains(st.name) { queue.push(st.name) }
+            }
+            has_previous_target = false
+        }
+    }
+    mut i = 0
+    for st in def.states {
+        if !seen.contains(st.name) && st.name != def.error_end {
+            cx_issue(cx, "$.states[${i}]", "the state ${st.name} cannot be reached from ${def.initial}")
+        }
+        i += 1
+    }
+}
+
+// ---- the Ends --------------------------------------------------------------------------------------------------------------------
+
+// The values of `field == "..."` that a condition covers: Some(field, values) when the condition is an or-chain of such comparisons.
+type Cover { ok bool, always bool, field str, values []str }
+
+fn cover_of(e Expr) -> Cover {
+    match e {
+        Lit(v) => {
+            match v {
+                Bool(right_cover) => return Cover { ok: right_cover, always: right_cover, field: "", values: []str.new() }
+                _ => ()
+            }
+            Cover { ok: false, always: false, field: "", values: []str.new() }
+        }
+        Binary { op, left, right } => {
+            if op == Or {
+                ro left_cover = cover_of(left)
+                ro right_cover = cover_of(right)
+                if left_cover.ok && right_cover.ok && !left_cover.always && !right_cover.always && left_cover.field == right_cover.field {
+                    return Cover { ok: true, always: false, field: left_cover.field, values: names_with_all(left_cover.values, right_cover.values) }
+                }
+                return Cover { ok: false, always: false, field: "", values: []str.new() }
+            }
+            if op == Eq {
+                match left {
+                    Name(n) => {
+                        match right {
+                            Lit(v) => {
+                                match v {
+                                    Text(w) => return Cover { ok: true, always: false, field: n, values: [w] }
+                                    _ => ()
+                                }
+                            }
+                            _ => ()
+                        }
+                    }
+                    _ => ()
+                }
+            }
+            Cover { ok: false, always: false, field: "", values: []str.new() }
+        }
+        _ => Cover { ok: false, always: false, field: "", values: []str.new() }
+    }
+}
+
+fn check_ends(mut cx Checker) -> () {
+    ro def = cx.def
+    mut i = 0
+    for st in def.states {
+        if st.kind == EndKind {
+            mut always = false
+            mut field = ""
+            mut covered = []str.new()
+            mut analysable = true
+            for er in def.end_rows {
+                if er.state != st.name { continue }
+                ro c = cover_of(er.when)
+                if !c.ok {
+                    analysable = false
+                } else if c.always {
+                    always = true
+                } else {
+                    if field != "" && field != c.field { analysable = false }
+                    field = c.field
+                    for v in c.values {
+                        if covered.contains(v) {
+                            cx_issue(cx, "$.states[${i}]", "the rows of the end ${st.name} are not exclusive: \"${v}\" is covered twice")
+                        }
+                        covered.push(v)
+                    }
+                }
+            }
+            if !always {
+                if !analysable || field == "" {
+                    cx_issue(cx, "$.states[${i}]", "the rows of the end ${st.name} must be a row with when true, or a chain of ${st.name} == \"...\" over one closed datum")
+                } else {
+                    ro at = find_data(def, field)
+                    if at < 0 {
+                        cx_issue(cx, "$.states[${i}]", "the end ${st.name} branches on ${field}, which is not a datum")
+                    } else {
+                        match def.data[at].spec {
+                            TextSet(words) => {
+                                mut missing = []str.new()
+                                for w in words {
+                                    ro excepted = st.except_field == field && st.except_values.contains(w)
+                                    if !covered.contains(w) && !excepted { missing.push(w) }
+                                }
+                                if missing.len() > 0 {
+                                    cx_issue(cx, "$.states[${i}]", "the rows of the end ${st.name} do not cover ${missing.len()} values of ${field}: ${missing.join(", ")}")
+                                }
+                            }
+                            _ => cx_issue(cx, "$.states[${i}]", "the end ${st.name} branches on ${field}, which is not a closed text")
+                        }
+                    }
+                }
+            }
+        }
+        i += 1
+    }
+}
+
+// ---- data, definitions, journal codes, includes ------------------------------------------------------------------------------------
+
+fn check_data(mut cx Checker) -> () {
+    ro def = cx.def
+    mut i = 0
+    for d in def.data {
+        ro p = "$.data[${i}]"
+        if d.name.contains("[") {
+            match d.initial {
+                NoInitial => ()
+                _ => cx_issue(cx, "${p}.initial", "a path datum has no initial value (the datum of the dict gives it)")
+            }
+            if d.monotonic.on && false { cx_issue(cx, p, "unreachable") }
+        } else {
+            match d.initial {
+                NoInitial => cx_issue(cx, "${p}.initial", "a datum needs an initial value")
+                InitialExpr(e) => {
+                    ro problem = literal_problem(d.spec, e)
+                    if problem != "" { cx_issue(cx, "${p}.initial", problem) }
+                }
+                InitialFromInput(f) => {
+                    if !def.input.present {
+                        cx_issue(cx, "${p}.initial", "from_input needs the section input")
+                    } else {
+                        mut known = false
+                        for field in def.input.fields {
+                            if field.name == f { known = true }
+                        }
+                        if !known { cx_issue(cx, "${p}.initial", "the input has no field ${f}") }
+                    }
+                }
+            }
+        }
+        if d.monotonic.on {
+            match d.spec {
+                IntType => ()
+                IntMin(n) => ()
+                FloatType => ()
+                _ => cx_issue(cx, "${p}.monotonic", "only a number does not decrease")
+            }
+        }
+        i += 1
+    }
+}
+
+fn definition_calls(def MachineDef, d DefFn) -> []str {
+    mut out = []str.new()
+    called_names(d.body, out)
+    mut defs = []str.new()
+    for x in def.definitions { defs.push(x.name) }
+    mut only = []str.new()
+    for c in out {
+        if defs.contains(c) { only.push(c) }
+    }
+    only
+}
+
+fn reaches(def MachineDef, from str, target str, mut seen []str) -> bool {
+    if seen.contains(from) { return false }
+    seen.push(from)
+    for d in def.definitions {
+        if d.name == from {
+            for c in definition_calls(def, d) {
+                if c == target { return true }
+                if reaches(def, c, target, seen) { return true }
+            }
+        }
+    }
+    false
+}
+
+fn check_definitions(mut cx Checker) -> () {
+    ro def = cx.def
+    mut i = 0
+    for d in def.definitions {
+        mut seen = []str.new()
+        if reaches(def, d.name, d.name, seen) { cx_issue(cx, "$.definitions[${i}]", "the definition ${d.name} calls itself (no recursion)") }
+        i += 1
+    }
+}
+
+fn journal_codes_in(actions []Action, path str, mut out []CodeSeen) -> () {
+    mut i = 0
+    for a in actions {
+        ro p = "${path}[${i}]"
+        match a {
+            JournalAct { code, params } => {
+                out.push(CodeSeen { place: p, code, names: param_names(params) })
+            }
+            MachineErrorAct { code, params } => {
+                out.push(CodeSeen { place: p, code, names: param_names(params) })
+            }
+            ForEachAct { var, list, body } => journal_codes_in(body, "${p}.body", out)
+            LetAct { name, value, body } => journal_codes_in(body, "${p}.body", out)
+            IfAct { cond, then_actions, else_actions } => {
+                journal_codes_in(then_actions, "${p}.then", out)
+                journal_codes_in(else_actions, "${p}.else", out)
+            }
+            _ => ()
+        }
+        i += 1
+    }
+}
+
+type CodeSeen { place str, code str, names []str }
+
+fn param_names(params []NamedExpr) -> []str {
+    mut out = []str.new()
+    for q in params { out.push(q.name) }
+    out
+}
+
+fn check_journal(mut cx Checker) -> () {
+    ro def = cx.def
+    mut seen = []CodeSeen.new()
+    mut i = 0
+    for st in def.states {
+        mut k = 0
+        for r in st.rows {
+            journal_codes_in(r.actions, "$.states[${i}].rows[${k}].actions", seen)
+            k += 1
+        }
+        journal_codes_in(st.entry, "$.states[${i}].entry", seen)
+        k = 0
+        for a in st.accept {
+            journal_codes_in(a.actions, "$.states[${i}].accept[${k}].actions", seen)
+            k += 1
+        }
+        i += 1
+    }
+    i = 0
+    for r in def.common {
+        journal_codes_in(r.actions, "$.common_events[${i}].actions", seen)
+        i += 1
+    }
+    for c in seen {
+        if !is_snake(c.code) { cx_issue(cx, c.place, "the code ${c.code} must be lower case latin with underscores") }
+        for n in c.names {
+            if !is_snake(n) { cx_issue(cx, c.place, "the parameter ${n} of the code ${c.code} must be lower case latin with underscores") }
+        }
+    }
+    // the codes against the union of the table of the methodology and the table of the product (format 2.12, Ya-31); a host that names no table has no codes to compare with
+    if cx.registry.journal.len() > 0 {
+        for c in seen {
+            match journal_find(cx.registry.journal, c.code) {
+                None => cx_issue(cx, c.place, "the code ${c.code} is in neither of the journal tables (the table of the methodology, the table of the product)")
+                Some(row) => {
+                    for n in row.params {
+                        if !c.names.contains(n) { cx_issue(cx, c.place, "the code ${c.code} lacks the parameter ${n} of the journal tables") }
+                    }
+                    for n in c.names {
+                        if !row.params.contains(n) && !row.optional.contains(n) { cx_issue(cx, c.place, "the parameter ${n} of the code ${c.code} is not in the journal tables") }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn is_hex12(s str) -> bool {
+    if s.byte_len() != 12 { return false }
+    for c in s.chars() {
+        ro one = "${c}"
+        ro hex = (one >= "0" && one <= "9") || (one >= "a" && one <= "f")
+        if !hex { return false }
+    }
+    true
+}
+
+// The name of a file of definitions in the registry of the host (format section 8): a word of letters of any alphabet, digits and underscores; not a path.
+fn is_registry_name(s str) -> bool {
+    if s.byte_len() == 0 { return false }
+    for c in s.chars() {
+        ro one = "${c}"
+        if one == "/" || one == "\\" || one == ":" || one == "." || one == " " || one == "\"" { return false }
+    }
+    true
+}
+
+fn check_includes(mut cx Checker) -> () {
+    mut seen = []str.new()
+    mut i = 0
+    for inc in cx.def.includes {
+        ro p = "$.includes[${i}]"
+        if !is_registry_name(inc.name) { cx_issue(cx, "${p}.name", "the name of a definitions file is a name of the registry (letters, digits, underscore; not a path)") }
+        if seen.contains(inc.name) { cx_issue(cx, "${p}.name", "the file ${inc.name} is included twice") }
+        seen.push(inc.name)
+        if inc.version == "" { cx_issue(cx, "${p}.version", "the version is missing") }
+        if !is_hex12(inc.hash) { cx_issue(cx, "${p}.hash", "the hash is the first 12 hex digits (lower case) of SHA-256") }
+        i += 1
+    }
+}
+
+fn check_parties(mut cx Checker) -> () {
+    ro def = cx.def
+    mut i = 0
+    for pt in def.parties {
+        ro p = "$.parties[${i}]"
+        if pt.kind == GatekeeperParty && pt.setting == "" { cx_issue(cx, "${p}.setting", "a gatekeeper names the setting of the project") }
+        if pt.kind == MachineParty && pt.nested == "" { cx_issue(cx, "${p}.nested", "a nested machine party names the machine") }
+        if pt.kind != MachineParty && pt.nested != "" { cx_issue(cx, "${p}.nested", "only a machine party names a nested machine") }
+        if sends_requests(pt.kind) && pt.result_spec.len() == 0 { cx_issue(cx, "${p}.result", "an agent or a machine party declares the type of its result (format 2.2, the column kind: result)") }
+        if pt.counter == "" {
+            cx_issue(cx, "${p}.counter", "a party names the datum of its attempt counter (rule 15)")
+        } else if pt.id != "" {
+            ro at = find_data(def, pt.counter)
+            if at < 0 {
+                cx_issue(cx, "${p}.counter", "the datum ${pt.counter} is not declared")
+            } else {
+                ro d = def.data[at]
+                match d.writes {
+                    MechanicsWrite => ()
+                    _ => cx_issue(cx, "${p}.counter", "the counter ${pt.counter} is written by mechanics")
+                }
+                if !d.monotonic.on { cx_issue(cx, "${p}.counter", "the counter ${pt.counter} does not decrease") }
+                match d.spec {
+                    IntMin(n) => ()
+                    _ => cx_issue(cx, "${p}.counter", "the counter ${pt.counter} is an int>=0")
+                }
+            }
+        }
+        if !sends_requests(pt.kind) && pt.progress.len() > 0 { cx_issue(cx, "${p}.progress", "only a party that gets requests has progress events") }
+        if sends_requests(pt.kind) && pt.words.len() > 0 { cx_issue(cx, "${p}.words", "words are for the gates (human, enhanced, gatekeeper)") }
+        i += 1
+    }
+    // a state with a set of parties needs a party without an id
+    for st in def.states {
+        if st.set.len() > 0 {
+            ro pi = find_party(def, st.party)
+            if pi >= 0 && def.parties[pi].id != "" { cx_issue(cx, "$.states", "the state ${st.name} has a set: its party ${st.party} has the id of the element of the set instead") }
+        }
+    }
+}
+
+// ---- nested machines (format sections 1, 4.2, 5, 10; task 119) --------------------------------------------------------------------------
+
+// The fields of a record type of the machine by the spec; None when the spec is not a record of the types.
+fn record_fields_of(types TypeDefs, spec TypeSpec) -> Option[[]FieldDef] {
+    match spec {
+        RecordType(name) => {
+            for r in types.records {
+                if r.name == name { return Some(r.fields) }
+            }
+            None
+        }
+        _ => None
+    }
+}
+
+fn field_has(fields []FieldDef, name str) -> bool {
+    for f in fields {
+        if f.name == name { return true }
+    }
+    false
+}
+
+// Does a list of actions write the datum (an assignment or an addition whose root is the datum), at any depth?
+fn actions_write(actions []Action, datum str) -> bool {
+    for a in actions {
+        match a {
+            AssignAct { target, value } => {
+                if target.root == datum { return true }
+            }
+            AddAct { target, value } => {
+                if target.root == datum { return true }
+            }
+            ForEachAct { var, list, body } => {
+                if actions_write(body, datum) { return true }
+            }
+            LetAct { name, value, body } => {
+                if actions_write(body, datum) { return true }
+            }
+            IfAct { cond, then_actions, else_actions } => {
+                if actions_write(then_actions, datum) || actions_write(else_actions, datum) { return true }
+            }
+            _ => ()
+        }
+    }
+    false
+}
+
+// The names of the machines in a literal list `["agent_step", …]`; `ok` is false when the expression is not such a list (an expression that is computed is not checked here).
+type LiteralNames { ok bool, names []str }
+
+fn literal_names(e Expr) -> LiteralNames {
+    mut out = []str.new()
+    match e {
+        ListLit(items) => {
+            for it in items {
+                match it {
+                    Lit(v) => {
+                        match v {
+                            Text(t) => out.push(t)
+                            _ => return LiteralNames { ok: false, names: out }
+                        }
+                    }
+                    _ => return LiteralNames { ok: false, names: out }
+                }
+            }
+            LiteralNames { ok: true, names: out }
+        }
+        _ => LiteralNames { ok: false, names: out }
+    }
+}
+
+fn nested_names_of(def MachineDef) -> []str {
+    mut out = []str.new()
+    for p in def.parties {
+        if p.kind == MachineParty && p.nested != "" { push_unique(out, p.nested) }
+    }
+    out
+}
+
+fn check_list_names(mut cx Checker, e Expr, path str, what str) -> () {
+    ro lit = literal_names(e)
+    if !lit.ok { return }
+    ro known = nested_names_of(cx.def)
+    for n in lit.names {
+        if !known.contains(n) { cx_issue(cx, path, "${what} names the machine ${n} that no party calls") }
+    }
+}
+
+fn check_nested_actions(mut cx Checker, actions []Action, path str) -> () {
+    mut i = 0
+    for a in actions {
+        ro p = "${path}[${i}]"
+        match a {
+            PassAct { nested, signal } => {
+                if !signal_words().contains(signal) { cx_issue(cx, "${p}.signal", "the signal must be stop, continue, halt or cancel, got ${signal}") }
+                check_list_names(cx, nested, "${p}.nested", "the pass")
+            }
+            CancelOpenAct { party, except } => {
+                mut k = 0
+                for x in except {
+                    check_list_names(cx, x, "${p}.except[${k}]", "the exception of cancel_open")
+                    k += 1
+                }
+            }
+            ForEachAct { var, list, body } => check_nested_actions(cx, body, "${p}.body")
+            LetAct { name, value, body } => check_nested_actions(cx, body, "${p}.body")
+            IfAct { cond, then_actions, else_actions } => {
+                check_nested_actions(cx, then_actions, "${p}.then")
+                check_nested_actions(cx, else_actions, "${p}.else")
+            }
+            _ => ()
+        }
+        i += 1
+    }
+}
+
+// Is the idle term of a state no term: absent, `none` or `0`?
+fn silence_is_none(st StateDef) -> bool {
+    for e in st.silence {
+        match e {
+            Lit(v) => {
+                match v {
+                    Null => ()
+                    Int(n) => {
+                        if n != 0 { return false }
+                    }
+                    _ => return false
+                }
+            }
+            _ => return false
+        }
+    }
+    true
+}
+
+// The call of a nested machine: no idle term (rule 35, item 5), and the fields of the request are the fields of the input type, the profile among them when the column has one.
+fn check_call_state(mut cx Checker, st StateDef, path str) -> () {
+    ro def = cx.def
+    ro pi = find_party(def, st.party)
+    if pi < 0 { return }
+    ro party = def.parties[pi]
+    for f in st.inputs {
+        if f.field == "profile" && f.to_party { cx_issue(cx, "${path}.inputs", "the field profile of the request is given by the column profile of the table of the parties, not by a row of the Input (T3)") }
+    }
+    if party.kind != MachineParty { return }
+    if !silence_is_none(st) { cx_issue(cx, "${path}.silence", "a call of a nested machine has no idle term (rule 35, item 5)") }
+    if party.input_spec.len() == 0 { return }
+    match record_fields_of(def.types, party.input_spec[0]) {
+        None => cx_issue(cx, "$.parties[${pi}].input_type", "the input type of a nested machine is a record of the machine")
+        Some(fields) => {
+            mut given = []str.new()
+            for f in st.inputs {
+                if !f.to_party { continue }
+                given.push(f.field)
+                if !field_has(fields, f.field) { cx_issue(cx, "${path}.inputs", "the field ${f.field} of the request is not a field of the input type ${spec_text(party.input_spec[0])} of the nested machine") }
+            }
+            if party.profile.len() > 0 {
+                given.push("profile")
+                if !field_has(fields, "profile") { cx_issue(cx, "$.parties[${pi}].profile", "the party has a profile but the input type ${spec_text(party.input_spec[0])} has no field profile") }
+            }
+            for f in fields {
+                if !given.contains(f.name) { cx_issue(cx, path, "the input type ${spec_text(party.input_spec[0])} has the field ${f.name} that the request of ${st.name} does not give") }
+            }
+        }
+    }
+}
+
+// The property `Правит` (rule 14) and `Возвратов формы` of an appeal.
+fn check_edits_state(mut cx Checker, st StateDef, path str) -> () {
+    ro def = cx.def
+    if st.edits != "" && st.edit_check == "" { cx_issue(cx, "${path}.edit_check", "Edits needs the check: the reading primitive edit_check") }
+    if st.edits == "" && st.edit_check != "" { cx_issue(cx, "${path}.edits", "edit_check is the check of Edits: the datum that the answer edits is missing") }
+    if st.edits != "" && find_data(def, st.edits) >= 0 {
+        mut written = false
+        for a in st.accept {
+            if actions_write(a.actions, st.edits) { written = true }
+        }
+        if !written { cx_issue(cx, "${path}.edits", "the datum ${st.edits} of Edits is not written in On accept of the state ${st.name} (rule 14)") }
+    }
+    if st.edit_check != "" {
+        match find_primitive(cx.registry, st.edit_check) {
+            Some(p) => {
+                match p.result {
+                    BoolType => ()
+                    _ => cx_issue(cx, "${path}.edit_check", "the check ${st.edit_check} must return bool")
+                }
+            }
+            None => ()
+        }
+    }
+    if st.form_returns > 0 {
+        ro pi = find_party(def, st.party)
+        if pi >= 0 && def.parties[pi].parse.len() == 0 {
+            cx_issue(cx, "${path}.form_returns", "Form returns above zero needs a party whose answer the parse checks (format 4.2)")
+        }
+    }
+}
+
+// The `разбор` of a party: a reading primitive of one parameter (the answer) or two (the answer and the role), the first one of the type of the result of the party.
+fn check_party_parse(mut cx Checker, pt PartyDef, path str) -> () {
+    if pt.parse.len() == 0 { return }
+    if pt.kind != MachineParty { cx_issue(cx, "${path}.parse", "only a party of the kind machine has a parse") }
+    ro pr = pt.parse[0]
+    match find_primitive(cx.registry, pr.primitive) {
+        None => cx_issue(cx, "${path}.parse.primitive", "the primitive ${pr.primitive} is not registered")
+        Some(p) => {
+            if p.class != Reading { cx_issue(cx, "${path}.parse.primitive", "the parse ${pr.primitive} must be a reading primitive, it is ${class_word(p.class)}") }
+            ro wanted = if pr.role == "" { 1 } else { 2 }
+            if p.params.len() != wanted {
+                if pr.role == "" {
+                    cx_issue(cx, "${path}.parse.primitive", "the parse ${pr.primitive} takes ${p.params.len()} parameters: without a role it takes the answer only")
+                } else {
+                    cx_issue(cx, "${path}.parse.role", "the role ${pr.role} is the second parameter of the parse: the primitive ${pr.primitive} takes ${p.params.len()} parameters")
+                }
+            } else {
+                if pt.result_spec.len() > 0 && spec_text(p.params[0].spec) != spec_text(pt.result_spec[0]) {
+                    cx_issue(cx, "${path}.parse.primitive", "the first parameter of the parse ${pr.primitive} is ${spec_text(p.params[0].spec)}, the result of the party is ${spec_text(pt.result_spec[0])}")
+                }
+                if pr.role != "" {
+                    match p.params[1].spec {
+                        TextSet(words) => {
+                            if !words.contains(pr.role) { cx_issue(cx, "${path}.parse.role", "the role ${pr.role} is not in ${spec_text(p.params[1].spec)}") }
+                        }
+                        _ => ()
+                    }
+                }
+                // the table "by role" (format 7, 2.12, Ya-33): the type of the value is chosen by the literal of the role, and the type after `->` is that type
+                if has_roles(cx.registry, pr.primitive) {
+                    if pr.role == "" {
+                        cx_issue(cx, "${path}.parse.role", "the primitive ${pr.primitive} has a table by role: the parse names the role")
+                    } else {
+                        match find_role(cx.registry, pr.primitive, pr.role) {
+                            None => cx_issue(cx, "${path}.parse.role", "the role ${pr.role} is not in the table by role of the primitive ${pr.primitive}")
+                            Some(row) => {
+                                if spec_text(row.result) != spec_text(pr.result) {
+                                    cx_issue(cx, "${path}.parse.type", "the role ${pr.role} of ${pr.primitive} gives ${spec_text(row.result)}, the parse says ${spec_text(pr.result)}")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The counter of a party of a set is a path `x[*].field` into the dict of its elements (format 1, rule 15, СГ1); a plain datum counts a single party.
+fn check_set_counter(mut cx Checker, pt PartyDef, path str) -> () {
+    if !pt.counter.contains("[*]") { return }
+    ro def = cx.def
+    if pt.id != "" { cx_issue(cx, "${path}.counter", "the counter ${pt.counter} is a path into a set: the party has no id of its own") }
+    ro cut = pt.counter.find("[*]") ?? 0
+    ro root = pt.counter[..cut]
+    ro field = pt.counter[cut + 4..]
+    ro at = find_data(def, pt.counter)
+    if at < 0 {
+        cx_issue(cx, "${path}.counter", "the datum ${pt.counter} is not declared")
+    } else {
+        ro d = def.data[at]
+        match d.writes {
+            MechanicsWrite => ()
+            _ => cx_issue(cx, "${path}.counter", "the counter ${pt.counter} is written by mechanics")
+        }
+        if !d.monotonic.on { cx_issue(cx, "${path}.counter", "the counter ${pt.counter} does not decrease") }
+        match d.spec {
+            IntMin(n) => ()
+            _ => cx_issue(cx, "${path}.counter", "the counter ${pt.counter} is an int>=0")
+        }
+    }
+    ro rt = find_data(def, root)
+    if rt < 0 {
+        cx_issue(cx, "${path}.counter", "the datum ${root} of the set is not declared")
+    } else {
+        match def.data[rt].spec {
+            DictType { key, value } => {
+                match record_fields_of(def.types, value) {
+                    Some(fields) => {
+                        if !field_has(fields, field) { cx_issue(cx, "${path}.counter", "the record of the elements of ${root} has no field ${field}") }
+                    }
+                    None => cx_issue(cx, "${path}.counter", "the elements of ${root} are records with the counter field ${field}")
+                }
+            }
+            _ => cx_issue(cx, "${path}.counter", "the datum ${root} of the set is a dict of records")
+        }
+    }
+}
+
+fn check_nested_use(mut cx Checker) -> () {
+    ro def = cx.def
+    mut i = 0
+    for pt in def.parties {
+        ro p = "$.parties[${i}]"
+        if pt.kind == MachineParty && pt.input_spec.len() == 0 { cx_issue(cx, "${p}.input_type", "a nested machine party declares the type of its input") }
+        if pt.kind != MachineParty && pt.input_spec.len() > 0 { cx_issue(cx, "${p}.input_type", "only a machine party has the type of the input of a call") }
+        check_party_parse(cx, pt, p)
+        check_set_counter(cx, pt, p)
+        i += 1
+    }
+    i = 0
+    for st in def.states {
+        ro path = "$.states[${i}]"
+        if st.kind == AppealKind {
+            check_call_state(cx, st, path)
+            check_edits_state(cx, st, path)
+        }
+        check_nested_actions(cx, st.entry, "${path}.entry")
+        mut k = 0
+        for r in st.rows {
+            check_nested_actions(cx, r.actions, "${path}.rows[${k}].actions")
+            k += 1
+        }
+        k = 0
+        for a in st.accept {
+            check_nested_actions(cx, a.actions, "${path}.accept[${k}].actions")
+            k += 1
+        }
+        i += 1
+    }
+    i = 0
+    for r in def.common {
+        check_nested_actions(cx, r.actions, "$.common_events[${i}].actions")
+        i += 1
+    }
+}
+
+/// NestedProblem: why a parent machine does not fit the machine it calls: the place in the tree of the parent and the reason.
+export type NestedProblem { path str, message str }
+
+// The structural equality of two types of two machines: the same spec text, and the same fields for the named types (a record is told by its name, as the wire form tells it).
+fn same_type(a TypeSpec, adefs TypeDefs, b TypeSpec, bdefs TypeDefs, depth int) -> bool {
+    if spec_text(a) != spec_text(b) { return false }
+    if depth > 8 { return true }
+    match a {
+        RecordType(name) => {
+            ro fa = record_fields_of(adefs, a)
+            ro fb = record_fields_of(bdefs, b)
+            match fa {
+                Some(xs) => {
+                    match fb {
+                        Some(ys) => {
+                            if xs.len() != ys.len() { return false }
+                            for x in xs {
+                                mut found = false
+                                for y in ys {
+                                    if x.name == y.name && same_type(x.spec, adefs, y.spec, bdefs, depth + 1) { found = true }
+                                }
+                                if !found { return false }
+                            }
+                            true
+                        }
+                        None => false
+                    }
+                }
+                None => false
+            }
+        }
+        OptionalType(inner) => {
+            match b {
+                OptionalType(other) => same_type(inner, adefs, other, bdefs, depth + 1)
+                _ => false
+            }
+        }
+        ListType(inner) => {
+            match b {
+                ListType(other) => same_type(inner, adefs, other, bdefs, depth + 1)
+                _ => false
+            }
+        }
+        _ => true
+    }
+}
+
+/// The check of a parent against the machine it calls under the registry name `name`: for each party of the parent that names it, the record of its input type has the fields of
+/// the `## Input` of the called machine (the same names and types) and its result is the result type of the ends of the called one. The registry of the caller gives the machine
+/// by the name (format 1, rule 35). An empty list means that the pair fits.
+export fn check_nested(def MachineDef, name str, callee MachineDef) -> []NestedProblem {
+    mut out = []NestedProblem.new()
+    mut i = 0
+    for pt in def.parties {
+        ro p = "$.parties[${i}]"
+        i += 1
+        if pt.kind != MachineParty || pt.nested != name { continue }
+        if pt.input_spec.len() > 0 {
+            match record_fields_of(def.types, pt.input_spec[0]) {
+                None => out.push(NestedProblem { path: "${p}.input_type", message: "the input type of the party ${pt.name} is not a record" })
+                Some(mine) => {
+                    for f in callee.input.fields {
+                        mut found = false
+                        for m in mine {
+                            if m.name == f.name {
+                                found = true
+                                if !same_type(m.spec, def.types, f.spec, callee.types, 0) {
+                                    out.push(NestedProblem { path: "${p}.input_type", message: "the field ${f.name} is ${spec_text(m.spec)} in the input type, the input of ${callee.name} takes ${spec_text(f.spec)}" })
+                                }
+                            }
+                        }
+                        if !found { out.push(NestedProblem { path: "${p}.input_type", message: "the input of ${callee.name} takes the field ${f.name} that the input type does not have" }) }
+                    }
+                    for m in mine {
+                        if !field_has(callee.input.fields, m.name) { out.push(NestedProblem { path: "${p}.input_type", message: "the input type has the field ${m.name} that the input of ${callee.name} does not take" }) }
+                    }
+                }
+            }
+        }
+        if pt.result_spec.len() > 0 && callee.result_spec.len() > 0 {
+            if !same_type(pt.result_spec[0], def.types, callee.result_spec[0], callee.types, 0) {
+                out.push(NestedProblem { path: "${p}.result", message: "the result ${spec_text(pt.result_spec[0])} of the party ${pt.name} is not the result ${spec_text(callee.result_spec[0])} of ${callee.name}" })
+            }
+        }
+    }
+    out
+}
+
+/// Every issue found in a decoded machine, in a fixed order; the registry gives the classes and the signatures of the primitives.
+export fn check_machine(def MachineDef, registry Registry) -> []LoadError {
+    mut cx = Checker { def, registry, issues: []LoadError.new(), sites: []Site.new() }
+    check_names(cx)
+    check_structure(cx)
+    check_parties(cx)
+    check_nested_use(cx)
+    check_data(cx)
+    check_definitions(cx)
+    check_includes(cx)
+    check_events(cx)
+    collect_sites(cx)
+    check_reads(cx)
+    check_all_writes(cx)
+    check_positions(cx)
+    check_new_id(cx)
+    check_journal(cx)
+    check_reachable(cx)
+    check_ends(cx)
+    cx.issues
+}
+
+/// The text of one issue: `<path>: <message>`.
+export fn issue_text(e LoadError) -> str => "${e.path}: ${e.message}"
+
+/// The machine from a JSON text: decoded, then checked. The list is empty-free: an `Err` carries at least one issue.
+export fn load_machine(text str, registry Registry) -> Result[MachineDef, []LoadError] {
+    match parse_machine(text) {
+        Ok(def) => {
+            ro issues = check_machine(def, registry)
+            if issues.len() > 0 { return Err(issues) }
+            Ok(def)
+        }
+        Err(e) => Err([e])
+    }
+}

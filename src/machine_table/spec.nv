@@ -1,0 +1,208 @@
+// spec.nv - the types of the JSON tree written as the format writes them: `int>=0`, `?text`, `[]Finding`, `{text: int}`,
+// `"first" | "retry"`, `id`, `full {Kind: text}`, `(text, int)`. The reverse of `spec_text` of the core.
+//
+// A name that is not one of the base types is a record or a variant of the machine: it must be declared in the `TypeDefs` that the
+// caller passes. `?` and `[]` apply to everything to their right; a set of literals under them is in parentheses, `?("a" | "b")`;
+// the form `?"a" | "b"` is not defined (format 2.5, section 2). The old form `text from {...}` is gone.
+module alula.machine_table
+
+import std.text
+import alula.machine.{TypeSpec, TypeDefs, IntType, IntMin, FloatType, TextType, BoolType, NothingType, IdType, TextSet, OptionalType, ListType, DictType, FullDictType, TupleType, RecordType, VariantType}
+
+// The text as a list of characters (one `str` each): a byte slice of a text with Cyrillic words would split a code point.
+type SpecReader { text str, items []str, pos int }
+
+fn sr_peek(r SpecReader) -> str {
+    if r.pos < r.items.len() { return r.items[r.pos] }
+    ""
+}
+
+fn sr_slice(r SpecReader, from int, to int) -> str {
+    mut out = ""
+    mut i = from
+    while i < to {
+        out = "${out}${r.items[i]}"
+        i += 1
+    }
+    out
+}
+
+fn sr_skip(mut r SpecReader) -> () {
+    while sr_peek(r) == " " { r.pos += 1 }
+}
+
+fn sr_eat(mut r SpecReader, word str) -> bool {
+    sr_skip(r)
+    ro n = word.chars().count()
+    if r.pos + n <= r.items.len() && sr_slice(r, r.pos, r.pos + n) == word {
+        r.pos += n
+        return true
+    }
+    false
+}
+
+fn sr_is_word_char(c str) -> bool {
+    if c == "_" { return true }
+    if c >= "a" && c <= "z" { return true }
+    if c >= "A" && c <= "Z" { return true }
+    c >= "0" && c <= "9"
+}
+
+fn sr_ident(mut r SpecReader) -> str {
+    sr_skip(r)
+    ro start = r.pos
+    while sr_is_word_char(sr_peek(r)) { r.pos += 1 }
+    sr_slice(r, start, r.pos)
+}
+
+fn sr_fail(r SpecReader, message str) -> Result[TypeSpec, str] => Err("${message} at ${r.pos} in \"${r.text}\"")
+
+fn sr_quoted(mut r SpecReader) -> Result[str, str] {
+    sr_skip(r)
+    if sr_peek(r) != "\"" { return Err("a quoted word is expected at ${r.pos} in \"${r.text}\"") }
+    r.pos += 1
+    ro start = r.pos
+    while r.pos < r.items.len() && sr_peek(r) != "\"" { r.pos += 1 }
+    if r.pos >= r.items.len() { return Err("the quoted word is not closed in \"${r.text}\"") }
+    ro word = sr_slice(r, start, r.pos)
+    r.pos += 1
+    Ok(word)
+}
+
+fn sr_number(mut r SpecReader) -> Result[int, str] {
+    sr_skip(r)
+    mut negative = false
+    if sr_peek(r) == "-" {
+        negative = true
+        r.pos += 1
+    }
+    ro start = r.pos
+    while sr_peek(r) >= "0" && sr_peek(r) <= "9" { r.pos += 1 }
+    if r.pos == start { return Err("a number is expected at ${r.pos} in \"${r.text}\"") }
+    ro digits = sr_slice(r, start, r.pos)
+    if digits.byte_len() > 18 { return Err("the number ${digits} is too long") }
+    mut n = 0
+    for c in digits.chars() {
+        ro d = match "0123456789".find("${c}") {
+            Some(at) => at
+            None => 0
+        }
+        n = n * 10 + d
+    }
+    Ok(if negative { 0 - n } else { n })
+}
+
+// A set of literals: `"a" | "b"`, two literals or more; the first one is under the reader.
+fn sr_literal_set(mut r SpecReader) -> Result[TypeSpec, str] {
+    mut words = []str.new()
+    while true {
+        ro word = sr_quoted(r)?
+        words.push(word)
+        if sr_eat(r, "|") { continue }
+        break
+    }
+    if words.len() < 2 { return sr_fail(r, "a set of literals has two values or more") }
+    Ok(TextSet(words))
+}
+
+fn sr_named(name str, defs TypeDefs, r SpecReader) -> Result[TypeSpec, str] {
+    if name == "State" {
+        // the built-in `State` (format section 2): the set of the names of the states of the machine (a machine of one state: any text)
+        for v in defs.variants {
+            if v.name == "State" {
+                mut words = []str.new()
+                for c in v.cases { words.push(c.name) }
+                if words.len() >= 2 { return Ok(TextSet(words)) }
+                return Ok(TextType)
+            }
+        }
+    }
+    for v in defs.variants {
+        if v.name == name { return Ok(VariantType(name)) }
+    }
+    for rec in defs.records {
+        if rec.name == name { return Ok(RecordType(name)) }
+    }
+    Err("the type ${name} is not declared (in \"${r.text}\")")
+}
+
+// The type under `?` or `[]`: a set of literals must be in parentheses.
+fn sr_under(mut r SpecReader, defs TypeDefs) -> Result[TypeSpec, str] {
+    sr_skip(r)
+    if sr_peek(r) == "\"" { return sr_fail(r, "a set of literals under ? or [] is written in parentheses") }
+    sr_type(r, defs)
+}
+
+fn sr_type(mut r SpecReader, defs TypeDefs) -> Result[TypeSpec, str] {
+    sr_skip(r)
+    if sr_peek(r) == "\"" { return sr_literal_set(r) }
+    if sr_eat(r, "?") {
+        ro inner = sr_under(r, defs)?
+        return Ok(OptionalType(inner))
+    }
+    if sr_eat(r, "[]") {
+        ro inner = sr_under(r, defs)?
+        return Ok(ListType(inner))
+    }
+    if sr_peek(r) == "{" {
+        r.pos += 1
+        ro key = sr_type(r, defs)?
+        if !sr_eat(r, ":") { return sr_fail(r, "':' is expected in a dict type") }
+        ro value = sr_type(r, defs)?
+        if !sr_eat(r, "}") { return sr_fail(r, "'}' is expected in a dict type") }
+        return Ok(DictType { key, value })
+    }
+    if sr_peek(r) == "(" {
+        r.pos += 1
+        mut items = []TypeSpec.new()
+        while true {
+            ro item = sr_type(r, defs)?
+            items.push(item)
+            if sr_eat(r, ",") { continue }
+            if sr_eat(r, ")") { break }
+            return sr_fail(r, "',' or ')' is expected in a tuple type")
+        }
+        if items.len() == 1 {
+            match items[0] {
+                TextSet(words) => return Ok(items[0])
+                _ => ()
+            }
+        }
+        if items.len() < 2 { return sr_fail(r, "a tuple type has two fields or more") }
+        return Ok(TupleType(items))
+    }
+    ro name = sr_ident(r)
+    if name == "" { return sr_fail(r, "a type is expected") }
+    if name == "full" {
+        if !sr_eat(r, "{") { return sr_fail(r, "'{' is expected after 'full'") }
+        ro key = sr_type(r, defs)?
+        if !sr_eat(r, ":") { return sr_fail(r, "':' is expected in a full dict type") }
+        ro value = sr_type(r, defs)?
+        if !sr_eat(r, "}") { return sr_fail(r, "'}' is expected in a full dict type") }
+        return Ok(FullDictType { key, value })
+    }
+    if name == "int" {
+        if sr_eat(r, ">=") {
+            ro bound = sr_number(r)?
+            return Ok(IntMin(bound))
+        }
+        return Ok(IntType)
+    }
+    if name == "float" { return Ok(FloatType) }
+    if name == "bool" { return Ok(BoolType) }
+    if name == "nothing" { return Ok(NothingType) }
+    if name == "text" { return Ok(TextType) }
+    if name == "id" { return Ok(IdType) }
+    sr_named(name, defs, r)
+}
+
+/// A type from its text; a name must be declared in `defs`. The error says where in the text.
+export fn parse_spec(text str, defs TypeDefs) -> Result[TypeSpec, str] {
+    mut items = []str.new()
+    for c in text.chars() { items.push("${c}") }
+    mut r = SpecReader { text, items, pos: 0 }
+    ro spec = sr_type(r, defs)?
+    sr_skip(r)
+    if r.pos < items.len() { return Err("unexpected text at ${r.pos} in \"${text}\"") }
+    Ok(spec)
+}

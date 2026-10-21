@@ -1,0 +1,271 @@
+// check_test.nv - the checks of a table: every check is red on a broken table and green on the good one.
+module alula.machine_table
+
+import alula.machine.{chat_machine_text, standard_registry, machine_files, text_of_file}
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+
+fn wait_rows_with(go_value str) -> str {
+    ro inc = jassign("n", go_value)
+    ro a = jassign("stop", jl(jstr("a")))
+    ro go = `{"n":1,"event":{"kind":"word","word":"go"},"actions":[${inc}],"to":"Decide"}`
+    ro halt = `{"n":2,"event":{"kind":"word","word":"halt"},"actions":[${a}],"to":"Stopped"}`
+    "${go},${halt}"
+}
+
+fn tiny_rows(wait_rows str) -> str => tiny_with("", "", wait_rows, tiny_ends_rows())
+
+test "good tables" {
+    assert(ok_text(tiny()))
+    assert(ok_text(chat_machine_text()))
+    assert(check_machine(decoded(tiny()), standard_registry()).len() == 0)
+}
+
+test "red read outside" {
+    ro text = tiny_rows(wait_rows_with(jb("+", jn("n"), jcall("length", jn("stop")))))
+    assert(says(text, "the datum stop is read but is not in the Input of the state (rule 11)"))
+    assert(first_issue(text).starts_with("$.states[0].rows[0].actions[0].value"))
+    assert(says(tiny().replace("\"reads\":[\"n\"],\"rows\"", "\"reads\":[],\"rows\""), "the datum n is read but is not in the Input"))
+    assert(says(chat_with("\"reads\": [ \"reply\" ]", "\"reads\": []"), "the datum reply is read"))
+    assert(says(chat_with("\"silence\": { \"op\": \"name\", \"name\": \"IDLE_TERM\" }", "\"silence\": { \"op\": \"name\", \"name\": \"stop_text\" }"), "stop_text is read"))
+}
+
+test "red write outside" {
+    ro ghost = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"word\",\"word\":\"go\"},\"actions\":[${jassign("ghost", jl("1"))}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"word\",\"word\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
+    assert(says(ghost, "ghost is not a datum of the machine"))
+    ro mech = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"word\",\"word\":\"go\"},\"actions\":[${jassign("u_attempt", jl("1"))}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"word\",\"word\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
+    assert(says(mech, "written by mechanics, not by rows"))
+    assert(says(chat_with("\"target\": \"user\"", "\"target\": \"nobody\""), "nobody is not a datum"))
+    assert(says(chat_with("\"target\": \"user\"", "\"target\": \"agent_attempt\""), "written by mechanics"))
+}
+
+test "red unreachable" {
+    ro island = tiny_with("", ",{\"name\":\"Island\",\"kind\":\"end\",\"reads\":[\"n\"]}", tiny_wait_rows(), "${tiny_ends_rows()},{\"state\":\"Island\",\"n\":1,\"when\":${jl("true")},\"answer\":{\"kind\":\"answer\",\"value\":${jn("n")}}}")
+    assert(says(island, "the state Island cannot be reached from Wait"))
+    assert(says(tiny().replace("\"to\":\"Wait\"", "\"to\":\"Finished\""), "the state Wait") == false)
+    ro cut = tiny().replace("\"to\":\"Decide\"", "\"to\":\"Stopped\"")
+    assert(says(cut, "the state Decide cannot be reached"))
+    assert(says(cut, "the state Finished cannot be reached"))
+}
+
+test "red primitive class" {
+    ro in_cond = tiny().replace(jb(">=", jn("n"), jl("2")), jprim("close_agent_turn", ""))
+    assert(says(in_cond, "may not stand in condition"))
+    ro read_in_action = tiny_rows(wait_rows_with(jprim("time_now", "")))
+    assert(says(read_in_action, "the reading primitive time_now may not stand in action"))
+    ro unregistered = tiny_rows(wait_rows_with(jprim("no_such", "")))
+    assert(says(unregistered, "the primitive no_such is not registered"))
+    ro unlisted = tiny().replace("\"parties\":", "\"primitives\":[\"time_now\"],\"parties\":")
+    assert(ok_text(unlisted))
+    ro call = "{\"do\":\"call\",\"primitive\":\"close_agent_turn\"}"
+    ro in_row = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"word\",\"word\":\"go\"},\"actions\":[${call}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"word\",\"word\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
+    assert(says(in_row, "called but not listed in primitives"))
+    assert(ok_text(in_row.replace("\"parties\":", "\"primitives\":[\"close_agent_turn\"],\"parties\":")))
+    ro reading_call = call.replace("close_agent_turn", "time_now")
+    ro bad_call = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"word\",\"word\":\"go\"},\"actions\":[${reading_call}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"word\",\"word\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
+    assert(says(bad_call.replace("\"parties\":", "\"primitives\":[\"time_now\"],\"parties\":"), "the reading primitive time_now may not stand in action"))
+}
+
+test "red ends not exhausted" {
+    ro without_b = tiny_with("", "", tiny_wait_rows(), tiny_ends_rows().replace(",{\"state\":\"Stopped\",\"n\":2", ",{\"state\":\"Zzz\",\"n\":2"))
+    assert(says(without_b, "do not cover 1 values of stop: b"))
+    assert(says(without_b, "Zzz is not a state"))
+    ro no_except = tiny().replace(",\"except\":{\"field\":\"stop\",\"values\":[\"\"]}", "")
+    assert(says(no_except, "do not cover 1 values of stop: "))
+    assert(says(tiny().replace("\"values\":[\"\"]", "\"values\":[\"q\"]"), "not in the set of stop"))
+    ro no_rows = tiny_with("", "", tiny_wait_rows(), "{\"state\":\"Finished\",\"n\":1,\"when\":${jl("true")},\"answer\":{\"kind\":\"answer\",\"value\":${jn("n")}}}")
+    assert(says(no_rows, "the end Stopped has no row"))
+    ro odd = tiny().replace(jb("==", jn("stop"), jl(jstr("b"))), jb(">", jcall("length", jn("stop")), jl("0")))
+    assert(says(odd, "must be a row with when true"))
+    ro twice = tiny().replace(jb("==", jn("stop"), jl(jstr("b"))), jb("or", jb("==", jn("stop"), jl(jstr("a"))), jb("==", jn("stop"), jl(jstr("b")))))
+    assert(says(twice, "not exclusive"))
+}
+
+test "names" {
+    assert(says(tiny().replace("\"machine\":\"Tiny\"", "\"machine\":\"1Tiny\""), "latin identifier"))
+    assert(says(tiny().replace("\"name\":\"Decide\"", "\"name\":\"Wait\""), "declared twice"))
+    assert(says(tiny().replace("\"name\":\"stop\"", "\"name\":\"n\""), "is taken"))
+    assert(says(tiny().replace("\"name\":\"stop\"", "\"name\":\"input\""), "is taken"))
+    assert(says(tiny().replace("\"name\":\"stop\"", "\"name\":\"two words\""), "not an identifier"))
+    assert(says(tiny().replace("\"id\":\"user\"", "\"id\":\"User\""), "lower case latin"))
+    assert(says(tiny().replace("\"id\":\"user\"", "\"id\":\"\""), "needs a latin id"))
+}
+
+test "events vs words" {
+    assert(says(tiny().replace("\"word\":\"go\"}", "\"word\":\"fly\"}"), "not a word of the party user"))
+    ro extra = tiny().replace("{\"name\":\"halt\"}", "{\"name\":\"halt\"},{\"name\":\"zap\"}")
+    assert(says(extra, "the word zap of the party user is used by no row"))
+    ro sig = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"stopit\"},\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"word\",\"word\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
+    assert(says(sig, "the signal stopit is not declared"))
+    ro fail = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"failure\"},\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"word\",\"word\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
+    assert(says(fail, "come from a party that gets requests"))
+    assert(says(chat_with("\"kind\": \"failure\", \"bind\": \"code\"", "\"kind\": \"failure\", \"reasons\": [\"Lost\"], \"bind\": \"code\""), "Lost is not a failure code"))
+    assert(says(chat_with("\"bind\": { \"content\": \"piece\" }", "\"bind\": { \"nope\": \"piece\" }"), "has no field nope"))
+    assert(says(chat_with("\"name\": \"agent_chunk\", \"bind\"", "\"name\": \"agent_zzz\", \"bind\""), "not a progress event"))
+    assert(says(chat_with("\"bind\": { \"content\": \"message\" }", "\"bind\": { \"content\": \"user\" }"), "has the name of a datum"))
+    assert(says(chat_with("\"bind\": { \"content\": \"message\" }", "\"bind\": { \"content\": \"IDLE_TERM\" }"), "has the name of a constant"))
+}
+
+test "targets" {
+    assert(says(tiny().replace("\"to\":\"Finished\"", "\"to\":\"Nowhere\""), "Nowhere is not a state"))
+    assert(says(tiny().replace("\"to\":\"Finished\"", "\"to\":\"@prepare_return\""), "needs the datum preparation_return"))
+    assert(says(tiny().replace("\"to\":\"Finished\"", "\"to\":\"@previous\""), "needs the datum previous"))
+    assert(says(tiny().replace("\"to\":\"Finished\"", "\"to\":\"@same\""), "@same is for the rows of an appeal"))
+    assert(says(tiny().replace("\"to\":\"Stopped\"", "\"to\":null"), "ends in machine_error"))
+}
+
+test "structure" {
+    assert(says(tiny().replace("\"initial\":\"Wait\"", "\"initial\":\"Ghost\""), "the initial state Ghost"))
+    assert(says(tiny().replace("\"initial\":\"Wait\",", "\"initial\":\"Wait\",\"error_end\":\"Wait\","), "must be a state of the kind end"))
+    assert(says(tiny().replace("\"initial\":\"Wait\",", "\"initial\":\"Wait\",\"error_end\":\"Gone\","), "is not a state"))
+    assert(says(tiny().replace("\"else\":true,\"to\":\"Wait\"", "\"else\":true,\"to\":\"Wait\"},{\"n\":3,\"event\":{\"kind\":\"now\"},\"to\":\"Wait\""), "the row else is the last one"))
+    assert(says(tiny().replace("\"party\":\"user\",\"inputs\"", "\"party\":\"ghost\",\"inputs\""), "the party ghost is not declared"))
+    assert(says(tiny().replace("{\"n\":2,\"event\":{\"kind\":\"now\"}", "{\"n\":1,\"event\":{\"kind\":\"now\"}"), "used twice"))
+    assert(says(tiny().replace("{\"n\":1,\"event\":{\"kind\":\"word\",\"word\":\"go\"}", "{\"n\":1,\"event\":{\"kind\":\"now\"}"), "does not have the event now"))
+    assert(says(tiny().replace("\"kind\":\"end\",\"reads\":[\"n\"]", "\"kind\":\"end\",\"reads\":[\"n\"],\"rows\":[{\"n\":1,\"event\":{\"kind\":\"now\"},\"to\":\"Wait\"}]"), "an end has no rows"))
+    assert(says(tiny().replace("\"result\":\"int\",", ""), "ends"))
+}
+
+test "operation shape" {
+    ro op = "{\"name\":\"Work\",\"kind\":\"operation\",\"reads\":[\"n\"],\"rows\":[{\"n\":1,\"event\":{\"kind\":\"now\"},\"to\":\"Decide\"}]}"
+    ro go_to_work = tiny().replace("\"to\":\"Decide\"},{\"n\":2", "\"to\":\"Work\"},{\"n\":2")
+    ro with_op = go_to_work.replace("\"states\":[", "\"states\":[${op},")
+    assert(ok_text(with_op))
+    assert(says(with_op.replace("{\"n\":1,\"event\":{\"kind\":\"now\"},\"to\":\"Decide\"}]}", "{\"n\":1,\"event\":{\"kind\":\"now\"},\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"now\"},\"to\":\"Decide\"}]}"), "an operation has one row"))
+    assert(says(with_op.replace("\"reads\":[\"n\"],\"rows\":[{\"n\":1,\"event\":{\"kind\":\"now\"},\"to\":\"Decide\"}]}", "\"reads\":[\"n\"],\"rows\":[{\"n\":1,\"event\":{\"kind\":\"now\"},\"cond\":${jl("true")},\"to\":\"Decide\"}]}"), "has no condition"))
+    ro bumps = "\"entry\":[{\"do\":\"assign\",\"target\":\"n\",\"value\":${jl("1")}}],"
+    assert(says(with_op.replace("\"kind\":\"operation\",", "\"kind\":\"operation\",${bumps}"), "changes no data (rule 29)"))
+}
+
+test "definitions" {
+    ro twice = "\"definitions\":[{\"name\":\"twice\",\"params\":[{\"name\":\"k\",\"type\":\"int\"}],\"result\":\"int\",\"body\":${jb("*", jn("k"), jl("2"))}}],"
+    ro with_def = tiny().replace("\"data\":[", "${twice}\"data\":[")
+    assert(ok_text(with_def))
+    ro rec = with_def.replace(jb("*", jn("k"), jl("2")), jcall("twice", jn("k")))
+    assert(says(rec, "calls itself"))
+    ro reads_data = with_def.replace(jb("*", jn("k"), jl("2")), jb("*", jn("n"), jl("2")))
+    assert(says(reads_data, "does not read the datum n"))
+    ro clash = with_def.replace("\"name\":\"twice\"", "\"name\":\"text\"")
+    assert(says(clash, "function of the catalog"))
+    ro two_args = tiny_rows(wait_rows_with(jcall("twice", "${jn("n")},${jn("n")}"))).replace("\"data\":[", "${twice}\"data\":[")
+    assert(says(two_args, "twice takes 1 arguments, got 2"))
+    ro unknown = tiny_rows(wait_rows_with(jcall("thrice", jn("n"))))
+    assert(says(unknown, "no function thrice"))
+    ro mutual = "\"definitions\":[{\"name\":\"a\",\"params\":[],\"result\":\"int\",\"body\":${jcall("b", "")}},{\"name\":\"b\",\"params\":[],\"result\":\"int\",\"body\":${jcall("a", "")}}],"
+    assert(says(tiny().replace("\"data\":[", "${mutual}\"data\":["), "calls itself"))
+}
+
+test "expression rules" {
+    ro nested = jprimless_if(jprimless_if(jl("1")))
+    assert(says(tiny_rows(wait_rows_with(nested)), "does not nest in a branch"))
+    assert(ok_text(tiny_rows(wait_rows_with(jprimless_if(jl("1"))))))
+    assert(says(tiny_rows(wait_rows_with(jn("zzz"))), "the name zzz is not a datum"))
+}
+
+fn jprimless_if(inner str) -> str {
+    ro yes = jl("true")
+    ro zero = jl("0")
+    `{"op":"if","cond":${yes},"then":${inner},"else":${zero}}`
+}
+
+test "journal codes" {
+    ro up = `{"do":"journal","code":"Bad_Code"}`
+    ro rows = "{\"n\":1,\"event\":{\"kind\":\"word\",\"word\":\"go\"},\"actions\":[${up}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"word\",\"word\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}"
+    assert(says(tiny_rows(rows), "the code Bad_Code must be lower case latin"))
+    ro param = `{"do":"journal","code":"fine","params":[{"name":"Bad","value":${jl(jstr("x"))}}]}`
+    assert(says(tiny_rows(rows.replace(up, param)), "the parameter Bad of the code fine"))
+    ro twice = `{"do":"journal","code":"fine","params":[{"name":"p","value":${jl(jstr("x"))}},{"name":"p","value":${jl(jstr("y"))}}]}`
+    assert(says(tiny_rows(rows.replace(up, twice)), "the parameter p is repeated"))
+}
+
+test "accept block" {
+    ro accept = `"accept":[{"event":{"kind":"answer"},"actions":[{"do":"journal","code":"x"}]}]`
+    assert(says(chat_with("\"silence\":", "${accept}, \"silence\":").replace("\"IDLE_TERM\" }", "\"IDLE_TERM\" }"), "On accept has no journal"))
+    ro word_accept = `"accept":[{"event":{"kind":"word","word":"cancel"},"actions":[]}]`
+    assert(says(chat_with("\"silence\":", "${word_accept}, \"silence\":"), "On accept takes an answer"))
+    ro good = `"accept":[{"event":{"kind":"answer"},"actions":[{"do":"assign","target":"reply","value":{"op":"lit","value":"x"}}]}]`
+    assert(ok_text(chat_with("\"silence\":", "${good}, \"silence\":")))
+}
+
+test "executor names" {
+    ro all_data = jn("all_data")
+    assert(says(tiny_rows(wait_rows_with(all_data)), "all_data is read by a state whose Input is all the data"))
+    assert(says(tiny_rows(wait_rows_with(jn("transition_note"))), "transition_note is defined in the error end only"))
+    assert(says(tiny_rows(wait_rows_with(jn("trace"))), "trace is read in the Input of a nested machine only"))
+    assert(says(tiny_rows(wait_rows_with(jn("input"))), "input is read in the table Input"))
+}
+
+test "data checks" {
+    assert(says(tiny().replace(",\"initial\":{\"expr\":{\"op\":\"lit\",\"value\":0}}}", "}"), "needs an initial value"))
+    assert(says(tiny_with(",{\"name\":\"m\",\"type\":\"int\",\"initial\":{\"from_input\":\"k\"}}", "", tiny_wait_rows(), tiny_ends_rows()), "from_input needs the section input"))
+    ro with_input = tiny_with(",{\"name\":\"m\",\"type\":\"int\",\"initial\":{\"from_input\":\"k\"}}", "", tiny_wait_rows(), tiny_ends_rows()).replace("\"data\":[", "\"input\":{\"fields\":[{\"name\":\"k\",\"type\":\"int\"}]},\"data\":[")
+    assert(ok_text(with_input))
+    assert(says(with_input.replace("\"name\":\"k\"", "\"name\":\"q\""), "the input has no field k"))
+    assert(says(tiny_with(",{\"name\":\"t\",\"type\":\"text\",\"initial\":{\"expr\":${jl(jstr(""))}},\"monotonic\":true}", "", tiny_wait_rows(), tiny_ends_rows()), "only a number does not decrease"))
+    assert(says(tiny_with(",{\"name\":\"p[*].q\",\"type\":\"int\",\"initial\":{\"expr\":${jl("1")}}}", "", tiny_wait_rows(), tiny_ends_rows()), "a path datum has no initial value"))
+    assert(says(tiny_with(",{\"name\":\"ghost[*].q\",\"type\":\"int\"}", "", tiny_wait_rows(), tiny_ends_rows()), "names a datum that is not declared"))
+}
+
+test "parties" {
+    assert(says(tiny().replace("\"counter\":\"u_attempt\",", ""), "names the datum of its attempt counter"))
+    assert(says(tiny().replace("\"counter\":\"u_attempt\"", "\"counter\":\"nothing\""), "the datum nothing is not declared"))
+    assert(says(tiny().replace("\"monotonic\":true,\"writes\":\"mechanics\"", "\"writes\":\"mechanics\""), "does not decrease"))
+    assert(says(tiny().replace("\"monotonic\":true,\"writes\":\"mechanics\"", "\"monotonic\":true,\"writes\":\"rows\""), "written by mechanics"))
+    assert(says(chat_with("\"result\": \"text\", ", ""), "declares the type of its result"))
+    assert(says(chat_with("\"kind\": \"human\"", "\"kind\": \"gatekeeper\""), "names the setting"))
+    assert(says(chat_with("\"kind\": \"human\"", "\"kind\": \"machine\""), "names the machine"))
+    assert(says(tiny().replace("\"kind\":\"human\"", "\"kind\":\"agent\""), "words are for the gates"))
+}
+
+test "includes" {
+    ro inc = tiny().replace("\"data\":[", "\"includes\":[{\"name\":\"cycle\",\"version\":\"1\",\"hash\":\"0123456789ab\"}],\"data\":[")
+    assert(ok_text(inc))
+    assert(says(inc.replace("0123456789ab", "0123456789AB"), "first 12 hex digits"))
+    assert(says(inc.replace("\"version\":\"1\",\"hash\"", "\"version\":\"\",\"hash\""), "the version is missing"))
+    ro twice = inc.replace("\"includes\":[{", "\"includes\":[{\"name\":\"cycle\",\"version\":\"1\",\"hash\":\"0123456789ab\"},{")
+    assert(says(twice, "included twice"))
+}
+
+test "issue text" {
+    assert(issue_text(LoadError { path: "$.a", message: "m" }) == "$.a: m")
+    match load_machine(tiny().replace("\"initial\":\"Wait\"", "\"initial\":\"Ghost\""), standard_registry()) {
+        Ok(d) => assert(false)
+        Err(list) => assert(list.len() >= 1)
+    }
+}
+
+test "example machines" {
+    ro files = machine_files()
+    assert(files.len() == 15)
+    for f in files {
+        ro issues = issues_of(f.text)
+        if issues.len() > 0 { panic("${f.name}: ${issues.join(" | ")}") }
+        assert(decoded(f.text).states.len() >= 3)
+    }
+}
+
+test "set rule" {
+    ro lenses = text_of_file(machine_files(), "lenses.portolan.json")
+    assert(ok_text(lenses))
+    // the set is a list of the ids of the parties; the datum to_send (rows_and_mechanics) is what the mechanics hand over, a set that is another datum is allowed (task 119)
+    assert(ok_text(lenses.replace("\"writes\": \"rows_and_mechanics\"", "\"writes\": \"rows\"")))
+    assert(says(lenses.replace("\"id\": \"\"", "\"id\": \"lens\""), "has the id of the element of the set"))
+    assert(says(lenses.replace("\"set\": { \"op\": \"name\", \"name\": \"to_send\" },", "\"set\": { \"op\": \"name\", \"name\": \"ghost\" },"), "the name ghost is not a datum"))
+}
+
+test "error end" {
+    ro calc = text_of_file(machine_files(), "calc.portolan.json")
+    assert(ok_text(calc))
+    assert(says(calc.replace("\"error_end\": \"Errored\",", ""), "transition_note is defined in the error end only"))
+    assert(says(calc.replace("\"error_end\": \"Errored\",", "\"error_end\": \"Check\","), "must be a state of the kind end"))
+    assert(ok_text(calc.replace("{ \"do\": \"journal_all\" }", "{ \"do\": \"journal_all\" }, { \"do\": \"journal_value\", \"value\": { \"op\": \"name\", \"name\": \"transition_note\" } }")))
+}
+
+test "variants rule" {
+    ro v = text_of_file(machine_files(), "variants.portolan.json")
+    assert(ok_text(v))
+    assert(says(v.replace("\"variant\": \"Done\"", "\"variant\": \"Nope\""), "has no case Nope"))
+    assert(says(v.replace("\"result\": \"Outcome\"", "\"result\": \"text\""), "must be a variant"))
+    assert(says(v.replace(", \"counter\": \"agent_attempt\"", ""), "attempt counter"))
+    assert(says(v.replace("\"event\": { \"kind\": \"timeout\" }", "\"event\": { \"kind\": \"word\", \"word\": \"x\" }"), "not a word of the party agent"))
+}

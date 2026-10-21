@@ -1,0 +1,100 @@
+// support_test.nv - helpers and fixtures of the tests of the loader and of the checks.
+module alula.machine_table
+
+import alula.machine.{chat_machine_text, standard_registry}
+import std.text
+
+fn jl(v str) -> str => `{"op":"lit","value":${v}}`
+fn jn(name str) -> str => `{"op":"name","name":"${name}"}`
+fn jb(op str, l str, r str) -> str => `{"op":"${op}","left":${l},"right":${r}}`
+fn jcall(f str, args str) -> str => `{"op":"call","fn":"${f}","args":[${args}]}`
+fn jprim(name str, args str) -> str => `{"op":"primitive_call","name":"${name}","args":[${args}]}`
+fn jfc(name str) -> str => `{"op":"variant","type":"FailCode","name":"${name}"}`
+fn jassign(target str, value str) -> str => `{"do":"assign","target":"${target}","value":${value}}`
+
+// A JSON string literal of a text.
+fn jstr(s str) -> str {
+    ro escaped = s.replace("\\", "\\\\").replace("\"", "\\\"")
+    "\"${escaped}\""
+}
+
+// A small machine: one human gate, a fork, two ends. `extra_data`, `extra_states` and the rows are spliced in.
+fn tiny_with(extra_data str, extra_states str, wait_rows str, ends_rows str) -> str {
+    ro zero = jl("0")
+    ro empty = jl(jstr(""))
+    ro stop_type = jstr("\"\" | \"a\" | \"b\"")
+    ro ge2 = jb(">=", jn("n"), jl("2"))
+    ro n_name = jn("n")
+    ro up = `{"name":"u_attempt","type":"int>=0","initial":{"expr":${zero}},"monotonic":true,"writes":"mechanics"}`
+    ro data = `{"name":"n","type":"int>=0","initial":{"expr":${zero}}},{"name":"stop","type":${stop_type},"initial":{"expr":${empty}}},${up}${extra_data}`
+    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","words":[{"name":"go"},{"name":"halt"}]}`
+    ro wait = `{"name":"Wait","kind":"appeal","party":"user","inputs":[{"field":"n","value":${n_name},"reads":"executor"}],"rows":[${wait_rows}]}`
+    ro decide = `{"name":"Decide","kind":"fork","reads":["n"],"rows":[{"n":1,"event":{"kind":"now"},"cond":${ge2},"to":"Finished"},{"n":2,"event":{"kind":"now"},"else":true,"to":"Wait"}]}`
+    ro ends = `{"name":"Finished","kind":"end","reads":["n"]},{"name":"Stopped","kind":"end","reads":["stop"],"except":{"field":"stop","values":[""]}}`
+    `{"format":"machine/2","machine":"Tiny","version":"1","data":[${data}],"parties":[${party}],"initial":"Wait","states":[${wait},${decide},${ends}${extra_states}],"ends":{"result":"int","rows":[${ends_rows}]}}`
+}
+
+fn tiny_wait_rows() -> str {
+    ro inc = jassign("n", jb("+", jn("n"), jl("1")))
+    ro a = jassign("stop", jl(jstr("a")))
+    ro go = `{"n":1,"event":{"kind":"word","word":"go"},"actions":[${inc}],"to":"Decide"}`
+    ro halt = `{"n":2,"event":{"kind":"word","word":"halt"},"actions":[${a}],"to":"Stopped"}`
+    "${go},${halt}"
+}
+
+fn tiny_ends_rows() -> str {
+    ro yes = jl("true")
+    ro n_name = jn("n")
+    ro is_a = jb("==", jn("stop"), jl(jstr("a")))
+    ro is_b = jb("==", jn("stop"), jl(jstr("b")))
+    ro stopped = jl(jstr("stopped"))
+    ro bee = jl(jstr("b"))
+    ro human = jfc("StoppedByHuman")
+    ro none = jfc("NoResult")
+    ro done = `{"state":"Finished","n":1,"when":${yes},"answer":{"kind":"answer","value":${n_name}}}`
+    ro ra = `{"state":"Stopped","n":1,"when":${is_a},"answer":{"kind":"refusal","code":${human},"text":${stopped}}}`
+    ro rb = `{"state":"Stopped","n":2,"when":${is_b},"answer":{"kind":"refusal","code":${none},"text":${bee}}}`
+    "${done},${ra},${rb}"
+}
+
+fn tiny() -> str => tiny_with("", "", tiny_wait_rows(), tiny_ends_rows())
+
+// The issues of a text as lines `path: message`; a text that does not decode gives one line.
+fn issues_of(text str) -> []str {
+    mut out = []str.new()
+    match load_machine(text, standard_registry()) {
+        Ok(def) => ()
+        Err(list) => {
+            for e in list { out.push(issue_text(e)) }
+        }
+    }
+    out
+}
+
+fn first_issue(text str) -> str {
+    ro all = issues_of(text)
+    if all.len() == 0 { return "ok" }
+    all[0]
+}
+
+// Does some issue say `needle`?
+fn says(text str, needle str) -> bool {
+    for line in issues_of(text) {
+        if line.contains(needle) { return true }
+    }
+    false
+}
+
+fn ok_text(text str) -> bool => issues_of(text).len() == 0
+
+// A copy of the chat machine / of the tiny one with a piece changed.
+fn chat_with(old str, new str) -> str => chat_machine_text().replace(old, new)
+
+fn tiny_with_replaced(old str, new str) -> str => tiny().replace(old, new)
+
+fn decoded(text str) -> MachineDef {
+    match parse_machine(text) {
+        Ok(def) => def
+        Err(e) => panic("the fixture does not decode: ${issue_text(e)}")
+    }
+}

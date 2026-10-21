@@ -1,0 +1,145 @@
+// schema_test.nv - the schema file `machine-2.schema.json` lists the same keys, kinds and words as the decoder.
+module alula.machine_table
+
+import std.text
+import std.encoding.json.{Json, JsonValue, JsonObject}
+import alula.machine.{schema_files, text_of_file}
+
+fn schema_root() -> JsonObject {
+    match Json.parse(text_of_file(schema_files(), "machine-2.schema.json")) {
+        Ok(j) => match j.object() {
+            Some(o) => o
+            None => panic("the schema is not an object")
+        }
+        Err(e) => panic("the schema is not JSON")
+    }
+}
+
+fn sub(o JsonObject, key str) -> JsonObject {
+    match o.get(key) {
+        Some(v) => match v.object() {
+            Some(x) => x
+            None => panic("${key} is not an object")
+        }
+        None => panic("no ${key}")
+    }
+}
+
+fn def_of(name str) -> JsonObject => sub(sub(schema_root(), "$defs"), name)
+
+fn property_names(o JsonObject) -> []str => sub(o, "properties").keys()
+
+fn same_names(xs []str, ys []str) -> bool {
+    if xs.len() != ys.len() { return false }
+    for x in xs {
+        if !ys.contains(x) { return false }
+    }
+    true
+}
+
+// The values of `const` (or of an `enum`) that a key of the branches of a `oneOf` takes: the kinds of an event, the actions.
+fn branch_consts(o JsonObject, key str) -> []str {
+    mut out = []str.new()
+    match o.get("oneOf") {
+        Some(v) => match v.array() {
+            Some(branches) => {
+                for b in branches {
+                    match b.object() {
+                        Some(bo) => {
+                            ro props = sub(bo, "properties")
+                            ro k = sub(props, key)
+                            match k.get("const") {
+                                Some(c) => match c.str() {
+                                    Some(s) => out.push(s)
+                                    None => ()
+                                }
+                                None => ()
+                            }
+                        }
+                        None => ()
+                    }
+                }
+            }
+            None => ()
+        }
+        None => ()
+    }
+    out
+}
+
+fn enum_values(o JsonObject) -> []str {
+    mut out = []str.new()
+    match o.get("enum") {
+        Some(v) => match v.array() {
+            Some(items) => {
+                for item in items {
+                    match item.str() {
+                        Some(s) => out.push(s)
+                        None => ()
+                    }
+                }
+            }
+            None => ()
+        }
+        None => ()
+    }
+    out
+}
+
+test "schema files" {
+    ro files = schema_files()
+    assert(files.len() == 2)
+    for f in files {
+        match Json.parse(f.text) {
+            Ok(j) => {
+                match j.object() {
+                    Some(o) => assert(o.contains("$schema") && o.contains("$id") && o.contains("$defs"))
+                    None => assert(false)
+                }
+            }
+            Err(e) => assert(false)
+        }
+    }
+}
+
+test "schema root" {
+    ro root = schema_root()
+    assert(same_names(property_names(root), top_keys()))
+    ro required = match root.get("required") {
+        Some(v) => v.array() ?? []JsonValue.new()
+        None => []JsonValue.new()
+    }
+    assert(required.len() == 5)
+    assert(sub(sub(root, "properties"), "format").contains("const"))
+}
+
+test "schema keys" {
+    assert(same_names(property_names(def_of("state")), state_keys()))
+    assert(same_names(property_names(def_of("party")), party_keys()))
+    assert(same_names(property_names(def_of("row")), row_keys()))
+}
+
+test "schema kinds" {
+    assert(same_names(branch_consts(def_of("event"), "kind"), event_kind_names()))
+    assert(same_names(branch_consts(def_of("action"), "do"), action_names()))
+    // ORACLE-WORKAROUND(33): the variants are bound to a list before the loop: `for x in [A, B]` over a literal list of variants of a user enum does not compile; loop over the literal when item 33 is fixed
+    ro states = [AppealKind, OperationKind, ForkKind, EndKind]
+    mut words = []str.new()
+    for k in states { words.push(state_kind_word(k)) }
+    assert(same_names(enum_values(sub(property_names_object(def_of("state")), "kind")), words))
+    ro parties = [AgentParty, HumanParty, EnhancedParty, GatekeeperParty, MachineParty]
+    mut kinds = []str.new()
+    for k in parties { kinds.push(party_kind_word(k)) }
+    assert(same_names(enum_values(sub(property_names_object(def_of("party")), "kind")), kinds))
+    ro writes = [RowsWrite, MechanicsWrite, RowsAndMechanics, FragmentWrite, RowsAndFragment]
+    mut wwords = []str.new()
+    for k in writes { wwords.push(write_kind_word(k)) }
+    assert(same_names(enum_values(sub(property_names_object(def_of("datum")), "writes")), wwords))
+}
+
+fn property_names_object(o JsonObject) -> JsonObject => sub(o, "properties")
+
+test "schema failure codes" {
+    assert(fail_code_names().len() == 10)
+    assert(text_of_file(schema_files(), "machine-2.schema.json").contains("FailCode"))
+}

@@ -1,0 +1,1147 @@
+// json.nv - the decoder of the JSON tree `machine/2` into a `MachineDef`, with the structural check of the schema:
+// the required keys, the kinds of the states, the events by variants, the columns of the rows, the actions, the sides, the ends, the data
+// with their marks, the parameters, the constants, the definitions and the includes. A key the schema does not know is refused (a typo is
+// an error, not a silent default). The error is a `LoadError` with the place in the JSON.
+//
+// The keys are listed in README.md and in schema/machine-2.schema.json (beside the core, `src/machine`); this file is the reference.
+module alula.machine_table
+
+import std.encoding.json.{Json, JsonValue, JsonObject}
+import alula.machine.{Expr, Lit, Text, TypeSpec, TypeDefs, FieldDef, RecordDef, VariantDef, EnumWord, CaseDef, Bind, DefFn, expr_from_json, field_def, TextType, ListType, TupleType}
+
+/// The format tag of the tree.
+export const MACHINE_FORMAT = "machine/2"
+
+/// The version of the language Portolan of the methodology that the tree follows (the optional key `portolan_version`; absent means this one). The key was named
+/// `table_format` before task 113; the old name is not accepted (it is a key the schema does not know).
+export const PORTOLAN_VERSION = "2.12"
+
+/// The versions of the language whose tree this decoder reads: one. Task 125: there is no transition period (the word of the owner, 2026-10-20), so a tree of 2.11 or of an older version is refused.
+export fn portolan_versions() -> []str => ["2.12"]
+
+fn le(path str, message str) -> LoadError => { path, message }
+
+fn j_obj(v JsonValue, path str) -> Result[JsonObject, LoadError] {
+    match v.object() {
+        Some(o) => Ok(o)
+        None => Err(le(path, "an object is expected"))
+    }
+}
+
+fn j_arr(v JsonValue, path str) -> Result[[]JsonValue, LoadError] {
+    match v.array() {
+        Some(a) => Ok(a)
+        None => Err(le(path, "a list is expected"))
+    }
+}
+
+fn j_str(v JsonValue, path str) -> Result[str, LoadError] {
+    match v.str() {
+        Some(s) => Ok(s)
+        None => Err(le(path, "a text is expected"))
+    }
+}
+
+fn j_int(v JsonValue, path str) -> Result[int, LoadError] {
+    match v.int() {
+        Some(n) => Ok(n)
+        None => Err(le(path, "an integer is expected"))
+    }
+}
+
+fn j_bool(v JsonValue, path str) -> Result[bool, LoadError] {
+    match v.bool() {
+        Some(b) => Ok(b)
+        None => Err(le(path, "true or false is expected"))
+    }
+}
+
+// The key is there and is not null.
+fn j_has(o JsonObject, key str) -> bool {
+    match o.get(key) {
+        Some(v) => !v.is_null()
+        None => false
+    }
+}
+
+fn j_need(o JsonObject, key str, path str) -> Result[JsonValue, LoadError] {
+    match o.get(key) {
+        Some(v) => {
+            if v.is_null() { return Err(le("${path}.${key}", "the key must not be null")) }
+            Ok(v)
+        }
+        None => Err(le(path, "the key ${key} is missing"))
+    }
+}
+
+fn j_need_str(o JsonObject, key str, path str) -> Result[str, LoadError] {
+    ro v = j_need(o, key, path)?
+    j_str(v, "${path}.${key}")
+}
+
+fn j_need_arr(o JsonObject, key str, path str) -> Result[[]JsonValue, LoadError] {
+    ro v = j_need(o, key, path)?
+    j_arr(v, "${path}.${key}")
+}
+
+fn j_need_obj(o JsonObject, key str, path str) -> Result[JsonObject, LoadError] {
+    ro v = j_need(o, key, path)?
+    j_obj(v, "${path}.${key}")
+}
+
+fn j_str_or(o JsonObject, key str, fallback str, path str) -> Result[str, LoadError] {
+    if !j_has(o, key) { return Ok(fallback) }
+    ro v = j_need(o, key, path)?
+    j_str(v, "${path}.${key}")
+}
+
+fn j_bool_or(o JsonObject, key str, fallback bool, path str) -> Result[bool, LoadError] {
+    if !j_has(o, key) { return Ok(fallback) }
+    ro v = j_need(o, key, path)?
+    j_bool(v, "${path}.${key}")
+}
+
+fn j_int_or(o JsonObject, key str, fallback int, path str) -> Result[int, LoadError] {
+    if !j_has(o, key) { return Ok(fallback) }
+    ro v = j_need(o, key, path)?
+    j_int(v, "${path}.${key}")
+}
+
+fn j_arr_or_empty(o JsonObject, key str, path str) -> Result[[]JsonValue, LoadError] {
+    if !j_has(o, key) { return Ok([]JsonValue.new()) }
+    ro v = j_need(o, key, path)?
+    j_arr(v, "${path}.${key}")
+}
+
+// No key that the schema does not know.
+fn j_only(o JsonObject, allowed []str, path str) -> Result[(), LoadError] {
+    for k in o.keys() {
+        if !allowed.contains(k) { return Err(le(path, "the key ${k} is not in the schema")) }
+    }
+    Ok(())
+}
+
+fn j_strings(v JsonValue, path str) -> Result[[]str, LoadError] {
+    ro items = j_arr(v, path)?
+    mut out = []str.new()
+    mut i = 0
+    for item in items {
+        out.push(j_str(item, "${path}[${i}]")?)
+        i += 1
+    }
+    Ok(out)
+}
+
+fn j_strings_or_empty(o JsonObject, key str, path str) -> Result[[]str, LoadError] {
+    if !j_has(o, key) { return Ok([]str.new()) }
+    ro v = j_need(o, key, path)?
+    j_strings(v, "${path}.${key}")
+}
+
+fn j_expr_at(v JsonValue, path str) -> Result[Expr, LoadError] {
+    match expr_from_json(v) {
+        Ok(e) => Ok(e)
+        Err(x) => Err(le("${path}${x.path[1..]}", x.message))
+    }
+}
+
+fn j_expr(o JsonObject, key str, path str) -> Result[Expr, LoadError] {
+    ro v = j_need(o, key, path)?
+    j_expr_at(v, "${path}.${key}")
+}
+
+fn j_exprs(v JsonValue, path str) -> Result[[]Expr, LoadError] {
+    ro items = j_arr(v, path)?
+    mut out = []Expr.new()
+    mut i = 0
+    for item in items {
+        out.push(j_expr_at(item, "${path}[${i}]")?)
+        i += 1
+    }
+    Ok(out)
+}
+
+fn j_exprs_or_empty(o JsonObject, key str, path str) -> Result[[]Expr, LoadError] {
+    if !j_has(o, key) { return Ok([]Expr.new()) }
+    ro v = j_need(o, key, path)?
+    j_exprs(v, "${path}.${key}")
+}
+
+// zero or one expression
+fn j_expr_opt(o JsonObject, key str, path str) -> Result[[]Expr, LoadError] {
+    if !j_has(o, key) { return Ok([]Expr.new()) }
+    ro e = j_expr(o, key, path)?
+    Ok([e])
+}
+
+fn j_type(o JsonObject, key str, defs TypeDefs, path str) -> Result[TypeSpec, LoadError] {
+    ro text = j_need_str(o, key, path)?
+    match parse_spec(text, defs) {
+        Ok(spec) => Ok(spec)
+        Err(message) => Err(le("${path}.${key}", message))
+    }
+}
+
+fn j_type_text(text str, defs TypeDefs, path str) -> Result[TypeSpec, LoadError] {
+    match parse_spec(text, defs) {
+        Ok(spec) => Ok(spec)
+        Err(message) => Err(le(path, message))
+    }
+}
+
+fn j_fields(v JsonValue, defs TypeDefs, path str) -> Result[[]FieldDef, LoadError] {
+    ro items = j_arr(v, path)?
+    mut out = []FieldDef.new()
+    mut i = 0
+    for item in items {
+        ro p = "${path}[${i}]"
+        ro o = j_obj(item, p)?
+        j_only(o, ["name", "type"], p)?
+        ro name = j_need_str(o, "name", p)?
+        ro spec = j_type(o, "type", defs, p)?
+        for f in out {
+            if f.name == name { return Err(le(p, "the field ${name} is repeated")) }
+        }
+        out.push(field_def(name, spec))
+        i += 1
+    }
+    Ok(out)
+}
+
+fn j_fields_or_empty(o JsonObject, key str, defs TypeDefs, path str) -> Result[[]FieldDef, LoadError] {
+    if !j_has(o, key) { return Ok([]FieldDef.new()) }
+    ro v = j_need(o, key, path)?
+    j_fields(v, defs, "${path}.${key}")
+}
+
+// ---- the keys of the schema (the schema file `schema/machine-2.schema.json` lists the same; a test compares them) -----------------------------
+
+/// The keys of the root object of a machine.
+export fn top_keys() -> []str => [
+    "format", "portolan_version", "machine", "version", "title", "types", "constants", "params", "input", "data", "parties", "request_limit", "signals",
+    "definitions", "includes", "fragments", "initial", "error_end", "common_events", "states", "ends", "primitives"
+]
+
+/// The fragments that a machine may connect (the keys of the table of words, kind `fragment`) and the keys of the arguments of the connection of each (format section 9, 1b (m), the key `fragments` of the product).
+export fn fragment_names() -> []str => ["Pause"]
+
+export fn pause_arg_names() -> []str => ["halt_word", "halt_code", "nested", "cancel_requests", "reenter", "write_right"]
+
+/// The words of the arguments `cancel_requests` and `reenter` of the fragment Pause (the behavior parameters of section 9).
+export fn pause_behavior_words(arg str) -> []str {
+    if arg == "cancel_requests" { return ["mechanics", "without_return_to_send", "stop_transport_turn"] }
+    if arg == "reenter" { return ["nothing", "requests_from_to_send"] }
+    []str.new()
+}
+
+/// The keys of a state.
+export fn state_keys() -> []str => [
+    "name", "kind", "reads", "reads_all", "party", "set", "silence", "edits", "edit_check", "form_returns", "inputs", "accept", "entry", "rows", "except"
+]
+
+/// The keys of a party.
+export fn party_keys() -> []str => ["name", "id", "kind", "profile", "words", "progress", "setting", "nested", "input_type", "result", "parse", "counter"]
+
+/// The signals that `передать` passes to a nested machine (the built-in enum `Signal`, format 2).
+export fn signal_words() -> []str => ["stop", "continue", "halt", "cancel"]
+
+/// The keys of a row.
+export fn row_keys() -> []str => ["n", "event", "cond", "else", "actions", "to", "restart"]
+
+/// The kinds of an event of a row.
+export fn event_kind_names() -> []str => ["answer", "answer_variant", "failure", "timeout", "progress", "word", "signal", "now"]
+
+/// The kinds of an action (`do`).
+export fn action_names() -> []str => [
+    "assign", "add", "journal", "journal_value", "journal_all", "for_each", "let", "bind", "if", "call", "machine_error", "cancel_open", "pass"
+]
+
+// ---- the closed list of the failure codes (the engine's FailCode) ---------------------------------------------------------
+
+/// The names of the cases of the closed list of the failure causes (spec rule 16); the type `FailCode` is built into every machine.
+export fn fail_code_names() -> []str => [
+    "NoResult", "ModelRefused", "ConnectionLost", "FormNotFixed", "Timeout",
+    "Cancelled", "StoppedByHuman", "CeilingReached", "MaxTokens", "MaxTurnRequests"
+]
+
+fn fail_code_def() -> VariantDef {
+    mut cases = []CaseDef.new()
+    for n in fail_code_names() { cases.push(CaseDef { name: n, fields: []FieldDef.new() }) }
+    VariantDef { name: "FailCode", cases, words: []EnumWord.new() }
+}
+
+/// The built-in enum `Signal` of format section 2 (`Сигнал`): the signals that a parent passes to a nested machine.
+fn signal_def() -> VariantDef {
+    ro cases = [CaseDef { name: "Stop", fields: []FieldDef.new() }, CaseDef { name: "Continue", fields: []FieldDef.new() }, CaseDef { name: "Halt", fields: []FieldDef.new() }, CaseDef { name: "Cancel", fields: []FieldDef.new() }]
+    VariantDef { name: "Signal", cases, words: [EnumWord { name: "Stop", word: "stop" }, EnumWord { name: "Continue", word: "continue" }, EnumWord { name: "Halt", word: "halt" }, EnumWord { name: "Cancel", word: "cancel" }] }
+}
+
+// The built-in `State` (`Состояние`, format section 2): the names of the states of the machine. At run time a value is a text; the reader of the type text
+// (`spec.nv`) makes it the set of literals of these names, so a value outside them is refused like any set.
+fn state_def(root JsonObject) -> VariantDef {
+    mut cases = []CaseDef.new()
+    match root.get("states") {
+        Some(v) => {
+            match v.array() {
+                Some(items) => {
+                    for item in items {
+                        match item.object() {
+                            Some(o) => {
+                                ro n = sval_of(o, "name")
+                                if n != "" { cases.push(CaseDef { name: n, fields: []FieldDef.new() }) }
+                            }
+                            None => ()
+                        }
+                    }
+                }
+                None => ()
+            }
+        }
+        None => ()
+    }
+    VariantDef { name: "State", cases, words: []EnumWord.new() }
+}
+
+fn sval_of(o JsonObject, key str) -> str {
+    match o.get(key) {
+        Some(v) => v.str() ?? ""
+        None => ""
+    }
+}
+
+// Is the word of an enum value a Latin word of a code: lower case letters, digits, `_`, the first one a letter?
+fn j_word_ok(w str) -> bool {
+    if w == "" { return false }
+    mut first = true
+    for c in w.chars() {
+        ro one = "${c}"
+        ro letter = one >= "a" && one <= "z"
+        ro digit = one >= "0" && one <= "9"
+        if first && !letter { return false }
+        if !letter && !digit && one != "_" { return false }
+        first = false
+    }
+    true
+}
+
+// The key `words` of a variant that is an enum (format 2.7, section 6, P-7): a list of the pairs ["Name", "word"] in the order of the declaration; the name of a case
+// without fields, the word a Latin word of a code; a case and a word stand once. A variant without the key has no words.
+fn j_enum_words(o JsonObject, type_name str, cases []CaseDef, p str) -> Result[[]EnumWord, LoadError] {
+    mut out = []EnumWord.new()
+    if !j_has(o, "words") { return Ok(out) }
+    ro wp = "${p}.words"
+    ro items = match (o.get("words") ?? JsonValue.null()).array() {
+        Some(a) => a
+        None => return Err(le(wp, "a list of pairs [name, word] is expected"))
+    }
+    mut k = 0
+    for item in items {
+        ro ip = "${wp}[${k}]"
+        ro pair = match item.array() {
+            Some(a) => a
+            None => return Err(le(ip, "a pair [name, word] of two texts is expected"))
+        }
+        if pair.len() != 2 { return Err(le(ip, "a pair [name, word] of two texts is expected")) }
+        ro case_name = match pair[0].str() {
+            Some(t) => t
+            None => return Err(le(ip, "a pair [name, word] of two texts is expected"))
+        }
+        ro word = match pair[1].str() {
+            Some(t) => t
+            None => return Err(le(ip, "a pair [name, word] of two texts is expected"))
+        }
+        mut found = false
+        mut with_fields = false
+        for c in cases {
+            if c.name == case_name {
+                found = true
+                with_fields = c.fields.len() > 0
+            }
+        }
+        if !found { return Err(le(ip, "the case ${case_name} is not in the variant ${type_name}")) }
+        if with_fields { return Err(le(ip, "the case ${case_name} has fields: only a value without fields has a word")) }
+        for seen in out {
+            if seen.name == case_name { return Err(le(ip, "the word of the case ${case_name} is repeated")) }
+            if seen.word == word { return Err(le(ip, "the word ${word} is repeated")) }
+        }
+        if !j_word_ok(word) { return Err(le(ip, "a word is lower case Latin letters, digits and _, the first one a letter, got ${word}")) }
+        out.push(EnumWord { name: case_name, word })
+        k += 1
+    }
+    Ok(out)
+}
+
+// The record `JournalEvent` (`СобытиеЖурнала` of the format, section 2) is built into every machine, like `FailCode`: the code and the list of the pairs (name, text).
+fn journal_event_def() -> RecordDef {
+    RecordDef { name: "JournalEvent", fields: [field_def("code", TextType), field_def("params", ListType(TupleType([TextType, TextType])))] }
+}
+
+fn base_type_names() -> []str => ["int", "float", "text", "bool", "nothing", "full", "id"]
+
+// ---- types ----------------------------------------------------------------------------------------------------------------
+
+fn dec_types(root JsonObject) -> Result[TypeDefs, LoadError] {
+    mut rec_items = []JsonValue.new()
+    mut var_items = []JsonValue.new()
+    if j_has(root, "types") {
+        ro to = j_need_obj(root, "types", "$")?
+        j_only(to, ["records", "variants"], "$.types")?
+        rec_items = j_arr_or_empty(to, "records", "$.types")?
+        var_items = j_arr_or_empty(to, "variants", "$.types")?
+    }
+    // pass 1: the names, so that a field may name a type declared later
+    mut names = []str.new()
+    mut skeleton_records = [journal_event_def()]
+    mut skeleton_variants = [fail_code_def(), signal_def(), state_def(root)]
+    names.push("FailCode")
+    names.push("JournalEvent")
+    names.push("Signal")
+    names.push("State")
+    mut i = 0
+    for item in rec_items {
+        ro p = "$.types.records[${i}]"
+        ro o = j_obj(item, p)?
+        ro name = j_need_str(o, "name", p)?
+        if names.contains(name) || base_type_names().contains(name) { return Err(le(p, "the type name ${name} is repeated or reserved")) }
+        names.push(name)
+        skeleton_records.push(RecordDef { name, fields: []FieldDef.new() })
+        i += 1
+    }
+    i = 0
+    for item in var_items {
+        ro p = "$.types.variants[${i}]"
+        ro o = j_obj(item, p)?
+        ro name = j_need_str(o, "name", p)?
+        if names.contains(name) || base_type_names().contains(name) { return Err(le(p, "the type name ${name} is repeated or reserved")) }
+        names.push(name)
+        skeleton_variants.push(VariantDef { name, cases: []CaseDef.new(), words: []EnumWord.new() })
+        i += 1
+    }
+    ro skeleton = TypeDefs { records: skeleton_records, variants: skeleton_variants }
+    // pass 2: the fields
+    mut records = [journal_event_def()]
+    mut variants = [fail_code_def(), signal_def(), state_def(root)]
+    i = 0
+    for item in rec_items {
+        ro p = "$.types.records[${i}]"
+        ro o = j_obj(item, p)?
+        j_only(o, ["name", "fields"], p)?
+        ro name = j_need_str(o, "name", p)?
+        ro fields = j_fields(j_need(o, "fields", p)?, skeleton, "${p}.fields")?
+        records.push(RecordDef { name, fields })
+        i += 1
+    }
+    i = 0
+    for item in var_items {
+        ro p = "$.types.variants[${i}]"
+        ro o = j_obj(item, p)?
+        j_only(o, ["name", "cases", "words"], p)?
+        ro name = j_need_str(o, "name", p)?
+        ro case_items = j_need_arr(o, "cases", p)?
+        if case_items.len() == 0 { return Err(le(p, "a variant needs a case")) }
+        mut cases = []CaseDef.new()
+        mut k = 0
+        for c in case_items {
+            ro cp = "${p}.cases[${k}]"
+            ro co = j_obj(c, cp)?
+            j_only(co, ["name", "fields"], cp)?
+            ro case_name = j_need_str(co, "name", cp)?
+            for seen in cases {
+                if seen.name == case_name { return Err(le(cp, "the case ${case_name} is repeated")) }
+            }
+            ro fields = j_fields_or_empty(co, "fields", skeleton, cp)?
+            cases.push(CaseDef { name: case_name, fields })
+            k += 1
+        }
+        ro words = j_enum_words(o, name, cases, p)?
+        variants.push(VariantDef { name, cases, words })
+        i += 1
+    }
+    Ok(TypeDefs { records, variants })
+}
+
+// ---- constants, parameters, definitions, includes --------------------------------------------------------------------------
+
+fn dec_constants(root JsonObject, defs TypeDefs) -> Result[[]ConstDef, LoadError] {
+    ro items = j_arr_or_empty(root, "constants", "$")?
+    mut out = []ConstDef.new()
+    mut i = 0
+    for item in items {
+        ro p = "$.constants[${i}]"
+        ro o = j_obj(item, p)?
+        j_only(o, ["name", "type", "value"], p)?
+        ro name = j_need_str(o, "name", p)?
+        ro spec = j_type(o, "type", defs, p)?
+        ro value = j_expr(o, "value", p)?
+        out.push(ConstDef { name, spec, value })
+        i += 1
+    }
+    Ok(out)
+}
+
+fn dec_params(root JsonObject, defs TypeDefs) -> Result[[]ParamDef, LoadError] {
+    ro items = j_arr_or_empty(root, "params", "$")?
+    mut out = []ParamDef.new()
+    mut i = 0
+    for item in items {
+        ro p = "$.params[${i}]"
+        ro o = j_obj(item, p)?
+        j_only(o, ["name", "type", "default", "project_key"], p)?
+        ro name = j_need_str(o, "name", p)?
+        ro spec = j_type(o, "type", defs, p)?
+        ro default_value = j_expr(o, "default", p)?
+        ro project_key = j_str_or(o, "project_key", "", p)?
+        out.push(ParamDef { name, spec, default_value, project_key })
+        i += 1
+    }
+    Ok(out)
+}
+
+fn dec_definitions(root JsonObject, defs TypeDefs) -> Result[[]DefFn, LoadError] {
+    ro items = j_arr_or_empty(root, "definitions", "$")?
+    mut out = []DefFn.new()
+    mut i = 0
+    for item in items {
+        ro p = "$.definitions[${i}]"
+        ro o = j_obj(item, p)?
+        j_only(o, ["name", "params", "result", "body"], p)?
+        ro name = j_need_str(o, "name", p)?
+        ro plist = j_need_arr(o, "params", p)?
+        mut names = []str.new()
+        mut specs = []TypeSpec.new()
+        mut k = 0
+        for q in plist {
+            ro qp = "${p}.params[${k}]"
+            ro qo = j_obj(q, qp)?
+            j_only(qo, ["name", "type"], qp)?
+            ro qname = j_need_str(qo, "name", qp)?
+            if names.contains(qname) { return Err(le(qp, "the parameter ${qname} is repeated")) }
+            names.push(qname)
+            specs.push(j_type(qo, "type", defs, qp)?)
+            k += 1
+        }
+        ro result = j_type(o, "result", defs, p)?
+        ro body = j_expr(o, "body", p)?
+        out.push(DefFn { name, params: names, specs, result, body })
+        i += 1
+    }
+    Ok(out)
+}
+
+fn dec_includes(root JsonObject) -> Result[[]IncludeDef, LoadError] {
+    ro items = j_arr_or_empty(root, "includes", "$")?
+    mut out = []IncludeDef.new()
+    mut i = 0
+    for item in items {
+        ro p = "$.includes[${i}]"
+        ro o = j_obj(item, p)?
+        j_only(o, ["name", "version", "hash"], p)?
+        out.push(IncludeDef {
+            name: j_need_str(o, "name", p)?, version: j_need_str(o, "version", p)?, hash: j_need_str(o, "hash", p)?
+        })
+        i += 1
+    }
+    Ok(out)
+}
+
+// The words of a list with a comma between them (a list of the words of a message; no `join`, so the file needs no `import std.text`).
+fn word_list(items []str) -> str {
+    mut out = ""
+    mut first = true
+    for w in items {
+        out = if first { w } else { "${out}, ${w}" }
+        first = false
+    }
+    out
+}
+
+// The connections of the fragments: `fragments: [{ "name", "args": { argument: expression } }]` (the key of the product, 1b (m)): the fragment is in the tree already substituted, the
+// connection says how, so that the generator can write the line of connection back. Every argument is named, the words of the behavior arguments are checked.
+fn dec_fragments(root JsonObject) -> Result[[]FragmentUse, LoadError] {
+    ro items = j_arr_or_empty(root, "fragments", "$")?
+    mut out = []FragmentUse.new()
+    mut seen = []str.new()
+    mut i = 0
+    for item in items {
+        ro p = "$.fragments[${i}]"
+        ro o = j_obj(item, p)?
+        j_only(o, ["name", "args"], p)?
+        ro name = j_need_str(o, "name", p)?
+        if !fragment_names().contains(name) { return Err(le("${p}.name", "the fragment ${name} is not one that the host connects (${word_list(fragment_names())})")) }
+        if seen.contains(name) { return Err(le("${p}.name", "the fragment ${name} is connected twice")) }
+        seen.push(name)
+        ro ao = j_need_obj(o, "args", p)?
+        ro ap = "${p}.args"
+        j_only(ao, pause_arg_names(), ap)?
+        mut args = []FragmentArg.new()
+        for arg in pause_arg_names() {
+            if !j_has(ao, arg) { return Err(le("${ap}.${arg}", "the argument ${arg} of the fragment ${name} is missing")) }
+            ro value = j_expr(ao, arg, ap)?
+            ro words = pause_behavior_words(arg)
+            if words.len() > 0 {
+                match value {
+                    Lit(Text(w)) => {
+                        if !words.contains(w) { return Err(le("${ap}.${arg}", "the argument ${arg} is one of ${word_list(words)}")) }
+                    }
+                    _ => return Err(le("${ap}.${arg}", "the argument ${arg} is one of ${word_list(words)}"))
+                }
+            }
+            args.push(FragmentArg { name: arg, value })
+        }
+        out.push(FragmentUse { name, args })
+        i += 1
+    }
+    Ok(out)
+}
+
+// ---- input and data ---------------------------------------------------------------------------------------------------------
+
+fn dec_input(root JsonObject, defs TypeDefs) -> Result[InputDef, LoadError] {
+    if !j_has(root, "input") { return Ok(InputDef { present: false, fields: []FieldDef.new(), invariants: []Expr.new() }) }
+    ro o = j_need_obj(root, "input", "$")?
+    j_only(o, ["fields", "invariants"], "$.input")?
+    ro fields = j_fields(j_need(o, "fields", "$.input")?, defs, "$.input.fields")?
+    ro invariants = j_exprs_or_empty(o, "invariants", "$.input")?
+    Ok(InputDef { present: true, fields, invariants })
+}
+
+fn write_kind_of(word str, path str) -> Result[WriteKind, LoadError] {
+    match word {
+        "rows" => Ok(RowsWrite)
+        "mechanics" => Ok(MechanicsWrite)
+        "rows_and_mechanics" => Ok(RowsAndMechanics)
+        "fragment" => Ok(FragmentWrite)
+        "rows_and_fragment" => Ok(RowsAndFragment)
+        _ => Err(le(path, "writes must be rows, mechanics, rows_and_mechanics, fragment or rows_and_fragment, got ${word}"))
+    }
+}
+
+fn dec_initial(o JsonObject, path str) -> Result[InitialDef, LoadError] {
+    if !j_has(o, "initial") { return Ok(NoInitial) }
+    ro io = j_need_obj(o, "initial", path)?
+    ro ip = "${path}.initial"
+    j_only(io, ["expr", "from_input"], ip)?
+    if j_has(io, "expr") {
+        if j_has(io, "from_input") { return Err(le(ip, "expr and from_input are alternatives")) }
+        ro e = j_expr(io, "expr", ip)?
+        return Ok(InitialExpr(e))
+    }
+    if j_has(io, "from_input") {
+        ro field = j_need_str(io, "from_input", ip)?
+        return Ok(InitialFromInput(field))
+    }
+    Err(le(ip, "expr or from_input is expected"))
+}
+
+fn dec_monotonic(o JsonObject, path str) -> Result[MonotonicDef, LoadError] {
+    if !j_has(o, "monotonic") { return Ok(MonotonicDef { on: false, bound: []Expr.new() }) }
+    ro v = j_need(o, "monotonic", path)?
+    ro mp = "${path}.monotonic"
+    match v.bool() {
+        Some(b) => return Ok(MonotonicDef { on: b, bound: []Expr.new() })
+        None => ()
+    }
+    ro mo = j_obj(v, mp)?
+    j_only(mo, ["bound"], mp)?
+    ro bound = j_expr(mo, "bound", mp)?
+    Ok(MonotonicDef { on: true, bound: [bound] })
+}
+
+fn dec_data(root JsonObject, defs TypeDefs) -> Result[[]DataDef, LoadError] {
+    ro items = j_arr_or_empty(root, "data", "$")?
+    mut out = []DataDef.new()
+    mut i = 0
+    for item in items {
+        ro p = "$.data[${i}]"
+        ro o = j_obj(item, p)?
+        j_only(o, ["name", "type", "initial", "monotonic", "writes"], p)?
+        ro name = j_need_str(o, "name", p)?
+        ro spec = j_type(o, "type", defs, p)?
+        ro initial = dec_initial(o, p)?
+        ro monotonic = dec_monotonic(o, p)?
+        ro writes = write_kind_of(j_str_or(o, "writes", "rows", p)?, "${p}.writes")?
+        out.push(DataDef { name, spec, initial, monotonic, writes })
+        i += 1
+    }
+    Ok(out)
+}
+
+// ---- parties ----------------------------------------------------------------------------------------------------------------
+
+fn party_kind_of(word str, path str) -> Result[PartyKind, LoadError] {
+    match word {
+        "agent" => Ok(AgentParty)
+        "human" => Ok(HumanParty)
+        "enhanced" => Ok(EnhancedParty)
+        "gatekeeper" => Ok(GatekeeperParty)
+        "machine" => Ok(MachineParty)
+        _ => Err(le(path, "the kind of a party must be agent, human, enhanced, gatekeeper or machine, got ${word}"))
+    }
+}
+
+fn dec_words(v JsonValue, defs TypeDefs, path str) -> Result[[]WordDef, LoadError] {
+    ro items = j_arr(v, path)?
+    mut out = []WordDef.new()
+    mut i = 0
+    for item in items {
+        ro p = "${path}[${i}]"
+        ro o = j_obj(item, p)?
+        j_only(o, ["name", "fields"], p)?
+        ro name = j_need_str(o, "name", p)?
+        for w in out {
+            if w.name == name { return Err(le(p, "the word ${name} is repeated")) }
+        }
+        ro fields = j_fields_or_empty(o, "fields", defs, p)?
+        out.push(WordDef { name, fields })
+        i += 1
+    }
+    Ok(out)
+}
+
+fn dec_words_or_empty(o JsonObject, key str, defs TypeDefs, path str) -> Result[[]WordDef, LoadError] {
+    if !j_has(o, key) { return Ok([]WordDef.new()) }
+    ro v = j_need(o, key, path)?
+    dec_words(v, defs, "${path}.${key}")
+}
+
+// The `разбор` of a party: {"primitive": "name", "role": "literal" (optional), "type": "T"}.
+fn dec_parse(o JsonObject, defs TypeDefs, path str) -> Result[ParseDef, LoadError] {
+    j_only(o, ["primitive", "role", "type"], path)?
+    ro primitive = j_need_str(o, "primitive", path)?
+    ro role = j_str_or(o, "role", "", path)?
+    ro result = j_type(o, "type", defs, path)?
+    Ok(ParseDef { primitive, role, result })
+}
+
+fn dec_parties(root JsonObject, defs TypeDefs) -> Result[[]PartyDef, LoadError] {
+    ro items = j_arr_or_empty(root, "parties", "$")?
+    mut out = []PartyDef.new()
+    mut i = 0
+    for item in items {
+        ro p = "$.parties[${i}]"
+        ro o = j_obj(item, p)?
+        j_only(o, party_keys(), p)?
+        ro name = j_need_str(o, "name", p)?
+        ro id = j_str_or(o, "id", "", p)?
+        ro kind = party_kind_of(j_need_str(o, "kind", p)?, "${p}.kind")?
+        ro profile = j_expr_opt(o, "profile", p)?
+        ro words = dec_words_or_empty(o, "words", defs, p)?
+        ro progress = dec_words_or_empty(o, "progress", defs, p)?
+        ro setting = j_str_or(o, "setting", "", p)?
+        ro nested = j_str_or(o, "nested", "", p)?
+        mut input_spec = []TypeSpec.new()
+        if j_has(o, "input_type") { input_spec.push(j_type(o, "input_type", defs, p)?) }
+        mut result_spec = []TypeSpec.new()
+        if j_has(o, "result") { result_spec.push(j_type(o, "result", defs, p)?) }
+        mut parse = []ParseDef.new()
+        if j_has(o, "parse") { parse.push(dec_parse(j_need_obj(o, "parse", p)?, defs, "${p}.parse")?) }
+        ro counter = j_str_or(o, "counter", "", p)?
+        out.push(PartyDef { name, id, kind, profile, words, progress, setting, nested, input_spec, result_spec, parse, counter })
+        i += 1
+    }
+    Ok(out)
+}
+
+// ---- events, actions, rows --------------------------------------------------------------------------------------------------
+
+// The binding of the fields of an event: an object {"field": "name"}.
+fn dec_binds(o JsonObject, key str, path str) -> Result[[]Bind, LoadError] {
+    mut out = []Bind.new()
+    if !j_has(o, key) { return Ok(out) }
+    ro bo = j_need_obj(o, key, path)?
+    for field in bo.keys() {
+        match bo.get(field) {
+            Some(v) => out.push(Bind { field, name: j_str(v, "${path}.${key}.${field}")? })
+            None => ()
+        }
+    }
+    Ok(out)
+}
+
+fn dec_event(v JsonValue, path str) -> Result[EventPat, LoadError] {
+    ro o = j_obj(v, path)?
+    ro kind = j_need_str(o, "kind", path)?
+    match kind {
+        "answer" => {
+            j_only(o, ["kind", "bind"], path)?
+            Ok(AnswerEv { bind: j_str_or(o, "bind", "", path)? })
+        }
+        "answer_variant" => {
+            j_only(o, ["kind", "variant", "bind"], path)?
+            Ok(AnswerVariantEv { variant: j_need_str(o, "variant", path)?, binds: dec_binds(o, "bind", path)? })
+        }
+        "failure" => {
+            j_only(o, ["kind", "reasons", "bind"], path)?
+            Ok(FailureEv { reasons: j_strings_or_empty(o, "reasons", path)?, bind: j_str_or(o, "bind", "", path)? })
+        }
+        "timeout" => {
+            j_only(o, ["kind"], path)?
+            Ok(TimeoutEv)
+        }
+        "progress" => {
+            j_only(o, ["kind", "name", "bind"], path)?
+            Ok(ProgressEv { name: j_need_str(o, "name", path)?, binds: dec_binds(o, "bind", path)? })
+        }
+        "word" => {
+            j_only(o, ["kind", "word", "bind"], path)?
+            Ok(WordEv { word: j_need_str(o, "word", path)?, binds: dec_binds(o, "bind", path)? })
+        }
+        "signal" => {
+            j_only(o, ["kind", "name", "bind"], path)?
+            Ok(SignalEv { name: j_need_str(o, "name", path)?, binds: dec_binds(o, "bind", path)? })
+        }
+        "now" => {
+            j_only(o, ["kind"], path)?
+            Ok(NowEv)
+        }
+        _ => Err(le("${path}.kind", "the kind of an event must be answer, answer_variant, failure, timeout, progress, word, signal or now, got ${kind}"))
+    }
+}
+
+fn dec_named_exprs(o JsonObject, key str, path str) -> Result[[]NamedExpr, LoadError] {
+    ro items = j_arr_or_empty(o, key, path)?
+    mut out = []NamedExpr.new()
+    mut i = 0
+    for item in items {
+        ro p = "${path}.${key}[${i}]"
+        ro po = j_obj(item, p)?
+        j_only(po, ["name", "value"], p)?
+        ro name = j_need_str(po, "name", p)?
+        for seen in out {
+            if seen.name == name { return Err(le(p, "the parameter ${name} is repeated")) }
+        }
+        out.push(NamedExpr { name, value: j_expr(po, "value", p)? })
+        i += 1
+    }
+    Ok(out)
+}
+
+fn dec_lvalue(o JsonObject, key str, path str) -> Result[LValue, LoadError] {
+    ro v = j_need(o, key, path)?
+    ro p = "${path}.${key}"
+    match v.str() {
+        Some(name) => return Ok(LValue { root: name, steps: []PathStep.new() })
+        None => ()
+    }
+    ro lo = j_obj(v, p)?
+    j_only(lo, ["name", "path"], p)?
+    ro root = j_need_str(lo, "name", p)?
+    ro items = j_arr_or_empty(lo, "path", p)?
+    mut steps = []PathStep.new()
+    mut i = 0
+    for item in items {
+        ro sp = "${p}.path[${i}]"
+        ro so = j_obj(item, sp)?
+        j_only(so, ["key", "field"], sp)?
+        if j_has(so, "key") {
+            if j_has(so, "field") { return Err(le(sp, "key and field are alternatives")) }
+            steps.push(KeyStep(j_expr(so, "key", sp)?))
+        } else {
+            steps.push(FieldStep(j_need_str(so, "field", sp)?))
+        }
+        i += 1
+    }
+    Ok(LValue { root, steps })
+}
+
+fn dec_actions(v JsonValue, path str) -> Result[[]Action, LoadError] {
+    ro items = j_arr(v, path)?
+    mut out = []Action.new()
+    mut i = 0
+    for item in items {
+        out.push(dec_action(item, "${path}[${i}]")?)
+        i += 1
+    }
+    Ok(out)
+}
+
+fn dec_actions_or_empty(o JsonObject, key str, path str) -> Result[[]Action, LoadError] {
+    if !j_has(o, key) { return Ok([]Action.new()) }
+    ro v = j_need(o, key, path)?
+    dec_actions(v, "${path}.${key}")
+}
+
+fn dec_action(v JsonValue, path str) -> Result[Action, LoadError] {
+    ro o = j_obj(v, path)?
+    ro kind = j_need_str(o, "do", path)?
+    match kind {
+        "assign" => {
+            j_only(o, ["do", "target", "value"], path)?
+            Ok(AssignAct { target: dec_lvalue(o, "target", path)?, value: j_expr(o, "value", path)? })
+        }
+        "add" => {
+            j_only(o, ["do", "target", "value"], path)?
+            Ok(AddAct { target: dec_lvalue(o, "target", path)?, value: j_expr(o, "value", path)? })
+        }
+        "journal" => {
+            j_only(o, ["do", "code", "params"], path)?
+            Ok(JournalAct { code: j_need_str(o, "code", path)?, params: dec_named_exprs(o, "params", path)? })
+        }
+        "journal_value" => {
+            j_only(o, ["do", "value"], path)?
+            Ok(JournalValueAct(j_expr(o, "value", path)?))
+        }
+        "journal_all" => {
+            j_only(o, ["do"], path)?
+            Ok(JournalAllAct)
+        }
+        "for_each" => {
+            j_only(o, ["do", "var", "in", "body"], path)?
+            Ok(ForEachAct {
+                var: j_need_str(o, "var", path)?, list: j_expr(o, "in", path)?,
+                body: dec_actions(j_need(o, "body", path)?, "${path}.body")?
+            })
+        }
+        "let" => {
+            j_only(o, ["do", "name", "value", "body"], path)?
+            Ok(LetAct {
+                name: j_need_str(o, "name", path)?, value: j_expr(o, "value", path)?,
+                body: dec_actions(j_need(o, "body", path)?, "${path}.body")?
+            })
+        }
+        "bind" => {
+            j_only(o, ["do", "name", "value"], path)?
+            Ok(BindAct { name: j_need_str(o, "name", path)?, value: j_expr(o, "value", path)? })
+        }
+        "if" => {
+            j_only(o, ["do", "cond", "then", "else"], path)?
+            Ok(IfAct {
+                cond: j_expr(o, "cond", path)?, then_actions: dec_actions(j_need(o, "then", path)?, "${path}.then")?,
+                else_actions: dec_actions_or_empty(o, "else", path)?
+            })
+        }
+        "call" => {
+            j_only(o, ["do", "primitive", "args"], path)?
+            Ok(CallAct { name: j_need_str(o, "primitive", path)?, args: j_exprs_or_empty(o, "args", path)? })
+        }
+        "machine_error" => {
+            j_only(o, ["do", "code", "params"], path)?
+            Ok(MachineErrorAct { code: j_need_str(o, "code", path)?, params: dec_named_exprs(o, "params", path)? })
+        }
+        "cancel_open" => {
+            j_only(o, ["do", "party", "except"], path)?
+            Ok(CancelOpenAct { party: j_str_or(o, "party", "", path)?, except: j_exprs_or_empty(o, "except", path)? })
+        }
+        "pass" => {
+            j_only(o, ["do", "nested", "signal"], path)?
+            Ok(PassAct { nested: j_expr(o, "nested", path)?, signal: j_need_str(o, "signal", path)? })
+        }
+        _ => Err(le("${path}.do", "unknown action ${kind}"))
+    }
+}
+
+fn dec_next(o JsonObject, path str) -> Result[Goto, LoadError] {
+    ro restart = j_bool_or(o, "restart", false, path)?
+    if !j_has(o, "to") { return Ok(Goto { target: ToNothing, restart }) }
+    ro word = j_need_str(o, "to", path)?
+    match word {
+        "@previous" => Ok(Goto { target: ToPrevious, restart })
+        "@prepare_return" => Ok(Goto { target: ToPrepareReturn, restart })
+        "@same" => Ok(Goto { target: ToSame, restart })
+        _ => Ok(Goto { target: ToState(word), restart })
+    }
+}
+
+fn dec_row(v JsonValue, path str) -> Result[TableRow, LoadError] {
+    ro o = j_obj(v, path)?
+    j_only(o, row_keys(), path)?
+    ro n = j_int(j_need(o, "n", path)?, "${path}.n")?
+    ro event = dec_event(j_need(o, "event", path)?, "${path}.event")?
+    ro cond = j_expr_opt(o, "cond", path)?
+    ro is_else = j_bool_or(o, "else", false, path)?
+    if is_else && cond.len() > 0 { return Err(le(path, "a row has a condition or else, not both")) }
+    ro actions = dec_actions_or_empty(o, "actions", path)?
+    ro next = dec_next(o, path)?
+    Ok(TableRow { n, event, cond, is_else, actions, next })
+}
+
+fn dec_rows(o JsonObject, key str, path str) -> Result[[]TableRow, LoadError] {
+    ro items = j_arr_or_empty(o, key, path)?
+    mut out = []TableRow.new()
+    mut i = 0
+    for item in items {
+        out.push(dec_row(item, "${path}.${key}[${i}]")?)
+        i += 1
+    }
+    Ok(out)
+}
+
+// ---- states -----------------------------------------------------------------------------------------------------------------
+
+fn state_kind_of(word str, path str) -> Result[StateKind, LoadError] {
+    match word {
+        "appeal" => Ok(AppealKind)
+        "operation" => Ok(OperationKind)
+        "fork" => Ok(ForkKind)
+        "end" => Ok(EndKind)
+        _ => Err(le(path, "the kind of a state must be appeal, operation, fork or end, got ${word}"))
+    }
+}
+
+fn dec_inputs(o JsonObject, path str) -> Result[[]InputField, LoadError] {
+    ro items = j_arr_or_empty(o, "inputs", path)?
+    mut out = []InputField.new()
+    mut i = 0
+    for item in items {
+        ro p = "${path}.inputs[${i}]"
+        ro io = j_obj(item, p)?
+        j_only(io, ["field", "value", "reads"], p)?
+        ro field = j_need_str(io, "field", p)?
+        for seen in out {
+            if seen.field == field { return Err(le(p, "the field ${field} is repeated")) }
+        }
+        ro reads = j_str_or(io, "reads", "party", p)?
+        if reads != "party" && reads != "executor" { return Err(le("${p}.reads", "reads must be party or executor, got ${reads}")) }
+        out.push(InputField { field, value: j_expr(io, "value", p)?, to_party: reads == "party" })
+        i += 1
+    }
+    Ok(out)
+}
+
+fn dec_accept(o JsonObject, path str) -> Result[[]AcceptRow, LoadError] {
+    ro items = j_arr_or_empty(o, "accept", path)?
+    mut out = []AcceptRow.new()
+    mut i = 0
+    for item in items {
+        ro p = "${path}.accept[${i}]"
+        ro ao = j_obj(item, p)?
+        j_only(ao, ["event", "actions"], p)?
+        out.push(AcceptRow { event: dec_event(j_need(ao, "event", p)?, "${p}.event")?, actions: dec_actions_or_empty(ao, "actions", p)? })
+        i += 1
+    }
+    Ok(out)
+}
+
+fn dec_state(v JsonValue, path str) -> Result[StateDef, LoadError] {
+    ro o = j_obj(v, path)?
+    j_only(o, state_keys(), path)?
+    ro name = j_need_str(o, "name", path)?
+    ro kind = state_kind_of(j_need_str(o, "kind", path)?, "${path}.kind")?
+    ro reads = j_strings_or_empty(o, "reads", path)?
+    ro reads_all = j_bool_or(o, "reads_all", false, path)?
+    ro party = j_str_or(o, "party", "", path)?
+    ro set = j_expr_opt(o, "set", path)?
+    ro silence = j_expr_opt(o, "silence", path)?
+    ro edits = j_str_or(o, "edits", "", path)?
+    ro edit_check = j_str_or(o, "edit_check", "", path)?
+    ro form_returns = j_int_or(o, "form_returns", 0, path)?
+    ro inputs = dec_inputs(o, path)?
+    ro accept = dec_accept(o, path)?
+    ro entry = dec_actions_or_empty(o, "entry", path)?
+    ro rows = dec_rows(o, "rows", path)?
+    mut except_field = ""
+    mut except_values = []str.new()
+    if j_has(o, "except") {
+        ro eo = j_need_obj(o, "except", path)?
+        j_only(eo, ["field", "values"], "${path}.except")?
+        except_field = j_need_str(eo, "field", "${path}.except")?
+        except_values = j_strings(j_need(eo, "values", "${path}.except")?, "${path}.except.values")?
+    }
+    Ok(StateDef {
+        name, kind, reads, reads_all, party, set, silence, edits, edit_check, form_returns,
+        inputs, accept, entry, rows, except_field, except_values
+    })
+}
+
+fn dec_states(root JsonObject) -> Result[[]StateDef, LoadError] {
+    ro items = j_need_arr(root, "states", "$")?
+    mut out = []StateDef.new()
+    mut i = 0
+    for item in items {
+        out.push(dec_state(item, "$.states[${i}]")?)
+        i += 1
+    }
+    Ok(out)
+}
+
+// ---- ends -------------------------------------------------------------------------------------------------------------------
+
+fn dec_answer(v JsonValue, path str) -> Result[AnswerDef, LoadError] {
+    ro o = j_obj(v, path)?
+    ro kind = j_need_str(o, "kind", path)?
+    match kind {
+        "answer" => {
+            j_only(o, ["kind", "value"], path)?
+            Ok(AnswerValue(j_expr(o, "value", path)?))
+        }
+        "refusal" => {
+            j_only(o, ["kind", "code", "text"], path)?
+            Ok(RefusalValue { code: j_expr(o, "code", path)?, text: j_expr(o, "text", path)? })
+        }
+        _ => Err(le("${path}.kind", "the answer of an end must be answer or refusal, got ${kind}"))
+    }
+}
+
+// The result type of the machine and the rows of its table "Ends".
+type EndsPart { spec TypeSpec, rows []EndRow }
+
+fn dec_ends(root JsonObject, defs TypeDefs) -> Result[EndsPart, LoadError] {
+    ro eo = j_need_obj(root, "ends", "$")?
+    j_only(eo, ["result", "rows"], "$.ends")?
+    ro spec = j_type(eo, "result", defs, "$.ends")?
+    ro items = j_need_arr(eo, "rows", "$.ends")?
+    mut rows = []EndRow.new()
+    mut i = 0
+    for item in items {
+        ro p = "$.ends.rows[${i}]"
+        ro o = j_obj(item, p)?
+        j_only(o, ["state", "n", "when", "answer"], p)?
+        rows.push(EndRow {
+            state: j_need_str(o, "state", p)?, n: j_int(j_need(o, "n", p)?, "${p}.n")?,
+            when: j_expr(o, "when", p)?, answer: dec_answer(j_need(o, "answer", p)?, "${p}.answer")?
+        })
+        i += 1
+    }
+    Ok(EndsPart { spec, rows })
+}
+
+// ---- the machine ------------------------------------------------------------------------------------------------------------
+
+fn dec_machine(root JsonObject) -> Result[MachineDef, LoadError] {
+    j_only(root, top_keys(), "$")?
+    ro format = j_need_str(root, "format", "$")?
+    if format != MACHINE_FORMAT { return Err(le("$.format", "the format must be ${MACHINE_FORMAT}, got ${format}")) }
+    ro language_version = j_str_or(root, "portolan_version", PORTOLAN_VERSION, "$")?
+    if !portolan_versions().contains(language_version) {
+        return Err(le("$.portolan_version", "the portolan_version must be 2.12 (the version of the language of the methodology; there is no transition period), got ${language_version}"))
+    }
+    ro name = j_need_str(root, "machine", "$")?
+    ro version = j_str_or(root, "version", "", "$")?
+    ro types = dec_types(root)?
+    ro constants = dec_constants(root, types)?
+    ro params = dec_params(root, types)?
+    ro input = dec_input(root, types)?
+    ro data = dec_data(root, types)?
+    ro parties = dec_parties(root, types)?
+    ro request_limit = j_expr_opt(root, "request_limit", "$")?
+    ro signals = dec_words_or_empty(root, "signals", types, "$")?
+    ro definitions = dec_definitions(root, types)?
+    ro includes = dec_includes(root)?
+    ro fragments = dec_fragments(root)?
+    ro initial = j_need_str(root, "initial", "$")?
+    ro error_end = j_str_or(root, "error_end", "", "$")?
+    ro common = dec_rows(root, "common_events", "$")?
+    ro states = dec_states(root)?
+    ro ends = dec_ends(root, types)?
+    ro primitives = j_strings_or_empty(root, "primitives", "$")?
+    Ok(MachineDef {
+        name, version, types, constants, params, input, data, parties, request_limit, signals,
+        definitions, includes, fragments, initial, error_end, common, states,
+        result_spec: [ends.spec], end_rows: ends.rows, primitives
+    })
+}
+
+/// The machine from a parsed JSON tree: the structure of the schema is checked, the expressions are read. The checks of the TABLE
+/// (reads, writes, reachability, the ends, the classes of the primitives) are `check_machine`.
+export fn machine_from_json(root JsonValue) -> Result[MachineDef, LoadError] {
+    ro o = j_obj(root, "$")?
+    dec_machine(o)
+}
+
+/// The machine from the text of a JSON tree.
+export fn parse_machine(text str) -> Result[MachineDef, LoadError] {
+    match Json.parse(text) {
+        Ok(j) => machine_from_json(j)
+        Err(e) => Err(le("$", "not valid JSON"))
+    }
+}

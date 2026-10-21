@@ -1,0 +1,99 @@
+// words_test.nv - P-7 of format 2.7 in the decoder: the key `words` of an enum, a list of the pairs ["Name", "word"] in the order of the declaration; `portolan_version` 2.7; the schema.
+module alula.machine_table
+
+import std.text
+import alula.machine.{schema_files, text_of_file}
+
+fn kind_types(words str) -> str => `"types":{"variants":[{"name":"Kind","cases":[{"name":"Read"},{"name":"Write"},{"name":"Other"}]${words}}]},`
+
+fn with_kind(words str) -> str => tiny().replace("\"data\":[", "${kind_types(words)}\"data\":[")
+
+fn kind_def(text str) -> VariantDef {
+    ro def = decoded(text)
+    for v in def.types.variants {
+        if v.name == "Kind" { return v }
+    }
+    panic("no Kind in the types")
+}
+
+test "wd decodes" {
+    ro text = with_kind(",\"words\":[[\"Read\",\"read\"],[\"Write\",\"save\"]]")
+    if !ok_text(text) { panic(first_issue(text)) }
+    assert(ok_text(text))
+    ro kind = kind_def(text)
+    assert(kind.words.len() == 2)
+    assert(kind.words[0].name == "Read")
+    assert(kind.words[0].word == "read")
+    assert(kind.words[1].name == "Write")
+    assert(kind.words[1].word == "save")
+    assert(kind.cases.len() == 3)
+}
+
+test "wd absent" {
+    assert(ok_text(with_kind("")))
+    assert(kind_def(with_kind("")).words.len() == 0)
+    ro def = decoded(with_kind(""))
+    assert(def.types.variants[0].name == "FailCode")
+    assert(def.types.variants[0].words.len() == 0)
+    assert(kind_def(with_kind(",\"words\":[]")).words.len() == 0)
+}
+
+test "wd order kept" {
+    ro kind = kind_def(with_kind(",\"words\":[[\"Other\",\"o\"],[\"Read\",\"r\"]]"))
+    assert(kind.words.len() == 2)
+    assert(kind.words[0].name == "Other")
+    assert(kind.words[1].name == "Read")
+}
+
+test "wd bad shape" {
+    assert(says(with_kind(",\"words\":\"x\""), "$.types.variants[0].words"))
+    assert(says(with_kind(",\"words\":\"x\""), "a list of pairs"))
+    assert(says(with_kind(",\"words\":[[\"Read\"]]"), "a pair [name, word]"))
+    assert(says(with_kind(",\"words\":[[\"Read\",\"a\",\"b\"]]"), "a pair [name, word]"))
+    assert(says(with_kind(",\"words\":[[\"Read\",1]]"), "a pair [name, word]"))
+    assert(says(with_kind(",\"words\":[{\"Read\":\"a\"}]"), "a pair [name, word]"))
+    assert(says(with_kind(",\"words\":[\"Read\"]"), "a pair [name, word]"))
+}
+
+test "wd bad names" {
+    assert(says(with_kind(",\"words\":[[\"Nope\",\"x\"]]"), "the case Nope is not in the variant Kind"))
+    assert(says(with_kind(",\"words\":[[\"Read\",\"a\"],[\"Read\",\"b\"]]"), "the word of the case Read is repeated"))
+    assert(says(with_kind(",\"words\":[[\"Read\",\"a\"],[\"Write\",\"a\"]]"), "the word a is repeated"))
+}
+
+test "wd bad word" {
+    assert(says(with_kind(",\"words\":[[\"Read\",\"\"]]"), "lower case Latin"))
+    assert(says(with_kind(",\"words\":[[\"Read\",\"Чтение\"]]"), "lower case Latin"))
+    assert(says(with_kind(",\"words\":[[\"Read\",\"Read\"]]"), "lower case Latin"))
+    assert(says(with_kind(",\"words\":[[\"Read\",\"a b\"]]"), "lower case Latin"))
+    assert(says(with_kind(",\"words\":[[\"Read\",\"2x\"]]"), "lower case Latin"))
+    assert(ok_text(with_kind(",\"words\":[[\"Read\",\"read_2\"]]")))
+}
+
+test "wd not for fields" {
+    ro text = tiny().replace("\"data\":[", "\"types\":{\"variants\":[{\"name\":\"Shape\",\"cases\":[{\"name\":\"Dot\"},{\"name\":\"Box\",\"fields\":[{\"name\":\"w\",\"type\":\"int\"}]}],\"words\":[[\"Box\",\"box\"]]}]},\"data\":[")
+    assert(says(text, "the case Box has fields"))
+    ro dot = tiny().replace("\"data\":[", "\"types\":{\"variants\":[{\"name\":\"Shape\",\"cases\":[{\"name\":\"Dot\"},{\"name\":\"Box\",\"fields\":[{\"name\":\"w\",\"type\":\"int\"}]}],\"words\":[[\"Dot\",\"dot\"]]}]},\"data\":[")
+    assert(ok_text(dot))
+}
+
+test "wd not on records" {
+    ro text = tiny().replace("\"data\":[", "\"types\":{\"records\":[{\"name\":\"Rec\",\"fields\":[],\"words\":[]}]},\"data\":[")
+    assert(says(text, "words"))
+    assert(says(text, "not in the schema"))
+}
+
+test "wd table format" {
+    assert(ok_text(tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"portolan_version\":\"2.12\",")))
+    assert(says(tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"portolan_version\":\"2.7\","), "must be 2.12"))
+    assert(says(tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"portolan_version\":\"2.11\","), "must be 2.12"))
+    assert(portolan_versions().len() == 1)
+}
+
+test "wd schema" {
+    ro schema = text_of_file(schema_files(), "machine-2.schema.json")
+    assert(schema.contains("\"2.12\""))
+    ro variant = def_of("variant_def")
+    assert(same_names(property_names(variant), ["name", "cases", "words"]))
+    assert(schema.contains("the words of the values of an enum"))
+}

@@ -1,0 +1,239 @@
+// model.nv - the machine as the interpreter holds it: the decoded form of the JSON tree `machine/2`.
+//
+// The source of the language is the format of the methodology (`state-machines/state-machine-portolan-spec.md`, version 2.1); the keys of
+// the JSON tree are English (the dictionary of the methodology) and are listed in README.md and in schema/machine-2.schema.json beside
+// the core. Every type here is plain data: no protocol, no effect. The decoder is json.nv, the checks of a table are check.nv.
+//
+// ORACLE-WORKAROUND(34): "none or one" is a list of zero or one item or an empty text, not an `Option` field of a record (the nearest known defect: an `Option` of an enum held by a record declared before the enum breaks the C); the enums are declared before the records that hold them; use `Option` fields when item 34 is fixed
+module alula.machine_table
+
+import alula.machine.{Expr, TypeSpec, TypeDefs, FieldDef, Bind, DefFn}
+
+/// LoadError: why a machine is refused, with the place in the JSON (`$.states[2].rows[0].event`).
+export type LoadError { path str, message str }
+
+/// PartyKind: the kind of a party (format section 1). `Gatekeeper` is "human or agent by a setting of the project".
+export type PartyKind enum
+    | AgentParty
+    | HumanParty
+    | EnhancedParty
+    | GatekeeperParty
+    | MachineParty
+
+/// WriteKind: who changes a datum (format section 2, the column `writes`).
+export type WriteKind enum
+    | RowsWrite
+    | MechanicsWrite
+    | RowsAndMechanics
+    | FragmentWrite
+    | RowsAndFragment
+
+/// InitialDef: the initial value of a datum.
+export type InitialDef enum
+    | NoInitial
+    | InitialExpr(Expr)
+    | InitialFromInput(str)
+
+/// StateKind: the four kinds of a state (format 4.1).
+export type StateKind enum
+    | AppealKind
+    | OperationKind
+    | ForkKind
+    | EndKind
+
+/// Target: where a row leads (format 4.1, "Where"). `ToNothing` is a row that ends in `machine_error`.
+export type Target enum
+    | ToState(str)
+    | ToPrevious
+    | ToPrepareReturn
+    | ToSame
+    | ToNothing
+
+/// EventPat: the event of a row (format 4.3), plus `ProgressEv` (a part of an answer that keeps the request open) and `TimeoutEv`
+/// ("no answer in time", made by the executor) that the engine of the product has and the format folds into `failure`.
+export type EventPat enum
+    | AnswerEv { bind str }
+    | AnswerVariantEv { variant str, binds []Bind }
+    | FailureEv { reasons []str, bind str }
+    | TimeoutEv
+    | ProgressEv { name str, binds []Bind }
+    | WordEv { word str, binds []Bind }
+    | SignalEv { name str, binds []Bind }
+    | NowEv
+
+/// PathStep: a step of a path in an assignment: `x[key]` or `x.field`.
+export type PathStep enum
+    | KeyStep(Expr)
+    | FieldStep(str)
+
+/// LValue: the place an action writes: a datum and the steps into it (`lenses[party].attempt`).
+export type LValue { root str, steps []PathStep }
+
+/// NamedExpr: a named parameter of a journal event or of a machine error.
+export type NamedExpr { name str, value Expr }
+
+/// Action: an action of a row, of "On accept" and of "On entry" (format 5).
+export type Action enum
+    | AssignAct { target LValue, value Expr }
+    | AddAct { target LValue, value Expr }
+    | JournalAct { code str, params []NamedExpr }
+    | JournalValueAct(Expr)
+    | JournalAllAct
+    | ForEachAct { var str, list Expr, body []Action }
+    | LetAct { name str, value Expr, body []Action }
+    | BindAct { name str, value Expr }
+    | IfAct { cond Expr, then_actions []Action, else_actions []Action }
+    | CallAct { name str, args []Expr }
+    | MachineErrorAct { code str, params []NamedExpr }
+    | CancelOpenAct { party str, except []Expr }
+    | PassAct { nested Expr, signal str }
+
+// ORACLE-WORKAROUND(38, 39): the record has a name of its own (`Goto`, not `Next` or `Slot`): a user record named like a type of the standard library (`Next`, `Slot`) breaks the compile of the standard library, and type names are global to the program; use a short name when items 38 and 39 are fixed
+/// Goto: the "Where" of a row; `restart` is the suffix "restart" (rule 18).
+export type Goto { target Target, restart bool }
+
+// ORACLE-WORKAROUND(48): the record is `TableRow`, not `Row`: the driver nova-postgres has a variant `Row` and the compiler keeps one table of type and variant names; call it `Row` again when item 48 is fixed
+/// TableRow: a row of a table of states: `n` is the number of the row, `cond` is zero or one condition, `is_else` the condition `else`.
+export type TableRow { n int, event EventPat, cond []Expr, is_else bool, actions []Action, next Goto }
+
+/// AcceptRow: a row of "On accept" (format 4.4).
+export type AcceptRow { event EventPat, actions []Action }
+
+/// InputField: a field of the table "Input" of an appeal; `to_party` is the column `reads` = party (else executor).
+export type InputField { field str, value Expr, to_party bool }
+
+/// WordDef: a word, a signal or a part of an answer with its fields.
+export type WordDef { name str, fields []FieldDef }
+
+/// ParseDef: the `разбор` of a party of the kind `machine` (format section 1): the reading primitive that turns the answer into the value of the answer, the literal of the role
+/// (empty when there is none) and the type of its result.
+export type ParseDef { primitive str, role str, result TypeSpec }
+
+/// PartyDef: a party (format section 1); `profile` is zero or one expression. A party of the kind `machine` names the nested machine (`nested`, a name of the registry of the caller),
+/// the record type of the input of the call (`input_spec`, zero or one) and may have `parse` (zero or one).
+export type PartyDef {
+    name str, id str, kind PartyKind, profile []Expr, words []WordDef, progress []WordDef,
+    setting str, nested str, input_spec []TypeSpec, result_spec []TypeSpec, parse []ParseDef, counter str
+}
+
+/// ConstDef, ParamDef: constants and parameters (format section 8); the definitions are `DefFn` of the core.
+export type ConstDef { name str, spec TypeSpec, value Expr }
+export type ParamDef { name str, spec TypeSpec, default_value Expr, project_key str }
+
+/// IncludeDef: a line `definitions: <name> version <N> hash <hex12>` (format section 8); the tree carries a copy of what it brings.
+export type IncludeDef { name str, version str, hash str }
+
+/// FragmentArg, FragmentUse: the connection of a fragment as the tree carries it (the key `fragments`, 1b (m)): the name of the fragment and the value of each of its arguments (an expression of the tree).
+export type FragmentArg { name str, value Expr }
+export type FragmentUse { name str, args []FragmentArg }
+
+/// MonotonicDef: "does not decrease" and the optional bound `<= expr` (zero or one).
+export type MonotonicDef { on bool, bound []Expr }
+
+/// DataDef: a datum of the machine (format section 2); a name with `[*]` is a path into a dict (only `writes` and `monotonic` count).
+export type DataDef { name str, spec TypeSpec, initial InitialDef, monotonic MonotonicDef, writes WriteKind }
+
+/// InputDef: the input of the machine (`## Input`): the fields and the invariants.
+export type InputDef { present bool, fields []FieldDef, invariants []Expr }
+
+/// StateDef: a state. `reads` is the line `Input:` of an operation, a fork and an end (for an appeal the names of its table);
+/// `reads_all` is the end ERROR (`Input` is all the data). `silence`, `edits`, `edit_check` and `set` are zero or one item.
+export type StateDef {
+    name str, kind StateKind, reads []str, reads_all bool,
+    party str, set []Expr, silence []Expr, edits str, edit_check str, form_returns int,
+    inputs []InputField, accept []AcceptRow, entry []Action, rows []TableRow,
+    except_field str, except_values []str
+}
+
+/// AnswerDef: what an end answers with (format 4.7): `Answer(value)` or `Refusal(code, text)`.
+export type AnswerDef enum
+    | AnswerValue(Expr)
+    | RefusalValue { code Expr, text Expr }
+
+/// EndRow: a row of the table "Ends": the end, the number, the condition of entry and the answer.
+export type EndRow { state str, n int, when Expr, answer AnswerDef }
+
+/// MachineDef: the whole machine.
+export type MachineDef {
+    name str, version str, types TypeDefs,
+    constants []ConstDef, params []ParamDef, input InputDef, data []DataDef,
+    parties []PartyDef, request_limit []Expr, signals []WordDef,
+    definitions []DefFn, includes []IncludeDef, fragments []FragmentUse,
+    initial str, error_end str, common []TableRow, states []StateDef,
+    result_spec []TypeSpec, end_rows []EndRow, primitives []str
+}
+
+/// The built-in names of the machine (what the executor provides, format 3.1): not data, not constants.
+export fn builtin_names() -> []str => ["input", "event", "party", "state", "trace", "step", "transition_note", "all_data", "end_states"]
+
+/// The word of a party kind.
+export fn party_kind_word(kind PartyKind) -> str {
+    match kind {
+        AgentParty => "agent"
+        HumanParty => "human"
+        EnhancedParty => "enhanced"
+        GatekeeperParty => "gatekeeper"
+        MachineParty => "machine"
+    }
+}
+
+/// The word of a kind of a state.
+export fn state_kind_word(kind StateKind) -> str {
+    match kind {
+        AppealKind => "appeal"
+        OperationKind => "operation"
+        ForkKind => "fork"
+        EndKind => "end"
+    }
+}
+
+/// The word of a kind of a write.
+export fn write_kind_word(kind WriteKind) -> str {
+    match kind {
+        RowsWrite => "rows"
+        MechanicsWrite => "mechanics"
+        RowsAndMechanics => "rows_and_mechanics"
+        FragmentWrite => "fragment"
+        RowsAndFragment => "rows_and_fragment"
+    }
+}
+
+/// Does a row of the machine write the datum (the column `writes` has `rows`)?
+export fn rows_may_write(kind WriteKind) -> bool {
+    match kind {
+        RowsWrite => true
+        RowsAndMechanics => true
+        RowsAndFragment => true
+        _ => false
+    }
+}
+
+/// The state by its name.
+export fn find_state(def MachineDef, name str) -> int {
+    mut i = 0
+    while i < def.states.len() {
+        if def.states[i].name == name { return i }
+        i += 1
+    }
+    -1
+}
+
+/// The party by its name.
+export fn find_party(def MachineDef, name str) -> int {
+    mut i = 0
+    while i < def.parties.len() {
+        if def.parties[i].name == name { return i }
+        i += 1
+    }
+    -1
+}
+
+/// The datum by its name (a plain datum, not a path).
+export fn find_data(def MachineDef, name str) -> int {
+    mut i = 0
+    while i < def.data.len() {
+        if def.data[i].name == name { return i }
+        i += 1
+    }
+    -1
+}
