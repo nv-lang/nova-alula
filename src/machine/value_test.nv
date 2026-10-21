@@ -1,0 +1,484 @@
+// value_test.nv - the value: equality, order, text, JSON both ways.
+module alula.machine
+
+import std.encoding.json.{Json}
+
+fn vf(name str, value Value) -> RecordField => { name, value }
+fn ve(key Value, value Value) -> DictEntry => { key, value }
+
+fn vtext(v Value) -> str {
+    match value_text(v) {
+        Some(t) => t
+        None => "<none>"
+    }
+}
+
+fn vback(v Value) -> bool {
+    match parse_value(value_json(v)) {
+        Ok(b) => value_equal(v, b)
+        Err(e) => false
+    }
+}
+
+fn vbad(text str) -> bool {
+    match parse_value(text) {
+        Ok(v) => false
+        Err(e) => true
+    }
+}
+
+fn vsample() -> Value {
+    make_record("Finding", [
+        vf("severity", enum_value("Severity", "Critical")),
+        vf("evidence", Text("Привет, \"мир\"\n😀")),
+        vf("tags", List([Text("a"), Int(2), Float(2.5), Null, Bool(true)])),
+        vf("by_lens", make_dict([ve(Text("к"), Int(1)), ve(Text("a"), Int(2))])),
+        vf("by_key", make_dict([ve(make_record("Key", [vf("lens", Text("x")), vf("pass", Int(2))]), List([Int(1)])), ve(Int(7), Null)])),
+        vf("result", make_variant("Outcome", "Done", [vf("text", Text("ok")), vf("artifact", Null)]))
+    ])
+}
+
+test "eq scalars" {
+    assert(value_equal(Null, Null))
+    assert(value_equal(Bool(true), Bool(true)))
+    assert(!value_equal(Bool(true), Bool(false)))
+    assert(value_equal(Int(5), Int(5)))
+    assert(!value_equal(Int(5), Int(6)))
+    assert(value_equal(Float(1.5), Float(1.5)))
+    assert(value_equal(Text("я"), Text("я")))
+    assert(!value_equal(Text("a"), Text("b")))
+}
+
+test "eq int float" {
+    assert(!value_equal(Int(1), Float(1.0)))
+    assert(!value_equal(Null, Bool(false)))
+    assert(!value_equal(Text("1"), Int(1)))
+}
+
+test "eq list" {
+    assert(value_equal(List([Int(1), Int(2)]), List([Int(1), Int(2)])))
+    assert(!value_equal(List([Int(1), Int(2)]), List([Int(2), Int(1)])))
+    assert(!value_equal(List([Int(1)]), List([Int(1), Int(1)])))
+    assert(value_equal(List([]Value.new()), List([]Value.new())))
+}
+
+test "eq dict" {
+    ro a = make_dict([ve(Text("x"), Int(1)), ve(Text("y"), Int(2))])
+    ro b = make_dict([ve(Text("y"), Int(2)), ve(Text("x"), Int(1))])
+    assert(value_equal(a, b))
+    assert(value_compare(a, b) == 0)
+    assert(!value_equal(a, make_dict([ve(Text("x"), Int(1))])))
+    assert(!value_equal(a, make_dict([ve(Text("x"), Int(1)), ve(Text("y"), Int(3))])))
+}
+
+test "eq record" {
+    ro a = make_record("R", [vf("b", Int(2)), vf("a", Int(1))])
+    ro b = make_record("R", [vf("a", Int(1)), vf("b", Int(2))])
+    assert(value_equal(a, b))
+    assert(!value_equal(a, make_record("Q", [vf("a", Int(1)), vf("b", Int(2))])))
+}
+
+test "eq variant" {
+    assert(value_equal(enum_value("T", "A"), enum_value("T", "A")))
+    assert(!value_equal(enum_value("T", "A"), enum_value("T", "B")))
+    assert(!value_equal(enum_value("T", "A"), enum_value("U", "A")))
+    assert(!value_equal(enum_value("T", "A"), make_variant("T", "A", [vf("x", Int(1))])))
+}
+
+test "dc order" {
+    ro d = make_dict([ve(Text("b"), Int(1)), ve(Text("a"), Int(2)), ve(Text("b"), Int(3))])
+    match d {
+        Dict(entries) => {
+            assert(entries.len() == 2)
+            assert(value_equal(entries[0].key, Text("b")))
+            assert(value_equal(entries[0].value, Int(3)))
+            assert(value_equal(entries[1].key, Text("a")))
+        }
+        _ => assert(false)
+    }
+}
+
+test "dc get" {
+    ro d = make_dict([ve(Text("a"), Int(1)), ve(Int(5), Text("five")), ve(enum_value("K", "X"), Bool(true))])
+    match d {
+        Dict(entries) => {
+            match dict_get(entries, Text("a")) {
+                Some(v) => assert(value_equal(v, Int(1)))
+                None => assert(false)
+            }
+            match dict_get(entries, Int(5)) {
+                Some(v) => assert(value_equal(v, Text("five")))
+                None => assert(false)
+            }
+            match dict_get(entries, enum_value("K", "X")) {
+                Some(v) => assert(value_equal(v, Bool(true)))
+                None => assert(false)
+            }
+            match dict_get(entries, Text("zz")) {
+                Some(v) => assert(false)
+                None => assert(true)
+            }
+            match dict_get(entries, Int(6)) {
+                Some(v) => assert(false)
+                None => assert(true)
+            }
+        }
+        _ => assert(false)
+    }
+}
+
+test "dc record key" {
+    ro k1 = make_record("Key", [vf("lens", Text("x")), vf("pass", Int(1))])
+    ro k2 = make_record("Key", [vf("pass", Int(2)), vf("lens", Text("x"))])
+    ro d = make_dict([ve(k1, Int(10)), ve(k2, Int(20))])
+    match d {
+        Dict(entries) => {
+            assert(entries.len() == 2)
+            match dict_get(entries, make_record("Key", [vf("pass", Int(2)), vf("lens", Text("x"))])) {
+                Some(v) => assert(value_equal(v, Int(20)))
+                None => assert(false)
+            }
+        }
+        _ => assert(false)
+    }
+}
+
+test "rec sorted" {
+    ro r = make_record("R", [vf("z", Int(1)), vf("a", Int(2)), vf("z", Int(3))])
+    match r {
+        Record { name, fields } => {
+            assert(name == "R")
+            assert(fields.len() == 2)
+            assert(fields[0].name == "a")
+            assert(fields[1].name == "z")
+            assert(value_equal(fields[1].value, Int(3)))
+            match record_get(fields, "a") {
+                Some(v) => assert(value_equal(v, Int(2)))
+                None => assert(false)
+            }
+            match record_get(fields, "q") {
+                Some(v) => assert(false)
+                None => assert(true)
+            }
+        }
+        _ => assert(false)
+    }
+}
+
+test "cp rank" {
+    ro ordered = [Null, Bool(true), Int(0), Float(0.0), Text(""), List([]Value.new()), make_dict([]DictEntry.new()),
+        make_record("R", []RecordField.new()), enum_value("T", "A")]
+    mut i = 0
+    while i + 1 < ordered.len() {
+        assert(value_compare(ordered[i], ordered[i + 1]) < 0)
+        assert(value_compare(ordered[i + 1], ordered[i]) > 0)
+        i += 1
+    }
+}
+
+test "cp kind" {
+    assert(value_compare(Bool(false), Bool(true)) < 0)
+    assert(value_compare(Int(-5), Int(3)) < 0)
+    assert(value_compare(Int(3), Int(3)) == 0)
+    assert(value_compare(Float(1.5), Float(-2.5)) > 0)
+    assert(value_compare(Text("a"), Text("b")) < 0)
+    assert(value_compare(Text("б"), Text("а")) > 0)
+    assert(value_compare(Text("ab"), Text("a")) > 0)
+}
+
+test "cp lists" {
+    assert(value_compare(List([Int(1), Int(2)]), List([Int(1), Int(3)])) < 0)
+    assert(value_compare(List([Int(1)]), List([Int(1), Int(0)])) < 0)
+    assert(value_compare(List([Int(2)]), List([Int(1), Int(9)])) > 0)
+    assert(value_compare(List([Int(1)]), List([Int(1)])) == 0)
+}
+
+test "cp cases" {
+    assert(value_compare(enum_value("A", "Z"), enum_value("B", "A")) < 0)
+    assert(value_compare(enum_value("T", "A"), enum_value("T", "B")) < 0)
+    assert(value_compare(make_variant("T", "A", [vf("x", Int(1))]), make_variant("T", "A", [vf("x", Int(2))])) < 0)
+}
+
+test "kind names" {
+    assert(kind_name(Null) == "null")
+    assert(kind_name(Bool(true)) == "bool")
+    assert(kind_name(Int(1)) == "int")
+    assert(kind_name(Float(1.0)) == "float")
+    assert(kind_name(Text("")) == "text")
+    assert(kind_name(List([]Value.new())) == "list")
+    assert(kind_name(make_dict([]DictEntry.new())) == "dict")
+    assert(kind_name(make_record("R", []RecordField.new())) == "record")
+    assert(kind_name(enum_value("T", "A")) == "variant")
+}
+
+test "tx int" {
+    assert(vtext(Int(42)) == "42")
+    assert(vtext(Int(-7)) == "-7")
+    assert(vtext(Int(0)) == "0")
+    assert(vtext(Int(9223372036854775807)) == "9223372036854775807")
+}
+
+test "tx float" {
+    assert(vtext(Float(1.5)) == "1.5")
+    assert(vtext(Float(0.1)) == "0.1")
+    assert(vtext(Float(-0.25)) == "-0.25")
+    assert(vtext(Float(123456789.125)) == "123456789.125")
+    assert(vtext(Float(0.30000000000000004)) == "0.30000000000000004")
+}
+
+test "tx float whole" {
+    assert(vtext(Float(1.0)) == "1.0")
+    assert(vtext(Float(0.0)) == "0.0")
+    assert(vtext(Float(-0.0)) == "-0.0")
+    assert(vtext(Float(2.0)) == "2.0")
+    assert(vtext(Float(-30.0)) == "-30.0")
+    assert(vtext(Float(1234567.0)) == "1234567.0")
+    assert(vtext(Float(1.0e15)) == "1000000000000000.0")
+}
+
+test "tx float exp" {
+    assert(vtext(Float(1.0e16)) == "1e16")
+    assert(vtext(Float(1.5e20)) == "1.5e20")
+    assert(vtext(Float(-2.5e30)) == "-2.5e30")
+    assert(vtext(Float(1.0e-7)) == "1e-7")
+    assert(vtext(Float(1.5e-7)) == "1.5e-7")
+    assert(vtext(Float(0.00001)) == "1e-5")
+    assert(vtext(Float(0.0001)) == "0.0001")
+    assert(vtext(Float(0.00012)) == "0.00012")
+}
+
+test "tx float inf" {
+    ro zero = 0.0
+    assert(float_text(zero / zero) == None)
+    assert(float_text(1.0 / zero) == None)
+    assert(float_text(-1.0 / zero) == None)
+    assert(vtext(Float(1.0 / zero)) == "<none>")
+}
+
+test "tx none bool" {
+    assert(vtext(Null) == "none")
+    assert(vtext(Bool(true)) == "true")
+    assert(vtext(Bool(false)) == "false")
+    assert(vtext(Text("мир")) == "мир")
+}
+
+test "tx enum" {
+    assert(vtext(enum_value("FailCode", "StoppedByHuman")) == "stopped_by_human")
+    assert(vtext(enum_value("FailCode", "NoResult")) == "no_result")
+    assert(vtext(enum_value("ActionKind", "SwitchMode")) == "switch_mode")
+    assert(vtext(enum_value("ActionKind", "Think")) == "think")
+}
+
+test "tx no form" {
+    assert(vtext(List([]Value.new())) == "<none>")
+    assert(vtext(make_dict([]DictEntry.new())) == "<none>")
+    assert(vtext(make_record("R", []RecordField.new())) == "<none>")
+    assert(vtext(make_variant("T", "A", [vf("x", Int(1))])) == "<none>")
+}
+
+test "code words" {
+    assert(code_word("StoppedByHuman") == "stopped_by_human")
+    assert(code_word("MaxTurnRequests") == "max_turn_requests")
+    assert(code_word("Think") == "think")
+    assert(code_word("Gate10a") == "gate10a")
+    assert(code_word("already_snake") == "already_snake")
+    assert(code_word("") == "")
+}
+
+test "js scalars" {
+    assert(value_json(Null) == "null")
+    assert(value_json(Bool(true)) == "true")
+    assert(value_json(Int(-12)) == "-12")
+    assert(value_json(Text("a\"b")) == "\"a\\\"b\"")
+    assert(value_json(List([Int(1), Null])) == "[1,null]")
+}
+
+test "js int float" {
+    assert(value_json(Int(1)) == "1")
+    assert(value_json(Float(1.0)) == "1.0")
+    assert(value_json(Float(0.5)) == "0.5")
+    match parse_value("1.0") {
+        Ok(v) => assert(value_equal(v, Float(1.0)))
+        Err(e) => assert(false)
+    }
+    match parse_value("1") {
+        Ok(v) => assert(value_equal(v, Int(1)))
+        Err(e) => assert(false)
+    }
+    assert(vback(Float(3.0)) && vback(Int(3)))
+}
+
+test "js unicode" {
+    ro t = Text("Привет, мир 😀 𝔘")
+    assert(value_json(t) == "\"Привет, мир 😀 𝔘\"")
+    assert(vback(t))
+    assert(vback(make_dict([ve(Text("ключ 😀"), Text("значение"))])))
+}
+
+test "js surrogate" {
+    match parse_value("\"\\ud83d\\ude00 \\u043f\"") {
+        Ok(v) => assert(value_equal(v, Text("😀 п")))
+        Err(e) => assert(false)
+    }
+}
+
+test "js dict obj" {
+    ro d = make_dict([ve(Text("b"), Int(2)), ve(Text("a"), Int(1))])
+    assert(value_json(d) == "{\"b\":2,\"a\":1}")
+    assert(vback(d))
+    assert(value_json(make_dict([]DictEntry.new())) == "{}")
+    assert(vback(make_dict([]DictEntry.new())))
+}
+
+test "js dict tag" {
+    ro d = make_dict([ve(Int(2), Text("b")), ve(Int(1), Text("a"))])
+    assert(value_json(d) == "{\"$dict\":[[2,\"b\"],[1,\"a\"]]}")
+    assert(vback(d))
+}
+
+test "js dollar key" {
+    ro d = make_dict([ve(Text("$x"), Int(1))])
+    assert(value_json(d) == "{\"$dict\":[[\"$x\",1]]}")
+    assert(vback(d))
+}
+
+test "tp record" {
+    ro t = make_tuple([Int(1), Text("b"), Null])
+    match t {
+        Record { name, fields } => {
+            assert(name == "")
+            assert(fields.len() == 3)
+            assert(fields[0].name == "0" && fields[2].name == "2")
+            match record_get(fields, "1") {
+                Some(v) => assert(value_equal(v, Text("b")))
+                None => assert(false)
+            }
+        }
+        _ => assert(false)
+    }
+    assert(value_equal(t, make_tuple([Int(1), Text("b"), Null])))
+    assert(!value_equal(t, make_tuple([Int(1), Text("b"), Bool(false)])))
+}
+
+test "tp order" {
+    mut items = []Value.new()
+    mut i = 0
+    while i < 12 {
+        items.push(Int(i))
+        i += 1
+    }
+    match make_tuple(items) {
+        Record { name, fields } => {
+            assert(fields[8].name == "8" && fields[9].name == "9" && fields[10].name == "10" && fields[11].name == "11")
+        }
+        _ => assert(false)
+    }
+}
+
+test "tp key json" {
+    ro k = make_tuple([Text("lens"), Int(2)])
+    ro d = make_dict([ve(k, List([Int(1)]))])
+    assert(value_json(k) == "{\"$tuple\":[\"lens\",2]}")
+    assert(vback(k))
+    assert(vback(d))
+    match d {
+        Dict(entries) => match dict_get(entries, make_tuple([Text("lens"), Int(2)])) {
+            Some(v) => assert(value_equal(v, List([Int(1)])))
+            None => assert(false)
+        }
+        _ => assert(false)
+    }
+}
+
+test "js record" {
+    ro r = make_record("Finding", [vf("evidence", Text("e")), vf("repeat", Bool(false))])
+    assert(value_json(r) == "{\"$record\":\"Finding\",\"fields\":{\"evidence\":\"e\",\"repeat\":false}}")
+    assert(vback(r))
+}
+
+test "js variant" {
+    ro v = make_variant("Outcome", "Done", [vf("text", Text("ok"))])
+    assert(value_json(v) == "{\"$variant\":\"Outcome\",\"name\":\"Done\",\"fields\":{\"text\":\"ok\"}}")
+    assert(vback(v))
+    ro e = enum_value("Severity", "Critical")
+    assert(value_json(e) == "{\"$variant\":\"Severity\",\"name\":\"Critical\"}")
+    assert(vback(e))
+}
+
+test "js round trip" {
+    ro v = vsample()
+    assert(vback(v))
+    ro once = value_json(v)
+    match parse_value(once) {
+        Ok(b) => assert(value_json(b) == once)
+        Err(e) => assert(false)
+    }
+}
+
+test "js stable" {
+    assert(value_json(vsample()) == value_json(vsample()))
+}
+
+test "js nonfinite" {
+    ro nan = 0.0 / 0.0
+    ro inf = 1.0 / 0.0
+    assert(value_json(Float(inf)) == "{\"$float\":\"Infinity\"}")
+    assert(value_json(Float(-inf)) == "{\"$float\":\"-Infinity\"}")
+    assert(value_json(Float(nan)) == "{\"$float\":\"NaN\"}")
+    match parse_value("{\"$float\":\"Infinity\"}") {
+        Ok(v) => assert(value_equal(v, Float(inf)))
+        Err(e) => assert(false)
+    }
+}
+
+test "js bad text" {
+    assert(vbad(""))
+    assert(vbad("{"))
+    assert(vbad("[1,"))
+    assert(vbad("{\"a\":1,\"a\":2}"))
+    assert(vbad("18446744073709551615"))
+    assert(vbad("[1] 2"))
+}
+
+test "js bad tags" {
+    assert(vbad("{\"$nope\":1}"))
+    assert(vbad("{\"$record\":1,\"fields\":{}}"))
+    assert(vbad("{\"$record\":\"R\"}"))
+    assert(vbad("{\"$record\":\"R\",\"fields\":[],\"extra\":1}"))
+    assert(vbad("{\"$variant\":\"T\"}"))
+    assert(vbad("{\"$dict\":[[1]]}"))
+    assert(vbad("{\"$dict\":5}"))
+    assert(vbad("{\"$float\":\"big\"}"))
+    assert(vbad("{\"$tuple\":[1]}"))
+    assert(vbad("{\"$tuple\":5}"))
+    assert(vbad("{\"$dict\":[[1,2],[1,3]]}"))
+    assert(vbad("{\"$dict\":[],\"a\":1}"))
+}
+
+test "js too deep" {
+    mut deep = "1"
+    mut i = 0
+    while i < 150 {
+        deep = "[${deep}]"
+        i += 1
+    }
+    assert(vbad(deep))
+    mut ok = "1"
+    mut j = 0
+    while j < 20 {
+        ok = "[${ok}]"
+        j += 1
+    }
+    assert(!vbad(ok))
+}
+
+test "js from json" {
+    match Json.parse("{\"a\":[1,2.5,\"x\",null,true]}") {
+        Ok(j) => match value_from_json(j) {
+            Ok(v) => assert(value_json(v) == "{\"a\":[1,2.5,\"x\",null,true]}")
+            Err(e) => assert(false)
+        }
+        Err(e) => assert(false)
+    }
+    assert(value_to_json(Int(3)).to_str() == "3")
+}

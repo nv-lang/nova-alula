@@ -1,0 +1,17 @@
+{
+  "format": "scenario/0",
+  "machine": "DialogSession",
+  "name": "a cancel closes the turn, the late answer and the late refusal are discarded, the next turn works",
+  "start_at": 1000,
+  "params": {"проект.срок_бездействия": 30000},
+  "steps": [
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "slow"}, "expect": {"state": "Awaiting", "open": ["agent-1"]}},
+    {"do": "feed", "event": {"kind": "progress", "name": "agent_chunk", "request": "agent-1", "input": "start"}, "expect": {"state": "Awaiting", "data": {"reply": "start"}}},
+    {"do": "feed", "event": {"kind": "signal", "name": "cancel"}, "expect": {"state": "Idle", "journal": [{"code": "cancelled_while_waiting", "params": {}}], "open": [], "cancelled": ["agent-1"], "outcome": "none"}},
+    {"do": "feed", "event": {"kind": "progress", "name": "agent_chunk", "request": "agent-1", "input": "late"}, "expect": {"state": "Idle", "journal": [], "open": []}},
+    {"do": "feed", "event": {"kind": "failure", "name": "agent_refused", "request": "agent-1", "code": "StoppedByHuman"}, "expect": {"state": "Idle", "journal": [], "open": []}},
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "again"}, "expect": {"state": "Awaiting", "open": ["agent-2"], "sent": ["agent-1", "agent-2"], "data": {"user": "again", "reply": ""}}},
+    {"do": "feed", "event": {"kind": "progress", "name": "agent_chunk", "request": "agent-2", "input": "ok"}, "expect": {"state": "Awaiting", "data": {"reply": "ok"}}},
+    {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-2"}, "expect": {"state": "Idle", "open": [], "outcome": "none"}}
+  ]
+}

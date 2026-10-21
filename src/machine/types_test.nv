@@ -1,0 +1,152 @@
+// types_test.nv - the check of a value against a type.
+module alula.machine
+
+fn tf(name str, spec TypeSpec) -> FieldDef => { name, spec }
+fn tv(name str, value Value) -> RecordField => { name, value }
+
+fn tdefs() -> TypeDefs {
+    ro finding = RecordDef { name: "Finding", fields: [tf("evidence", TextType), tf("repeat", BoolType), tf("note", OptionalType(TextType))] }
+    ro severity = VariantDef { name: "Severity", cases: [CaseDef { name: "Critical", fields: []FieldDef.new() }, CaseDef { name: "Desirable", fields: []FieldDef.new() }], words: []EnumWord.new() }
+    ro outcome = VariantDef { name: "Outcome", cases: [
+        CaseDef { name: "Done", fields: [tf("text", OptionalType(TextType)), tf("count", IntMin(0))] },
+        CaseDef { name: "Refused", fields: []FieldDef.new() }
+    ], words: []EnumWord.new() }
+    TypeDefs { records: [finding], variants: [severity, outcome] }
+}
+
+fn tmsg(spec TypeSpec, v Value) -> str {
+    match check_value(spec, v, tdefs()) {
+        Ok(u) => "ok"
+        Err(e) => "${e.path}: ${e.message}"
+    }
+}
+
+fn tpath(spec TypeSpec, v Value) -> str {
+    match check_value(spec, v, tdefs()) {
+        Ok(u) => "ok"
+        Err(e) => e.path
+    }
+}
+
+fn tok(spec TypeSpec, v Value) -> bool => tpath(spec, v) == "ok"
+
+fn tfinding(evidence Value, repeat Value) -> Value {
+    make_record("Finding", [tv("evidence", evidence), tv("repeat", repeat), tv("note", Null)])
+}
+
+test "ty scalars" {
+    assert(tok(IntType, Int(3)))
+    assert(!tok(IntType, Float(3.0)))
+    assert(!tok(IntType, Text("3")))
+    assert(tok(FloatType, Float(0.5)))
+    assert(!tok(FloatType, Int(1)))
+    assert(tok(TextType, Text("")))
+    assert(tok(BoolType, Bool(false)))
+    assert(!tok(BoolType, Null))
+    assert(tok(NothingType, Null))
+    assert(!tok(NothingType, Int(0)))
+}
+
+test "ty int bound" {
+    assert(tok(IntMin(0), Int(0)))
+    assert(tok(IntMin(0), Int(7)))
+    assert(!tok(IntMin(0), Int(-1)))
+    assert(tok(IntMin(1), Int(1)))
+    assert(!tok(IntMin(1), Int(0)))
+    assert(tmsg(IntMin(2), Int(1)) == "$: 1 is less than the bound 2")
+}
+
+test "ty text set" {
+    ro set = TextSet(["first", "retry"])
+    assert(tok(set, Text("first")))
+    assert(!tok(set, Text("other")))
+    assert(!tok(set, Int(1)))
+    assert(tok(OptionalType(set), Null))
+    assert(!tok(OptionalType(set), Text("x")))
+}
+
+test "ty optional" {
+    assert(tok(OptionalType(IntType), Null))
+    assert(tok(OptionalType(IntType), Int(1)))
+    assert(!tok(OptionalType(IntType), Text("a")))
+    assert(!tok(IntType, Null))
+}
+
+test "ty list" {
+    ro spec = ListType(IntType)
+    assert(tok(spec, List([]Value.new())))
+    assert(tok(spec, List([Int(1), Int(2)])))
+    assert(tpath(spec, List([Int(1), Text("x"), Int(3)])) == "$[1]")
+    assert(!tok(spec, Int(1)))
+    assert(tmsg(spec, Null) == "$: expected []int, got null")
+}
+
+test "ty dict" {
+    ro spec = DictType { key: TextType, value: ListType(IntType) }
+    assert(tok(spec, make_dict([]DictEntry.new())))
+    assert(tok(spec, make_dict([DictEntry { key: Text("a"), value: List([Int(1)]) }])))
+    assert(tpath(spec, make_dict([DictEntry { key: Int(1), value: List([]Value.new()) }])) == "$.key[0]")
+    assert(tpath(spec, make_dict([DictEntry { key: Text("a"), value: List([Text("x")]) }])) == "$[\"a\"][0]")
+}
+
+test "ty tuple" {
+    ro spec = TupleType([TextType, IntMin(0)])
+    assert(tok(spec, make_tuple([Text("x"), Int(2)])))
+    assert(!tok(spec, make_tuple([Text("x")])))
+    assert(!tok(spec, make_tuple([Text("x"), Int(-2)])))
+    assert(tpath(spec, make_tuple([Int(1), Int(2)])) == "$.0")
+    assert(!tok(spec, make_record("Finding", []RecordField.new())))
+}
+
+test "ty full dict" {
+    ro spec = FullDictType { key: VariantType("Severity"), value: TextType }
+    ro both = make_dict([
+        DictEntry { key: enum_value("Severity", "Critical"), value: Text("a") },
+        DictEntry { key: enum_value("Severity", "Desirable"), value: Text("b") }
+    ])
+    ro one = make_dict([DictEntry { key: enum_value("Severity", "Critical"), value: Text("a") }])
+    assert(tok(spec, both))
+    assert(!tok(spec, one))
+    assert(tmsg(spec, one) == "$: the full dict has no key Desirable")
+}
+
+test "ty record" {
+    ro spec = RecordType("Finding")
+    assert(tok(spec, tfinding(Text("e"), Bool(true))))
+    assert(tok(spec, make_record("Finding", [tv("evidence", Text("e")), tv("repeat", Bool(false)), tv("note", Text("n"))])))
+    assert(tpath(spec, tfinding(Int(1), Bool(true))) == "$.evidence")
+    assert(tmsg(spec, make_record("Finding", [tv("evidence", Text("e"))])) == "$: the field repeat is missing")
+    assert(tmsg(spec, make_record("Finding", [tv("evidence", Text("e")), tv("repeat", Bool(true)), tv("note", Null), tv("zzz", Int(1))])) == "$: the field zzz is not in Finding")
+    assert(!tok(spec, make_record("Other", []RecordField.new())))
+    assert(!tok(RecordType("Missing"), tfinding(Text("e"), Bool(true))))
+}
+
+test "ty variant" {
+    ro sev = VariantType("Severity")
+    assert(tok(sev, enum_value("Severity", "Critical")))
+    assert(!tok(sev, enum_value("Severity", "Nope")))
+    assert(!tok(sev, enum_value("Other", "Critical")))
+    ro out = VariantType("Outcome")
+    assert(tok(out, make_variant("Outcome", "Done", [tv("text", Null), tv("count", Int(2))])))
+    assert(tok(out, enum_value("Outcome", "Refused")))
+    assert(tpath(out, make_variant("Outcome", "Done", [tv("text", Null), tv("count", Int(-2))])) == "$.count")
+    assert(!tok(out, enum_value("Outcome", "Done")))
+}
+
+test "ty nested" {
+    ro spec = DictType { key: TextType, value: ListType(RecordType("Finding")) }
+    ro bad = make_dict([DictEntry { key: Text("k"), value: List([tfinding(Text("e"), Bool(true)), tfinding(Text("e"), Int(0))]) }])
+    assert(tpath(spec, bad) == "$[\"k\"][1].repeat")
+}
+
+test "ty spec text" {
+    assert(spec_text(IntType) == "int")
+    assert(spec_text(IntMin(0)) == "int>=0")
+    assert(spec_text(OptionalType(TextType)) == "?text")
+    assert(spec_text(ListType(RecordType("Finding"))) == "[]Finding")
+    assert(spec_text(DictType { key: TextType, value: IntType }) == "{text: int}")
+    assert(spec_text(FullDictType { key: VariantType("K"), value: IntType }) == "full {K: int}")
+    assert(spec_text(TupleType([TextType, IntType])) == "(text, int)")
+    assert(spec_text(TextSet(["a", "b"])) == "\"a\" | \"b\"")
+    assert(spec_text(NothingType) == "nothing")
+}

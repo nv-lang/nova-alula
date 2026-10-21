@@ -1,0 +1,10 @@
+{
+  "format": "scenario/0",
+  "machine": "agent_step",
+  "name": "COMMON 2: the stop of the parent with the request of the call",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start", "request": "call-1", "input": {"kind": {"$variant": "CallerKind", "name": "CycleSession", "fields": {}}, "profile": {"$record": "AgentProfile", "fields": {"family": "claude", "model": "m1", "effort": null}}, "session": "s1", "dialog_kind": "main", "context": "ctx", "limits": {"$record": "AgentLimits", "fields": {"silence_term": null, "token_budget": null, "cost_budget": null, "turn_limit": null}}, "trace": "t1", "step": 0}}, "host": {"reply_validation": {"$variant": "ReplyCheck", "name": "Valid", "fields": {}}, "close_agent_turn": null}, "expect": {"state": "AgentTurn", "journal": [], "data": {"turn_count": 1, "started": 1000, "turn": "first", "agent_attempt": 1, "open_requests": ["agent-1"], "call_request_id": "call-1"}, "open": ["agent-1"], "sent": ["agent-1"]}},
+    {"do": "feed", "event": {"kind": "signal", "name": "parent_stop", "input": "call-1"}, "expect": {"state": "Pause", "journal": [{"code": "pause_by_parent_stop", "params": {"request": "call-1", "event": "input-3"}}], "data": {"previous": "AgentTurn", "open_requests": []}, "open": [], "cancelled": ["agent-1"]}}
+  ]
+}

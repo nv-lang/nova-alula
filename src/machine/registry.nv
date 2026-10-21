@@ -1,0 +1,462 @@
+// registry.nv - the registry of the primitives of the host and the classes of the positions of a call.
+//
+// A primitive is what a machine may ask of the host that the language cannot do: read an object, write a file, close a turn of
+// an agent. The registry is a table of records "name, parameters with types, result, class" (draft-format-v1.md, section 7).
+// The core only keeps the table and checks it: nothing is called here; a call goes through the `PrimitiveHost` of eval.nv.
+//
+// Classes and where a call of each is allowed (format v2, section 7):
+//   Pure          everywhere (conditions, expressions, the table "Input", actions, "On entry");
+//   Reading       in "Input" of an appeal, in the "profile" of a party, in "On entry" (an operation, a fork, an end) and in
+//                 "On accept"; not in conditions and not in the actions of a row;
+//   Writing       in "On entry" of an operation and of an end and in the actions of a row; not in conditions, not in "Input",
+//                 not in "On entry" of a fork, not in "On accept";
+//   Irreversible  as Writing (the host runs it as the last stage of a commit; it may be repeated without harm).
+// The positions are `Position`: ConditionPos (a condition of a row, an expression of the data and of the definitions), InputPos,
+// ProfilePos, ForkEntryPos, OperationEntryPos, EndEntryPos, AcceptPos, ActionPos.
+// A primitive also names what it reads without an argument (`reads`: they join the "Input" of the state of the call, rule 11)
+// and what it writes (`writes`: the data of the machine of a writing one, the service records of a reading one).
+//
+// `standard_registry()` is filled with the primitives that the methodology marks for the two pilots: the 17 functions of the
+// meeting (8 reading, 6 writing, 3 irreversible) and the primitives of the agent step. They are stubs: a name, the types and
+// the class; the bodies are the host's. `standard_types()` declares the records and the variants those signatures use.
+module alula.machine
+
+/// PrimitiveClass: what a primitive does to the world.
+export type PrimitiveClass enum
+    | Pure
+    | Reading
+    | Writing
+    | Irreversible
+
+/// Position: the place of a call in a table.
+export type Position enum
+    | ConditionPos
+    | InputPos
+    | ProfilePos
+    | ForkEntryPos
+    | OperationEntryPos
+    | EndEntryPos
+    | AcceptPos
+    | ActionPos
+
+/// ParamSpec: a parameter of a primitive.
+export type ParamSpec { name str, spec TypeSpec }
+
+/// Primitive: the signature and the class of a primitive of the host.
+export type Primitive { name str, params []ParamSpec, result TypeSpec, class PrimitiveClass, reads []str, writes []str }
+
+/// RoleRow: one row of the table "by role" of a parse primitive (format 7, 2.12, Ya-33): the result for the literal of the role and the data that the primitive reads for that role.
+export type RoleRow { primitive str, role str, result TypeSpec, reads []str }
+
+/// Registry: the primitives, in the order of registration; the codes of the journal that the host declares (the table of the methodology and the table of the product, format 5, 2.12, Ya-31;
+/// empty means that the codes are not checked against a table); the tables "by role" of the parse primitives.
+export type Registry { primitives []Primitive, journal []JournalCode, roles []RoleRow }
+
+/// RegistryError: a primitive cannot be registered.
+export type RegistryError { message str }
+
+/// PositionError: a call of a primitive in a place where its class is not allowed (or a primitive that is not registered).
+export type PositionError { path str, primitive str, message str }
+
+/// A parameter.
+export fn param(name str, spec TypeSpec) -> ParamSpec => { name, spec }
+
+/// An empty registry.
+export fn new_registry() -> Registry => { primitives: []Primitive.new(), journal: []JournalCode.new(), roles: []RoleRow.new() }
+
+/// Put the table of the codes of the journal into the registry (the union of the tables of the methodology and of the product).
+export fn with_journal(mut registry Registry, codes []JournalCode) -> () {
+    registry.journal = codes
+}
+
+/// Register a row of the table "by role" of a parse primitive; the primitive must be registered and its second parameter a text.
+export fn add_role(mut registry Registry, primitive str, role str, result TypeSpec, reads []str) -> Result[(), RegistryError] {
+    match find_primitive(registry, primitive) {
+        Some(p) => {
+            if p.params.len() != 2 { return Err(RegistryError { message: "the primitive ${primitive} takes the answer and the role: two parameters" }) }
+        }
+        None => return Err(RegistryError { message: "the primitive ${primitive} is not registered" })
+    }
+    for r in registry.roles {
+        if r.primitive == primitive && r.role == role { return Err(RegistryError { message: "the role ${role} of ${primitive} is registered already" }) }
+    }
+    registry.roles.push(RoleRow { primitive, role, result, reads })
+    Ok(())
+}
+
+/// The row of the table "by role" for the primitive and the role literal.
+export fn find_role(registry Registry, primitive str, role str) -> Option[RoleRow] {
+    for r in registry.roles {
+        if r.primitive == primitive && r.role == role { return Some(r) }
+    }
+    None
+}
+
+/// Does the primitive have a table "by role"?
+export fn has_roles(registry Registry, primitive str) -> bool {
+    for r in registry.roles {
+        if r.primitive == primitive { return true }
+    }
+    false
+}
+
+/// Register a primitive; a second one with the same name, a repeated parameter name, an empty name are errors.
+export fn register(mut registry Registry, primitive Primitive) -> Result[(), RegistryError] {
+    if primitive.name.byte_len() == 0 { return Err(RegistryError { message: "the name of a primitive is empty" }) }
+    for p in registry.primitives {
+        if p.name == primitive.name { return Err(RegistryError { message: "the primitive ${primitive.name} is registered already" }) }
+    }
+    mut i = 0
+    while i < primitive.params.len() {
+        mut j = i + 1
+        while j < primitive.params.len() {
+            if primitive.params[i].name == primitive.params[j].name {
+                return Err(RegistryError { message: "the primitive ${primitive.name} has the parameter ${primitive.params[i].name} twice" })
+            }
+            j += 1
+        }
+        i += 1
+    }
+    registry.primitives.push(primitive)
+    Ok(())
+}
+
+/// The primitive with the name.
+export fn find_primitive(registry Registry, name str) -> Option[Primitive] {
+    for p in registry.primitives {
+        if p.name == name { return Some(p) }
+    }
+    None
+}
+
+/// The word of a class: pure, reading, writing, irreversible.
+export fn class_word(class PrimitiveClass) -> str {
+    match class {
+        Pure => "pure"
+        Reading => "reading"
+        Writing => "writing"
+        Irreversible => "irreversible"
+    }
+}
+
+/// The word of a position: condition, input, profile, fork_entry, operation_entry, end_entry, accept, action.
+export fn position_word(position Position) -> str {
+    match position {
+        ConditionPos => "condition"
+        InputPos => "input"
+        ProfilePos => "profile"
+        ForkEntryPos => "fork_entry"
+        OperationEntryPos => "operation_entry"
+        EndEntryPos => "end_entry"
+        AcceptPos => "accept"
+        ActionPos => "action"
+    }
+}
+
+/// May a call of this class stand in this position?
+export fn class_allowed(class PrimitiveClass, position Position) -> bool {
+    match class {
+        Pure => true
+        Reading => match position {
+            ConditionPos => false
+            ActionPos => false
+            _ => true
+        }
+        _ => match position {
+            OperationEntryPos => true
+            EndEntryPos => true
+            ActionPos => true
+            _ => false
+        }
+    }
+}
+
+/// May the primitive be called in this position? An unknown primitive is an error.
+export fn check_call_position(registry Registry, name str, position Position) -> Result[(), PositionError] {
+    match find_primitive(registry, name) {
+        Some(p) => {
+            if class_allowed(p.class, position) { return Ok(()) }
+            Err(PositionError { path: "$", primitive: name, message: "the ${class_word(p.class)} primitive ${name} may not stand in ${position_word(position)}" })
+        }
+        None => Err(PositionError { path: "$", primitive: name, message: "the primitive ${name} is not registered" })
+    }
+}
+
+fn walk_positions(registry Registry, e Expr, position Position, path str) -> Result[(), PositionError] {
+    match e {
+        CallPrimitive { name, args } => {
+            match check_call_position(registry, name, position) {
+                Ok(u) => ()
+                Err(x) => return Err(PositionError { path, primitive: x.primitive, message: x.message })
+            }
+        }
+        _ => ()
+    }
+    for c in children(e) {
+        match walk_positions(registry, c.expr, position, "${path}.${c.seg}") {
+            Ok(u) => ()
+            Err(x) => return Err(x)
+        }
+    }
+    Ok(())
+}
+
+/// Walk a tree and check every call of a primitive in it for the position. The error has the path of the call in the tree.
+export fn check_expr_positions(registry Registry, expr Expr, position Position) -> Result[(), PositionError] {
+    walk_positions(registry, expr, position, "$")
+}
+
+fn collect_names(e Expr, mut out []str) -> () {
+    match e {
+        CallPrimitive { name, args } => {
+            mut known = false
+            for n in out {
+                if n == name { known = true }
+            }
+            if !known { out.push(name) }
+        }
+        _ => ()
+    }
+    for c in children(e) { collect_names(c.expr, out) }
+}
+
+/// The names of the primitives a tree calls, in the order of the walk, each once.
+export fn primitive_names(expr Expr) -> []str {
+    mut out = []str.new()
+    collect_names(expr, out)
+    out
+}
+
+/// Check the arguments of a call against the parameters of the primitive (the count and the types).
+export fn check_call_args(registry Registry, defs TypeDefs, name str, args []Value) -> Result[(), TypeCheckError] {
+    match find_primitive(registry, name) {
+        Some(p) => {
+            if args.len() != p.params.len() {
+                return Err(TypeCheckError { path: "$", message: "wrong argument count for ${name}: expected ${p.params.len()}, got ${args.len()}" })
+            }
+            mut i = 0
+            for q in p.params {
+                match check_at(q.spec, args[i], defs, "$.${q.name}") {
+                    Ok(u) => ()
+                    Err(x) => return Err(x)
+                }
+                i += 1
+            }
+            Ok(())
+        }
+        None => Err(TypeCheckError { path: "$", message: "the primitive ${name} is not registered" })
+    }
+}
+
+/// Check the result of a primitive against its declared type.
+export fn check_call_result(registry Registry, defs TypeDefs, name str, result Value) -> Result[(), TypeCheckError] {
+    match find_primitive(registry, name) {
+        Some(p) => check_value(p.result, result, defs)
+        None => Err(TypeCheckError { path: "$", message: "the primitive ${name} is not registered" })
+    }
+}
+
+// ---- the primitives of the pilots -----------------------------------------------------------------------------------
+
+fn std_prim(name str, params []ParamSpec, result TypeSpec, class PrimitiveClass, reads []str, writes []str) -> Primitive {
+    Primitive { name, params, result, class, reads, writes }
+}
+
+fn std_add(mut reg Registry, p Primitive) -> () {
+    match register(reg, p) {
+        Ok(u) => ()
+        Err(x) => panic("the standard registry is wrong: ${x.message}")
+    }
+}
+
+fn nothing() -> []str => []str.new()
+fn no_params() -> []ParamSpec => []ParamSpec.new()
+fn count_spec() -> TypeSpec => IntMin(0)
+
+/// The registry of the pilots: the 17 functions of the meeting that the methodology marks as primitives of the host
+/// (8 reading, 6 writing, 3 irreversible; markup of the 80 functions, `functions-markup.md` of the pilot) and the primitives
+/// of the agent step (`time_now`, `new_id` of format 2.5, `reply_validation`, `close_agent_turn`, and `check_cache`, which the specification of the step
+/// puts after every accepted result of a turn) and the one primitive of the cycle check (`stop_agent_group`, task 122: the group of processes of the agent is stopped
+/// as a whole when the check ends in HALTED or ERRORED). Stubs: the names, the types and the classes are the methodology's, the bodies are the host's.
+export fn standard_registry() -> Registry {
+    mut reg = new_registry()
+    // the meeting: reading
+    std_add(reg, std_prim("party_profile", [param("party", TextType)], RecordType("AgentProfile"), Reading, ["project setting: role profiles"], nothing()))
+    std_add(reg, std_prim("role_context", [param("context", VariantType("RoleContext"))], TextType, Reading, ["project objects"], nothing()))
+    std_add(reg, std_prim("call_trace", no_params(), TextType, Reading, ["envelope of the call"], nothing()))
+    std_add(reg, std_prim("call_step", no_params(), count_spec(), Reading, ["envelope of the call"], nothing()))
+    // the parse of a party of the kind machine (format 7): the answer of the nested machine and the role literal of the `разбор`; the result is by the role (the table "by role" is below, 2.12, Ya-33)
+    std_add(reg, std_prim("parse_agent_reply", [param("reply", RecordType("AgentReply")), param("role", TextSet(["witness", "author", "lens"]))], VariantType("RoleResult"), Reading, ["object: artifact file of the reply"], nothing()))
+    std_add(reg, std_prim("proposal_read", no_params(), BoolType, Reading, ["object: proposal"], nothing()))
+    std_add(reg, std_prim("proposal_with_fingerprint", no_params(), TextType, Reading, ["object: proposal"], nothing()))
+    std_add(reg, std_prim("proposal_changed_since_attempt", no_params(), BoolType, Reading, ["object: proposal"], nothing()))
+    // the meeting: writing
+    std_add(reg, std_prim("count_in_model_tally", [param("finding", RecordType("Finding"))], NothingType, Writing, nothing(), ["buffer: model tally"]))
+    std_add(reg, std_prim("journal_findings", [param("findings", ListType(RecordType("Finding")))], NothingType, Writing, nothing(), nothing()))
+    std_add(reg, std_prim("journal_machine_data", no_params(), NothingType, Writing, ["all_data"], nothing()))
+    std_add(reg, std_prim("journal_decision", [param("decision", TextType), param("source", TextType), param("passes", count_spec()), param("open", ListType(RecordType("Finding")))], NothingType, Writing, nothing(), nothing()))
+    std_add(reg, std_prim("remove_unsound", [param("number", count_spec())], NothingType, Writing, ["lens_findings"], ["lens_findings"]))
+    std_add(reg, std_prim("build_summary", [param("number", count_spec())], OptionalType(RecordType("Summary")), Writing, ["lens_findings", "lenses"], ["object: summary file"]))
+    // the meeting: irreversible
+    std_add(reg, std_prim("close_for_writing", [param("object", TextType)], NothingType, Irreversible, nothing(), nothing()))
+    std_add(reg, std_prim("open_for_writing", [param("object", TextType)], NothingType, Irreversible, nothing(), nothing()))
+    std_add(reg, std_prim("move_to_archive", [param("number", count_spec()), param("suffix", count_spec())], NothingType, Irreversible, nothing(), nothing()))
+    // the agent step
+    std_add(reg, std_prim("time_now", no_params(), IntType, Reading, nothing(), nothing()))
+    // format 2.5, section 7: a built-in primitive of the host; a new identifier (UUID v7), fixed in the event `now` of an operation
+    std_add(reg, std_prim("new_id", no_params(), IdType, Reading, nothing(), nothing()))
+    std_add(reg, std_prim("reply_validation", no_params(), VariantType("ReplyCheck"), Reading,
+        ["reply_text", "reply_artifact", "agent_request", "objects: session files"], ["service record: form remarks (read by the turn fix)"]))
+    std_add(reg, std_prim("close_agent_turn", no_params(), NothingType, Irreversible, nothing(), nothing()))
+    std_add(reg, std_prim("check_cache", [param("dialog_kind", TextSet(["main", "delivery"]))], NothingType, Writing, nothing(), ["service record: request start mark"]))
+    // the session start (task 121): what the methodology leaves to the executor of a launch. The reads are objects and service stores of the executor, not data of the machine.
+    std_add(reg, std_prim("launch_scope", no_params(), VariantType("LaunchScope"), Reading, ["objects: measure of the dialog of the launch"], nothing()))
+    std_add(reg, std_prim("launch_profile", [param("session", TextType)], RecordType("AgentProfile"), Reading, ["service store: profile confirmed at the gate of the profile"], nothing()))
+    std_add(reg, std_prim("session_context", [param("session", TextType), param("source", TextType), param("launch_pass", OptionalType(IntType)), param("delivery_mode", TextType),
+        param("task_dir", TextType), param("repo_dir", TextType), param("route", TextType), param("source_list", OptionalType(TextType)), param("delivery_short", BoolType)],
+        TextType, Reading, ["objects: plan of the task, prompts of the sessions, dialog of the author"], nothing()))
+    std_add(reg, std_prim("parse_session_artifact", [param("session", TextType), param("reply", RecordType("AgentReply"))], RecordType("SessionParsing"), Reading, ["objects: artifact file of the session"], nothing()))
+    // the primitive of the cycle check (task 122) and of the session start (task 121), below: the last, repeatable stage of the commit of their ends HALTED and ERRORED (rule 13); the group of the agent processes stops as a whole and it is checked that none is left
+    std_add(reg, std_prim("stop_agent_group", no_params(), NothingType, Irreversible, nothing(), nothing()))
+    // the task runner (task 123): what the methodology leaves to the executor of the runner - the documents of the task, the preparation, the files of the delivery, the settings of the project.
+    // Reading primitives stand in `пусть` of the entry of a fork or an operation (rule Ya-29) and in the input of an appeal; the writing and the irreversible ones in the rows (the irreversible last, rule 13).
+    std_add(reg, std_prim("run_preparation", [param("task_dir", TextType), param("repo_dir", TextType)], RecordType("PreparationResult"), Writing,
+        ["objects: state of the runner, files of the cycles on the disk, lock, mark of the tree"], ["objects: lock of the runner, state, file of a torn pass"]))
+    std_add(reg, std_prim("specification", no_params(), RecordType("TaskDocumentState"), Reading, ["objects: spec.md"], nothing()))
+    std_add(reg, std_prim("task_plan", no_params(), RecordType("TaskDocumentState"), Reading, ["objects: plan.md"], nothing()))
+    std_add(reg, std_prim("implementation_report", no_params(), RecordType("TaskDocumentState"), Reading, ["objects: result.md"], nothing()))
+    std_add(reg, std_prim("route_features", no_params(), OptionalType(RecordType("RouteFeatures")), Reading, ["objects: section Route features of the brief"], nothing()))
+    std_add(reg, std_prim("project_settings", no_params(), RecordType("ProjectSettings"), Reading, ["project setting: thresholds and numbers of the cycle by the routes"], nothing()))
+    std_add(reg, std_prim("source_list", no_params(), OptionalType(TextType), Reading, ["objects: line Source list of the brief"], nothing()))
+    std_add(reg, std_prim("brief_complete", no_params(), BoolType, Reading, ["objects: brief task/message.md"], nothing()))
+    std_add(reg, std_prim("copy_approval", [param("word", TextType), param("date", TextType)], RecordType("Approval"), Reading, ["objects: brief task/message.md"], nothing()))
+    std_add(reg, std_prim("approval_by_document", [param("document", VariantType("TaskDocument"))], RecordType("Approval"), Reading, ["objects: spec.md, plan.md"], nothing()))
+    std_add(reg, std_prim("source_with_specification_marks", [param("source", TextType)], TextType, Reading, ["objects: specification, file of the review"], nothing()))
+    std_add(reg, std_prim("last_implementation_review", no_params(), OptionalType(TextType), Reading, ["objects: last file of the implementation review"], nothing()))
+    std_add(reg, std_prim("has_unresolved_line", no_params(), BoolType, Reading, ["objects: implementation report"], nothing()))
+    std_add(reg, std_prim("customer_letter", no_params(), OptionalType(TextType), Reading, ["objects: letter to the customer"], nothing()))
+    std_add(reg, std_prim("round_letters", [param("round", count_spec())], OptionalType(TextType), Reading, ["objects: letters of the rounds"], nothing()))
+    std_add(reg, std_prim("secrets_report", no_params(), OptionalType(TextType), Reading, ["objects: last file of the implementation review"], nothing()))
+    std_add(reg, std_prim("tree_diff", no_params(), TextType, Reading, ["objects: working tree"], nothing()))
+    std_add(reg, std_prim("commit_message", no_params(), TextType, Reading, ["objects: history of the working tree"], nothing()))
+    std_add(reg, std_prim("commit_text", no_params(), TextType, Reading, ["objects: commit.txt"], nothing()))
+    std_add(reg, std_prim("feedback_route", no_params(), OptionalType(TextType), Reading, ["objects: file of the feedback analysis"], nothing()))
+    std_add(reg, std_prim("write_answers", [param("answers", TextType)], NothingType, Writing, nothing(), ["objects: section Answers of the specification"]))
+    std_add(reg, std_prim("write_decisions", [param("decisions", TextType)], NothingType, Writing, nothing(), ["objects: section Requires approval of the plan"]))
+    std_add(reg, std_prim("write_owner_marks", [param("decisions", TextType)], NothingType, Writing, nothing(), ["objects: implementation report"]))
+    std_add(reg, std_prim("save_round_notes", [param("round", count_spec()), param("text", TextType)], NothingType, Writing, nothing(), ["objects: folder of the feedback round"]))
+    std_add(reg, std_prim("write_draft_status", [param("document", VariantType("TaskDocument"))], NothingType, Irreversible, nothing(), nothing()))
+    std_add(reg, std_prim("create_approved_copy", [param("word", TextType), param("date", TextType)], NothingType, Irreversible, nothing(), nothing()))
+    std_add(reg, std_prim("rename_letter", [param("round", count_spec())], NothingType, Irreversible, nothing(), nothing()))
+    std_add(reg, std_prim("release_lock", no_params(), NothingType, Irreversible, nothing(), nothing()))
+    std_add(reg, std_prim("show_human", [param("text", TextType)], NothingType, Irreversible, nothing(), nothing()))
+    // the table "by role" of the parse (format 7, 2.12, Ya-33): the type of the value is chosen by the literal of the role when the table is checked; what the primitive reads for the role joins the Input of the state
+    std_role(reg, "parse_agent_reply", "witness", ListType(VariantType("WitnessAnswer")), ["object: proposal"])
+    std_role(reg, "parse_agent_reply", "author", VariantType("EditResult"), nothing())
+    std_role(reg, "parse_agent_reply", "lens", RecordType("LensResult"), nothing())
+    // the codes of the journal: the table of the methodology and the table of the product (format 5, 2.12, Ya-31)
+    with_journal(reg, journal_union())
+    reg
+}
+
+fn std_role(mut reg Registry, primitive str, role str, result TypeSpec, reads []str) -> () {
+    match add_role(reg, primitive, role, result, reads) {
+        Ok(u) => ()
+        Err(x) => panic("the standard registry is wrong: ${x.message}")
+    }
+}
+
+fn fd(name str, spec TypeSpec) -> FieldDef => { name, spec }
+
+fn cd(name str, fields []FieldDef) -> CaseDef => { name, fields }
+
+fn plain_case(name str) -> CaseDef => { name, fields: []FieldDef.new() }
+
+/// The records and the variants the signatures of `standard_registry()` use (English names of the dictionary of the methodology).
+export fn standard_types() -> TypeDefs {
+    ro finding_list = ListType(RecordType("Finding"))
+    ro optional_text = OptionalType(TextType)
+    ro optional_count = OptionalType(IntType)
+    mut records = []RecordDef.new()
+    records.push(RecordDef { name: "Finding", fields: [fd("severity", VariantType("Severity")), fd("evidence", TextType), fd("repeat", BoolType), fd("question", BoolType)] })
+    records.push(RecordDef { name: "Summary", fields: [fd("critical", count_spec()), fd("probes", count_spec())] })
+    records.push(RecordDef { name: "AgentProfile", fields: [fd("family", TextType), fd("model", TextType), fd("effort", optional_text)] })
+    records.push(RecordDef { name: "AgentModel", fields: [fd("id", TextType), fd("provider", TextType), fd("variant", optional_text)] })
+    records.push(RecordDef { name: "TokenUsage", fields: [fd("input", optional_count), fd("output", optional_count), fd("reasoning", optional_count), fd("cache_read", optional_count), fd("cache_write", optional_count)] })
+    records.push(RecordDef { name: "Usage", fields: [fd("session", TextType), fd("result", TextType), fd("family", TextType), fd("model", RecordType("AgentModel")),
+        fd("tokens", RecordType("TokenUsage")), fd("cost", OptionalType(FloatType)), fd("created", IntType), fd("updated", IntType),
+        fd("context_used", optional_count), fd("trace", TextType), fd("step", IntType)] })
+    records.push(RecordDef { name: "AgentReply", fields: [fd("text", optional_text), fd("artifact", optional_text), fd("usage", RecordType("Usage")), fd("request_started", optional_count)] })
+    records.push(RecordDef { name: "Claim", fields: [fd("kind", TextType), fd("statement", TextType), fd("source", TextType), fd("excerpt", optional_text), fd("check", VariantType("Check"))] })
+    records.push(RecordDef { name: "LensResult", fields: [fd("findings", finding_list), fd("probes", count_spec())] })
+    records.push(RecordDef { name: "JournalEvent", fields: [fd("code", TextType), fd("params", ListType(TupleType([TextType, TextType])))] })
+    mut variants = []VariantDef.new()
+    variants.push(VariantDef { name: "Severity", cases: [plain_case("Critical"), plain_case("Significant"), plain_case("Desirable")] , words: []EnumWord.new() })
+    variants.push(VariantDef { name: "Check", cases: [plain_case("Confirmed"), plain_case("ChannelDistortion"), plain_case("NotConfirmed")] , words: []EnumWord.new() })
+    variants.push(VariantDef { name: "ReplyCheck", cases: [plain_case("Valid"), plain_case("Violated"), plain_case("Empty")] , words: []EnumWord.new() })
+    variants.push(VariantDef { name: "WitnessAnswer", cases: [cd("Answered", [fd("claim", RecordType("Claim"))]), cd("NotMeasured", [fd("claim", TextType)])] , words: []EnumWord.new() })
+    variants.push(VariantDef { name: "EditResult", cases: [cd("Done", [fd("proposal", TextType)]), cd("Question", [fd("proposal", TextType), fd("question", TextType)])] , words: []EnumWord.new() })
+    variants.push(VariantDef { name: "RoleResult", cases: [
+        cd("WitnessOutcome", [fd("answers", ListType(VariantType("WitnessAnswer")))]),
+        cd("LensOutcome", [fd("result", RecordType("LensResult"))]),
+        cd("EditOutcome", [fd("result", VariantType("EditResult"))])
+    ], words: []EnumWord.new() })
+    variants.push(VariantDef { name: "RoleContext", cases: [
+        cd("WitnessContext", [fd("author_question", optional_text), fd("findings", OptionalType(finding_list)), fd("proposal", TextType)]),
+        cd("LensContext", [fd("proposal", TextType), fd("witness_answers", OptionalType(ListType(VariantType("WitnessAnswer"))))]),
+        cd("FixContext", [fd("proposal", TextType), fd("gate3_findings", finding_list), fd("author_guidance", optional_text)]),
+        cd("QuestionContext", [fd("author_question", TextType), fd("proposal", TextType), fd("gate3_findings", finding_list), fd("human_answer", TextType)])
+    ], words: []EnumWord.new() })
+    TypeDefs { records, variants }
+}
+
+/// The records and the variants the signatures of the session start use (task 121): the types of the machine "Session start" (English names of the dictionary of the methodology). They are
+/// another set than `standard_types()` for the names `Finding` (severity essential or superficial, a level, the evidence), `Severity` and `Summary` (essential, probes): the meeting has
+/// types of the same names with other fields (`standard_types()`), and each machine declares its own, so the registry has a set of types for each of them. The rest is the common part.
+export fn session_types() -> TypeDefs {
+    ro base = standard_types()
+    mut records = []RecordDef.new()
+    for r in base.records {
+        if r.name != "Finding" && r.name != "Summary" { records.push(r) }
+    }
+    records.push(RecordDef { name: "Finding", fields: [fd("severity", VariantType("Severity")), fd("level", VariantType("Level")), fd("evidence", TextType)] })
+    records.push(RecordDef { name: "Summary", fields: [fd("essential", count_spec()), fd("probes", count_spec())] })
+    records.push(RecordDef { name: "SessionParsing", fields: [fd("result", VariantType("SessionResult")), fd("summary", OptionalType(RecordType("Summary"))), fd("findings", OptionalType(ListType(RecordType("Finding"))))] })
+    mut variants = []VariantDef.new()
+    for v in base.variants {
+        if v.name != "Severity" { variants.push(v) }
+    }
+    variants.push(VariantDef { name: "Severity", cases: [plain_case("Essential"), plain_case("Superficial")], words: []EnumWord.new() })
+    variants.push(VariantDef { name: "Level", cases: [plain_case("Implementation"), plain_case("Plan"), plain_case("Requirements"), plain_case("OutOfScope"), plain_case("Delivery")], words: []EnumWord.new() })
+    variants.push(VariantDef { name: "SessionResult", cases: [plain_case("Done"), plain_case("Revision"), plain_case("Plan"), plain_case("Requirements"), plain_case("Question")], words: []EnumWord.new() })
+    variants.push(VariantDef { name: "LaunchScope", cases: [plain_case("Fits"), plain_case("DoesNotFit")], words: []EnumWord.new() })
+    TypeDefs { records, variants }
+}
+
+/// The records and the variants the signatures of the task runner use (task 123): the types of the documents of the task, of the approval, of the route and of the preparation (English names of the
+/// dictionary of the methodology and of the product). The rest is the common part.
+export fn runner_types() -> TypeDefs {
+    ro base = standard_types()
+    mut records = []RecordDef.new()
+    for r in base.records { records.push(r) }
+    ro optional_count = OptionalType(IntType)
+    records.push(RecordDef { name: "Cycle", fields: [fd("number", IntMin(1)), fd("origin", IntMin(1)), fd("streak", count_spec()), fd("no_probes", count_spec())] })
+    records.push(RecordDef { name: "Approval", fields: [fd("date", TextType), fd("who", TextType), fd("hash", TextType)] })
+    records.push(RecordDef { name: "TaskDocumentState", fields: [fd("exists", BoolType), fd("status", VariantType("DocumentStatus")), fd("stop_word", VariantType("StopWord")), fd("hash", TextType)] })
+    records.push(RecordDef { name: "RouteFeatures", fields: [fd("goal", TextType), fd("sources", optional_count), fd("parts", optional_count), fd("risk", VariantType("Risk")), fd("irreversible", VariantType("Rating")),
+        fd("cause_known", VariantType("Rating")), fd("touches_norm", VariantType("Rating")), fd("helper_proposal", TextType)] })
+    records.push(RecordDef { name: "RouteThresholds", fields: [fd("max_sources", count_spec()), fd("max_parts", count_spec()), fd("allowed_risk", VariantType("Risk"))] })
+    records.push(RecordDef { name: "RouteSettings", fields: [fd("ceiling", count_spec()), fd("clean_needed", count_spec()), fd("probes_min", count_spec()), fd("delivery_short", BoolType), fd("relaxations", ListType(TextType))] })
+    records.push(RecordDef { name: "ProjectSettings", fields: [fd("thresholds", RecordType("RouteThresholds")), fd("full", RecordType("RouteSettings")), fd("fast", RecordType("RouteSettings"))] })
+    records.push(RecordDef { name: "PreparationResult", fields: [fd("outcome", VariantType("PreparationStatus")), fd("cycle", FullDictType { key: VariantType("Stage"), value: RecordType("Cycle") })] })
+    mut variants = []VariantDef.new()
+    for v in base.variants { variants.push(v) }
+    variants.push(VariantDef { name: "Stage", cases: [plain_case("Analysis"), plain_case("Plan"), plain_case("Implementation"), plain_case("Delivery"), plain_case("Meeting")], words: []EnumWord.new() })
+    variants.push(VariantDef { name: "TaskDocument", cases: [plain_case("Specification"), plain_case("Plan"), plain_case("ImplementationReport")], words: []EnumWord.new() })
+    variants.push(VariantDef { name: "DocumentStatus", cases: [plain_case("Draft"), plain_case("Approved"), plain_case("InProgress"), plain_case("Done"), plain_case("Unparsed")], words: []EnumWord.new() })
+    variants.push(VariantDef { name: "StopWord", cases: [plain_case("NoWord"), plain_case("Revision"), plain_case("Plan"), plain_case("Requirements"), plain_case("Question")], words: []EnumWord.new() })
+    variants.push(VariantDef { name: "Risk", cases: [plain_case("Low"), plain_case("Medium"), plain_case("High"), plain_case("Unrated")], words: []EnumWord.new() })
+    variants.push(VariantDef { name: "Rating", cases: [plain_case("Confirmed"), plain_case("No"), plain_case("Unrated")], words: []EnumWord.new() })
+    variants.push(VariantDef { name: "PreparationStatus", cases: [plain_case("Ready"), plain_case("BusyByLiveProcess"), plain_case("TreeBusyByOtherTask"), plain_case("GroupNotStopped")], words: []EnumWord.new() })
+    TypeDefs { records, variants }
+}

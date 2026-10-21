@@ -1,0 +1,13 @@
+{
+  "format": "scenario/0",
+  "machine": "DialogSession",
+  "name": "a second answer to a closed request is discarded and the journal remembers it",
+  "start_at": 1000,
+  "params": {"проект.срок_бездействия": 30000},
+  "steps": [
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
+    {"do": "feed", "event": {"kind": "progress", "name": "agent_chunk", "request": "agent-1", "input": "x"}, "expect": {"state": "Awaiting"}},
+    {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-1"}, "expect": {"state": "Idle", "outcome": "none"}},
+    {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-1"}, "expect": {"state": "Idle", "journal": [], "outcome": "none", "sent": ["agent-1"]}}
+  ]
+}

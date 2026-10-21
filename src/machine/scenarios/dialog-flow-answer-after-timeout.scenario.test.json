@@ -1,0 +1,14 @@
+{
+  "format": "scenario/0",
+  "machine": "DialogSession",
+  "name": "an answer that comes after the timeout is discarded",
+  "start_at": 1000,
+  "params": {"проект.срок_бездействия": 30000},
+  "steps": [
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
+    {"do": "advance", "ms": 31000},
+    {"do": "pump", "expect": {"state": "Idle", "outcome": "none"}},
+    {"do": "deliver", "event": {"kind": "answer", "name": "agent_done", "request": "agent-1"}},
+    {"do": "pump", "expect": {"state": "Idle", "journal": [], "outcome": "none"}}
+  ]
+}

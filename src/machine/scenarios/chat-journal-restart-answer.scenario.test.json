@@ -1,0 +1,15 @@
+{
+  "format": "scenario/0",
+  "machine": "ChatSession",
+  "name": "restart in the middle, then answers, a repeated answer and a foreign one",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
+    {"do": "feed", "event": {"kind": "progress", "name": "agent_chunk", "request": "agent-1", "input": "a"}, "expect": {"state": "Awaiting"}},
+    {"do": "restart", "expect": {"state": "Awaiting"}},
+    {"do": "dispatch"},
+    {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-1"}, "expect": {"state": "Done", "outcome": "answer:a"}},
+    {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-1"}, "expect": {"state": "Done"}},
+    {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-9"}, "expect": {"state": "Done"}}
+  ]
+}

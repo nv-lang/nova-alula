@@ -1,0 +1,108 @@
+{
+  "format": "scenario/0",
+  "machine": "caller",
+  "name": "a call: the agent of the nested machine fails, the nested machine ends with a refusal, the parent gets the failure",
+  "start_at": 1000,
+  "steps": [
+    {
+      "do": "feed",
+      "event": {
+        "kind": "start",
+        "request": "up-1",
+        "input": {
+          "task": "t"
+        }
+      },
+      "expect": {
+        "state": "Call",
+        "journal": [],
+        "open": [
+          "callee-1"
+        ],
+        "sent": [
+          "callee-1"
+        ],
+        "queue": [],
+        "outcome": "none",
+        "data": {
+          "call_request_id": "up-1",
+          "child_attempt": 1,
+          "open_requests": [
+            "callee-1"
+          ]
+        }
+      },
+      "also": {
+        "callee-1": {
+          "state": "Ask",
+          "open": [
+            "agent-1"
+          ],
+          "sent": [
+            "agent-1"
+          ],
+          "queue": [],
+          "outcome": "none",
+          "data": {
+            "label": "t",
+            "count": 3,
+            "profile": "fast",
+            "call_request_id": "callee-1",
+            "agent_attempt": 1,
+            "open_requests": [
+              "agent-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "failure",
+        "request": "agent-1",
+        "code": "ConnectionLost"
+      },
+      "on": "callee-1",
+      "expect": {
+        "state": "Halted",
+        "journal": [
+          {
+            "code": "callee_failed",
+            "params": {
+              "reason": "connection_lost"
+            }
+          }
+        ],
+        "outcome": "refusal:NoResult"
+      },
+      "also": {
+        "parent": {
+          "state": "Call",
+          "queue": [
+            "in failure"
+          ]
+        }
+      }
+    },
+    {
+      "do": "pump",
+      "expect": {
+        "state": "Failed",
+        "journal": [
+          {
+            "code": "child_failed",
+            "params": {
+              "code": "no_result"
+            }
+          }
+        ],
+        "outcome": "refusal:NoResult",
+        "open": [],
+        "data": {
+          "child_code": "no_result"
+        }
+      }
+    }
+  ]
+}

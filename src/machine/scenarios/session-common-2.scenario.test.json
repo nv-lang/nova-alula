@@ -1,0 +1,96 @@
+{
+  "format": "scenario/0",
+  "machine": "session_start",
+  "name": "COMMON 2: the stop of the parent in a gate: the launch is paused, the journal says that the parent did it",
+  "start_at": 1000,
+  "steps": [
+    {
+      "do": "feed",
+      "host": {
+        "reply_validation": {
+          "$variant": "ReplyCheck",
+          "name": "Valid",
+          "fields": {}
+        },
+        "close_agent_turn": null,
+        "launch_scope": {
+          "$variant": "LaunchScope",
+          "name": "Fits",
+          "fields": {}
+        },
+        "launch_profile": {
+          "$record": "AgentProfile",
+          "fields": {
+            "family": "claude",
+            "model": "m1",
+            "effort": null
+          }
+        },
+        "session_context": "the prompt of s3",
+        "parse_session_artifact": {
+          "$record": "SessionParsing",
+          "fields": {
+            "result": {
+              "$variant": "SessionResult",
+              "name": "Done",
+              "fields": {}
+            },
+            "summary": null,
+            "findings": null
+          }
+        },
+        "stop_agent_group": null
+      },
+      "event": {
+        "kind": "start",
+        "request": "up-1",
+        "input": {
+          "session": "s3",
+          "task_dir": "/t",
+          "repo_dir": "/r",
+          "delivery_mode": "files",
+          "route": "full",
+          "delivery_short": false
+        }
+      },
+      "expect": {
+        "state": "Gate2",
+        "journal": [],
+        "open": [],
+        "sent": [],
+        "queue": [],
+        "outcome": "none",
+        "data": {
+          "call_request_id": "up-1",
+          "step_attempt": 0,
+          "open_requests": [],
+          "session": "s3",
+          "stop_reason": ""
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "signal",
+        "name": "parent_stop",
+        "input": "up-1"
+      },
+      "expect": {
+        "state": "Pause",
+        "journal": [
+          {
+            "code": "pause_by_parent_stop",
+            "params": {
+              "request": "up-1",
+              "event": "input-3"
+            }
+          }
+        ],
+        "data": {
+          "previous": "Gate2"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,194 @@
+{
+  "format": "scenario/0",
+  "machine": "session_start",
+  "name": "FLOW: a session of the runner (no number of the pass, no phase): start, confirm, the agent answers, the result is Done and the summary and the findings are empty",
+  "start_at": 1000,
+  "steps": [
+    {
+      "do": "feed",
+      "host": {
+        "reply_validation": {
+          "$variant": "ReplyCheck",
+          "name": "Valid",
+          "fields": {}
+        },
+        "close_agent_turn": null,
+        "launch_scope": {
+          "$variant": "LaunchScope",
+          "name": "Fits",
+          "fields": {}
+        },
+        "launch_profile": {
+          "$record": "AgentProfile",
+          "fields": {
+            "family": "claude",
+            "model": "m1",
+            "effort": null
+          }
+        },
+        "session_context": "the prompt of s1",
+        "parse_session_artifact": {
+          "$record": "SessionParsing",
+          "fields": {
+            "result": {
+              "$variant": "SessionResult",
+              "name": "Done",
+              "fields": {}
+            },
+            "summary": null,
+            "findings": null
+          }
+        },
+        "stop_agent_group": null
+      },
+      "event": {
+        "kind": "start",
+        "request": "up-1",
+        "input": {
+          "session": "s1",
+          "task_dir": "/t",
+          "repo_dir": "/r",
+          "delivery_mode": "files",
+          "route": "full",
+          "delivery_short": false
+        }
+      },
+      "expect": {
+        "state": "Gate2",
+        "journal": [],
+        "open": [],
+        "sent": [],
+        "queue": [],
+        "outcome": "none",
+        "data": {
+          "call_request_id": "up-1",
+          "step_attempt": 0,
+          "open_requests": [],
+          "session": "s1",
+          "stop_reason": ""
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "word",
+        "name": "confirm"
+      },
+      "expect": {
+        "state": "Session",
+        "open": [
+          "agent_step-1"
+        ],
+        "sent": [
+          "agent_step-1"
+        ],
+        "outcome": "none",
+        "data": {
+          "step_attempt": 1,
+          "open_requests": [
+            "agent_step-1"
+          ]
+        }
+      },
+      "also": {
+        "agent_step-1": {
+          "state": "AgentTurn",
+          "open": [
+            "agent-1"
+          ],
+          "sent": [
+            "agent-1"
+          ],
+          "outcome": "none",
+          "data": {
+            "call_request_id": "agent_step-1",
+            "open_requests": [
+              "agent-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "answer",
+        "name": "agent_done",
+        "request": "agent-1",
+        "input": {
+          "$variant": "TurnResult",
+          "name": "Finished",
+          "fields": {
+            "text": "Привет, мир",
+            "artifact": null,
+            "usage": {
+              "$record": "TransportUsage",
+              "fields": {
+                "model": {
+                  "$record": "AgentModel",
+                  "fields": {
+                    "id": "m1",
+                    "provider": "p",
+                    "variant": null
+                  }
+                },
+                "tokens": {
+                  "$record": "TokenUsage",
+                  "fields": {
+                    "input": 10,
+                    "output": 5,
+                    "reasoning": null,
+                    "cache_read": null,
+                    "cache_write": null
+                  }
+                },
+                "cost": null,
+                "context_used": null,
+                "request_started": 5
+              }
+            }
+          }
+        }
+      },
+      "on": "agent_step-1",
+      "expect": {
+        "state": "End",
+        "open": []
+      },
+      "also": {
+        "parent": {
+          "queue": [
+            "in answer"
+          ]
+        }
+      }
+    },
+    {
+      "do": "pump",
+      "expect": {
+        "state": "End",
+        "journal": [
+          {
+            "code": "session_result",
+            "params": {
+              "session": "s1",
+              "outcome": "done"
+            }
+          }
+        ],
+        "open": [],
+        "queue": [],
+        "outcome": "answer:{\"$record\":\"SessionLaunchResult\",\"fields\":{\"findings\":null,\"result\":{\"$variant\":\"SessionResult\",\"name\":\"Done\"},\"summary\":null}}",
+        "data": {
+          "open_requests": [],
+          "result": {
+            "$variant": "SessionResult",
+            "name": "Done",
+            "fields": {}
+          }
+        }
+      }
+    }
+  ]
+}

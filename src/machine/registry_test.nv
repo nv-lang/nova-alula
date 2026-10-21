@@ -1,0 +1,407 @@
+// registry_test.nv - the registry: registration, the class in the position of a call, the primitives of the pilots, their types.
+module alula.machine
+
+fn rprim(name str, params []ParamSpec, result TypeSpec, class PrimitiveClass) -> Primitive {
+    Primitive { name, params, result, class, reads: []str.new(), writes: []str.new() }
+}
+
+fn rwriting_classes() -> []PrimitiveClass => [Writing, Irreversible]
+
+fn rall_positions() -> []Position {
+    [ConditionPos, InputPos, ProfilePos, ForkEntryPos, OperationEntryPos, EndEntryPos, AcceptPos, ActionPos]
+}
+
+// The classes of the standard registry by name: the word of the class or "" for a primitive that is not there.
+fn rclass(name str) -> str {
+    match find_primitive(standard_registry(), name) {
+        Some(p) => class_word(p.class)
+        None => ""
+    }
+}
+
+fn rfield_names(defs TypeDefs, record str) -> []str {
+    mut out = []str.new()
+    for r in defs.records {
+        if r.name == record {
+            for f in r.fields { out.push(f.name) }
+        }
+    }
+    out
+}
+
+fn rcase_names(defs TypeDefs, variant str) -> []str {
+    mut out = []str.new()
+    for v in defs.variants {
+        if v.name == variant {
+            for c in v.cases { out.push(c.name) }
+        }
+    }
+    out
+}
+
+fn rcount(class PrimitiveClass) -> int {
+    mut n = 0
+    for p in standard_registry().primitives {
+        if class_word(p.class) == class_word(class) { n += 1 }
+    }
+    n
+}
+
+fn rpos_ok(registry Registry, e Expr, position Position) -> bool {
+    match check_expr_positions(registry, e, position) {
+        Ok(u) => true
+        Err(x) => false
+    }
+}
+
+fn rpos_path(registry Registry, e Expr, position Position) -> str {
+    match check_expr_positions(registry, e, position) {
+        Ok(u) => "ok"
+        Err(x) => x.path
+    }
+}
+
+fn rargs(name str, args []Value) -> str {
+    match check_call_args(standard_registry(), standard_types(), name, args) {
+        Ok(u) => "ok"
+        Err(x) => "${x.path}: ${x.message}"
+    }
+}
+
+fn rresult(name str, v Value) -> bool {
+    match check_call_result(standard_registry(), standard_types(), name, v) {
+        Ok(u) => true
+        Err(x) => false
+    }
+}
+
+fn rknown(spec TypeSpec, defs TypeDefs) -> bool {
+    match spec {
+        OptionalType(inner) => rknown(inner, defs)
+        ListType(inner) => rknown(inner, defs)
+        DictType { key, value } => rknown(key, defs) && rknown(value, defs)
+        FullDictType { key, value } => rknown(key, defs) && rknown(value, defs)
+        TupleType(items) => {
+            mut ok = true
+            for item in items { if !rknown(item, defs) { ok = false } }
+            ok
+        }
+        RecordType(name) => {
+            mut found = false
+            for r in defs.records { if r.name == name { found = true } }
+            found
+        }
+        VariantType(name) => {
+            mut found = false
+            for v in defs.variants { if v.name == name { found = true } }
+            found
+        }
+        _ => true
+    }
+}
+
+fn rtext(s str) -> Value => Text(s)
+
+fn rfinding(severity str) -> Value {
+    make_record("Finding", [
+        RecordField { name: "severity", value: enum_value("Severity", severity) },
+        RecordField { name: "evidence", value: Text("e") },
+        RecordField { name: "repeat", value: Bool(false) },
+        RecordField { name: "question", value: Bool(false) }
+    ])
+}
+
+test "rg register" {
+    mut reg = new_registry()
+    ro p = rprim("time_now", []ParamSpec.new(), IntType, Reading)
+    match register(reg, p) {
+        Ok(u) => assert(true)
+        Err(x) => assert(false)
+    }
+    match find_primitive(reg, "time_now") {
+        Some(found) => assert(found.name == "time_now" && class_word(found.class) == "reading")
+        None => assert(false)
+    }
+    match find_primitive(reg, "other") {
+        Some(found) => assert(false)
+        None => assert(true)
+    }
+    assert(reg.primitives.len() == 1)
+}
+
+test "rg bad" {
+    mut reg = new_registry()
+    ro p = rprim("p", [param("a", IntType)], NothingType, Writing)
+    match register(reg, p) { Ok(u) => assert(true), Err(x) => assert(false) }
+    match register(reg, p) { Ok(u) => assert(false), Err(x) => assert(x.message == "the primitive p is registered already") }
+    match register(reg, rprim("", []ParamSpec.new(), NothingType, Pure)) { Ok(u) => assert(false), Err(x) => assert(x.message == "the name of a primitive is empty") }
+    match register(reg, rprim("q", [param("a", IntType), param("a", TextType)], NothingType, Pure)) {
+        Ok(u) => assert(false)
+        Err(x) => assert(x.message == "the primitive q has the parameter a twice")
+    }
+    assert(reg.primitives.len() == 1)
+}
+
+test "rg words" {
+    assert(class_word(Pure) == "pure" && class_word(Reading) == "reading")
+    assert(class_word(Writing) == "writing" && class_word(Irreversible) == "irreversible")
+    assert(position_word(ConditionPos) == "condition" && position_word(InputPos) == "input")
+    assert(position_word(ProfilePos) == "profile" && position_word(ForkEntryPos) == "fork_entry")
+    assert(position_word(OperationEntryPos) == "operation_entry" && position_word(EndEntryPos) == "end_entry")
+    assert(position_word(AcceptPos) == "accept" && position_word(ActionPos) == "action")
+}
+
+test "cs pure" {
+    for pos in rall_positions() { assert(class_allowed(Pure, pos)) }
+}
+
+test "cs reading" {
+    assert(!class_allowed(Reading, ConditionPos))
+    assert(class_allowed(Reading, InputPos))
+    assert(class_allowed(Reading, ProfilePos))
+    assert(class_allowed(Reading, ForkEntryPos))
+    assert(class_allowed(Reading, OperationEntryPos))
+    assert(class_allowed(Reading, EndEntryPos))
+    assert(class_allowed(Reading, AcceptPos))
+    assert(!class_allowed(Reading, ActionPos))
+}
+
+test "cs writing" {
+    for class in rwriting_classes() {
+        assert(!class_allowed(class, ConditionPos))
+        assert(!class_allowed(class, InputPos))
+        assert(!class_allowed(class, ProfilePos))
+        assert(!class_allowed(class, ForkEntryPos))
+        assert(class_allowed(class, OperationEntryPos))
+        assert(class_allowed(class, EndEntryPos))
+        assert(!class_allowed(class, AcceptPos))
+        assert(class_allowed(class, ActionPos))
+    }
+}
+
+test "ps call" {
+    ro reg = standard_registry()
+    assert(rpos_ok(reg, call_primitive("time_now", []Expr.new()), ForkEntryPos))
+    assert(!rpos_ok(reg, call_primitive("time_now", []Expr.new()), ConditionPos))
+    assert(rpos_ok(reg, call_primitive("close_agent_turn", []Expr.new()), EndEntryPos))
+    assert(!rpos_ok(reg, call_primitive("close_agent_turn", []Expr.new()), ForkEntryPos))
+    match check_call_position(reg, "close_agent_turn", InputPos) {
+        Ok(u) => assert(false)
+        Err(x) => assert(x.message == "the irreversible primitive close_agent_turn may not stand in input")
+    }
+    match check_call_position(reg, "no_such", ActionPos) {
+        Ok(u) => assert(false)
+        Err(x) => assert(x.message == "the primitive no_such is not registered" && x.primitive == "no_such")
+    }
+}
+
+test "ps walk" {
+    ro reg = standard_registry()
+    ro cond = en(And, call_primitive("proposal_read", []Expr.new()), lit_bool(true))
+    assert(!rpos_ok(reg, cond, ConditionPos))
+    assert(rpos_path(reg, cond, ConditionPos) == "$.left")
+    assert(rpos_ok(reg, cond, ForkEntryPos))
+    assert(rpos_ok(reg, lit_int(1), ConditionPos))
+}
+
+test "ps inside" {
+    ro reg = standard_registry()
+    ro in_lambda = call("map", [name_ref("xs"), lambda1("x", call_primitive("close_for_writing", [name_ref("x")]))])
+    assert(rpos_ok(reg, in_lambda, ActionPos))
+    assert(rpos_ok(reg, in_lambda, OperationEntryPos))
+    assert(rpos_path(reg, in_lambda, ForkEntryPos) == "$.args[1].body")
+    ro in_arm = MatchOn { subject: name_ref("r"), arms: [arm([AnyPattern], Some(call_primitive("proposal_read", []Expr.new())), call_primitive("call_step", []Expr.new()))] }
+    assert(rpos_path(reg, in_arm, ActionPos) == "$.arms[0].guard")
+    assert(rpos_ok(reg, in_arm, EndEntryPos))
+    ro in_let = let_in("a", lit_int(1), if_else(lit_bool(true), call_primitive("journal_machine_data", []Expr.new()), lit_int(0)))
+    assert(rpos_path(reg, in_let, InputPos) == "$.body.then")
+}
+
+test "ps unknown" {
+    ro reg = standard_registry()
+    match check_expr_positions(reg, bin(Add, lit_int(1), call_primitive("nope", []Expr.new())), ActionPos) {
+        Ok(u) => assert(false)
+        Err(x) => assert(x.path == "$.right" && x.primitive == "nope")
+    }
+}
+
+test "ps names" {
+    ro e = bin(Add, call_primitive("a", [call_primitive("b", []Expr.new())]), bin(Add, call_primitive("b", []Expr.new()), call_primitive("c", []Expr.new())))
+    ro names = primitive_names(e)
+    assert(names.len() == 3)
+    assert(names[0] == "a" && names[1] == "b" && names[2] == "c")
+    assert(primitive_names(lit_int(1)).len() == 0)
+}
+
+test "sd count" {
+    assert(standard_registry().primitives.len() == 56)
+    assert(rcount(Reading) == 34)
+    assert(rcount(Writing) == 12)
+    assert(rcount(Irreversible) == 10)
+    assert(rcount(Pure) == 0)
+}
+
+test "sd meeting" {
+    for name in ["party_profile", "role_context", "call_trace", "call_step", "parse_agent_reply", "proposal_read", "proposal_with_fingerprint", "proposal_changed_since_attempt"] {
+        assert(rclass(name) == "reading")
+    }
+    for name in ["count_in_model_tally", "journal_findings", "journal_machine_data", "journal_decision", "remove_unsound", "build_summary"] {
+        assert(rclass(name) == "writing")
+    }
+    for name in ["close_for_writing", "open_for_writing", "move_to_archive"] {
+        assert(rclass(name) == "irreversible")
+    }
+}
+
+test "sd agent step" {
+    assert(rclass("time_now") == "reading")
+    assert(rclass("reply_validation") == "reading")
+    assert(rclass("close_agent_turn") == "irreversible")
+    assert(rclass("check_cache") == "writing")
+    assert(rclass("not_there") == "")
+}
+
+test "sd cycle check" {
+    assert(rclass("stop_agent_group") == "irreversible")
+    match find_primitive(standard_registry(), "stop_agent_group") {
+        Some(p) => {
+            assert(p.params.len() == 0)
+            assert(spec_text(p.result) == "nothing")
+        }
+        None => assert(false)
+    }
+}
+
+test "sd signatures" {
+    match find_primitive(standard_registry(), "party_profile") {
+        Some(p) => {
+            assert(p.params.len() == 1 && p.params[0].name == "party")
+            assert(spec_text(p.params[0].spec) == "text")
+            assert(spec_text(p.result) == "AgentProfile")
+        }
+        None => assert(false)
+    }
+    match find_primitive(standard_registry(), "journal_decision") {
+        Some(p) => {
+            assert(p.params.len() == 4)
+            assert(p.params[3].name == "open" && spec_text(p.params[3].spec) == "[]Finding")
+            assert(spec_text(p.params[2].spec) == "int>=0")
+            assert(spec_text(p.result) == "nothing")
+        }
+        None => assert(false)
+    }
+    match find_primitive(standard_registry(), "move_to_archive") {
+        Some(p) => assert(p.params.len() == 2 && p.params[0].name == "number" && p.params[1].name == "suffix")
+        None => assert(false)
+    }
+    match find_primitive(standard_registry(), "build_summary") {
+        Some(p) => assert(spec_text(p.result) == "?Summary")
+        None => assert(false)
+    }
+    match find_primitive(standard_registry(), "time_now") {
+        Some(p) => assert(p.params.len() == 0 && spec_text(p.result) == "int")
+        None => assert(false)
+    }
+}
+
+test "sd reads writes" {
+    match find_primitive(standard_registry(), "remove_unsound") {
+        Some(p) => assert(p.reads == ["lens_findings"] && p.writes == ["lens_findings"])
+        None => assert(false)
+    }
+    match find_primitive(standard_registry(), "reply_validation") {
+        Some(p) => {
+            assert(p.reads.contains("reply_text") && p.reads.contains("reply_artifact") && p.reads.contains("agent_request"))
+            assert(p.writes.len() == 1)
+        }
+        None => assert(false)
+    }
+}
+
+test "sd types" {
+    // the five primitives of the session start (task 121) use the types of the session (session_types), the others those of the pilots (standard_types)
+    ro defs = standard_types()
+    ro session = session_types()
+    ro mine = ["launch_scope", "launch_profile", "session_context", "parse_session_artifact", "stop_agent_group"]
+    // the 29 primitives of the task runner (task 123) use the types of the runner (runner_types)
+    ro runner = runner_types()
+    ro theirs = ["run_preparation", "specification", "task_plan", "implementation_report", "route_features", "project_settings", "source_list", "brief_complete", "copy_approval", "approval_by_document",
+                 "source_with_specification_marks", "last_implementation_review", "has_unresolved_line", "customer_letter", "round_letters", "secrets_report", "tree_diff", "commit_message", "commit_text",
+                 "feedback_route", "write_answers", "write_decisions", "write_owner_marks", "save_round_notes", "write_draft_status", "create_approved_copy", "rename_letter", "release_lock", "show_human"]
+    for p in standard_registry().primitives {
+        ro use = if mine.contains(p.name) { session } else { if theirs.contains(p.name) { runner } else { defs } }
+        assert(rknown(p.result, use))
+        for q in p.params { assert(rknown(q.spec, use)) }
+    }
+}
+
+test "sd session start" {
+    for name in ["launch_scope", "launch_profile", "session_context", "parse_session_artifact"] { assert(rclass(name) == "reading") }
+    assert(rclass("stop_agent_group") == "irreversible")
+    match find_primitive(standard_registry(), "session_context") {
+        Some(p) => assert(p.params.len() == 9 && spec_text(p.result) == "text")
+        None => assert(false)
+    }
+}
+
+test "sd session types" {
+    ro session = session_types()
+    ro meeting = standard_types()
+    // the same names, other fields: the meeting's Summary has `critical`, the session's has `essential`
+    assert(rfield_names(meeting, "Summary") == ["critical", "probes"])
+    assert(rfield_names(session, "Summary") == ["essential", "probes"])
+    assert(rfield_names(meeting, "Finding") == ["severity", "evidence", "repeat", "question"])
+    assert(rfield_names(session, "Finding") == ["severity", "level", "evidence"])
+    assert(rcase_names(meeting, "Severity") == ["Critical", "Significant", "Desirable"])
+    assert(rcase_names(session, "Severity") == ["Essential", "Superficial"])
+    assert(rcase_names(session, "SessionResult") == ["Done", "Revision", "Plan", "Requirements", "Question"])
+    assert(rcase_names(session, "LaunchScope") == ["Fits", "DoesNotFit"])
+    // what they share
+    assert(rfield_names(session, "AgentReply") == rfield_names(meeting, "AgentReply"))
+}
+
+test "sd names" {
+    for p in standard_registry().primitives {
+        assert(p.name.byte_len() > 0)
+        assert(code_word(p.name) == p.name)
+    }
+}
+
+test "ag count types" {
+    assert(rargs("party_profile", [rtext("witness")]) == "ok")
+    assert(rargs("party_profile", []Value.new()) == "$: wrong argument count for party_profile: expected 1, got 0")
+    assert(rargs("party_profile", [rtext("a"), rtext("b")]) == "$: wrong argument count for party_profile: expected 1, got 2")
+    assert(rargs("party_profile", [Int(1)]) == "$.party: expected text, got int")
+    assert(rargs("time_now", []Value.new()) == "ok")
+    assert(rargs("no_such", []Value.new()) == "$: the primitive no_such is not registered")
+}
+
+test "ag records" {
+    assert(rargs("journal_findings", [List([rfinding("Critical"), rfinding("Desirable")])]) == "ok")
+    assert(rargs("journal_findings", [List([rfinding("Nope")])]) == "$.findings[0].severity: Severity has no case Nope")
+    assert(rargs("move_to_archive", [Int(2), Int(1)]) == "ok")
+    assert(rargs("move_to_archive", [Int(-1), Int(1)]) == "$.number: -1 is less than the bound 0")
+    assert(rargs("close_for_writing", [rtext("proposal")]) == "ok")
+}
+
+test "ag variant" {
+    ro ctx = make_variant("RoleContext", "WitnessContext", [
+        RecordField { name: "author_question", value: Null },
+        RecordField { name: "findings", value: Null },
+        RecordField { name: "proposal", value: Text("p") }
+    ])
+    assert(rargs("role_context", [ctx]) == "ok")
+    assert(rargs("role_context", [Text("p")]) == "$.context: expected RoleContext, got text")
+}
+
+test "rs checked" {
+    assert(rresult("time_now", Int(1000)))
+    assert(!rresult("time_now", Text("1000")))
+    assert(rresult("close_agent_turn", Null))
+    assert(!rresult("close_agent_turn", Int(1)))
+    assert(rresult("reply_validation", enum_value("ReplyCheck", "Valid")))
+    assert(!rresult("reply_validation", enum_value("ReplyCheck", "Maybe")))
+    assert(rresult("build_summary", Null))
+    assert(rresult("build_summary", make_record("Summary", [RecordField { name: "critical", value: Int(0) }, RecordField { name: "probes", value: Int(2) }])))
+    assert(!rresult("build_summary", Int(1)))
+}

@@ -1,0 +1,353 @@
+// types.nv - the types of the data of a machine and the check of a value against a type.
+//
+// `TypeSpec` is the type of the format v1 (draft-format-v1.md, section 2): int (also `int>=n`), float, text
+// (also the closed set `"first" | "retry"`), bool, `?T`, `[]T`, `{K: V}`, a record or a variant (an enum is a
+// variant whose cases have no fields) by name. The named types are declared in `TypeDefs`. The check is made on values at
+// run time (`check_value`): the data of a machine, the arguments and the results of the primitives of the host.
+module alula.machine
+
+/// TypeSpec: a type of a value. `NothingType` is the type of "no result" (the value is `Null`). `IntMin(n)` is `int>=n`. `TextSet` is the set of
+/// literals `"a" | "b"` and `IdType` the built-in type `id` (text of the form of a UUID), both of format 2.5.
+/// `FullDictType` is the "full dict" of the format: the key is an enum, the keys of the dict are all its values.
+/// `TupleType` is `(T1, T2, ...)`, two fields or more.
+export type TypeSpec enum
+    | IntType
+    | IntMin(int)
+    | FloatType
+    | TextType
+    | BoolType
+    | NothingType
+    | TextSet([]str)
+    | IdType
+    | OptionalType(TypeSpec)
+    | ListType(TypeSpec)
+    | DictType { key TypeSpec, value TypeSpec }
+    | FullDictType { key TypeSpec, value TypeSpec }
+    | TupleType([]TypeSpec)
+    | RecordType(str)
+    | VariantType(str)
+
+/// FieldDef: a field of a record or of a case of a variant.
+export type FieldDef { name str, spec TypeSpec }
+
+/// RecordDef: the declaration of a record type.
+export type RecordDef { name str, fields []FieldDef }
+
+/// CaseDef: a case of a variant type; an enum value is a case without fields.
+export type CaseDef { name str, fields []FieldDef }
+
+/// EnumWord: the word of a value of an enum (format 2.7, section 6): the name of the case and its word (`Read` - `read`).
+export type EnumWord { name str, word str }
+
+/// VariantDef: the declaration of a variant or enum type. `words` are the words of the values of an enum that has them (format 2.7, P-7), in the order of the declaration; empty when it has none.
+export type VariantDef { name str, cases []CaseDef, words []EnumWord }
+
+/// TypeDefs: the named types a check may meet.
+export type TypeDefs { records []RecordDef, variants []VariantDef }
+
+/// The word of a value of an enum (format 2.7, P-7): the word that `words` of the type gives to the case; None when the type has none for it.
+export fn enum_word(defs TypeDefs, type_name str, case_name str) -> Option[str] {
+    for v in defs.variants {
+        if v.name == type_name {
+            for w in v.words {
+                if w.name == case_name { return Some(w.word) }
+            }
+        }
+    }
+    None
+}
+
+/// Is the named type an enum: a variant whose cases have no fields?
+export fn is_enum_type(defs TypeDefs, type_name str) -> bool {
+    for v in defs.variants {
+        if v.name == type_name {
+            for c in v.cases {
+                if c.fields.len() > 0 { return false }
+            }
+            return true
+        }
+    }
+    false
+}
+
+/// TypeCheckError: a value is not of the type; `path` is where in the value (`$.findings[2].severity`).
+export type TypeCheckError { path str, message str }
+
+/// No named types.
+export fn empty_type_defs() -> TypeDefs => { records: []RecordDef.new(), variants: []VariantDef.new() }
+
+/// A field declaration.
+export fn field_def(name str, spec TypeSpec) -> FieldDef => { name, spec }
+
+/// The type as the format writes it: `int`, `int>=0`, `?text`, `[]Finding`, `{text: int}`, `"a" | "b"`, `id`. A set of literals under `?` or `[]`
+/// is in parentheses (format 2.5, section 2): `?("a" | "b")`.
+export fn spec_text(spec TypeSpec) -> str {
+    match spec {
+        IntType => "int"
+        IntMin(n) => "int>=${n}"
+        FloatType => "float"
+        TextType => "text"
+        BoolType => "bool"
+        NothingType => "nothing"
+        IdType => "id"
+        TextSet(words) => {
+            consume sb = StringBuilder.new()
+            mut first = true
+            for w in words {
+                if !first { sb.append(" | ") }
+                sb.append("\"${w}\"")
+                first = false
+            }
+            sb.into_str()
+        }
+        OptionalType(inner) => "?${wrapped_text(inner)}"
+        ListType(inner) => "[]${wrapped_text(inner)}"
+        DictType { key, value } => "{${spec_text(key)}: ${spec_text(value)}}"
+        FullDictType { key, value } => "full {${spec_text(key)}: ${spec_text(value)}}"
+        TupleType(items) => {
+            mut out = ""
+            mut first = true
+            for item in items {
+                out = if first { spec_text(item) } else { "${out}, ${spec_text(item)}" }
+                first = false
+            }
+            "(${out})"
+        }
+        RecordType(name) => name
+        VariantType(name) => name
+    }
+}
+
+// The text of the type under `?` or `[]`: a set of literals is in parentheses.
+fn wrapped_text(spec TypeSpec) -> str {
+    match spec {
+        TextSet(words) => "(${spec_text(spec)})"
+        _ => spec_text(spec)
+    }
+}
+
+/// Is the text an identifier of the type `id`: 8-4-4-4-12 lower case hexadecimal digits with hyphens (format 2.5, section 2).
+export fn is_uuid(s str) -> bool {
+    if s.byte_len() != 36 { return false }
+    mut i = 0
+    for c in s.chars() {
+        ro one = "${c}"
+        if i == 8 || i == 13 || i == 18 || i == 23 {
+            if one != "-" { return false }
+        } else {
+            ro digit = one >= "0" && one <= "9"
+            ro letter = one >= "a" && one <= "f"
+            if !digit && !letter { return false }
+        }
+        i += 1
+    }
+    i == 36
+}
+
+fn type_error(path str, message str) -> Result[(), TypeCheckError] => Err(TypeCheckError { path, message })
+
+fn mismatch(spec TypeSpec, v Value, path str) -> Result[(), TypeCheckError] {
+    type_error(path, "expected ${spec_text(spec)}, got ${kind_name(v)}")
+}
+
+fn find_record(defs TypeDefs, name str) -> Option[RecordDef] {
+    for r in defs.records {
+        if r.name == name { return Some(r) }
+    }
+    None
+}
+
+fn find_variant(defs TypeDefs, name str) -> Option[VariantDef] {
+    for v in defs.variants {
+        if v.name == name { return Some(v) }
+    }
+    None
+}
+
+// The fields of a record or of a case against their declarations: every declared field is there, no other, each of its type.
+fn check_fields(declared []FieldDef, fields []RecordField, owner str, defs TypeDefs, path str) -> Result[(), TypeCheckError] {
+    for d in declared {
+        match record_get(fields, d.name) {
+            Some(value) => match check_at(d.spec, value, defs, "${path}.${d.name}") {
+                Ok(u) => ()
+                Err(e) => return Err(e)
+            }
+            None => return type_error(path, "the field ${d.name} is missing")
+        }
+    }
+    for f in fields {
+        mut known = false
+        for d in declared {
+            if d.name == f.name { known = true }
+        }
+        if !known { return type_error(path, "the field ${f.name} is not in ${owner}") }
+    }
+    Ok(())
+}
+
+fn check_record(name str, v Value, defs TypeDefs, path str) -> Result[(), TypeCheckError] {
+    ro def = match find_record(defs, name) {
+        Some(d) => d
+        None => return type_error(path, "the record type ${name} is not declared")
+    }
+    match v {
+        Record { name: actual, fields } => {
+            if actual != name { return type_error(path, "expected ${name}, got the record ${actual}") }
+            check_fields(def.fields, fields, name, defs, path)
+        }
+        _ => mismatch(RecordType(name), v, path)
+    }
+}
+
+fn check_variant(name str, v Value, defs TypeDefs, path str) -> Result[(), TypeCheckError] {
+    ro def = match find_variant(defs, name) {
+        Some(d) => d
+        None => return type_error(path, "the variant type ${name} is not declared")
+    }
+    match v {
+        Variant { type_name, name: case_name, fields } => {
+            if type_name != name { return type_error(path, "expected ${name}, got ${type_name}") }
+            for c in def.cases {
+                if c.name == case_name { return check_fields(c.fields, fields, "${name}.${case_name}", defs, path) }
+            }
+            type_error(path, "${name} has no case ${case_name}")
+        }
+        _ => mismatch(VariantType(name), v, path)
+    }
+}
+
+fn check_dict(key_spec TypeSpec, value_spec TypeSpec, entries []DictEntry, defs TypeDefs, path str) -> Result[(), TypeCheckError] {
+    mut i = 0
+    for e in entries {
+        match check_at(key_spec, e.key, defs, "${path}.key[${i}]") {
+            Ok(u) => ()
+            Err(x) => return Err(x)
+        }
+        match check_at(value_spec, e.value, defs, "${path}[${value_json(e.key)}]") {
+            Ok(u) => ()
+            Err(x) => return Err(x)
+        }
+        i += 1
+    }
+    Ok(())
+}
+
+// A full dict: the key is an enum and every one of its values is a key.
+fn check_full(key_spec TypeSpec, entries []DictEntry, defs TypeDefs, path str) -> Result[(), TypeCheckError] {
+    match key_spec {
+        VariantType(name) => match find_variant(defs, name) {
+            Some(def) => {
+                for c in def.cases {
+                    if dict_find(entries, enum_value(name, c.name)) < 0 {
+                        return type_error(path, "the full dict has no key ${c.name}")
+                    }
+                }
+                Ok(())
+            }
+            None => type_error(path, "the variant type ${name} is not declared")
+        }
+        _ => type_error(path, "the key of a full dict must be an enum")
+    }
+}
+
+fn check_tuple(items []TypeSpec, v Value, defs TypeDefs, path str) -> Result[(), TypeCheckError] {
+    match v {
+        Record { name, fields } => {
+            if name != "" { return mismatch(TupleType(items), v, path) }
+            if fields.len() != items.len() { return type_error(path, "expected a tuple of ${items.len()} fields, got ${fields.len()}") }
+            mut i = 0
+            for item in items {
+                match record_get(fields, "${i}") {
+                    Some(value) => match check_at(item, value, defs, "${path}.${i}") {
+                        Ok(u) => ()
+                        Err(e) => return Err(e)
+                    }
+                    None => return mismatch(TupleType(items), v, path)
+                }
+                i += 1
+            }
+            Ok(())
+        }
+        _ => mismatch(TupleType(items), v, path)
+    }
+}
+
+fn check_at(spec TypeSpec, v Value, defs TypeDefs, path str) -> Result[(), TypeCheckError] {
+    match spec {
+        IntType => match v {
+            Int(n) => Ok(())
+            _ => mismatch(spec, v, path)
+        }
+        IntMin(bound) => match v {
+            Int(n) => if n >= bound { Ok(()) } else { type_error(path, "${n} is less than the bound ${bound}") }
+            _ => mismatch(spec, v, path)
+        }
+        FloatType => match v {
+            Float(x) => Ok(())
+            _ => mismatch(spec, v, path)
+        }
+        TextType => match v {
+            Text(s) => Ok(())
+            _ => mismatch(spec, v, path)
+        }
+        BoolType => match v {
+            Bool(b) => Ok(())
+            _ => mismatch(spec, v, path)
+        }
+        NothingType => match v {
+            Null => Ok(())
+            _ => mismatch(spec, v, path)
+        }
+        TextSet(words) => match v {
+            Text(s) => {
+                for w in words {
+                    if w == s { return Ok(()) }
+                }
+                type_error(path, "\"${s}\" is not in ${spec_text(spec)}")
+            }
+            _ => mismatch(spec, v, path)
+        }
+        IdType => match v {
+            Text(s) => if is_uuid(s) { Ok(()) } else { type_error(path, "\"${s}\" is not an id (8-4-4-4-12 lower case hexadecimal digits)") }
+            _ => mismatch(spec, v, path)
+        }
+        OptionalType(inner) => match v {
+            Null => Ok(())
+            _ => check_at(inner, v, defs, path)
+        }
+        ListType(inner) => match v {
+            List(items) => {
+                mut i = 0
+                for item in items {
+                    match check_at(inner, item, defs, "${path}[${i}]") {
+                        Ok(u) => ()
+                        Err(e) => return Err(e)
+                    }
+                    i += 1
+                }
+                Ok(())
+            }
+            _ => mismatch(spec, v, path)
+        }
+        DictType { key, value } => match v {
+            Dict(entries) => check_dict(key, value, entries, defs, path)
+            _ => mismatch(spec, v, path)
+        }
+        FullDictType { key, value } => match v {
+            Dict(entries) => {
+                match check_dict(key, value, entries, defs, path) {
+                    Ok(u) => ()
+                    Err(e) => return Err(e)
+                }
+                check_full(key, entries, defs, path)
+            }
+            _ => mismatch(spec, v, path)
+        }
+        TupleType(items) => check_tuple(items, v, defs, path)
+        RecordType(name) => check_record(name, v, defs, path)
+        VariantType(name) => check_variant(name, v, defs, path)
+    }
+}
+
+/// Check a value against a type; the first mismatch is the error with its path.
+export fn check_value(spec TypeSpec, v Value, defs TypeDefs) -> Result[(), TypeCheckError] => check_at(spec, v, defs, "$")

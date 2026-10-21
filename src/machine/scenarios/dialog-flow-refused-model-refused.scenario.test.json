@@ -1,0 +1,11 @@
+{
+  "format": "scenario/0",
+  "machine": "DialogSession",
+  "name": "a refusal with the code ModelRefused ends the turn, the session stays open",
+  "start_at": 1000,
+  "params": {"проект.срок_бездействия": 30000},
+  "steps": [
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
+    {"do": "feed", "event": {"kind": "failure", "name": "agent_refused", "request": "agent-1", "code": "ModelRefused"}, "expect": {"state": "Idle", "journal": [{"code": "agent_refused", "params": {"code": "model_refused"}}], "outcome": "none", "open": []}}
+  ]
+}

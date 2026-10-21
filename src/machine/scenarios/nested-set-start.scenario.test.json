@@ -1,0 +1,83 @@
+{
+  "format": "scenario/0",
+  "machine": "fan",
+  "name": "a set: two nested machines go at once (the limit is 2), the third waits in to_send; each element counts its own attempts",
+  "start_at": 1000,
+  "steps": [
+    {
+      "do": "feed",
+      "event": {
+        "kind": "start",
+        "request": "up-1",
+        "input": {
+          "order": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      },
+      "expect": {
+        "state": "Lenses",
+        "open": [
+          "a-1",
+          "b-1"
+        ],
+        "sent": [
+          "a-1",
+          "b-1"
+        ],
+        "data": {
+          "to_send": [
+            "c"
+          ],
+          "open_requests": [
+            "a-1",
+            "b-1"
+          ],
+          "lenses": {
+            "a": {
+              "$record": "Lens",
+              "fields": {
+                "attempt": 1,
+                "name": "a"
+              }
+            },
+            "b": {
+              "$record": "Lens",
+              "fields": {
+                "attempt": 1,
+                "name": "b"
+              }
+            },
+            "c": {
+              "$record": "Lens",
+              "fields": {
+                "attempt": 0,
+                "name": "c"
+              }
+            }
+          }
+        }
+      },
+      "also": {
+        "a-1": {
+          "state": "Ask",
+          "data": {
+            "label": "a",
+            "profile": "lens:a",
+            "count": 1
+          }
+        },
+        "b-1": {
+          "state": "Ask",
+          "data": {
+            "label": "b",
+            "profile": "lens:b",
+            "count": 1
+          }
+        }
+      }
+    }
+  ]
+}

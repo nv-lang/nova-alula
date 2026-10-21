@@ -1,0 +1,16 @@
+{
+  "format": "scenario/0",
+  "machine": "DialogSession",
+  "name": "restart in the middle, then answers, a repeated answer and a foreign one",
+  "start_at": 1000,
+  "params": {"проект.срок_бездействия": 30000},
+  "steps": [
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
+    {"do": "feed", "event": {"kind": "progress", "name": "agent_chunk", "request": "agent-1", "input": "a"}, "expect": {"state": "Awaiting"}},
+    {"do": "restart", "expect": {"state": "Awaiting"}},
+    {"do": "dispatch"},
+    {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-1"}, "expect": {"state": "Idle", "outcome": "none"}},
+    {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-1"}, "expect": {"state": "Idle"}},
+    {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-9"}, "expect": {"state": "Idle"}}
+  ]
+}

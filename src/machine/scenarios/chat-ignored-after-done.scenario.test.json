@@ -1,0 +1,11 @@
+{
+  "format": "scenario/0",
+  "machine": "ChatSession",
+  "name": "a message after the end is ignored",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
+    {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-1"}, "expect": {"state": "Done"}},
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "again"}, "expect": {"state": "Done", "journal": [{"code": "event_ignored", "params": {"event": "user_message", "state": "Done"}}], "outcome": "answer:"}}
+  ]
+}

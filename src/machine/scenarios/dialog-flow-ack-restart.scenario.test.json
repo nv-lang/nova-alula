@@ -1,0 +1,15 @@
+{
+  "format": "scenario/0",
+  "machine": "DialogSession",
+  "name": "a restart acknowledges the committed key once more",
+  "start_at": 1000,
+  "params": {"проект.срок_бездействия": 30000},
+  "steps": [
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
+    {"do": "accept", "event": {"kind": "progress", "name": "agent_chunk", "request": "agent-1", "input": "one ", "source": "acp-1"}, "expect": {"state": "Awaiting"}},
+    {"do": "restart", "expect": {"state": "Awaiting"}},
+    {"do": "pump", "expect": {"state": "Awaiting"}},
+    {"do": "restart", "expect": {"state": "Awaiting"}},
+    {"do": "pump", "expect": {"state": "Awaiting"}}
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "format": "scenario/0",
+  "machine": "DialogSession",
+  "name": "an answer to a request nobody opened is discarded as unknown",
+  "start_at": 1000,
+  "params": {"проект.срок_бездействия": 30000},
+  "steps": [
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
+    {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-7"}, "expect": {"state": "Awaiting", "journal": [], "open": ["agent-1"], "outcome": "none"}}
+  ]
+}

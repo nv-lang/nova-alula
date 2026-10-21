@@ -1,0 +1,131 @@
+// defs_test.nv - what task 107 added to the evaluator: the definitions of a machine, `record_text`, `non_empty`, the registry that checks the calls.
+module alula.machine
+
+fn dcall(name str, args []Expr) -> Expr => call(name, args)
+
+fn twice_def() -> DefFn => { name: "twice", params: ["k"], specs: [IntType], result: IntType, body: bin(Mul, name_ref("k"), lit_int(2)) }
+
+fn dtable(fns []DefFn) -> DefTable {
+    ro base = no_defs()
+    DefTable { fns, types: base.types, globals: [Binding { name: "G", value: Int(10) }], registry: base.registry, checked: false }
+}
+
+fn dev(e Expr, fns []DefFn) -> Result[Value, EvalError] {
+    mut host = NoHost { unused: 0 }
+    eval_defs(e, scope_with(empty_scope(), "x", Int(1)), dtable(fns), host)
+}
+
+fn dok(e Expr, fns []DefFn, expected Value) -> bool {
+    match dev(e, fns) {
+        Ok(v) => value_equal(v, expected)
+        Err(x) => false
+    }
+}
+
+fn dkind(e Expr, fns []DefFn) -> str {
+    match dev(e, fns) {
+        Ok(v) => "ok"
+        Err(x) => "${kind_word(x.kind)}@${x.path}"
+    }
+}
+
+type DHost { answer Value }
+
+fn DHost mut @call_primitive(name str, args []Value) -> Result[Value, EvalError] => Ok(@answer)
+
+test "def call" {
+    assert(dok(dcall("twice", [lit_int(21)]), [twice_def()], Int(42)))
+    ro nested = DefFn { name: "four", params: [], specs: []TypeSpec.new(), result: IntType, body: dcall("twice", [lit_int(2)]) }
+    assert(dok(dcall("four", []Expr.new()), [twice_def(), nested], Int(4)))
+    assert(dok(dcall("twice", [dcall("twice", [lit_int(3)])]), [twice_def()], Int(12)))
+    assert(dkind(dcall("twice", []Expr.new()), [twice_def()]) == "bad_arity@$")
+    assert(dkind(dcall("thrice", [lit_int(1)]), [twice_def()]) == "unknown_function@$")
+    assert(dkind(dcall("twice", [lit_int(1)]), []DefFn.new()) == "unknown_function@$")
+}
+
+test "def types" {
+    ro bounded = DefFn { name: "f", params: ["n"], specs: [IntMin(0)], result: IntType, body: name_ref("n") }
+    assert(dok(dcall("f", [lit_int(3)]), [bounded], Int(3)))
+    assert(dkind(dcall("f", [lit_int(-1)]), [bounded]) == "type_mismatch@$.args[0]")
+    assert(dkind(dcall("f", [lit_text("a")]), [bounded]) == "type_mismatch@$.args[0]")
+    ro liar = DefFn { name: "g", params: [], specs: []TypeSpec.new(), result: TextType, body: lit_int(1) }
+    assert(dkind(dcall("g", []Expr.new()), [liar]) == "type_mismatch@$")
+    ro opt = DefFn { name: "h", params: ["o"], specs: [OptionalType(IntType)], result: IntType, body: bin(Coalesce, name_ref("o"), lit_int(0)) }
+    assert(dok(dcall("h", [lit_null()]), [opt], Int(0)))
+    assert(dok(dcall("h", [lit_int(4)]), [opt], Int(4)))
+}
+
+test "def scope" {
+    ro peeks = DefFn { name: "p", params: [], specs: []TypeSpec.new(), result: IntType, body: name_ref("x") }
+    assert(dkind(dcall("p", []Expr.new()), [peeks]) == "unknown_name@$.p")
+    ro globals = DefFn { name: "q", params: [], specs: []TypeSpec.new(), result: IntType, body: name_ref("G") }
+    assert(dok(dcall("q", []Expr.new()), [globals], Int(10)))
+    ro shadow = DefFn { name: "s", params: ["x"], specs: [IntType], result: IntType, body: name_ref("x") }
+    assert(dok(dcall("s", [lit_int(7)]), [shadow], Int(7)))
+    assert(dok(let_in("x", lit_int(5), dcall("s", [name_ref("x")])), [shadow], Int(5)))
+    assert(dok(dcall("s", [name_ref("x")]), [shadow], Int(1)))
+}
+
+test "def ends" {
+    ro forever = DefFn { name: "r", params: [], specs: []TypeSpec.new(), result: IntType, body: dcall("r", []Expr.new()) }
+    ro kind = dkind(dcall("r", []Expr.new()), [forever])
+    assert(kind.starts_with("too_deep") || kind.starts_with("out_of_budget"))
+}
+
+test "record text" {
+    ro two = call("journal_event", [lit_text("a"), lit_text("p"), lit_text("1"), lit_text("q"), lit_text("2")])
+    match eval(call("record_text", [two]), empty_scope()) {
+        Ok(v) => assert(value_equal(v, Text("event a: p=1, q=2")))
+        Err(x) => assert(false)
+    }
+    match eval(call("record_text", [call("journal_event", [lit_text("done")])]), empty_scope()) {
+        Ok(v) => assert(value_equal(v, Text("event done")))
+        Err(x) => assert(false)
+    }
+    match eval(call("record_text", [lit_int(1)]), empty_scope()) {
+        Ok(v) => assert(false)
+        Err(x) => assert(x.kind == TypeMismatch)
+    }
+}
+
+test "non empty" {
+    match eval(call("non_empty", [lit_text("a")]), empty_scope()) {
+        Ok(v) => assert(value_equal(v, Text("a")))
+        Err(x) => assert(false)
+    }
+    match eval(call("non_empty", [lit_text("")]), empty_scope()) {
+        Ok(v) => assert(false)
+        Err(x) => assert(x.kind == Unreachable)
+    }
+    match eval(call("non_empty", [lit_int(1)]), empty_scope()) {
+        Ok(v) => assert(false)
+        Err(x) => assert(x.kind == TypeMismatch)
+    }
+}
+
+test "checked calls" {
+    ro checked = DefTable { fns: []DefFn.new(), types: standard_types(), globals: []Binding.new(), registry: standard_registry(), checked: true }
+    mut ints = DHost { answer: Int(5) }
+    match eval_defs(call_primitive("time_now", []Expr.new()), empty_scope(), checked, ints) {
+        Ok(v) => assert(value_equal(v, Int(5)))
+        Err(x) => assert(false)
+    }
+    match eval_defs(call_primitive("time_now", [lit_int(1)]), empty_scope(), checked, ints) {
+        Ok(v) => assert(false)
+        Err(x) => assert(x.kind == TypeMismatch)
+    }
+    mut texts = DHost { answer: Text("x") }
+    match eval_defs(call_primitive("time_now", []Expr.new()), empty_scope(), checked, texts) {
+        Ok(v) => assert(false)
+        Err(x) => assert(x.message.contains("the result of time_now"))
+    }
+    match eval_defs(call_primitive("no_such", []Expr.new()), empty_scope(), checked, ints) {
+        Ok(v) => assert(false)
+        Err(x) => assert(x.kind == TypeMismatch)
+    }
+    mut unchecked = DHost { answer: Text("x") }
+    match eval_with(call_primitive("anything", []Expr.new()), empty_scope(), unchecked) {
+        Ok(v) => assert(value_equal(v, Text("x")))
+        Err(x) => assert(false)
+    }
+}

@@ -1,0 +1,106 @@
+// journal.nv - the codes of the journal that a machine may write (format sections 5 and 10, 2.12, Ya-31): the table of the methodology (`journal_methodology.md`, a copy of the two tables of
+// `state-machine-journal.md`: the templates and the events of the format) and the table of the product beside it (`journal_product.md`), both of the form
+// `Machine | Code | Russian template | Parameters`. The check takes the union of the two tables.
+module alula.machine
+
+import std.text
+
+/// JournalCode: a row of a table of templates: the machines that write the code, the code, the template, the required parameters and the optional ones.
+export type JournalCode { machine str, code str, template str, params []str, optional []str }
+
+// The names between backticks in a cell: "`a`, `b`" -> ["a", "b"].
+fn ticked(cell str) -> []str {
+    mut out = []str.new()
+    mut rest = cell
+    while true {
+        ro open = rest.find("`") ?? -1
+        if open < 0 { break }
+        ro after = rest[open + 1..]
+        ro close = after.find("`") ?? -1
+        if close < 0 { break }
+        out.push(after[..close])
+        rest = after[close + 1..]
+    }
+    out
+}
+
+// The rows of the tables of a file: the lines `| machine | `code` | template | parameters |` (the header and the separator are skipped).
+fn journal_rows(text str) -> []JournalCode {
+    mut out = []JournalCode.new()
+    for raw in text.split("\n") {
+        ro line = (raw.strip_suffix("\r") ?? raw).trim_ascii()
+        if !line.starts_with("| ") { continue }
+        mut cells = []str.new()
+        for c in line.split("|") { cells.push(c.trim_ascii()) }
+        if cells.len() != 6 { continue }
+        if cells[1] == "Машина" { continue }
+        ro codes = ticked(cells[2])
+        if codes.len() != 1 { continue }
+        mut required = []str.new()
+        mut optional = []str.new()
+        mut first = true
+        for part in cells[4].split(";") {
+            if first {
+                if part.contains("необязательные") { optional = ticked(part) } else { required = ticked(part) }
+                first = false
+            } else {
+                optional = ticked(part)
+            }
+        }
+        out.push(JournalCode { machine: cells[1], code: codes[0], template: cells[3], params: required, optional })
+    }
+    out
+}
+
+/// The table of the methodology.
+export fn methodology_journal() -> []JournalCode => journal_rows(embed_str("journal_methodology.md"))
+
+/// The table of the product.
+export fn product_journal() -> []JournalCode => journal_rows(embed_str("journal_product.md"))
+
+/// The union of the two tables: the codes that a machine of the product may write.
+export fn journal_union() -> []JournalCode {
+    mut out = methodology_journal()
+    for row in product_journal() { out.push(row) }
+    out
+}
+
+/// The row of the code in a table.
+export fn journal_find(codes []JournalCode, code str) -> Option[JournalCode] {
+    for row in codes {
+        if row.code == code { return Some(row) }
+    }
+    None
+}
+
+fn is_code_word(code str) -> bool {
+    if code.byte_len() == 0 { return false }
+    mut first = true
+    for c in code.chars() {
+        ro one = "${c}"
+        ro letter = one >= "a" && one <= "z"
+        ro digit = one >= "0" && one <= "9"
+        if first && !letter { return false }
+        if !letter && !digit && one != "_" { return false }
+        first = false
+    }
+    true
+}
+
+/// The faults of the table of the product against the table of the methodology: a code that is not lower case latin with underscores, a code that repeats a code of the methodology (even with the same
+/// template: this also covers the codes that the format itself writes, `signal_passed`, `input_rejected`, `machine_error`, `machine_data`, and the codes of the fragment "Pause"), a code twice in the table.
+export fn journal_table_issues(methodology []JournalCode, product []JournalCode) -> []str {
+    mut out = []str.new()
+    mut seen = []str.new()
+    for row in product {
+        if !is_code_word(row.code) {
+            out.push("the code ${row.code} of the table of the product is not lower case latin with underscores")
+        } else if journal_find(methodology, row.code).is_some() {
+            out.push("the code ${row.code} of the table of the product repeats a code of the methodology (a code of the methodology or of the format is not replaced)")
+        } else if seen.contains(row.code) {
+            out.push("the code ${row.code} stands twice in the table of the product")
+        }
+        seen.push(row.code)
+    }
+    out
+}

@@ -1,0 +1,13 @@
+{
+  "format": "scenario/0",
+  "machine": "agent_step",
+  "name": "the retries are exhausted after four transient errors",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start", "request": "call-1", "input": {"kind": {"$variant": "CallerKind", "name": "CycleSession", "fields": {}}, "profile": {"$record": "AgentProfile", "fields": {"family": "claude", "model": "m1", "effort": null}}, "session": "s1", "dialog_kind": "main", "context": "ctx", "limits": {"$record": "AgentLimits", "fields": {"silence_term": null, "token_budget": null, "cost_budget": null, "turn_limit": null}}, "trace": "t1", "step": 0}}, "host": {"reply_validation": {"$variant": "ReplyCheck", "name": "Valid", "fields": {}}, "close_agent_turn": null}, "expect": {"state": "AgentTurn", "journal": [], "data": {"turn_count": 1, "started": 1000, "turn": "first", "agent_attempt": 1, "open_requests": ["agent-1"], "call_request_id": "call-1"}, "open": ["agent-1"], "sent": ["agent-1"]}},
+    {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-1", "input": {"$variant": "TurnResult", "name": "TransientError", "fields": {}}}, "expect": {"state": "AgentTurn"}},
+    {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-2", "input": {"$variant": "TurnResult", "name": "TransientError", "fields": {}}}, "expect": {"state": "AgentTurn"}},
+    {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-3", "input": {"$variant": "TurnResult", "name": "TransientError", "fields": {}}}, "expect": {"state": "AgentTurn", "data": {"retry_count": 3}}},
+    {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-4", "input": {"$variant": "TurnResult", "name": "TransientError", "fields": {}}}, "expect": {"state": "Halted", "journal": [{"code": "agent_transient_error_exhausted", "params": {"retries": "3"}}, {"code": "agent_usage", "params": {"session": "s1", "result": "no_result", "model": "m1", "input": "none", "output": "none", "reasoning": "none", "cache_read": "none", "cache_write": "none", "cost": "none"}}, {"code": "agent_step_stopped", "params": {"reason": "no_result"}}], "open": [], "outcome": "refusal:NoResult", "sent": ["agent-1", "agent-2", "agent-3", "agent-4"]}}
+  ]
+}

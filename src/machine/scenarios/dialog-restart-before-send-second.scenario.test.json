@@ -1,0 +1,16 @@
+{
+  "format": "scenario/0",
+  "machine": "DialogSession",
+  "name": "death after the commit of the second turn, before the send: sent once as agent-2",
+  "start_at": 1000,
+  "params": {"проект.срок_бездействия": 30000},
+  "steps": [
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "one"}, "expect": {"state": "Awaiting"}},
+    {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-1"}, "expect": {"state": "Idle"}},
+    {"do": "accept", "event": {"kind": "word", "name": "user_message", "input": "two"}, "expect": {"state": "Awaiting", "sent": ["agent-1"], "queue": ["send agent-2"]}},
+    {"do": "restart", "expect": {"state": "Awaiting", "sent": ["agent-1"]}},
+    {"do": "dispatch", "expect": {"sent": ["agent-1", "agent-2"], "queue": []}},
+    {"do": "restart", "expect": {"state": "Awaiting"}},
+    {"do": "dispatch", "expect": {"sent": ["agent-1", "agent-2"]}}
+  ]
+}

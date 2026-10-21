@@ -1,0 +1,1036 @@
+// eval.nv - the evaluator of the expressions: a pure function of a tree and a scope.
+//
+// `eval(expr, scope)` reads nothing but its two arguments, writes nothing and has no effects in its signature; two runs
+// give the same result (the order of everything the evaluator walks is fixed). The only door to the world is a primitive of
+// the host: a node `CallPrimitive` goes to the `PrimitiveHost` that the caller passes (`eval_with`); `eval` passes a host
+// that refuses every primitive. The core does not know what a primitive does.
+//
+// The rules (format v2, section 3 and the catalog, section 12; the choices where the format is silent are marked "decision" and listed in README.md):
+//  - `if`, `and`, `or`, `??` are lazy: the part that is not needed is not evaluated (not even for its errors);
+//  - `match` is exhaustive: when no arm accepts the value the result is the error `NoMatchArm`; an arm may bind the fields
+//    of a case to names, and has a guard;
+//  - numbers: `+ - *` on two ints is checked (overflow is the error `Overflow`), `/` and `%` on ints truncate toward zero
+//    (decision), a zero divisor is `DivisionByZero`; floats are `+ - * /` and a result that is not finite is `Overflow`;
+//    an int and a float are never mixed (`float(x)`, `int(x)` convert); `+` on two texts or two lists joins them (the left first);
+//  - the index of a dict by an absent key and the index of a list out of its bounds are `none`, not an error (owner, 2026-10-19);
+//  - `require(x)` on `none` is the DEFECT `Unreachable` (not a machine error: the executor stops, no ERROR end), as `required`
+//    of the automata;
+//  - `x ?? y` is `y` only when `x` is `none`; `text(x)` as in value.nv;
+//  - totality: no loops and no recursion in the language; the depth of a tree is limited (`MAX_EXPR_DEPTH`), the number of
+//    nodes one run may evaluate is limited (`MAX_STEPS`) and so is the length of a list (`MAX_ITEMS`).
+//
+// Macros and functions (name in the "call" node; the catalog of the format, section 12): filter, map, any, all, count,
+// first_where, fold, dict (a dict from a list, a repeated key is the error `DuplicateKey`), range, keys, values (in the
+// order of the first record of a key), length, has, require, remove (all equal items), without_key, text, float, int
+// (the fraction is cut toward zero), max, min, journal_event.
+//
+// An error is a value with its place in the tree: `EvalError { kind, message, path }`, the path as `$.args[1].body.left`.
+module alula.machine
+
+/// The number of nodes one `eval` may evaluate.
+export const MAX_STEPS = 50000
+
+/// The longest list a run may build (`range`, `+`, `map`, `filter`).
+export const MAX_ITEMS = 10000
+
+/// EvalErrorKind: why an evaluation stopped. `Unreachable` is a defect of the program, the others are errors of the machine
+/// (an overflow, a zero divisor) or of the table that the checks of the table must prevent (a type, a name).
+export type EvalErrorKind enum
+    | TypeMismatch
+    | UnknownName
+    | UnknownField
+    | UnknownFunction
+    | BadArity
+    | Overflow
+    | DivisionByZero
+    | NoMatchArm
+    | Unreachable
+    | DuplicateKey
+    | LambdaMisplaced
+    | TooDeep
+    | OutOfBudget
+    | PrimitiveFailed
+
+/// EvalError: the error of an evaluation: the kind, the text and the place in the tree.
+export type EvalError { kind EvalErrorKind, message str, path str }
+
+/// Binding: a name and its value.
+export type Binding { name str, value Value }
+
+/// Scope: the names an expression may read (the data of the machine, the bound names of the step). A later binding of a name hides an earlier one.
+export type Scope { bindings []Binding }
+
+/// PrimitiveHost: the door of the evaluator to the world. The host answers a call of a primitive by name; the core does not
+/// check the registry (registry.nv checks the class of a call and the types of its arguments).
+export type PrimitiveHost protocol {
+    mut @call_primitive(name str, args []Value) -> Result[Value, EvalError]
+}
+
+/// A host that refuses every primitive.
+export type NoHost { unused int }
+
+export fn NoHost mut @call_primitive(name str, args []Value) -> Result[Value, EvalError] {
+    Err(EvalError { kind: PrimitiveFailed, message: "no host", path: "" })
+}
+
+/// A scope with no names.
+export fn empty_scope() -> Scope => { bindings: []Binding.new() }
+
+/// A copy of the scope with one more name.
+export fn scope_with(scope Scope, name str, value Value) -> Scope {
+    // ORACLE-WORKAROUND(45): a copy of a `ro` list (`scope.bindings`) built by hand in a loop; write `mut out = scope.bindings` when item 45 is fixed
+    mut out = []Binding.new()
+    for b in scope.bindings { out.push(b) }
+    out.push(Binding { name, value })
+    Scope { bindings: out }
+}
+
+/// The word of an error kind: `type_mismatch`, `overflow`, ...
+export fn kind_word(kind EvalErrorKind) -> str {
+    match kind {
+        TypeMismatch => "type_mismatch"
+        UnknownName => "unknown_name"
+        UnknownField => "unknown_field"
+        UnknownFunction => "unknown_function"
+        BadArity => "bad_arity"
+        Overflow => "overflow"
+        DivisionByZero => "division_by_zero"
+        NoMatchArm => "no_match_arm"
+        Unreachable => "unreachable"
+        DuplicateKey => "duplicate_key"
+        LambdaMisplaced => "lambda_misplaced"
+        TooDeep => "too_deep"
+        OutOfBudget => "out_of_budget"
+        PrimitiveFailed => "primitive_failed"
+    }
+}
+
+/// The error as one line: `overflow at $.left: ...`.
+export fn error_text(e EvalError) -> str => "${kind_word(e.kind)} at ${e.path}: ${e.message}"
+
+// ---- the run --------------------------------------------------------------------------------------------------------
+
+/// DefFn: a definition of a machine (format v2.1, section 8) - a pure function with typed parameters. Its body sees its parameters and
+/// the globals of the table (constants, parameters), never the names of the caller.
+export type DefFn { name str, params []str, specs []TypeSpec, result TypeSpec, body Expr }
+
+/// DefTable: what an evaluation may call besides the catalog: the definitions, the named types their signatures use, the globals,
+/// and (`checked`) the registry that checks the arguments and the result of every primitive call (task 107).
+export type DefTable { fns []DefFn, types TypeDefs, globals []Binding, registry Registry, checked bool }
+
+/// A table with no definitions and no checks of the primitives (`eval` and `eval_with` use it).
+export fn no_defs() -> DefTable => {
+    fns: []DefFn.new(), types: empty_type_defs(), globals: []Binding.new(), registry: new_registry(), checked: false
+}
+
+// The state of one run: the names in force (a stack: a later one hides an earlier one), the count of nodes evaluated and the definitions.
+type Env { names []Binding, steps int, table DefTable }
+
+// A lambda taken apart: the macros apply its body to their values.
+type Lam { params []str, body Expr }
+
+// What a pattern says about a value: matched or not, and the names it binds.
+type Matched { yes bool, binds []Binding }
+
+fn flaw(kind EvalErrorKind, message str) -> EvalError => { kind, message, path: "" }
+
+fn refuse(kind EvalErrorKind, message str) -> Result[Value, EvalError] => Err(flaw(kind, message))
+
+// The error with one more step of the path in front: the place of a mistake grows from the leaf to the root.
+fn at(e EvalError, seg str) -> EvalError {
+    EvalError { kind: e.kind, message: e.message, path: if e.path == "" { seg } else { "${seg}.${e.path}" } }
+}
+
+fn rooted(e EvalError) -> EvalError {
+    EvalError { kind: e.kind, message: e.message, path: if e.path == "" { "$" } else { "$.${e.path}" } }
+}
+
+fn wrong(expected str, v Value) -> Result[Value, EvalError] => refuse(TypeMismatch, "expected ${expected}, got ${kind_name(v)}")
+
+fn wrong_at(seg str, expected str, v Value) -> Result[Value, EvalError] => Err(at(flaw(TypeMismatch, "expected ${expected}, got ${kind_name(v)}"), seg))
+
+fn lookup(env Env, name str) -> Option[Value] {
+    mut i = env.names.len() - 1
+    while i >= 0 {
+        if env.names[i].name == name { return Some(env.names[i].value) }
+        i -= 1
+    }
+    None
+}
+
+fn bind(mut env Env, name str, value Value) -> () {
+    env.names.push(Binding { name, value })
+}
+
+fn unbind(mut env Env, count int) -> () {
+    mut k = 0
+    while k < count {
+        ro dropped = env.names.pop()
+        k += 1
+    }
+}
+
+// Evaluate a part of a node; a mistake in it gets the step `seg` in its path.
+fn part(e Expr, seg str, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+    match ev(e, env, host, depth + 1) {
+        Ok(v) => Ok(v)
+        Err(x) => Err(at(x, seg))
+    }
+}
+
+fn want_bool(v Value, seg str) -> Result[bool, EvalError] {
+    match v {
+        Bool(b) => Ok(b)
+        _ => Err(at(flaw(TypeMismatch, "expected bool, got ${kind_name(v)}"), seg))
+    }
+}
+
+fn floats(x f64, op_message str) -> Result[Value, EvalError] {
+    if x.is_finite() { return Ok(Float(x)) }
+    refuse(Overflow, op_message)
+}
+
+fn int_result(r Option[int], message str) -> Result[Value, EvalError] {
+    match r {
+        Some(n) => Ok(Int(n))
+        None => refuse(Overflow, message)
+    }
+}
+
+fn arith(op BinOp, l Value, r Value) -> Result[Value, EvalError] {
+    match l {
+        Int(a) => match r {
+            Int(b) => {
+                match op {
+                    Add => int_result(a.checked_add(b), "int overflow in +")
+                    Sub => int_result(a.checked_sub(b), "int overflow in -")
+                    Mul => int_result(a.checked_mul(b), "int overflow in *")
+                    Div => {
+                        if b == 0 { return refuse(DivisionByZero, "division by zero") }
+                        int_result(a.checked_div(b), "int overflow in /")
+                    }
+                    Mod => {
+                        if b == 0 { return refuse(DivisionByZero, "remainder by zero") }
+                        int_result(a.checked_rem(b), "int overflow in %")
+                    }
+                    _ => refuse(TypeMismatch, "not an arithmetic operator")
+                }
+            }
+            _ => refuse(TypeMismatch, "cannot mix int and ${kind_name(r)}")
+        }
+        Float(a) => match r {
+            Float(b) => {
+                match op {
+                    Add => floats(a + b, "float overflow in +")
+                    Sub => floats(a - b, "float overflow in -")
+                    Mul => floats(a * b, "float overflow in *")
+                    Div => {
+                        if b == 0.0 { return refuse(DivisionByZero, "division by zero") }
+                        floats(a / b, "float overflow in /")
+                    }
+                    _ => refuse(TypeMismatch, "the operator needs ints")
+                }
+            }
+            _ => refuse(TypeMismatch, "cannot mix float and ${kind_name(r)}")
+        }
+        List(a) => match r {
+            List(b) => {
+                match op {
+                    Add => {
+                        if a.len() + b.len() > MAX_ITEMS { return refuse(OutOfBudget, "a list longer than ${MAX_ITEMS}") }
+                        mut out = []Value.new()
+                        for x in a { out.push(x) }
+                        for y in b { out.push(y) }
+                        Ok(List(out))
+                    }
+                    _ => refuse(TypeMismatch, "lists can only be joined with +")
+                }
+            }
+            _ => refuse(TypeMismatch, "cannot join a list and ${kind_name(r)}")
+        }
+        Text(a) => match r {
+            Text(b) => {
+                match op {
+                    Add => Ok(Text("${a}${b}"))
+                    _ => refuse(TypeMismatch, "texts can only be joined with +")
+                }
+            }
+            _ => refuse(TypeMismatch, "cannot join a text and ${kind_name(r)}")
+        }
+        _ => refuse(TypeMismatch, "no arithmetic on ${kind_name(l)}")
+    }
+}
+
+fn order(op BinOp, l Value, r Value) -> Result[Value, EvalError] {
+    mut c = 0
+    match l {
+        Int(a) => match r {
+            Int(b) => { c = cmp_int(a, b) }
+            _ => return refuse(TypeMismatch, "cannot compare int and ${kind_name(r)}")
+        }
+        Float(a) => match r {
+            Float(b) => { c = cmp_float(a, b) }
+            _ => return refuse(TypeMismatch, "cannot compare float and ${kind_name(r)}")
+        }
+        _ => return refuse(TypeMismatch, "only numbers are ordered, got ${kind_name(l)}")
+    }
+    match op {
+        Lt => Ok(Bool(c < 0))
+        Le => Ok(Bool(c <= 0))
+        Gt => Ok(Bool(c > 0))
+        _ => Ok(Bool(c >= 0))
+    }
+}
+
+fn strict_op(op BinOp, l Value, r Value) -> Result[Value, EvalError] {
+    match op {
+        Eq => Ok(Bool(value_equal(l, r)))
+        Ne => Ok(Bool(!value_equal(l, r)))
+        Lt => order(op, l, r)
+        Le => order(op, l, r)
+        Gt => order(op, l, r)
+        Ge => order(op, l, r)
+        _ => arith(op, l, r)
+    }
+}
+
+fn binary(op BinOp, left Expr, right Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+    match op {
+        And => {
+            ro l = part(left, "left", env, host, depth)?
+            if !want_bool(l, "left")? { return Ok(Bool(false)) }
+            ro r = part(right, "right", env, host, depth)?
+            Ok(Bool(want_bool(r, "right")?))
+        }
+        Or => {
+            ro l = part(left, "left", env, host, depth)?
+            if want_bool(l, "left")? { return Ok(Bool(true)) }
+            ro r = part(right, "right", env, host, depth)?
+            Ok(Bool(want_bool(r, "right")?))
+        }
+        Coalesce => {
+            ro l = part(left, "left", env, host, depth)?
+            match l {
+                Null => part(right, "right", env, host, depth)
+                _ => Ok(l)
+            }
+        }
+        _ => {
+            ro l = part(left, "left", env, host, depth)?
+            ro r = part(right, "right", env, host, depth)?
+            strict_op(op, l, r)
+        }
+    }
+}
+
+fn field_access(t Value, name str) -> Result[Value, EvalError] {
+    match t {
+        Record { name: record_name, fields } => match record_get(fields, name) {
+            Some(v) => Ok(v)
+            None => refuse(UnknownField, "no field ${name} in ${record_name}")
+        }
+        _ => refuse(TypeMismatch, "a field needs a record, got ${kind_name(t)}")
+    }
+}
+
+fn index_access(t Value, i Value) -> Result[Value, EvalError] {
+    match t {
+        List(items) => match i {
+            Int(n) => if n >= 0 && n < items.len() { Ok(items[n]) } else { Ok(Null) }
+            _ => Err(at(flaw(TypeMismatch, "the index of a list must be an int, got ${kind_name(i)}"), "index"))
+        }
+        Dict(entries) => match dict_get(entries, i) {
+            Some(v) => Ok(v)
+            None => Ok(Null)
+        }
+        _ => refuse(TypeMismatch, "an index needs a list or a dict, got ${kind_name(t)}")
+    }
+}
+
+fn eval_fields(fields []FieldExpr, prefix str, mut env Env, mut host PrimitiveHost, depth int) -> Result[[]RecordField, EvalError] {
+    mut out = []RecordField.new()
+    for f in fields {
+        ro v = part(f.value, "${prefix}.${f.name}", env, host, depth)?
+        out.push(RecordField { name: f.name, value: v })
+    }
+    Ok(out)
+}
+
+fn eval_args(args []Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[[]Value, EvalError] {
+    mut out = []Value.new()
+    mut i = 0
+    for a in args {
+        ro v = part(a, "args[${i}]", env, host, depth)?
+        out.push(v)
+        i += 1
+    }
+    Ok(out)
+}
+
+fn eval_with_field(base Expr, fields []FieldExpr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+    ro b = part(base, "of", env, host, depth)?
+    match b {
+        Record { name, fields: old } => {
+            ro changes = eval_fields(fields, "fields", env, host, depth)?
+            // ORACLE-WORKAROUND(45): a copy of a `ro` list (`old`) built by hand in a loop; write `mut out = old` when item 45 is fixed
+            mut out = []RecordField.new()
+            for f in old { out.push(f) }
+            for c in changes {
+                mut found = false
+                mut i = 0
+                while i < out.len() {
+                    if out[i].name == c.name {
+                        out[i] = c
+                        found = true
+                    }
+                    i += 1
+                }
+                if !found { return Err(at(flaw(UnknownField, "no field ${c.name} in ${name}"), "fields.${c.name}")) }
+            }
+            Ok(make_record(name, out))
+        }
+        _ => wrong_at("of", "record", b)
+    }
+}
+
+fn eval_dict_lit(entries []EntryExpr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+    mut out = []DictEntry.new()
+    mut i = 0
+    for en in entries {
+        ro k = part(en.key, "entries[${i}].key", env, host, depth)?
+        ro v = part(en.value, "entries[${i}].value", env, host, depth)?
+        if dict_find(out, k) >= 0 { return Err(at(flaw(DuplicateKey, "the key ${value_json(k)} is repeated"), "entries[${i}]")) }
+        out.push(DictEntry { key: k, value: v })
+        i += 1
+    }
+    Ok(Dict(out))
+}
+
+// ---- match ----------------------------------------------------------------------------------------------------------
+
+fn try_pattern(p Pattern, v Value, seg str) -> Result[Matched, EvalError] {
+    match p {
+        AnyPattern => Ok(Matched { yes: true, binds: []Binding.new() })
+        LitPattern(x) => Ok(Matched { yes: value_equal(x, v), binds: []Binding.new() })
+        CasePattern { type_name, name, binds } => match v {
+            Variant { type_name: actual_type, name: actual_name, fields } => {
+                if actual_name != name { return Ok(Matched { yes: false, binds: []Binding.new() }) }
+                if type_name != "" && type_name != actual_type { return Ok(Matched { yes: false, binds: []Binding.new() }) }
+                mut got = []Binding.new()
+                for b in binds {
+                    match record_get(fields, b.field) {
+                        Some(x) => got.push(Binding { name: b.name, value: x })
+                        None => return Err(at(flaw(UnknownField, "no field ${b.field} in ${actual_type}.${actual_name}"), seg))
+                    }
+                }
+                Ok(Matched { yes: true, binds: got })
+            }
+            _ => Ok(Matched { yes: false, binds: []Binding.new() })
+        }
+    }
+}
+
+fn run_arm(a MatchArm, binds []Binding, seg str, mut env Env, mut host PrimitiveHost, depth int) -> Result[Option[Value], EvalError] {
+    for b in binds { bind(env, b.name, b.value) }
+    mut outcome Result[Option[Value], EvalError] = Ok(None)
+    if a.guard.len() > 0 {
+        match part(a.guard[0], "${seg}.guard", env, host, depth) {
+            Ok(g) => match g {
+                Bool(yes) => {
+                    if yes {
+                        match part(a.body, "${seg}.body", env, host, depth) {
+                            Ok(v) => { outcome = Ok(Some(v)) }
+                            Err(x) => { outcome = Err(x) }
+                        }
+                    }
+                }
+                _ => { outcome = Err(at(flaw(TypeMismatch, "a guard must be bool, got ${kind_name(g)}"), "${seg}.guard")) }
+            }
+            Err(x) => { outcome = Err(x) }
+        }
+    } else {
+        match part(a.body, "${seg}.body", env, host, depth) {
+            Ok(v) => { outcome = Ok(Some(v)) }
+            Err(x) => { outcome = Err(x) }
+        }
+    }
+    unbind(env, binds.len())
+    outcome
+}
+
+fn eval_match(subject Expr, arms []MatchArm, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+    ro v = part(subject, "on", env, host, depth)?
+    mut i = 0
+    for a in arms {
+        ro seg = "arms[${i}]"
+        for p in a.patterns {
+            ro m = try_pattern(p, v, seg)?
+            if m.yes {
+                ro done = run_arm(a, m.binds, seg, env, host, depth)?
+                match done {
+                    Some(result) => return Ok(result)
+                    None => ()
+                }
+                break
+            }
+        }
+        i += 1
+    }
+    refuse(NoMatchArm, "no arm accepts the value")
+}
+
+// ---- functions and macros -------------------------------------------------------------------------------------------
+
+fn is_macro(name str) -> bool {
+    match name {
+        "filter" => true
+        "map" => true
+        "any" => true
+        "all" => true
+        "count" => true
+        "first_where" => true
+        "fold" => true
+        "dict" => true
+        _ => false
+    }
+}
+
+// The number of arguments a plain function takes; -1 for a name that is not one.
+fn plain_arity(name str) -> int {
+    match name {
+        "range" => 2
+        "keys" => 1
+        "values" => 1
+        "length" => 1
+        "has" => 1
+        "require" => 1
+        "remove" => 2
+        "without_key" => 2
+        "text" => 1
+        "float" => 1
+        "int" => 1
+        "max" => 2
+        "min" => 2
+        "record_text" => 1
+        "non_empty" => 1
+        _ => -1
+    }
+}
+
+fn macro_arity(name str) -> int {
+    match name {
+        "fold" => 3
+        "dict" => 3
+        _ => 2
+    }
+}
+
+fn bad_count(name str, want int, got int) -> Result[Value, EvalError] {
+    refuse(BadArity, "${name} takes ${want} arguments, got ${got}")
+}
+
+fn lambda_at(args []Expr, i int, params int) -> Result[Lam, EvalError] {
+    match args[i] {
+        Lambda { params: names, body } => {
+            if names.len() != params { return Err(at(flaw(BadArity, "this lambda takes ${names.len()} parameters, the macro needs ${params}"), "args[${i}]")) }
+            Ok(Lam { params: names, body })
+        }
+        _ => Err(at(flaw(TypeMismatch, "expected a lambda"), "args[${i}]"))
+    }
+}
+
+fn list_arg(v Value, i int) -> Result[[]Value, EvalError] {
+    match v {
+        List(items) => Ok(items)
+        _ => Err(at(flaw(TypeMismatch, "expected list, got ${kind_name(v)}"), "args[${i}]"))
+    }
+}
+
+// Apply a lambda of one parameter to a value; the names live for the body only.
+fn apply1(lam Lam, x Value, seg str, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+    mut n = 0
+    if lam.params[0] != "_" {
+        bind(env, lam.params[0], x)
+        n = 1
+    }
+    ro r = part(lam.body, "${seg}.body", env, host, depth)
+    unbind(env, n)
+    r
+}
+
+fn apply2(lam Lam, a Value, x Value, seg str, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+    mut n = 0
+    if lam.params[0] != "_" {
+        bind(env, lam.params[0], a)
+        n += 1
+    }
+    if lam.params[1] != "_" {
+        bind(env, lam.params[1], x)
+        n += 1
+    }
+    ro r = part(lam.body, "${seg}.body", env, host, depth)
+    unbind(env, n)
+    r
+}
+
+fn predicate(lam Lam, x Value, seg str, mut env Env, mut host PrimitiveHost, depth int) -> Result[bool, EvalError] {
+    ro r = apply1(lam, x, seg, env, host, depth)?
+    match r {
+        Bool(b) => Ok(b)
+        _ => Err(at(flaw(TypeMismatch, "a predicate must give bool, got ${kind_name(r)}"), "${seg}.body"))
+    }
+}
+
+fn eval_macro(name str, args []Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+    ro items = list_arg(part(args[0], "args[0]", env, host, depth)?, 0)?
+    if name == "fold" {
+        mut acc = part(args[1], "args[1]", env, host, depth)?
+        ro lam = lambda_at(args, 2, 2)?
+        for x in items { acc = apply2(lam, acc, x, "args[2]", env, host, depth)? }
+        return Ok(acc)
+    }
+    if name == "dict" {
+        ro key_lam = lambda_at(args, 1, 1)?
+        ro value_lam = lambda_at(args, 2, 1)?
+        mut out = []DictEntry.new()
+        for x in items {
+            ro k = apply1(key_lam, x, "args[1]", env, host, depth)?
+            ro v = apply1(value_lam, x, "args[2]", env, host, depth)?
+            if dict_find(out, k) >= 0 { return refuse(DuplicateKey, "the key ${value_json(k)} is repeated") }
+            out.push(DictEntry { key: k, value: v })
+        }
+        return Ok(Dict(out))
+    }
+    ro lam = lambda_at(args, 1, 1)?
+    if name == "map" {
+        mut out = []Value.new()
+        for x in items { out.push(apply1(lam, x, "args[1]", env, host, depth)?) }
+        return Ok(List(out))
+    }
+    if name == "filter" {
+        mut out = []Value.new()
+        for x in items {
+            if predicate(lam, x, "args[1]", env, host, depth)? { out.push(x) }
+        }
+        return Ok(List(out))
+    }
+    if name == "any" {
+        for x in items {
+            if predicate(lam, x, "args[1]", env, host, depth)? { return Ok(Bool(true)) }
+        }
+        return Ok(Bool(false))
+    }
+    if name == "all" {
+        for x in items {
+            if !predicate(lam, x, "args[1]", env, host, depth)? { return Ok(Bool(false)) }
+        }
+        return Ok(Bool(true))
+    }
+    if name == "count" {
+        mut n = 0
+        for x in items {
+            if predicate(lam, x, "args[1]", env, host, depth)? { n += 1 }
+        }
+        return Ok(Int(n))
+    }
+    // first_where
+    for x in items {
+        if predicate(lam, x, "args[1]", env, host, depth)? { return Ok(x) }
+    }
+    Ok(Null)
+}
+
+fn fn_range(a Value, b Value) -> Result[Value, EvalError] {
+    match a {
+        Int(lo) => match b {
+            Int(hi) => {
+                if hi <= lo { return Ok(List([]Value.new())) }
+                match hi.checked_sub(lo) {
+                    Some(n) => {
+                        if n > MAX_ITEMS { return refuse(OutOfBudget, "a list longer than ${MAX_ITEMS}") }
+                    }
+                    None => return refuse(OutOfBudget, "a list longer than ${MAX_ITEMS}")
+                }
+                mut out = []Value.new()
+                mut x = lo
+                while x < hi {
+                    out.push(Int(x))
+                    x += 1
+                }
+                Ok(List(out))
+            }
+            _ => wrong_at("args[1]", "int", b)
+        }
+        _ => wrong_at("args[0]", "int", a)
+    }
+}
+
+fn fn_to_int(x f64) -> Result[Value, EvalError] {
+    if !x.is_finite() || x >= 9223372036854775808.0 || x < -9223372036854775808.0 {
+        return refuse(Overflow, "the float is out of the range of int")
+    }
+    Ok(Int(x as int))
+}
+
+fn fn_text_len(s str) -> int => s.chars().count()
+
+fn fn_journal_event(args []Value) -> Result[Value, EvalError] {
+    ro code = match args[0] {
+        Text(s) => s
+        _ => return wrong_at("args[0]", "text", args[0])
+    }
+    mut params = []Value.new()
+    mut i = 1
+    while i + 1 < args.len() {
+        match args[i] {
+            Text(n) => ()
+            _ => return wrong_at("args[${i}]", "text", args[i])
+        }
+        match args[i + 1] {
+            Text(v) => ()
+            _ => return wrong_at("args[${i + 1}]", "text", args[i + 1])
+        }
+        params.push(make_tuple([args[i], args[i + 1]]))
+        i += 2
+    }
+    Ok(make_record("JournalEvent", [RecordField { name: "code", value: Text(code) }, RecordField { name: "params", value: List(params) }]))
+}
+
+fn fn_remove(items []Value, x Value) -> Value {
+    mut out = []Value.new()
+    for item in items {
+        if !value_equal(item, x) { out.push(item) }
+    }
+    List(out)
+}
+
+fn fn_without_key(entries []DictEntry, key Value) -> Value {
+    mut out = []DictEntry.new()
+    for e in entries {
+        if value_compare(e.key, key) != 0 { out.push(e) }
+    }
+    Dict(out)
+}
+
+fn fn_max_min(name str, a Value, b Value) -> Result[Value, EvalError] {
+    ro biggest = name == "max"
+    match a {
+        Int(x) => match b {
+            Int(y) => Ok(Int(if biggest { if x >= y { x } else { y } } else { if x <= y { x } else { y } }))
+            _ => refuse(TypeMismatch, "cannot mix int and ${kind_name(b)}")
+        }
+        Float(x) => match b {
+            Float(y) => Ok(Float(if biggest { if x >= y { x } else { y } } else { if x <= y { x } else { y } }))
+            _ => refuse(TypeMismatch, "cannot mix float and ${kind_name(b)}")
+        }
+        _ => refuse(TypeMismatch, "${name} takes numbers, got ${kind_name(a)}")
+    }
+}
+
+// `record_text(e)` of the catalog (format 2.2, E8, SG10): `event <code>`, or `event <code>: name=value, ...` in the order of writing.
+fn fn_record_text(v Value) -> Result[Value, EvalError] {
+    match v {
+        Record { name, fields } => {
+            if name != "JournalEvent" { return wrong_at("args[0]", "a JournalEvent", v) }
+            ro code_v = match record_get(fields, "code") {
+                Some(c) => c
+                None => return wrong_at("args[0]", "a JournalEvent", v)
+            }
+            ro params_v = match record_get(fields, "params") {
+                Some(p) => p
+                None => return wrong_at("args[0]", "a JournalEvent", v)
+            }
+            mut out = match code_v {
+                Text(s) => "event ${s}"
+                _ => return wrong_at("args[0]", "a JournalEvent with a text code", v)
+            }
+            mut first = true
+            match params_v {
+                List(items) => {
+                    for item in items {
+                        match item {
+                            Record { name: tuple_name, fields: tuple_fields } => {
+                                ro n = match record_get(tuple_fields, "0") {
+                                    Some(Text(s)) => s
+                                    _ => return wrong_at("args[0]", "a JournalEvent with text parameters", v)
+                                }
+                                ro x = match record_get(tuple_fields, "1") {
+                                    Some(Text(s)) => s
+                                    _ => return wrong_at("args[0]", "a JournalEvent with text parameters", v)
+                                }
+                                out = if first { "${out}: ${n}=${x}" } else { "${out}, ${n}=${x}" }
+                                first = false
+                            }
+                            _ => return wrong_at("args[0]", "a JournalEvent with text parameters", v)
+                        }
+                    }
+                }
+                _ => return wrong_at("args[0]", "a JournalEvent with a list of parameters", v)
+            }
+            Ok(Text(out))
+        }
+        _ => wrong_at("args[0]", "a JournalEvent", v)
+    }
+}
+
+fn eval_plain(name str, v []Value) -> Result[Value, EvalError] {
+    match name {
+        "range" => fn_range(v[0], v[1])
+        "keys" => match v[0] {
+            Dict(entries) => {
+                mut out = []Value.new()
+                for e in entries { out.push(e.key) }
+                Ok(List(out))
+            }
+            _ => wrong_at("args[0]", "dict", v[0])
+        }
+        "values" => match v[0] {
+            Dict(entries) => {
+                mut out = []Value.new()
+                for e in entries { out.push(e.value) }
+                Ok(List(out))
+            }
+            _ => wrong_at("args[0]", "dict", v[0])
+        }
+        "length" => match v[0] {
+            List(items) => Ok(Int(items.len()))
+            Text(s) => Ok(Int(fn_text_len(s)))
+            Dict(entries) => Ok(Int(entries.len()))
+            _ => wrong_at("args[0]", "list, text or dict", v[0])
+        }
+        "has" => match v[0] {
+            Null => Ok(Bool(false))
+            _ => Ok(Bool(true))
+        }
+        "require" => match v[0] {
+            Null => refuse(Unreachable, "a required value is absent")
+            _ => Ok(v[0])
+        }
+        "remove" => match v[0] {
+            List(items) => Ok(fn_remove(items, v[1]))
+            _ => wrong_at("args[0]", "list", v[0])
+        }
+        "without_key" => match v[0] {
+            Dict(entries) => Ok(fn_without_key(entries, v[1]))
+            _ => wrong_at("args[0]", "dict", v[0])
+        }
+        "text" => match value_text(v[0]) {
+            Some(s) => Ok(Text(s))
+            None => wrong_at("args[0]", "a value with a text form", v[0])
+        }
+        "float" => match v[0] {
+            Int(n) => Ok(Float(n as f64))
+            Float(x) => Ok(Float(x))
+            _ => wrong_at("args[0]", "int", v[0])
+        }
+        "int" => match v[0] {
+            Int(n) => Ok(Int(n))
+            Float(x) => fn_to_int(x)
+            _ => wrong_at("args[0]", "float", v[0])
+        }
+        "max" => fn_max_min(name, v[0], v[1])
+        "min" => fn_max_min(name, v[0], v[1])
+        "record_text" => fn_record_text(v[0])
+        "non_empty" => match v[0] {
+            Text(s) => if s == "" { refuse(Unreachable, "a non-empty text is required") } else { Ok(v[0]) }
+            _ => wrong_at("args[0]", "text", v[0])
+        }
+        _ => refuse(UnknownFunction, "no function ${name}")
+    }
+}
+
+fn find_def(table DefTable, name str) -> int {
+    mut i = 0
+    while i < table.fns.len() {
+        if table.fns[i].name == name { return i }
+        i += 1
+    }
+    -1
+}
+
+// A call of a definition: the arguments are evaluated in the scope of the caller and checked against the types of the parameters; the
+// body runs in a scope of its own (the globals and the parameters) and its result is checked against the declared result.
+fn call_def(d DefFn, args []Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+    if args.len() != d.params.len() { return bad_count(d.name, d.params.len(), args.len()) }
+    ro values = eval_args(args, env, host, depth)?
+    // ORACLE-WORKAROUND(45): a copy of a `ro` list (`env.table.globals`) built by hand in a loop; write `mut names = env.table.globals` when item 45 is fixed
+    mut names = []Binding.new()
+    for g in env.table.globals { names.push(g) }
+    mut i = 0
+    for p in d.params {
+        match check_value(d.specs[i], values[i], env.table.types) {
+            Ok(u) => ()
+            Err(x) => return Err(at(flaw(TypeMismatch, "the argument ${p} of ${d.name}: ${x.path} ${x.message}"), "args[${i}]"))
+        }
+        names.push(Binding { name: p, value: values[i] })
+        i += 1
+    }
+    mut sub = Env { names, steps: env.steps, table: env.table }
+    ro r = ev(d.body, sub, host, depth + 1)
+    env.steps = sub.steps
+    match r {
+        Ok(v) => {
+            match check_value(d.result, v, env.table.types) {
+                Ok(u) => Ok(v)
+                Err(x) => refuse(TypeMismatch, "the result of ${d.name}: ${x.path} ${x.message}")
+            }
+        }
+        Err(x) => Err(at(x, "${d.name}"))
+    }
+}
+
+// A call of a primitive of the host, with the registry checking the arguments and the result when the table asks for it.
+fn call_host(name str, values []Value, mut env Env, mut host PrimitiveHost) -> Result[Value, EvalError] {
+    if env.table.checked {
+        match check_call_args(env.table.registry, env.table.types, name, values) {
+            Ok(u) => ()
+            Err(x) => return refuse(TypeMismatch, "${name}: ${x.path} ${x.message}")
+        }
+        ro r = host.call_primitive(name, values)?
+        match check_call_result(env.table.registry, env.table.types, name, r) {
+            Ok(u) => return Ok(r)
+            Err(x) => return refuse(TypeMismatch, "the result of ${name}: ${x.path} ${x.message}")
+        }
+    }
+    host.call_primitive(name, values)
+}
+
+fn eval_call(name str, args []Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+    if is_macro(name) {
+        ro want = macro_arity(name)
+        if args.len() != want { return bad_count(name, want, args.len()) }
+        return eval_macro(name, args, env, host, depth)
+    }
+    if name == "journal_event" {
+        if args.len() < 1 || args.len() % 2 == 0 { return refuse(BadArity, "journal_event takes a code and pairs of name and value") }
+        ro values = eval_args(args, env, host, depth)?
+        return fn_journal_event(values)
+    }
+    ro at_def = find_def(env.table, name)
+    if at_def >= 0 { return call_def(env.table.fns[at_def], args, env, host, depth) }
+    ro want = plain_arity(name)
+    if want < 0 { return refuse(UnknownFunction, "no function ${name}") }
+    if args.len() != want { return bad_count(name, want, args.len()) }
+    ro values = eval_args(args, env, host, depth)?
+    if name == "text" {
+        // the text of an enum value is its word when the type has words (format 2.7, P-7)
+        match values[0] {
+            Variant { type_name, name: case_name, fields } => {
+                if fields.len() == 0 {
+                    match enum_word(env.table.types, type_name, case_name) {
+                        Some(w) => return Ok(Text(w))
+                        None => ()
+                    }
+                }
+            }
+            _ => ()
+        }
+    }
+    eval_plain(name, values)
+}
+
+// ---- the walk -------------------------------------------------------------------------------------------------------
+
+fn ev(e Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+    if depth > MAX_EXPR_DEPTH { return refuse(TooDeep, "the tree is deeper than ${MAX_EXPR_DEPTH}") }
+    env.steps = env.steps + 1
+    if env.steps > MAX_STEPS { return refuse(OutOfBudget, "more than ${MAX_STEPS} nodes evaluated") }
+    match e {
+        Lit(v) => Ok(v)
+        Name(n) => match lookup(env, n) {
+            Some(v) => Ok(v)
+            None => refuse(UnknownName, "no name ${n}")
+        }
+        FieldOf { target, name } => {
+            ro t = part(target, "of", env, host, depth)?
+            field_access(t, name)
+        }
+        IndexOf { target, index } => {
+            ro t = part(target, "of", env, host, depth)?
+            ro i = part(index, "index", env, host, depth)?
+            index_access(t, i)
+        }
+        CallFn { name, args } => eval_call(name, args, env, host, depth)
+        Lambda { params, body } => refuse(LambdaMisplaced, "a lambda may stand only as an argument of a macro")
+        CallPrimitive { name, args } => {
+            ro values = eval_args(args, env, host, depth)?
+            call_host(name, values, env, host)
+        }
+        MatchOn { subject, arms } => eval_match(subject, arms, env, host, depth)
+        LetIn { name, value, body } => {
+            ro v = part(value, "value", env, host, depth)?
+            bind(env, name, v)
+            ro r = part(body, "body", env, host, depth)
+            unbind(env, 1)
+            r
+        }
+        IfElse { cond, then_branch, else_branch } => {
+            ro c = part(cond, "cond", env, host, depth)?
+            if want_bool(c, "cond")? { part(then_branch, "then", env, host, depth) } else { part(else_branch, "else", env, host, depth) }
+        }
+        RecordLit { type_name, fields } => {
+            ro made = eval_fields(fields, "fields", env, host, depth)?
+            Ok(make_record(type_name, made))
+        }
+        WithFields { base, fields } => eval_with_field(base, fields, env, host, depth)
+        VariantLit { type_name, name, fields } => {
+            ro made = eval_fields(fields, "fields", env, host, depth)?
+            Ok(make_variant(type_name, name, made))
+        }
+        ListLit(items) => {
+            mut out = []Value.new()
+            mut i = 0
+            for item in items {
+                out.push(part(item, "items[${i}]", env, host, depth)?)
+                i += 1
+            }
+            Ok(List(out))
+        }
+        TupleLit(items) => {
+            mut out = []Value.new()
+            mut i = 0
+            for item in items {
+                out.push(part(item, "items[${i}]", env, host, depth)?)
+                i += 1
+            }
+            Ok(make_tuple(out))
+        }
+        DictLit(entries) => eval_dict_lit(entries, env, host, depth)
+        Binary { op, left, right } => binary(op, left, right, env, host, depth)
+        Not(x) => {
+            ro v = part(x, "operand", env, host, depth)?
+            Ok(Bool(!want_bool(v, "operand")?))
+        }
+        Negate(x) => {
+            ro v = part(x, "operand", env, host, depth)?
+            match v {
+                Int(n) => int_result(n.checked_neg(), "int overflow in -")
+                Float(f) => Ok(Float(0.0 - f))
+                _ => wrong("number", v)
+            }
+        }
+    }
+}
+
+/// Evaluate an expression with the definitions of a machine; primitives go to the host. The scope is read, not changed.
+export fn eval_defs(expr Expr, scope Scope, table DefTable, mut host PrimitiveHost) -> Result[Value, EvalError] {
+    // ORACLE-WORKAROUND(45): a copy of a `ro` list (`scope.bindings`) built by hand in a loop; write `mut names = scope.bindings` when item 45 is fixed
+    mut names = []Binding.new()
+    for b in scope.bindings { names.push(b) }
+    mut env = Env { names, steps: 0, table }
+    match ev(expr, env, host, 1) {
+        Ok(v) => Ok(v)
+        Err(x) => Err(rooted(x))
+    }
+}
+
+/// Evaluate an expression; primitives go to the host. The scope is read, not changed.
+export fn eval_with(expr Expr, scope Scope, mut host PrimitiveHost) -> Result[Value, EvalError] {
+    eval_defs(expr, scope, no_defs(), host)
+}
+
+/// Evaluate an expression; a primitive call is an error.
+export fn eval(expr Expr, scope Scope) -> Result[Value, EvalError] {
+    mut host = NoHost { unused: 0 }
+    eval_with(expr, scope, host)
+}

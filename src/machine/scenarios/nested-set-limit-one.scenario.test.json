@@ -1,0 +1,74 @@
+{
+  "format": "scenario/0",
+  "machine": "fan",
+  "name": "a set: the limit is 1 (the table of the project), the elements go one by one in the order of the list",
+  "start_at": 1000,
+  "params": {
+    "проект.предел": 1
+  },
+  "steps": [
+    {
+      "do": "feed",
+      "event": {
+        "kind": "start",
+        "request": "up-1",
+        "input": {
+          "order": [
+            "a",
+            "b"
+          ]
+        }
+      },
+      "expect": {
+        "state": "Lenses",
+        "open": [
+          "a-1"
+        ],
+        "data": {
+          "to_send": [
+            "b"
+          ]
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "answer",
+        "request": "agent-1",
+        "input": "ra"
+      },
+      "on": "a-1"
+    },
+    {
+      "do": "pump",
+      "expect": {
+        "open": [
+          "b-1"
+        ],
+        "data": {
+          "to_send": [],
+          "answered": [
+            "a"
+          ]
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "answer",
+        "request": "agent-1",
+        "input": "rb"
+      },
+      "on": "b-1"
+    },
+    {
+      "do": "pump",
+      "expect": {
+        "state": "Done",
+        "outcome": "answer:[\"a\",\"b\"]"
+      }
+    }
+  ]
+}

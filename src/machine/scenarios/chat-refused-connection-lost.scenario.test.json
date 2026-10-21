@@ -1,0 +1,10 @@
+{
+  "format": "scenario/0",
+  "machine": "ChatSession",
+  "name": "a refusal with the code ConnectionLost ends the session with it",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
+    {"do": "feed", "event": {"kind": "failure", "name": "agent_refused", "request": "agent-1", "code": "ConnectionLost"}, "expect": {"state": "Failed", "journal": [{"code": "agent_refused", "params": {"code": "connection_lost"}}], "outcome": "refusal:ConnectionLost", "open": []}}
+  ]
+}

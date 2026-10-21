@@ -1,0 +1,167 @@
+{
+  "format": "scenario/0",
+  "machine": "session_start",
+  "name": "PAUSE 2: the human says halt in the pause -> HALTED with the reason pause_halt; the halt is passed to the agent step, which ends with StoppedByHuman, the launch refuses the same",
+  "start_at": 1000,
+  "steps": [
+    {
+      "do": "feed",
+      "host": {
+        "reply_validation": {
+          "$variant": "ReplyCheck",
+          "name": "Valid",
+          "fields": {}
+        },
+        "close_agent_turn": null,
+        "launch_scope": {
+          "$variant": "LaunchScope",
+          "name": "Fits",
+          "fields": {}
+        },
+        "launch_profile": {
+          "$record": "AgentProfile",
+          "fields": {
+            "family": "claude",
+            "model": "m1",
+            "effort": null
+          }
+        },
+        "session_context": "the prompt of s3",
+        "parse_session_artifact": {
+          "$record": "SessionParsing",
+          "fields": {
+            "result": {
+              "$variant": "SessionResult",
+              "name": "Done",
+              "fields": {}
+            },
+            "summary": null,
+            "findings": null
+          }
+        },
+        "stop_agent_group": null
+      },
+      "event": {
+        "kind": "start",
+        "request": "up-1",
+        "input": {
+          "session": "s3",
+          "task_dir": "/t",
+          "repo_dir": "/r",
+          "delivery_mode": "files",
+          "route": "full",
+          "delivery_short": false
+        }
+      },
+      "expect": {
+        "state": "Gate2",
+        "journal": [],
+        "open": [],
+        "sent": [],
+        "queue": [],
+        "outcome": "none",
+        "data": {
+          "call_request_id": "up-1",
+          "step_attempt": 0,
+          "open_requests": [],
+          "session": "s3",
+          "stop_reason": ""
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "word",
+        "name": "confirm"
+      },
+      "expect": {
+        "state": "Session",
+        "open": [
+          "agent_step-1"
+        ],
+        "sent": [
+          "agent_step-1"
+        ],
+        "outcome": "none",
+        "data": {
+          "step_attempt": 1,
+          "open_requests": [
+            "agent_step-1"
+          ]
+        }
+      },
+      "also": {
+        "agent_step-1": {
+          "state": "AgentTurn",
+          "open": [
+            "agent-1"
+          ],
+          "sent": [
+            "agent-1"
+          ],
+          "outcome": "none",
+          "data": {
+            "call_request_id": "agent_step-1",
+            "open_requests": [
+              "agent-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "signal",
+        "name": "human_stop",
+        "input": {
+          "human_word": "stop",
+          "author": "ann",
+          "source": "console"
+        }
+      },
+      "expect": {
+        "state": "Pause"
+      },
+      "also": {
+        "agent_step-1": {
+          "state": "Pause"
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "word",
+        "name": "halt"
+      },
+      "expect": {
+        "state": "Halted",
+        "outcome": "refusal:StoppedByHuman",
+        "open": [],
+        "queue": [
+          "in failure"
+        ],
+        "data": {
+          "stop_reason": "pause_halt",
+          "previous": "Session"
+        }
+      },
+      "also": {
+        "agent_step-1": {
+          "state": "Halted",
+          "outcome": "refusal:StoppedByHuman"
+        }
+      }
+    },
+    {
+      "do": "pump",
+      "expect": {
+        "state": "Halted",
+        "outcome": "refusal:StoppedByHuman",
+        "queue": []
+      }
+    }
+  ]
+}

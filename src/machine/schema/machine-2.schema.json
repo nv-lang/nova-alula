@@ -1,0 +1,289 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/unitcraft/crew-harness/src/machine/schema/machine-2.schema.json",
+  "title": "machine/2 - a state machine as data (the language Portolan of the methodology, version 2.12 only, in English keys)",
+  "description": "The tree that the interpreter of the product (src/machine_run) runs. The source of the language is state-machines/state-machine-portolan-spec.md of unitcraft/ai-dev-methodology (read only); the keys are English. The decoder in src/machine_table/json.nv is the reference: a key that is not listed here is refused. The checks of the table (reads against the Input, writes against the data, reachability, the classes of the primitives, the exhaustiveness of the Ends) are check.nv and cannot be written in a schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "machine", "initial", "states", "ends"],
+  "properties": {
+    "format": { "const": "machine/2" },
+    "portolan_version": { "enum": ["2.12"], "description": "the version of the language Portolan of the methodology that the tree follows (optional; absent means 2.12; the older versions are not read, there is no transition period)" },
+    "machine": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$", "description": "the Latin name of the machine (the name in the journal, `machine_started`)" },
+    "version": { "type": "string" },
+    "title": { "type": "string" },
+    "types": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "records": { "type": "array", "items": { "$ref": "#/$defs/record_def" } },
+        "variants": { "type": "array", "items": { "$ref": "#/$defs/variant_def" } }
+      },
+      "description": "records, variants and enums (a variant whose cases have no fields); `FailCode`, the closed list of the failure causes, is built in"
+    },
+    "constants": { "type": "array", "items": { "$ref": "#/$defs/constant" } },
+    "params": { "type": "array", "items": { "$ref": "#/$defs/param" } },
+    "input": {
+      "type": "object", "additionalProperties": false, "required": ["fields"],
+      "properties": {
+        "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } },
+        "invariants": { "type": "array", "items": { "$ref": "#/$defs/expr" }, "description": "expressions over the fields of the input; a false one refuses the call" }
+      }
+    },
+    "data": { "type": "array", "items": { "$ref": "#/$defs/datum" } },
+    "parties": { "type": "array", "items": { "$ref": "#/$defs/party" } },
+    "request_limit": { "$ref": "#/$defs/expr" },
+    "signals": { "type": "array", "items": { "$ref": "#/$defs/word" }, "description": "signals outside the contract: words from outside that belong to no party (stop, cancel)" },
+    "definitions": { "type": "array", "items": { "$ref": "#/$defs/definition" } },
+    "includes": { "type": "array", "items": { "$ref": "#/$defs/include" } },
+    "fragments": { "type": "array", "items": { "$ref": "#/$defs/fragment_use" }, "description": "the connections of the fragments (the key of the product, format 1b (m)): the fragment is in the tree substituted, the connection lets the generator write the line of connection with every argument" },
+    "initial": { "type": "string" },
+    "error_end": { "type": "string", "description": "the end ERROR: a state of the kind end; the machine goes there on a machine error" },
+    "common_events": { "type": "array", "items": { "$ref": "#/$defs/row" }, "description": "the common events (the fragment Pause, expanded): rows of signals that are tried before the rows of the state" },
+    "states": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/state" } },
+    "ends": {
+      "type": "object", "additionalProperties": false, "required": ["result", "rows"],
+      "properties": {
+        "result": { "$ref": "#/$defs/type" },
+        "rows": { "type": "array", "items": { "$ref": "#/$defs/end_row" } }
+      }
+    },
+    "primitives": { "type": "array", "items": { "type": "string" }, "description": "the primitives of the host that the machine calls (the section Primitives)" }
+  },
+  "$defs": {
+    "type": {
+      "type": "string",
+      "description": "int, int>=N, float, text, a set of literals \"a\" | \"b\" (two or more; under ? or [] in parentheses: ?(\"a\" | \"b\")), id (a text of the form 8-4-4-4-12 lower case hexadecimal digits, format 2.5), bool, nothing, ?T, []T, {K: V}, full {K: V}, (T1, T2), or the name of a declared record or variant"
+    },
+    "expr": {
+      "type": "object",
+      "description": "a node of the tree of an expression of the core (src/machine/expr.nv): lit, name, field, index, call, lambda, primitive_call, match, let, if, record, with_field, variant, list, tuple, dict, the operators + - * / % == != < <= > >= and or ??, not, neg",
+      "required": ["op"],
+      "properties": { "op": { "type": "string" } }
+    },
+    "field": {
+      "type": "object", "additionalProperties": false, "required": ["name", "type"],
+      "properties": { "name": { "type": "string" }, "type": { "$ref": "#/$defs/type" } }
+    },
+    "record_def": {
+      "type": "object", "additionalProperties": false, "required": ["name", "fields"],
+      "properties": { "name": { "type": "string" }, "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } } }
+    },
+    "variant_def": {
+      "type": "object", "additionalProperties": false, "required": ["name", "cases"],
+      "properties": {
+        "name": { "type": "string" },
+        "words": {
+          "type": "array",
+          "items": { "type": "array", "minItems": 2, "maxItems": 2, "items": [ { "type": "string" }, { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" } ] },
+          "description": "the words of the values of an enum (format 2.7, P-7): the pairs [name of the case, word] in the order of the declaration; a case without fields only, a case and a word once; absent when the enum has no words"
+        },
+        "cases": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["name"],
+            "properties": { "name": { "type": "string" }, "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } } }
+          }
+        }
+      }
+    },
+    "constant": {
+      "type": "object", "additionalProperties": false, "required": ["name", "type", "value"],
+      "properties": { "name": { "type": "string" }, "type": { "$ref": "#/$defs/type" }, "value": { "$ref": "#/$defs/expr" } }
+    },
+    "param": {
+      "type": "object", "additionalProperties": false, "required": ["name", "type", "default"],
+      "properties": {
+        "name": { "type": "string" }, "type": { "$ref": "#/$defs/type" }, "default": { "$ref": "#/$defs/expr" },
+        "project_key": { "type": "string", "description": "the key of the project that overrides the default; absent when the source names none" }
+      }
+    },
+    "datum": {
+      "type": "object", "additionalProperties": false, "required": ["name", "type"],
+      "properties": {
+        "name": { "type": "string", "description": "a datum, or a path into a dict: name[*].field" },
+        "type": { "$ref": "#/$defs/type" },
+        "initial": {
+          "type": "object", "additionalProperties": false,
+          "properties": { "expr": { "$ref": "#/$defs/expr" }, "from_input": { "type": "string" } },
+          "description": "an expression, or a field of the input; absent for a path"
+        },
+        "monotonic": {
+          "oneOf": [
+            { "type": "boolean" },
+            { "type": "object", "additionalProperties": false, "required": ["bound"], "properties": { "bound": { "$ref": "#/$defs/expr" } } }
+          ],
+          "description": "does not decrease (true), with the bound `<= expr` (an object)"
+        },
+        "writes": { "enum": ["rows", "mechanics", "rows_and_mechanics", "fragment", "rows_and_fragment"], "default": "rows" }
+      }
+    },
+    "word": {
+      "type": "object", "additionalProperties": false, "required": ["name"],
+      "properties": { "name": { "type": "string" }, "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } } }
+    },
+    "party": {
+      "type": "object", "additionalProperties": false, "required": ["name", "kind"],
+      "properties": {
+        "name": { "type": "string" },
+        "id": { "type": "string", "description": "the Latin id of the party (in the id of a request); empty for a party used with a set" },
+        "kind": { "enum": ["agent", "human", "enhanced", "gatekeeper", "machine"] },
+        "profile": { "$ref": "#/$defs/expr" },
+        "words": { "type": "array", "items": { "$ref": "#/$defs/word" }, "description": "the words of a gate (human, enhanced, gatekeeper)" },
+        "progress": { "type": "array", "items": { "$ref": "#/$defs/word" }, "description": "the parts of an answer of an agent or of a machine (the request stays open)" },
+        "setting": { "type": "string", "description": "the setting of the project that makes a gatekeeper a human or an agent" },
+        "nested": { "type": "string", "description": "the name of the nested machine in the registry of the caller (kind machine)" },
+        "input_type": { "$ref": "#/$defs/type", "description": "the record type of the input of the call of a nested machine (kind machine): the fields of its request" },
+        "result": { "$ref": "#/$defs/type", "description": "the type of the result of an agent or of a machine (the answer)" },
+        "parse": {
+          "type": "object", "additionalProperties": false, "required": ["primitive", "type"],
+          "properties": {
+            "primitive": { "type": "string", "description": "the reading primitive that turns the answer of the nested machine into the value of the answer" },
+            "role": { "type": "string", "description": "the literal of the role, the second argument of the primitive" },
+            "type": { "$ref": "#/$defs/type", "description": "the type of the result of the parse" }
+          },
+          "description": "`разбор` of a party of the kind machine (format 1)"
+        },
+        "counter": { "type": "string", "description": "the datum with the attempt counter of the party (rule 15)" }
+      }
+    },
+    "definition": {
+      "type": "object", "additionalProperties": false, "required": ["name", "params", "result", "body"],
+      "properties": {
+        "name": { "type": "string" },
+        "params": { "type": "array", "items": { "$ref": "#/$defs/field" } },
+        "result": { "$ref": "#/$defs/type" },
+        "body": { "$ref": "#/$defs/expr" }
+      }
+    },
+    "fragment_use": {
+      "type": "object", "additionalProperties": false, "required": ["name", "args"],
+      "properties": {
+        "name": { "enum": ["Pause"] },
+        "args": {
+          "type": "object", "additionalProperties": false, "required": ["halt_word", "halt_code", "nested", "cancel_requests", "reenter", "write_right"],
+          "properties": {
+            "halt_word": { "$ref": "#/$defs/expr", "description": "the gate word of the enhanced party that halts (a literal: the name of the word in the tree)" },
+            "halt_code": { "$ref": "#/$defs/expr", "description": "the value of the datum of the stop that the halt writes (a text literal)" },
+            "nested": { "$ref": "#/$defs/expr", "description": "the nested machines that the signals go to: a list of text literals with the names of the registry" },
+            "cancel_requests": { "$ref": "#/$defs/expr", "description": "a literal: mechanics, without_return_to_send, stop_transport_turn" },
+            "reenter": { "$ref": "#/$defs/expr", "description": "a literal: nothing, requests_from_to_send" },
+            "write_right": { "$ref": "#/$defs/expr", "description": "a note in a text literal" }
+          }
+        }
+      }
+    },
+    "include": {
+      "type": "object", "additionalProperties": false, "required": ["name", "version", "hash"],
+      "properties": { "name": { "type": "string" }, "version": { "type": "string" }, "hash": { "type": "string", "pattern": "^[0-9a-f]{12}$" } }
+    },
+    "binds": { "type": "object", "additionalProperties": { "type": "string" }, "description": "the fields of the event bound to names: {\"field\": \"name\"}" },
+    "event": {
+      "type": "object", "required": ["kind"],
+      "oneOf": [
+        { "properties": { "kind": { "const": "answer" }, "bind": { "type": "string" } }, "additionalProperties": false },
+        { "properties": { "kind": { "const": "answer_variant" }, "variant": { "type": "string" }, "bind": { "$ref": "#/$defs/binds" } }, "required": ["variant"], "additionalProperties": false },
+        { "properties": { "kind": { "const": "failure" }, "reasons": { "type": "array", "items": { "type": "string" } }, "bind": { "type": "string" } }, "additionalProperties": false },
+        { "properties": { "kind": { "const": "timeout" } }, "additionalProperties": false },
+        { "properties": { "kind": { "const": "progress" }, "name": { "type": "string" }, "bind": { "$ref": "#/$defs/binds" } }, "required": ["name"], "additionalProperties": false },
+        { "properties": { "kind": { "const": "word" }, "word": { "type": "string" }, "bind": { "$ref": "#/$defs/binds" } }, "required": ["word"], "additionalProperties": false },
+        { "properties": { "kind": { "const": "signal" }, "name": { "type": "string" }, "bind": { "$ref": "#/$defs/binds" } }, "required": ["name"], "additionalProperties": false },
+        { "properties": { "kind": { "const": "now" } }, "additionalProperties": false }
+      ]
+    },
+    "lvalue": {
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object", "additionalProperties": false, "required": ["name"],
+          "properties": {
+            "name": { "type": "string" },
+            "path": {
+              "type": "array",
+              "items": { "type": "object", "additionalProperties": false, "properties": { "key": { "$ref": "#/$defs/expr" }, "field": { "type": "string" } } }
+            }
+          }
+        }
+      ]
+    },
+    "params_list": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": false, "required": ["name", "value"], "properties": { "name": { "type": "string" }, "value": { "$ref": "#/$defs/expr" } } }
+    },
+    "actions": { "type": "array", "items": { "$ref": "#/$defs/action" } },
+    "action": {
+      "type": "object", "required": ["do"],
+      "oneOf": [
+        { "properties": { "do": { "const": "assign" }, "target": { "$ref": "#/$defs/lvalue" }, "value": { "$ref": "#/$defs/expr" } }, "required": ["target", "value"], "additionalProperties": false },
+        { "properties": { "do": { "const": "add" }, "target": { "$ref": "#/$defs/lvalue" }, "value": { "$ref": "#/$defs/expr" } }, "required": ["target", "value"], "additionalProperties": false },
+        { "properties": { "do": { "const": "journal" }, "code": { "type": "string" }, "params": { "$ref": "#/$defs/params_list" } }, "required": ["code"], "additionalProperties": false },
+        { "properties": { "do": { "const": "journal_value" }, "value": { "$ref": "#/$defs/expr" } }, "required": ["value"], "additionalProperties": false },
+        { "properties": { "do": { "const": "journal_all" } }, "additionalProperties": false },
+        { "properties": { "do": { "const": "for_each" }, "var": { "type": "string" }, "in": { "$ref": "#/$defs/expr" }, "body": { "$ref": "#/$defs/actions" } }, "required": ["var", "in", "body"], "additionalProperties": false },
+        { "properties": { "do": { "const": "let" }, "name": { "type": "string" }, "value": { "$ref": "#/$defs/expr" }, "body": { "$ref": "#/$defs/actions" } }, "required": ["name", "value", "body"], "additionalProperties": false },
+        { "properties": { "do": { "const": "bind" }, "name": { "type": "string" }, "value": { "$ref": "#/$defs/expr" } }, "required": ["name", "value"], "additionalProperties": false },
+        { "properties": { "do": { "const": "if" }, "cond": { "$ref": "#/$defs/expr" }, "then": { "$ref": "#/$defs/actions" }, "else": { "$ref": "#/$defs/actions" } }, "required": ["cond", "then"], "additionalProperties": false },
+        { "properties": { "do": { "const": "call" }, "primitive": { "type": "string" }, "args": { "type": "array", "items": { "$ref": "#/$defs/expr" } } }, "required": ["primitive"], "additionalProperties": false },
+        { "properties": { "do": { "const": "machine_error" }, "code": { "type": "string" }, "params": { "$ref": "#/$defs/params_list" } }, "required": ["code"], "additionalProperties": false },
+        { "properties": { "do": { "const": "cancel_open" }, "party": { "type": "string" }, "except": { "type": "array", "items": { "$ref": "#/$defs/expr" } } }, "additionalProperties": false },
+        { "properties": { "do": { "const": "pass" }, "nested": { "$ref": "#/$defs/expr" }, "signal": { "type": "string" } }, "required": ["nested", "signal"], "additionalProperties": false }
+      ]
+    },
+    "row": {
+      "type": "object", "additionalProperties": false, "required": ["n", "event"],
+      "properties": {
+        "n": { "type": "integer", "minimum": 1, "description": "the number of the row (the mark `NAME #n` of the source)" },
+        "event": { "$ref": "#/$defs/event" },
+        "cond": { "$ref": "#/$defs/expr", "description": "a condition (rows of signals and of forks)" },
+        "else": { "type": "boolean", "description": "the condition `else`: the last row of the event or of the fork" },
+        "actions": { "$ref": "#/$defs/actions" },
+        "to": { "type": "string", "description": "a state, or @previous, @same, @prepare_return; absent only when the actions end in machine_error" },
+        "restart": { "type": "boolean", "description": "the suffix `restart` (rule 18)" }
+      }
+    },
+    "input_field": {
+      "type": "object", "additionalProperties": false, "required": ["field", "value"],
+      "properties": {
+        "field": { "type": "string" }, "value": { "$ref": "#/$defs/expr" },
+        "reads": { "enum": ["party", "executor"], "default": "party", "description": "party: a field of the request; executor: a name that the rows read, not sent" }
+      }
+    },
+    "state": {
+      "type": "object", "additionalProperties": false, "required": ["name", "kind"],
+      "properties": {
+        "name": { "type": "string" },
+        "kind": { "enum": ["appeal", "operation", "fork", "end"] },
+        "reads": { "type": "array", "items": { "type": "string" }, "description": "the line `Input:` of an operation, a fork or an end" },
+        "reads_all": { "type": "boolean", "description": "the Input is all the data (the error end)" },
+        "party": { "type": "string" },
+        "set": { "$ref": "#/$defs/expr", "description": "a list of the ids of the parties of a set (a request to each); the datum to_send is emptied once they are sent" },
+        "silence": { "$ref": "#/$defs/expr", "description": "the term of silence in milliseconds; none or 0 - no term" },
+        "edits": { "type": "string" },
+        "edit_check": { "type": "string" },
+        "form_returns": { "type": "integer", "minimum": 0 },
+        "inputs": { "type": "array", "items": { "$ref": "#/$defs/input_field" } },
+        "accept": {
+          "type": "array",
+          "items": { "type": "object", "additionalProperties": false, "required": ["event"], "properties": { "event": { "$ref": "#/$defs/event" }, "actions": { "$ref": "#/$defs/actions" } } }
+        },
+        "entry": { "$ref": "#/$defs/actions", "description": "`On entry`: bindings and calls (operation, fork), actions with the journal (end)" },
+        "rows": { "type": "array", "items": { "$ref": "#/$defs/row" } },
+        "except": {
+          "type": "object", "additionalProperties": false, "required": ["field", "values"],
+          "properties": { "field": { "type": "string" }, "values": { "type": "array", "items": { "type": "string" } } }
+        }
+      }
+    },
+    "end_row": {
+      "type": "object", "additionalProperties": false, "required": ["state", "n", "when", "answer"],
+      "properties": {
+        "state": { "type": "string" }, "n": { "type": "integer", "minimum": 1 }, "when": { "$ref": "#/$defs/expr" },
+        "answer": {
+          "oneOf": [
+            { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "answer" }, "value": { "$ref": "#/$defs/expr" } } },
+            { "type": "object", "additionalProperties": false, "required": ["kind", "code", "text"], "properties": { "kind": { "const": "refusal" }, "code": { "$ref": "#/$defs/expr" }, "text": { "$ref": "#/$defs/expr" } } }
+          ]
+        }
+      }
+    }
+  }
+}

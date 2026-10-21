@@ -1,0 +1,15 @@
+{
+  "format": "scenario/0",
+  "machine": "DialogSession",
+  "name": "restart after the commit but before the send: the request is sent now, exactly once",
+  "start_at": 1000,
+  "params": {"проект.срок_бездействия": 30000},
+  "steps": [
+    {"do": "accept", "event": {"kind": "word", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting", "sent": [], "open": ["agent-1"], "queue": ["send agent-1"]}},
+    {"do": "restart", "expect": {"state": "Awaiting", "sent": []}},
+    {"do": "dispatch", "expect": {"sent": ["agent-1"], "queue": []}},
+    {"do": "dispatch", "expect": {"sent": ["agent-1"]}},
+    {"do": "restart", "expect": {"sent": ["agent-1"]}},
+    {"do": "dispatch", "expect": {"sent": ["agent-1"]}}
+  ]
+}

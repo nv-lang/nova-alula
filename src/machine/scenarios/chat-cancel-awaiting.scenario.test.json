@@ -1,0 +1,10 @@
+{
+  "format": "scenario/0",
+  "machine": "ChatSession",
+  "name": "the cancel of the user while waiting stops the session as human",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
+    {"do": "feed", "event": {"kind": "signal", "name": "cancel"}, "expect": {"state": "Failed", "journal": [{"code": "cancelled_while_waiting", "params": {}}], "outcome": "refusal:StoppedByHuman", "open": [], "cancelled": ["agent-1"]}}
+  ]
+}

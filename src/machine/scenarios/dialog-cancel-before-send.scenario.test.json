@@ -1,0 +1,16 @@
+{
+  "format": "scenario/0",
+  "machine": "DialogSession",
+  "name": "death after the cancel was committed, before it was sent: the cancel goes out once and the session goes on",
+  "start_at": 1000,
+  "params": {"проект.срок_бездействия": 30000},
+  "steps": [
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "slow"}, "expect": {"state": "Awaiting"}},
+    {"do": "accept", "event": {"kind": "signal", "name": "cancel"}, "expect": {"state": "Idle", "cancelled": [], "queue": ["cancel agent-1"]}},
+    {"do": "restart", "expect": {"state": "Idle"}},
+    {"do": "dispatch", "expect": {"cancelled": ["agent-1"], "queue": []}},
+    {"do": "restart", "expect": {"state": "Idle"}},
+    {"do": "dispatch", "expect": {"cancelled": ["agent-1"]}},
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "again"}, "expect": {"state": "Awaiting", "sent": ["agent-1", "agent-2"]}}
+  ]
+}

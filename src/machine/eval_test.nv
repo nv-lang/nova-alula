@@ -1,0 +1,687 @@
+// eval_test.nv - the evaluator: every construction, the edges, the paths of errors, laziness, determinism.
+module alula.machine
+
+fn ei(n int) -> Expr => lit_int(n)
+fn er(name str) -> Expr => name_ref(name)
+fn ec(name str, args []Expr) -> Expr => call(name, args)
+fn en(op BinOp, left Expr, right Expr) -> Expr => bin(op, left, right)
+fn edivzero() -> Expr => bin(Div, lit_int(1), lit_int(0))
+fn ef(name str, value Value) -> RecordField => { name, value }
+fn eint_list(items []int) -> Expr {
+    mut out = []Expr.new()
+    for n in items { out.push(lit_int(n)) }
+    ListLit(out)
+}
+fn eints(items []int) -> Value {
+    mut out = []Value.new()
+    for n in items { out.push(Int(n)) }
+    List(out)
+}
+
+// ORACLE-WORKAROUND(50): named `ev_plain` because `ev` clashed with the private `ev` of eval.nv in the unit of an importer; name it `ev` when item 50 is fixed
+fn ev_plain(e Expr) -> Result[Value, EvalError] => eval(e, empty_scope())
+
+fn eis(e Expr, expected Value) -> bool {
+    match ev_plain(e) {
+        Ok(v) => value_equal(v, expected)
+        Err(x) => false
+    }
+}
+
+fn eerr(e Expr) -> str {
+    match ev_plain(e) {
+        Ok(v) => "ok"
+        Err(x) => "${kind_word(x.kind)}@${x.path}"
+    }
+}
+
+fn escope() -> Scope {
+    ro s1 = scope_with(empty_scope(), "x", Int(5))
+    ro s2 = scope_with(s1, "name", Text("Мир"))
+    ro s3 = scope_with(s2, "xs", eints([3, 1, 4, 1, 5]))
+    ro finding = make_record("Finding", [ef("severity", enum_value("Severity", "Critical")), ef("evidence", Text("e1")), ef("repeat", Bool(false))])
+    ro s4 = scope_with(s3, "f", finding)
+    ro s5 = scope_with(s4, "d", make_dict([DictEntry { key: Text("a"), value: Int(1) }, DictEntry { key: Text("b"), value: Int(2) }]))
+    scope_with(s5, "t", make_tuple([Text("first"), Int(2)]))
+}
+
+fn eis_in(e Expr, expected Value) -> bool {
+    match eval(e, escope()) {
+        Ok(v) => value_equal(v, expected)
+        Err(x) => false
+    }
+}
+
+fn eerr_in(e Expr) -> str {
+    match eval(e, escope()) {
+        Ok(v) => "ok"
+        Err(x) => "${kind_word(x.kind)}@${x.path}"
+    }
+}
+
+type EHost { calls []str }
+
+fn EHost mut @call_primitive(name str, args []Value) -> Result[Value, EvalError] {
+    @calls.push(name)
+    if name == "fail" { return Err(EvalError { kind: PrimitiveFailed, message: "host says no", path: "" }) }
+    Ok(Int(args.len()))
+}
+
+fn esev(name str) -> Expr => VariantLit { type_name: "Severity", name, fields: []FieldExpr.new() }
+
+test "ev lit name" {
+    assert(eis(ei(7), Int(7)))
+    assert(eis(lit_text("я"), Text("я")))
+    assert(eis(lit_null(), Null))
+    assert(eis_in(er("x"), Int(5)))
+    assert(eis_in(er("name"), Text("Мир")))
+    assert(eerr(er("zzz")) == "unknown_name@$")
+}
+
+test "ev hides" {
+    ro s = scope_with(scope_with(empty_scope(), "x", Int(1)), "x", Int(2))
+    match eval(er("x"), s) {
+        Ok(v) => assert(value_equal(v, Int(2)))
+        Err(x) => assert(false)
+    }
+}
+
+test "ev int ops" {
+    assert(eis(en(Add, ei(2), en(Mul, ei(3), ei(4))), Int(14)))
+    assert(eis(en(Sub, ei(2), ei(5)), Int(-3)))
+    assert(eis(en(Div, ei(7), ei(2)), Int(3)))
+    assert(eis(en(Div, ei(-7), ei(2)), Int(-3)))
+    assert(eis(en(Mod, ei(7), ei(3)), Int(1)))
+    assert(eis(en(Mod, ei(-7), ei(3)), Int(-1)))
+    assert(eis(Negate(ei(5)), Int(-5)))
+    assert(eis(Negate(en(Sub, ei(1), ei(3))), Int(2)))
+}
+
+test "ev float ops" {
+    assert(eis(en(Add, lit_float(1.5), lit_float(2.25)), Float(3.75)))
+    assert(eis(en(Mul, lit_float(1.5), lit_float(4.0)), Float(6.0)))
+    assert(eis(en(Div, lit_float(1.0), lit_float(4.0)), Float(0.25)))
+    assert(eis(en(Sub, lit_float(1.0), lit_float(4.0)), Float(-3.0)))
+    assert(eis(Negate(lit_float(2.5)), Float(-2.5)))
+}
+
+test "ev no mixing" {
+    assert(eerr(en(Add, ei(1), lit_float(1.0))) == "type_mismatch@$")
+    assert(eerr(en(Mul, lit_float(1.0), ei(2))) == "type_mismatch@$")
+    assert(eerr(en(Lt, ei(1), lit_float(2.0))) == "type_mismatch@$")
+    assert(eerr(en(Mod, lit_float(5.0), lit_float(2.0))) == "type_mismatch@$")
+    assert(eerr(en(Add, lit_text("a"), ei(1))) == "type_mismatch@$")
+}
+
+test "ev int overflow" {
+    assert(eerr(en(Add, ei(9223372036854775807), ei(1))) == "overflow@$")
+    assert(eerr(en(Sub, ei(-9223372036854775807), ei(2))) == "overflow@$")
+    assert(eerr(en(Mul, ei(4611686018427387904), ei(2))) == "overflow@$")
+    assert(eerr(Negate(en(Sub, ei(-9223372036854775807), ei(1)))) == "overflow@$")
+    assert(eerr(en(Div, en(Sub, ei(-9223372036854775807), ei(1)), ei(-1))) == "overflow@$")
+    assert(eis(en(Add, ei(9223372036854775806), ei(1)), Int(9223372036854775807)))
+}
+
+test "ev zero div" {
+    assert(eerr(edivzero()) == "division_by_zero@$")
+    assert(eerr(en(Mod, ei(1), ei(0))) == "division_by_zero@$")
+    assert(eerr(en(Div, lit_float(1.0), lit_float(0.0))) == "division_by_zero@$")
+    assert(eerr(en(Add, ei(1), edivzero())) == "division_by_zero@$.right")
+}
+
+test "ev float overflow" {
+    assert(eerr(en(Mul, lit_float(1.0e308), lit_float(10.0))) == "overflow@$")
+    assert(eerr(en(Add, lit_float(1.7e308), lit_float(1.7e308))) == "overflow@$")
+}
+
+test "ev plus joins" {
+    assert(eis(en(Add, eint_list([1, 2]), eint_list([3])), eints([1, 2, 3])))
+    assert(eis(en(Add, eint_list([]), eint_list([3])), eints([3])))
+    assert(eis(en(Add, eint_list([1]), eint_list([])), eints([1])))
+    assert(eis(en(Add, lit_text("ab"), lit_text("вг")), Text("abвг")))
+    assert(eerr(en(Add, eint_list([1]), ei(2))) == "type_mismatch@$")
+}
+
+test "ev compare" {
+    assert(eis(en(Lt, ei(1), ei(2)), Bool(true)))
+    assert(eis(en(Le, ei(2), ei(2)), Bool(true)))
+    assert(eis(en(Gt, ei(1), ei(2)), Bool(false)))
+    assert(eis(en(Ge, lit_float(2.5), lit_float(2.5)), Bool(true)))
+    assert(eerr(en(Lt, lit_text("a"), lit_text("b"))) == "type_mismatch@$")
+    assert(eerr(en(Lt, lit_null(), ei(1))) == "type_mismatch@$")
+}
+
+test "ev eq struct" {
+    assert(eis(en(Eq, ei(1), ei(1)), Bool(true)))
+    assert(eis(en(Eq, ei(1), lit_float(1.0)), Bool(false)))
+    assert(eis(en(Eq, lit_null(), lit_null()), Bool(true)))
+    assert(eis(en(Eq, lit_null(), ei(0)), Bool(false)))
+    assert(eis(en(Ne, lit_text("a"), lit_text("b")), Bool(true)))
+    assert(eis(en(Eq, eint_list([1, 2]), eint_list([1, 2])), Bool(true)))
+    assert(eis(en(Eq, eint_list([1, 2]), eint_list([2, 1])), Bool(false)))
+    assert(eis_in(en(Eq, er("f"), er("f")), Bool(true)))
+    assert(eis_in(en(Eq, field_of(er("f"), "severity"), esev("Critical")), Bool(true)))
+    assert(eis_in(en(Ne, field_of(er("f"), "severity"), esev("Desirable")), Bool(true)))
+}
+
+test "ev and or not" {
+    assert(eis(en(And, lit_bool(true), lit_bool(false)), Bool(false)))
+    assert(eis(en(Or, lit_bool(false), lit_bool(true)), Bool(true)))
+    assert(eis(Not(lit_bool(false)), Bool(true)))
+    assert(eerr(en(And, ei(1), lit_bool(true))) == "type_mismatch@$.left")
+    assert(eerr(en(Or, lit_bool(false), ei(1))) == "type_mismatch@$.right")
+    assert(eerr(Not(ei(1))) == "type_mismatch@$.operand")
+}
+
+test "lz and or" {
+    assert(eis(en(And, lit_bool(false), edivzero()), Bool(false)))
+    assert(eis(en(Or, lit_bool(true), edivzero()), Bool(true)))
+    assert(eerr(en(And, lit_bool(true), edivzero())) == "division_by_zero@$.right")
+    assert(eerr(en(Or, lit_bool(false), edivzero())) == "division_by_zero@$.right")
+    assert(eis(en(And, lit_bool(false), er("not_a_name")), Bool(false)))
+}
+
+test "lz if" {
+    assert(eis(if_else(lit_bool(true), ei(1), edivzero()), Int(1)))
+    assert(eis(if_else(lit_bool(false), edivzero(), ei(2)), Int(2)))
+    assert(eerr(if_else(lit_bool(true), edivzero(), ei(2))) == "division_by_zero@$.then")
+    assert(eerr(if_else(lit_bool(false), ei(1), edivzero())) == "division_by_zero@$.else")
+    assert(eerr(if_else(ei(1), ei(1), ei(2))) == "type_mismatch@$.cond")
+}
+
+test "lz coalesce" {
+    assert(eis(en(Coalesce, ei(1), edivzero()), Int(1)))
+    assert(eis(en(Coalesce, lit_null(), ei(5)), Int(5)))
+    assert(eis(en(Coalesce, lit_null(), lit_null()), Null))
+    assert(eis(en(Coalesce, lit_bool(false), ei(5)), Bool(false)))
+    assert(eis(en(Coalesce, ei(0), ei(5)), Int(0)))
+    assert(eerr(en(Coalesce, lit_null(), edivzero())) == "division_by_zero@$.right")
+    assert(eerr(en(Coalesce, edivzero(), ei(1))) == "division_by_zero@$.left")
+}
+
+test "ev field" {
+    assert(eis_in(field_of(er("f"), "evidence"), Text("e1")))
+    assert(eis_in(field_of(er("t"), "0"), Text("first")))
+    assert(eis_in(field_of(er("t"), "1"), Int(2)))
+    assert(eerr_in(field_of(er("f"), "nope")) == "unknown_field@$")
+    assert(eerr_in(field_of(er("x"), "a")) == "type_mismatch@$")
+    assert(eerr_in(field_of(er("nope"), "a")) == "unknown_name@$.of")
+}
+
+test "ev index list" {
+    assert(eis_in(index_of(er("xs"), ei(0)), Int(3)))
+    assert(eis_in(index_of(er("xs"), ei(4)), Int(5)))
+    assert(eis_in(index_of(er("xs"), ei(5)), Null))
+    assert(eis_in(index_of(er("xs"), ei(-1)), Null))
+    assert(eerr_in(index_of(er("xs"), lit_text("a"))) == "type_mismatch@$.index")
+}
+
+test "ev index dict" {
+    assert(eis_in(index_of(er("d"), lit_text("a")), Int(1)))
+    assert(eis_in(index_of(er("d"), lit_text("zz")), Null))
+    assert(eis_in(index_of(er("d"), ei(1)), Null))
+    assert(eis_in(en(Coalesce, index_of(er("d"), lit_text("zz")), ei(0)), Int(0)))
+    assert(eerr_in(index_of(er("x"), ei(1))) == "type_mismatch@$")
+}
+
+test "ev tuple key" {
+    ro key = TupleLit([lit_text("lens"), ei(2)])
+    ro d = DictLit([EntryExpr { key, value: eint_list([7]) }])
+    assert(eis(index_of(d, TupleLit([lit_text("lens"), ei(2)])), eints([7])))
+    assert(eis(index_of(d, TupleLit([lit_text("lens"), ei(3)])), Null))
+    assert(eis(field_of(key, "1"), Int(2)))
+}
+
+test "ev let" {
+    assert(eis(let_in("a", ei(3), en(Mul, er("a"), er("a"))), Int(9)))
+    assert(eis(let_in("a", ei(3), let_in("a", ei(4), er("a"))), Int(4)))
+    assert(eis(let_in("a", ei(3), en(Add, er("a"), let_in("a", ei(10), er("a")))), Int(13)))
+    assert(eerr(en(Add, let_in("a", ei(1), er("a")), er("a"))) == "unknown_name@$.right")
+    assert(eerr(let_in("a", edivzero(), ei(1))) == "division_by_zero@$.value")
+    assert(eerr(let_in("a", ei(1), edivzero())) == "division_by_zero@$.body")
+}
+
+test "ev record lit" {
+    ro lit = RecordLit { type_name: "Finding", fields: [field_expr("repeat", lit_bool(true)), field_expr("evidence", lit_text("e"))] }
+    assert(eis(lit, make_record("Finding", [ef("evidence", Text("e")), ef("repeat", Bool(true))])))
+    ro changed = WithFields { base: er("f"), fields: [field_expr("repeat", lit_bool(true))] }
+    assert(eis_in(field_of(changed, "repeat"), Bool(true)))
+    assert(eis_in(field_of(changed, "evidence"), Text("e1")))
+    assert(eis_in(field_of(er("f"), "repeat"), Bool(false)))
+}
+
+test "ev record err" {
+    ro bad = RecordLit { type_name: "T", fields: [field_expr("a", ei(1)), field_expr("b", edivzero())] }
+    assert(eerr(bad) == "division_by_zero@$.fields.b")
+    assert(eerr_in(WithFields { base: er("f"), fields: [field_expr("zzz", ei(1))] }) == "unknown_field@$.fields.zzz")
+    assert(eerr_in(WithFields { base: er("x"), fields: [field_expr("a", ei(1))] }) == "type_mismatch@$.of")
+}
+
+test "ev variants" {
+    assert(eis(esev("Critical"), enum_value("Severity", "Critical")))
+    ro done = VariantLit { type_name: "Outcome", name: "Done", fields: [field_expr("count", ei(2))] }
+    assert(eis(done, make_variant("Outcome", "Done", [ef("count", Int(2))])))
+}
+
+test "ev literals" {
+    assert(eis(ListLit([]Expr.new()), List([]Value.new())))
+    assert(eis(eint_list([1, 2]), eints([1, 2])))
+    assert(eis(TupleLit([ei(1), lit_text("a")]), make_tuple([Int(1), Text("a")])))
+    ro d = DictLit([EntryExpr { key: lit_text("a"), value: ei(1) }, EntryExpr { key: lit_text("b"), value: ei(2) }])
+    assert(eis(d, make_dict([DictEntry { key: Text("a"), value: Int(1) }, DictEntry { key: Text("b"), value: Int(2) }])))
+    assert(eis(DictLit([]EntryExpr.new()), make_dict([]DictEntry.new())))
+    assert(eerr(ListLit([ei(1), edivzero()])) == "division_by_zero@$.items[1]")
+    assert(eerr(DictLit([EntryExpr { key: ei(1), value: edivzero() }])) == "division_by_zero@$.entries[0].value")
+}
+
+test "ev dup key" {
+    ro d = DictLit([EntryExpr { key: lit_text("a"), value: ei(1) }, EntryExpr { key: lit_text("a"), value: ei(2) }])
+    assert(eerr(d) == "duplicate_key@$.entries[1]")
+}
+
+test "mt first arm" {
+    ro arms = [
+        arm([CasePattern { type_name: "", name: "Critical", binds: []Bind.new() }], None, lit_text("c")),
+        arm([CasePattern { type_name: "", name: "Desirable", binds: []Bind.new() }], None, lit_text("d")),
+        arm([AnyPattern], None, lit_text("other"))
+    ]
+    assert(eis_in(MatchOn { subject: field_of(er("f"), "severity"), arms }, Text("c")))
+    assert(eis(MatchOn { subject: esev("Desirable"), arms }, Text("d")))
+    assert(eis(MatchOn { subject: esev("Significant"), arms }, Text("other")))
+    assert(eis(MatchOn { subject: ei(3), arms }, Text("other")))
+}
+
+test "mt alts" {
+    ro two = [CasePattern { type_name: "Severity", name: "Critical", binds: []Bind.new() }, CasePattern { type_name: "Severity", name: "Significant", binds: []Bind.new() }]
+    ro arms = [arm(two, None, lit_bool(true)), arm([AnyPattern], None, lit_bool(false))]
+    assert(eis(MatchOn { subject: esev("Critical"), arms }, Bool(true)))
+    assert(eis(MatchOn { subject: esev("Significant"), arms }, Bool(true)))
+    assert(eis(MatchOn { subject: esev("Desirable"), arms }, Bool(false)))
+}
+
+test "mt case type" {
+    ro arms = [arm([CasePattern { type_name: "Other", name: "Critical", binds: []Bind.new() }], None, ei(1)), arm([AnyPattern], None, ei(2))]
+    assert(eis(MatchOn { subject: esev("Critical"), arms }, Int(2)))
+}
+
+test "mt binds" {
+    ro done = VariantLit { type_name: "Outcome", name: "Done", fields: [field_expr("text", lit_text("ok")), field_expr("count", ei(4))] }
+    ro binds = [Bind { field: "text", name: "t" }, Bind { field: "count", name: "n" }]
+    ro arms = [arm([CasePattern { type_name: "", name: "Done", binds }], None, en(Add, en(Mul, er("n"), ei(10)), call("length", [er("t")]))), arm([AnyPattern], None, ei(0))]
+    assert(eis(MatchOn { subject: done, arms }, Int(42)))
+}
+
+test "mt scope" {
+    ro done = VariantLit { type_name: "Outcome", name: "Done", fields: [field_expr("count", ei(4))] }
+    ro arms = [arm([CasePattern { type_name: "", name: "Done", binds: [Bind { field: "count", name: "n" }] }], None, er("n"))]
+    ro m = MatchOn { subject: done, arms }
+    assert(eis(m, Int(4)))
+    assert(eerr(en(Add, m, er("n"))) == "unknown_name@$.right")
+}
+
+test "mt no field" {
+    ro done = VariantLit { type_name: "Outcome", name: "Done", fields: [field_expr("count", ei(4))] }
+    ro arms = [arm([CasePattern { type_name: "", name: "Done", binds: [Bind { field: "zzz", name: "n" }] }], None, er("n"))]
+    assert(eerr(MatchOn { subject: done, arms }) == "unknown_field@$.arms[0]")
+}
+
+test "mt guard" {
+    ro done = VariantLit { type_name: "Outcome", name: "Done", fields: [field_expr("count", ei(4))] }
+    ro binds = [Bind { field: "count", name: "n" }]
+    ro big = arm([CasePattern { type_name: "", name: "Done", binds }], Some(en(Gt, er("n"), ei(10))), lit_text("big"))
+    ro small = arm([CasePattern { type_name: "", name: "Done", binds }], Some(en(Le, er("n"), ei(10))), lit_text("small"))
+    assert(eis(MatchOn { subject: done, arms: [big, small] }, Text("small")))
+    assert(eerr(MatchOn { subject: done, arms: [big] }) == "no_match_arm@$")
+    ro bad = arm([AnyPattern], Some(ei(1)), ei(1))
+    assert(eerr(MatchOn { subject: done, arms: [bad] }) == "type_mismatch@$.arms[0].guard")
+}
+
+test "mt lit" {
+    ro arms = [arm([LitPattern(Int(1)), LitPattern(Int(2))], None, lit_text("low")), arm([LitPattern(Text("x"))], None, lit_text("ex")), arm([AnyPattern], None, lit_text("?"))]
+    assert(eis(MatchOn { subject: ei(2), arms }, Text("low")))
+    assert(eis(MatchOn { subject: lit_text("x"), arms }, Text("ex")))
+    assert(eis(MatchOn { subject: lit_null(), arms }, Text("?")))
+}
+
+test "mt exhaustive" {
+    ro arms = [arm([CasePattern { type_name: "", name: "Critical", binds: []Bind.new() }], None, ei(1))]
+    assert(eerr(MatchOn { subject: esev("Desirable"), arms }) == "no_match_arm@$")
+    assert(eerr(MatchOn { subject: ei(1), arms: []MatchArm.new() }) == "no_match_arm@$")
+    assert(eerr(MatchOn { subject: edivzero(), arms }) == "division_by_zero@$.on")
+}
+
+test "mc filter map" {
+    assert(eis_in(ec("filter", [er("xs"), lambda1("v", en(Gt, er("v"), ei(2)))]), eints([3, 4, 5])))
+    assert(eis_in(ec("map", [er("xs"), lambda1("v", en(Mul, er("v"), ei(2)))]), eints([6, 2, 8, 2, 10])))
+    assert(eis_in(ec("filter", [er("xs"), lambda1("v", lit_bool(false))]), eints([])))
+    assert(eis(ec("map", [eint_list([]), lambda1("v", er("v"))]), eints([])))
+    assert(eis_in(ec("map", [er("xs"), lambda1("_", ei(7))]), eints([7, 7, 7, 7, 7])))
+}
+
+test "mc any all" {
+    ro big = lambda1("v", en(Gt, er("v"), ei(3)))
+    assert(eis_in(ec("any", [er("xs"), big]), Bool(true)))
+    assert(eis_in(ec("all", [er("xs"), big]), Bool(false)))
+    assert(eis_in(ec("count", [er("xs"), big]), Int(2)))
+    assert(eis_in(ec("first_where", [er("xs"), big]), Int(4)))
+    assert(eis_in(ec("first_where", [er("xs"), lambda1("v", en(Gt, er("v"), ei(9)))]), Null))
+    assert(eis(ec("any", [eint_list([]), big]), Bool(false)))
+    assert(eis(ec("all", [eint_list([]), big]), Bool(true)))
+    assert(eis(ec("count", [eint_list([]), big]), Int(0)))
+}
+
+test "mc early stop" {
+    ro xs = eint_list([1, 0])
+    assert(eis(ec("any", [xs, lambda1("v", en(Eq, en(Div, ei(10), er("v")), ei(10)))]), Bool(true)))
+    assert(eis(ec("all", [xs, lambda1("v", en(Gt, en(Div, ei(10), er("v")), ei(100)))]), Bool(false)))
+    assert(eerr(ec("count", [xs, lambda1("v", en(Eq, en(Div, ei(10), er("v")), ei(10)))])) == "division_by_zero@$.args[1].body.left")
+}
+
+test "mc first stop" {
+    ro xs = eint_list([1, 0])
+    assert(eis(ec("first_where", [xs, lambda1("v", en(Eq, en(Div, ei(10), er("v")), ei(10)))]), Int(1)))
+}
+
+test "mc fold" {
+    ro add = lambda2("acc", "v", en(Add, er("acc"), er("v")))
+    assert(eis_in(ec("fold", [er("xs"), ei(0), add]), Int(14)))
+    assert(eis(ec("fold", [eint_list([]), ei(99), add]), Int(99)))
+    ro join = lambda2("acc", "v", en(Add, er("acc"), ListLit([er("v")])))
+    assert(eis_in(ec("fold", [er("xs"), ListLit([]Expr.new()), join]), eints([3, 1, 4, 1, 5])))
+    ro rev = lambda2("acc", "v", en(Add, ListLit([er("v")]), er("acc")))
+    assert(eis_in(ec("fold", [er("xs"), ListLit([]Expr.new()), rev]), eints([5, 1, 4, 1, 3])))
+    ro sub = lambda2("acc", "v", en(Sub, er("acc"), er("v")))
+    assert(eis(ec("fold", [eint_list([1, 2, 3]), ei(10), sub]), Int(4)))
+}
+
+test "mc fold unused" {
+    ro twice = lambda2("n", "_", en(Mul, er("n"), ei(2)))
+    assert(eis(ec("fold", [ec("range", [ei(1), ei(4)]), ei(2000), twice]), Int(16000)))
+    assert(eis(ec("fold", [ec("range", [ei(1), ei(1)]), ei(2000), twice]), Int(2000)))
+}
+
+test "mc range" {
+    assert(eis(ec("range", [ei(0), ei(3)]), eints([0, 1, 2])))
+    assert(eis(ec("range", [ei(3), ei(3)]), eints([])))
+    assert(eis(ec("range", [ei(5), ei(2)]), eints([])))
+    assert(eis(ec("range", [ei(-2), ei(1)]), eints([-2, -1, 0])))
+    assert(eerr(ec("range", [ei(0), lit_text("a")])) == "type_mismatch@$.args[1]")
+    assert(eis(ec("length", [ec("range", [ei(0), ei(10000)])]), Int(10000)))
+    assert(eerr(ec("range", [ei(0), ei(10001)])) == "out_of_budget@$")
+}
+
+test "fn keys values" {
+    ro d = DictLit([EntryExpr { key: lit_text("b"), value: ei(1) }, EntryExpr { key: lit_text("a"), value: ei(2) }])
+    assert(eis(ec("keys", [d]), List([Text("b"), Text("a")])))
+    assert(eis(ec("values", [d]), eints([1, 2])))
+    assert(eis(ec("keys", [DictLit([]EntryExpr.new())]), List([]Value.new())))
+    assert(eerr(ec("keys", [ei(1)])) == "type_mismatch@$.args[0]")
+}
+
+test "fn length" {
+    assert(eis_in(ec("length", [er("xs")]), Int(5)))
+    assert(eis_in(ec("length", [er("name")]), Int(3)))
+    assert(eis(ec("length", [lit_text("a😀b")]), Int(3)))
+    assert(eis_in(ec("length", [er("d")]), Int(2)))
+    assert(eerr(ec("length", [ei(1)])) == "type_mismatch@$.args[0]")
+}
+
+test "fn has require" {
+    assert(eis(ec("has", [lit_null()]), Bool(false)))
+    assert(eis(ec("has", [ei(0)]), Bool(true)))
+    assert(eis(ec("has", [lit_bool(false)]), Bool(true)))
+    assert(eis_in(ec("has", [index_of(er("d"), lit_text("zz"))]), Bool(false)))
+    assert(eis(ec("require", [ei(5)]), Int(5)))
+    assert(eis_in(ec("require", [index_of(er("d"), lit_text("a"))]), Int(1)))
+}
+
+test "fn require none" {
+    assert(eerr(ec("require", [lit_null()])) == "unreachable@$")
+    assert(eerr_in(ec("require", [index_of(er("d"), lit_text("zz"))])) == "unreachable@$")
+}
+
+test "fn remove" {
+    assert(eis_in(ec("remove", [er("xs"), ei(1)]), eints([3, 4, 5])))
+    assert(eis_in(ec("remove", [er("xs"), ei(9)]), eints([3, 1, 4, 1, 5])))
+    assert(eis(ec("remove", [eint_list([]), ei(1)]), eints([])))
+    assert(eerr(ec("remove", [ei(1), ei(1)])) == "type_mismatch@$.args[0]")
+}
+
+test "fn without_key" {
+    ro d = DictLit([EntryExpr { key: lit_text("a"), value: ei(1) }, EntryExpr { key: lit_text("b"), value: ei(2) }])
+    assert(eis(ec("without_key", [d, lit_text("a")]), make_dict([DictEntry { key: Text("b"), value: Int(2) }])))
+    assert(eis(ec("without_key", [d, lit_text("zz")]), make_dict([DictEntry { key: Text("a"), value: Int(1) }, DictEntry { key: Text("b"), value: Int(2) }])))
+    assert(eerr(ec("without_key", [eint_list([1]), ei(1)])) == "type_mismatch@$.args[0]")
+}
+
+test "fn dict" {
+    ro made = ec("dict", [er("xs"), lambda1("v", er("v")), lambda1("v", en(Mul, er("v"), er("v")))])
+    assert(eerr_in(made) == "duplicate_key@$")
+    ro ok = ec("dict", [eint_list([3, 1, 4]), lambda1("v", er("v")), lambda1("v", en(Mul, er("v"), er("v")))])
+    assert(eis(ok, make_dict([DictEntry { key: Int(3), value: Int(9) }, DictEntry { key: Int(1), value: Int(1) }, DictEntry { key: Int(4), value: Int(16) }])))
+    assert(eis(ec("dict", [eint_list([]), lambda1("v", er("v")), lambda1("v", er("v"))]), make_dict([]DictEntry.new())))
+}
+
+test "fn text" {
+    assert(eis(ec("text", [ei(42)]), Text("42")))
+    assert(eis(ec("text", [lit_float(1.0)]), Text("1.0")))
+    assert(eis(ec("text", [lit_float(1.5e20)]), Text("1.5e20")))
+    assert(eis(ec("text", [lit_null()]), Text("none")))
+    assert(eis(ec("text", [lit_text("т")]), Text("т")))
+    assert(eis(ec("text", [VariantLit { type_name: "FailCode", name: "StoppedByHuman", fields: []FieldExpr.new() }]), Text("stopped_by_human")))
+    assert(eerr(ec("text", [eint_list([1])])) == "type_mismatch@$.args[0]")
+}
+
+test "fn float int" {
+    assert(eis(ec("float", [ei(3)]), Float(3.0)))
+    assert(eis(ec("float", [lit_float(2.5)]), Float(2.5)))
+    assert(eis(ec("int", [lit_float(2.9)]), Int(2)))
+    assert(eis(ec("int", [lit_float(-2.9)]), Int(-2)))
+    assert(eis(ec("int", [ei(7)]), Int(7)))
+    assert(eerr(ec("int", [lit_float(1.0e30)])) == "overflow@$")
+    assert(eerr(ec("int", [lit_text("1")])) == "type_mismatch@$.args[0]")
+    assert(eerr(ec("float", [lit_text("1")])) == "type_mismatch@$.args[0]")
+}
+
+test "fn max min" {
+    assert(eis(ec("max", [ei(2), ei(9)]), Int(9)))
+    assert(eis(ec("min", [ei(2), ei(9)]), Int(2)))
+    assert(eis(ec("max", [lit_float(2.5), lit_float(-1.0)]), Float(2.5)))
+    assert(eerr(ec("max", [ei(1), lit_float(2.0)])) == "type_mismatch@$")
+}
+
+test "fn journal_event" {
+    ro made = ec("journal_event", [lit_text("agent_usage"), lit_text("session"), lit_text("s1"), lit_text("cost"), lit_text("none")])
+    ro pairs = List([make_tuple([Text("session"), Text("s1")]), make_tuple([Text("cost"), Text("none")])])
+    assert(eis(made, make_record("JournalEvent", [ef("code", Text("agent_usage")), ef("params", pairs)])))
+    assert(eis(ec("journal_event", [lit_text("x")]), make_record("JournalEvent", [ef("code", Text("x")), ef("params", List([]Value.new()))])))
+    assert(eerr(ec("journal_event", [lit_text("x"), lit_text("p")])) == "bad_arity@$")
+    assert(eerr(ec("journal_event", [lit_text("x"), lit_text("p"), ei(1)])) == "type_mismatch@$.args[2]")
+}
+
+test "cl unknown arity" {
+    assert(eerr(ec("nope", [ei(1)])) == "unknown_function@$")
+    assert(eerr(ec("filter", [eint_list([1])])) == "bad_arity@$")
+    assert(eerr(ec("length", [])) == "bad_arity@$")
+    assert(eerr(ec("filter", [eint_list([1]), ei(1)])) == "type_mismatch@$.args[1]")
+    assert(eerr(ec("filter", [eint_list([1]), lambda2("a", "b", lit_bool(true))])) == "bad_arity@$.args[1]")
+    assert(eerr(ec("fold", [eint_list([1]), ei(0), lambda1("a", er("a"))])) == "bad_arity@$.args[2]")
+    assert(eerr(lambda1("x", er("x"))) == "lambda_misplaced@$")
+    assert(eerr(ec("length", [lambda1("x", er("x"))])) == "lambda_misplaced@$.args[0]")
+}
+
+test "cl predicate" {
+    assert(eerr(ec("filter", [eint_list([1]), lambda1("v", ei(1))])) == "type_mismatch@$.args[1].body")
+    assert(eerr(ec("any", [eint_list([1]), lambda1("v", er("v"))])) == "type_mismatch@$.args[1].body")
+    assert(eerr(ec("filter", [ei(1), lambda1("v", lit_bool(true))])) == "type_mismatch@$.args[0]")
+}
+
+test "pt deep" {
+    ro body = en(Add, ei(1), en(Mul, ei(2), er("missing")))
+    assert(eerr(ec("map", [eint_list([1, 2]), lambda1("v", body)])) == "unknown_name@$.args[1].body.right.right")
+    assert(eerr(if_else(lit_bool(true), ListLit([ei(1), field_of(ei(2), "a")]), ei(0))) == "type_mismatch@$.then.items[1]")
+}
+
+test "pt text" {
+    match ev_plain(en(Add, ei(1), er("q"))) {
+        Ok(v) => assert(false)
+        Err(x) => {
+            assert(x.path == "$.right")
+            assert(error_text(x) == "unknown_name at $.right: ${x.message}")
+            assert(x.message.contains("q"))
+        }
+    }
+}
+
+test "lm depth" {
+    mut deep = ei(1)
+    mut i = 0
+    while i < 70 {
+        deep = Not(deep)
+        i += 1
+    }
+    assert(eerr(deep).starts_with("too_deep@"))
+    mut fine = lit_bool(true)
+    mut j = 0
+    while j < 40 {
+        fine = Not(fine)
+        j += 1
+    }
+    assert(eis(fine, Bool(true)))
+}
+
+test "lm steps" {
+    ro heavy = ec("fold", [ec("range", [ei(0), ei(9000)]), ei(0), lambda2("acc", "v", en(Add, er("acc"), en(Mul, er("v"), en(Add, er("v"), ei(1)))))])
+    assert(eerr(heavy).starts_with("out_of_budget@"))
+    ro light = ec("fold", [ec("range", [ei(0), ei(1000)]), ei(0), lambda2("acc", "v", en(Add, er("acc"), er("v")))])
+    assert(eis(light, Int(499500)))
+}
+
+test "lm double" {
+    ro bomb = ec("fold", [ec("range", [ei(0), ei(30)]), eint_list([1]), lambda2("acc", "v", en(Add, er("acc"), er("acc")))])
+    assert(eerr(bomb).starts_with("out_of_budget@"))
+}
+
+test "ho calls" {
+    mut host = EHost { calls: []str.new() }
+    ro e = en(Add, call_primitive("time_now", [ei(1), ei(2)]), call_primitive("other", []Expr.new()))
+    match eval_with(e, empty_scope(), host) {
+        Ok(v) => assert(value_equal(v, Int(2)))
+        Err(x) => assert(false)
+    }
+    assert(host.calls.len() == 2)
+    assert(host.calls[0] == "time_now" && host.calls[1] == "other")
+}
+
+test "ho args first" {
+    mut host = EHost { calls: []str.new() }
+    match eval_with(call_primitive("p", [ei(1), edivzero()]), empty_scope(), host) {
+        Ok(v) => assert(false)
+        Err(x) => assert(x.path == "$.args[1]")
+    }
+    assert(host.calls.len() == 0)
+    match eval_with(en(Add, ei(1), call_primitive("fail", []Expr.new())), empty_scope(), host) {
+        Ok(v) => assert(false)
+        Err(x) => {
+            assert(kind_word(x.kind) == "primitive_failed")
+            assert(x.path == "$.right")
+            assert(x.message == "host says no")
+        }
+    }
+}
+
+test "ho none" {
+    assert(eerr(call_primitive("time_now", []Expr.new())) == "primitive_failed@$")
+}
+
+test "ho lazy" {
+    mut host = EHost { calls: []str.new() }
+    ro e = en(Or, lit_bool(true), call_primitive("p", []Expr.new()))
+    match eval_with(e, empty_scope(), host) {
+        Ok(v) => assert(value_equal(v, Bool(true)))
+        Err(x) => assert(false)
+    }
+    assert(host.calls.len() == 0)
+}
+
+test "pu twice" {
+    ro e = ec("map", [er("xs"), lambda1("v", RecordLit { type_name: "R", fields: [field_expr("n", er("v")), field_expr("s", ec("text", [er("v")]))] })])
+    match eval(e, escope()) {
+        Ok(a) => match eval(e, escope()) {
+            Ok(b) => assert(value_json(a) == value_json(b))
+            Err(x) => assert(false)
+        }
+        Err(x) => assert(false)
+    }
+}
+
+test "pu scope" {
+    ro scope = escope()
+    ro before = scope.bindings.len()
+    ro e = let_in("y", ei(1), ec("map", [er("xs"), lambda1("v", en(Add, er("v"), er("y")))]))
+    match eval(e, scope) {
+        Ok(v) => assert(value_equal(v, eints([4, 2, 5, 2, 6])))
+        Err(x) => assert(false)
+    }
+    assert(scope.bindings.len() == before)
+}
+
+test "df pause" {
+    // определение пауза_повтора(п) = свёртка(диапазон(1, п), ПАУЗА_ПОВТОРА, (н, _) → н * 2)
+    ro s = scope_with(scope_with(empty_scope(), "PAUSE", Int(2000)), "n", Int(4))
+    ro e = ec("fold", [ec("range", [ei(1), er("n")]), er("PAUSE"), lambda2("p", "_", en(Mul, er("p"), ei(2)))])
+    match eval(e, s) {
+        Ok(v) => assert(value_equal(v, Int(16000)))
+        Err(x) => assert(false)
+    }
+}
+
+test "df sum" {
+    // определение сумма_целых(а, б) = если есть(а) и есть(б) то (а ?? 0) + (б ?? 0) иначе а ?? б
+    ro e = if_else(en(And, ec("has", [er("a")]), ec("has", [er("b")])), en(Add, en(Coalesce, er("a"), ei(0)), en(Coalesce, er("b"), ei(0))), en(Coalesce, er("a"), er("b")))
+    ro both = scope_with(scope_with(empty_scope(), "a", Int(2)), "b", Int(3))
+    ro one = scope_with(scope_with(empty_scope(), "a", Null), "b", Int(3))
+    ro none = scope_with(scope_with(empty_scope(), "a", Null), "b", Null)
+    match eval(e, both) {
+        Ok(v) => assert(value_equal(v, Int(5)))
+        Err(x) => assert(false)
+    }
+    match eval(e, one) {
+        Ok(v) => assert(value_equal(v, Int(3)))
+        Err(x) => assert(false)
+    }
+    match eval(e, none) {
+        Ok(v) => assert(value_equal(v, Null))
+        Err(x) => assert(false)
+    }
+}
+
+test "df findings" {
+    // определение находки_захода(порядок, находки, н) = свёртка(порядок, [], (акк, л) → акк + (находки[(л, н)] ?? []))
+    ro key1 = make_tuple([Text("a"), Int(1)])
+    ro key2 = make_tuple([Text("b"), Int(1)])
+    ro key3 = make_tuple([Text("a"), Int(2)])
+    ro findings = make_dict([DictEntry { key: key1, value: eints([1, 2]) }, DictEntry { key: key2, value: eints([3]) }, DictEntry { key: key3, value: eints([9]) }])
+    ro s = scope_with(scope_with(scope_with(empty_scope(), "order", List([Text("a"), Text("c"), Text("b")])), "findings", findings), "n", Int(1))
+    ro body = en(Add, er("acc"), en(Coalesce, index_of(er("findings"), TupleLit([er("l"), er("n")])), ListLit([]Expr.new())))
+    ro e = ec("fold", [er("order"), ListLit([]Expr.new()), lambda2("acc", "l", body)])
+    match eval(e, s) {
+        Ok(v) => assert(value_equal(v, eints([1, 2, 3])))
+        Err(x) => assert(false)
+    }
+}
+
+test "df critical" {
+    // определение есть_критическая(находки) = любой(находки, н → н.серьёзность == Серьёзность.Критическая)
+    ro crit = make_record("Finding", [ef("severity", enum_value("Severity", "Critical"))])
+    ro mild = make_record("Finding", [ef("severity", enum_value("Severity", "Desirable"))])
+    ro e = ec("any", [er("fs"), lambda1("f", en(Eq, field_of(er("f"), "severity"), esev("Critical")))])
+    match eval(e, scope_with(empty_scope(), "fs", List([mild, crit]))) {
+        Ok(v) => assert(value_equal(v, Bool(true)))
+        Err(x) => assert(false)
+    }
+    match eval(e, scope_with(empty_scope(), "fs", List([mild]))) {
+        Ok(v) => assert(value_equal(v, Bool(false)))
+        Err(x) => assert(false)
+    }
+}

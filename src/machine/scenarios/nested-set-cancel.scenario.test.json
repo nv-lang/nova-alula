@@ -1,0 +1,64 @@
+{
+  "format": "scenario/0",
+  "machine": "fan",
+  "name": "a set: the parent is cancelled by its own parent; the nested machines get the cancel, the elements go back to to_send in the order of the list",
+  "start_at": 1000,
+  "steps": [
+    {
+      "do": "feed",
+      "event": {
+        "kind": "start",
+        "request": "up-1",
+        "input": {
+          "order": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "signal",
+        "name": "cancel_request",
+        "input": "up-1"
+      },
+      "expect": {
+        "state": "Halted",
+        "outcome": "refusal:Cancelled",
+        "open": [],
+        "cancelled": [
+          "a-1",
+          "b-1"
+        ],
+        "data": {
+          "to_send": [
+            "a",
+            "b",
+            "c"
+          ],
+          "open_requests": []
+        }
+      },
+      "also": {
+        "a-1": {
+          "state": "Halted",
+          "outcome": "refusal:Cancelled"
+        },
+        "b-1": {
+          "state": "Halted",
+          "outcome": "refusal:Cancelled"
+        }
+      }
+    },
+    {
+      "do": "pump",
+      "expect": {
+        "state": "Halted",
+        "queue": []
+      }
+    }
+  ]
+}

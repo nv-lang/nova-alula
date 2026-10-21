@@ -1,0 +1,767 @@
+// value.nv - the dynamic value of a machine and its text forms.
+//
+// A machine of the product is DATA (a table of states, expressions over a JSON tree), and one interpreter on Nova runs
+// all of them (task 106). The values the expressions work with are of one kind, `Value`: a dynamic sum type with data and
+// no generics.
+// ORACLE-WORKAROUND(12, 13): no generics: a generic function with inferred type arguments and a protocol with parameters break the C, so a typed list or a typed dict is a `Value` and the check against a type is made by `check_value` (types.nv), not by the compiler; typed containers would do when items 12 and 13 are fixed
+//
+// The rules (format v2, state-machines/state-machine-portolan-spec.md, sections 2, 3.3 and 12; the owner's decisions of 2026-10-19):
+//  - `text(x)`: an integer is its decimal form; an enum value is the word of its code (`StoppedByHuman` -> `stopped_by_human`,
+//    the table of the dictionary of the methodology); `none` is the absence of a value; a text is itself; a bool is `true`
+//    or `false`. A float is the shortest decimal form that reads back to the same number, with `.0` for a whole value
+//    (`1.0`, `0.0`), no exponent for 1e-4 <= |x| < 1e16 and the form `1e-7`, `1.5e20` otherwise; NaN and infinities have
+//    no text;
+//  - equality is structural; a record keeps its fields in a canonical order (by the name), a dict keeps its entries in the
+//    order of insertion (`keys` and `values` give that order: the order of the first record of a key) and equals another dict
+//    with the same entries in any order; the JSON text of a value is the same on every run;
+//  - a tuple is an anonymous record (the name is empty) with the positional fields `1`, `2`, ... (`t.1`, `t.2`).
+//
+// JSON form of a value (lossless, `value_to_json` and `value_from_json`): null, bool, integer, float, text and list are the
+// JSON ones (an integer has no fraction, a float always has a fraction or an exponent); a dict with only text keys, none of
+// them starting with `$`, is a JSON object (in the order of insertion); every other value is an object with one tag key:
+//   {"$dict":[[key, value], ...]}                              a dict with other keys, in the order of insertion
+//   {"$tuple":[a, b, ...]}                                     a tuple
+//   {"$record":"Name","fields":{"field":value, ...}}           a record
+//   {"$variant":"Type","name":"Case","fields":{...}}           a variant or an enum value (`fields` is left out when empty)
+//   {"$float":"NaN"|"Infinity"|"-Infinity"}                    a float that is not finite
+module alula.machine
+
+import std.encoding.json.{Json, JsonValue, JsonObject}
+
+/// RecordField: a named field of a record or of a variant.
+export type RecordField { name str, value Value }
+
+/// DictEntry: a key and a value of a dict; the key is any value.
+export type DictEntry { key Value, value Value }
+
+/// Value: the dynamic value of a machine.
+///  - Dict keeps its entries in the order of insertion, without a repeated key;
+///  - Record keeps its fields sorted by the name;
+///  - Variant is a case of a sum type or of an enum (`fields` empty): `type_name` is the type, `name` the case.
+export type Value enum
+    | Null
+    | Bool(bool)
+    | Int(int)
+    | Float(f64)
+    | Text(str)
+    | List([]Value)
+    | Dict([]DictEntry)
+    | Record { name str, fields []RecordField }
+    | Variant { type_name str, name str, fields []RecordField }
+
+const MAX_VALUE_DEPTH = 64
+
+// ---- builders -------------------------------------------------------------------------------------------------------
+
+fn is_digits(s str) -> bool {
+    if s.byte_len() == 0 { return false }
+    for c in s.chars() {
+        if c < '0' || c > '9' { return false }
+    }
+    true
+}
+
+fn cmp_int(a int, b int) -> int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    0
+}
+
+fn cmp_float(a f64, b f64) -> int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    0
+}
+
+fn cmp_text(a str, b str) -> int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    0
+}
+
+// The order of the names of fields: positional names (`2`, `10`) by their number, the other names by the letters; digits go first.
+fn field_name_cmp(a str, b str) -> int {
+    if is_digits(a) && is_digits(b) {
+        ro by_length = cmp_int(a.byte_len(), b.byte_len())
+        if by_length != 0 { return by_length }
+    }
+    cmp_text(a, b)
+}
+
+fn put_field(mut out []RecordField, f RecordField) -> () {
+    mut i = 0
+    while i < out.len() {
+        if out[i].name == f.name {
+            out[i] = f
+            return
+        }
+        i += 1
+    }
+    out.push(f)
+    mut j = out.len() - 1
+    while j > 0 && field_name_cmp(out[j - 1].name, out[j].name) > 0 {
+        ro tmp = out[j - 1]
+        out[j - 1] = out[j]
+        out[j] = tmp
+        j -= 1
+    }
+}
+
+fn sorted_fields(fields []RecordField) -> []RecordField {
+    mut out = []RecordField.new()
+    for f in fields { put_field(out, f) }
+    out
+}
+
+/// A record with the fields put in the canonical order (a repeated name: the last one wins).
+export fn make_record(name str, fields []RecordField) -> Value => Record { name, fields: sorted_fields(fields) }
+
+fn dict_find(entries []DictEntry, key Value) -> int {
+    mut i = 0
+    while i < entries.len() {
+        if value_compare(entries[i].key, key) == 0 { return i }
+        i += 1
+    }
+    -1
+}
+
+/// A dict with the entries in the given order; a repeated key keeps the place of the first record and takes the last value.
+export fn make_dict(entries []DictEntry) -> Value {
+    mut out = []DictEntry.new()
+    for e in entries {
+        ro at = dict_find(out, e.key)
+        if at >= 0 {
+            out[at] = DictEntry { key: out[at].key, value: e.value }
+        } else {
+            out.push(e)
+        }
+    }
+    Dict(out)
+}
+
+/// A tuple: an anonymous record with the positional fields `0`, `1`, ... (from zero, as in Nova; format 2.3).
+export fn make_tuple(items []Value) -> Value {
+    mut fields = []RecordField.new()
+    mut n = 0
+    for item in items {
+        put_field(fields, RecordField { name: "${n}", value: item })
+        n += 1
+    }
+    Record { name: "", fields }
+}
+
+/// A case of a sum type with fields in the canonical order.
+export fn make_variant(type_name str, name str, fields []RecordField) -> Value => Variant { type_name, name, fields: sorted_fields(fields) }
+
+/// A value of an enum: a case without fields.
+export fn enum_value(type_name str, name str) -> Value => Variant { type_name, name, fields: []RecordField.new() }
+
+/// The name of the kind of a value, for the text of an error: null, bool, int, float, text, list, dict, record, variant.
+export fn kind_name(v Value) -> str {
+    match v {
+        Null => "null"
+        Bool(b) => "bool"
+        Int(n) => "int"
+        Float(x) => "float"
+        Text(s) => "text"
+        List(items) => "list"
+        Dict(entries) => "dict"
+        Record { name, fields } => "record"
+        Variant { type_name, name, fields } => "variant"
+    }
+}
+
+// ---- order and equality ---------------------------------------------------------------------------------------------
+
+fn rank(v Value) -> int {
+    match v {
+        Null => 0
+        Bool(b) => 1
+        Int(n) => 2
+        Float(x) => 3
+        Text(s) => 4
+        List(items) => 5
+        Dict(entries) => 6
+        Record { name, fields } => 7
+        Variant { type_name, name, fields } => 8
+    }
+}
+
+// The entries by the order of the keys: the view that makes the order of two dicts independent of the order of insertion.
+fn sorted_entries(entries []DictEntry) -> []DictEntry {
+    mut out = []DictEntry.new()
+    for e in entries {
+        out.push(e)
+        mut j = out.len() - 1
+        while j > 0 && value_compare(out[j - 1].key, out[j].key) > 0 {
+            ro tmp = out[j - 1]
+            out[j - 1] = out[j]
+            out[j] = tmp
+            j -= 1
+        }
+    }
+    out
+}
+
+fn compare_lists(xs []Value, ys []Value) -> int {
+    mut i = 0
+    while i < xs.len() && i < ys.len() {
+        ro c = value_compare(xs[i], ys[i])
+        if c != 0 { return c }
+        i += 1
+    }
+    cmp_int(xs.len(), ys.len())
+}
+
+fn compare_entries(xs []DictEntry, ys []DictEntry) -> int {
+    ro sa = sorted_entries(xs)
+    ro sb = sorted_entries(ys)
+    mut i = 0
+    while i < sa.len() && i < sb.len() {
+        ro ck = value_compare(sa[i].key, sb[i].key)
+        if ck != 0 { return ck }
+        ro cv = value_compare(sa[i].value, sb[i].value)
+        if cv != 0 { return cv }
+        i += 1
+    }
+    cmp_int(sa.len(), sb.len())
+}
+
+fn compare_fields(xs []RecordField, ys []RecordField) -> int {
+    mut i = 0
+    while i < xs.len() && i < ys.len() {
+        ro cn = field_name_cmp(xs[i].name, ys[i].name)
+        if cn != 0 { return cn }
+        ro cv = value_compare(xs[i].value, ys[i].value)
+        if cv != 0 { return cv }
+        i += 1
+    }
+    cmp_int(xs.len(), ys.len())
+}
+
+/// The total order of values: first by kind (null < bool < int < float < text < list < dict < record < variant), then by content.
+/// Negative, zero or positive. Two dicts are compared by their entries in the order of the keys, so the order of insertion does not count.
+export fn value_compare(a Value, b Value) -> int {
+    ro ra = rank(a)
+    ro rb = rank(b)
+    if ra != rb { return cmp_int(ra, rb) }
+    match a {
+        Null => 0
+        Bool(x) => match b {
+            Bool(y) => cmp_int(if x { 1 } else { 0 }, if y { 1 } else { 0 })
+            _ => 0
+        }
+        Int(x) => match b {
+            Int(y) => cmp_int(x, y)
+            _ => 0
+        }
+        Float(x) => match b {
+            Float(y) => cmp_float(x, y)
+            _ => 0
+        }
+        Text(x) => match b {
+            Text(y) => cmp_text(x, y)
+            _ => 0
+        }
+        List(x) => match b {
+            List(y) => compare_lists(x, y)
+            _ => 0
+        }
+        Dict(x) => match b {
+            Dict(y) => compare_entries(x, y)
+            _ => 0
+        }
+        Record { name, fields } => match b {
+            Record { name: other_name, fields: other_fields } => {
+                ro cn = cmp_text(name, other_name)
+                if cn != 0 { cn } else { compare_fields(fields, other_fields) }
+            }
+            _ => 0
+        }
+        Variant { type_name, name, fields } => match b {
+            Variant { type_name: other_type, name: other_name, fields: other_fields } => {
+                ro ct = cmp_text(type_name, other_type)
+                if ct != 0 { return ct }
+                ro cn = cmp_text(name, other_name)
+                if cn != 0 { return cn }
+                compare_fields(fields, other_fields)
+            }
+            _ => 0
+        }
+    }
+}
+
+/// Structural equality: `value_compare` is zero. An int and a float are never equal.
+export fn value_equal(a Value, b Value) -> bool => value_compare(a, b) == 0
+
+/// The value of a key in a dict; None when the key is absent.
+export fn dict_get(entries []DictEntry, key Value) -> Option[Value] {
+    ro at = dict_find(entries, key)
+    if at < 0 { return None }
+    Some(entries[at].value)
+}
+
+/// The value of a field in a record (or a case) by name; None when there is no such field.
+export fn record_get(fields []RecordField, name str) -> Option[Value] {
+    for f in fields {
+        if f.name == name { return Some(f.value) }
+    }
+    None
+}
+
+// ---- text -----------------------------------------------------------------------------------------------------------
+
+/// The code word of a name: `StoppedByHuman` -> `stopped_by_human`, `Think` -> `think`.
+export fn code_word(name str) -> str {
+    ro upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    ro lower = "abcdefghijklmnopqrstuvwxyz"
+    mut out = ""
+    mut previous_low = false
+    for c in name.chars() {
+        ro one = "${c}"
+        match upper.find(one) {
+            Some(at) => {
+                if previous_low { out = "${out}_" }
+                out = "${out}${lower[at..at + 1]}"
+                previous_low = false
+            }
+            None => {
+                out = "${out}${one}"
+                previous_low = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+            }
+        }
+    }
+    out
+}
+
+// The number of a digit character.
+fn digit_value(c char) -> int {
+    ro digits = "0123456789"
+    match digits.find("${c}") {
+        Some(at) => at
+        None => 0
+    }
+}
+
+/// The text of a float by the rule above; None for NaN and infinities.
+export fn float_text(x f64) -> Option[str] {
+    if !x.is_finite() { return None }
+    ro raw = x.to_str()
+    mut negative = false
+    mut body = raw
+    if raw.starts_with("-") {
+        negative = true
+        body = raw[1..]
+    }
+    mut mantissa = body
+    mut exp10 = 0
+    match body.find("e") {
+        Some(at) => {
+            mantissa = body[..at]
+            mut tail = body[at + 1..]
+            mut exp_negative = false
+            if tail.starts_with("-") {
+                exp_negative = true
+                tail = tail[1..]
+            } else if tail.starts_with("+") {
+                tail = tail[1..]
+            }
+            mut e = 0
+            for c in tail.chars() { e = e * 10 + digit_value(c) }
+            exp10 = if exp_negative { 0 - e } else { e }
+        }
+        None => ()
+    }
+    mut int_part = mantissa
+    mut frac_part = ""
+    match mantissa.find(".") {
+        Some(at) => {
+            int_part = mantissa[..at]
+            frac_part = mantissa[at + 1..]
+        }
+        None => ()
+    }
+    // value = 0.<all> * 10^point, all = the digits without leading and trailing zeros
+    mut all = "${int_part}${frac_part}"
+    mut point = int_part.byte_len() + exp10
+    while all.byte_len() > 0 && all.starts_with("0") {
+        all = all[1..]
+        point -= 1
+    }
+    while all.byte_len() > 0 && all.ends_with("0") {
+        all = all[..all.byte_len() - 1]
+    }
+    ro sign = if negative { "-" } else { "" }
+    if all.byte_len() == 0 { return Some("${sign}0.0") }
+    ro e10 = point - 1
+    ro n = all.byte_len()
+    if e10 >= -4 && e10 <= 15 {
+        if e10 >= 0 {
+            if n <= e10 + 1 {
+                mut zeros = ""
+                mut k = n
+                while k < e10 + 1 {
+                    zeros = "${zeros}0"
+                    k += 1
+                }
+                return Some("${sign}${all}${zeros}.0")
+            }
+            return Some("${sign}${all[..e10 + 1]}.${all[e10 + 1..]}")
+        }
+        mut zeros = ""
+        mut k = 0
+        while k < 0 - e10 - 1 {
+            zeros = "${zeros}0"
+            k += 1
+        }
+        return Some("${sign}0.${zeros}${all}")
+    }
+    if n == 1 { return Some("${sign}${all}e${e10}") }
+    Some("${sign}${all[..1]}.${all[1..]}e${e10}")
+}
+
+/// `text(x)` of the language: None for a value that has no text form (a list, a dict, a record, a case with fields).
+export fn value_text(v Value) -> Option[str] {
+    match v {
+        Null => Some("none")
+        Bool(b) => Some(if b { "true" } else { "false" })
+        Int(n) => Some("${n}")
+        Float(x) => float_text(x)
+        Text(s) => Some(s)
+        List(items) => None
+        Dict(entries) => None
+        Record { name, fields } => None
+        Variant { type_name, name, fields } => if fields.len() == 0 { Some(code_word(name)) } else { None }
+    }
+}
+
+// ---- JSON -----------------------------------------------------------------------------------------------------------
+
+fn put(mut o JsonObject, key str, value JsonValue) -> () {
+    ro replaced = o.insert(key, value)
+}
+
+fn fields_json(fields []RecordField) -> JsonValue {
+    mut o = JsonObject.new()
+    for f in fields { put(o, f.name, value_to_json(f.value)) }
+    JsonValue.object(o)
+}
+
+fn tagged(key str, value JsonValue) -> JsonValue {
+    mut o = JsonObject.new()
+    put(o, key, value)
+    JsonValue.object(o)
+}
+
+fn text_keys_only(entries []DictEntry) -> bool {
+    for e in entries {
+        match e.key {
+            Text(s) => if s.starts_with("$") { return false }
+            _ => return false
+        }
+    }
+    true
+}
+
+fn is_tuple(name str, fields []RecordField) -> bool {
+    if name != "" || fields.len() < 2 { return false }
+    mut n = 0
+    for f in fields {
+        if f.name != "${n}" { return false }
+        n += 1
+    }
+    true
+}
+
+/// The JSON form of a value.
+export fn value_to_json(v Value) -> JsonValue {
+    match v {
+        Null => JsonValue.null()
+        Bool(b) => JsonValue.bool(b)
+        Int(n) => JsonValue.int(n)
+        Float(x) => {
+            if x.is_finite() { return JsonValue.num(x) }
+            if x != x { return tagged("$float", JsonValue.str("NaN")) }
+            if x > 0.0 { return tagged("$float", JsonValue.str("Infinity")) }
+            tagged("$float", JsonValue.str("-Infinity"))
+        }
+        Text(s) => JsonValue.str(s)
+        List(items) => {
+            mut out = []JsonValue.new()
+            for item in items { out.push(value_to_json(item)) }
+            JsonValue.array(out)
+        }
+        Dict(entries) => {
+            if text_keys_only(entries) {
+                mut o = JsonObject.new()
+                for e in entries {
+                    match e.key {
+                        Text(s) => put(o, s, value_to_json(e.value))
+                        _ => ()
+                    }
+                }
+                return JsonValue.object(o)
+            }
+            mut pairs = []JsonValue.new()
+            for e in entries { pairs.push(JsonValue.array([value_to_json(e.key), value_to_json(e.value)])) }
+            tagged("$dict", JsonValue.array(pairs))
+        }
+        Record { name, fields } => {
+            if is_tuple(name, fields) {
+                mut items = []JsonValue.new()
+                for f in fields { items.push(value_to_json(f.value)) }
+                return tagged("$tuple", JsonValue.array(items))
+            }
+            mut o = JsonObject.new()
+            put(o, "$record", JsonValue.str(name))
+            put(o, "fields", fields_json(fields))
+            JsonValue.object(o)
+        }
+        Variant { type_name, name, fields } => {
+            mut o = JsonObject.new()
+            put(o, "$variant", JsonValue.str(type_name))
+            put(o, "name", JsonValue.str(name))
+            if fields.len() > 0 { put(o, "fields", fields_json(fields)) }
+            JsonValue.object(o)
+        }
+    }
+}
+
+/// The JSON text of a value, one line.
+export fn value_json(v Value) -> str => value_to_json(v).to_str()
+
+fn fail(path str, message str) -> Result[Value, str] => Err("${path}: ${message}")
+
+fn decode_fields(o JsonObject, path str, depth int) -> Result[[]RecordField, str] {
+    mut out = []RecordField.new()
+    for key in o.keys() {
+        match o.get(key) {
+            Some(item) => match decode(item, "${path}.${key}", depth + 1) {
+                Ok(value) => out.push(RecordField { name: key, value })
+                Err(e) => return Err(e)
+            }
+            None => ()
+        }
+    }
+    Ok(out)
+}
+
+fn text_of(o JsonObject, key str) -> Option[str] {
+    match o.get(key) {
+        Some(v) => v.str()
+        None => None
+    }
+}
+
+fn object_of(o JsonObject, key str) -> Option[JsonObject] {
+    match o.get(key) {
+        Some(v) => v.object()
+        None => None
+    }
+}
+
+fn array_of(o JsonObject, key str) -> Option[[]JsonValue] {
+    match o.get(key) {
+        Some(v) => v.array()
+        None => None
+    }
+}
+
+fn decode_dict_tag(o JsonObject, path str, depth int) -> Result[Value, str] {
+    ro pairs = match array_of(o, "$dict") {
+        Some(p) => p
+        None => return fail(path, "$dict must be a list of entries")
+    }
+    mut entries = []DictEntry.new()
+    mut i = 0
+    for pair in pairs {
+        ro two = match pair.array() {
+            Some(t) => t
+            None => return fail(path, "an entry of $dict must be [key, value]")
+        }
+        if two.len() != 2 { return fail(path, "an entry of $dict must be [key, value]") }
+        ro key = match decode(two[0], "${path}[${i}].key", depth + 1) {
+            Ok(k) => k
+            Err(e) => return Err(e)
+        }
+        ro value = match decode(two[1], "${path}[${i}]", depth + 1) {
+            Ok(v) => v
+            Err(e) => return Err(e)
+        }
+        if dict_find(entries, key) >= 0 { return fail(path, "the key of entry ${i} is repeated") }
+        entries.push(DictEntry { key, value })
+        i += 1
+    }
+    Ok(Dict(entries))
+}
+
+fn decode_tuple_tag(o JsonObject, path str, depth int) -> Result[Value, str] {
+    ro items = match array_of(o, "$tuple") {
+        Some(p) => p
+        None => return fail(path, "$tuple must be a list")
+    }
+    if items.len() < 2 { return fail(path, "a tuple has two fields or more") }
+    mut values = []Value.new()
+    mut i = 0
+    for item in items {
+        match decode(item, "${path}.${i}", depth + 1) {
+            Ok(value) => values.push(value)
+            Err(e) => return Err(e)
+        }
+        i += 1
+    }
+    Ok(make_tuple(values))
+}
+
+fn decode_float_tag(o JsonObject, path str) -> Result[Value, str] {
+    ro word = match text_of(o, "$float") {
+        Some(w) => w
+        None => return fail(path, "$float must be a text")
+    }
+    ro zero = 0.0
+    if word == "NaN" { return Ok(Float(zero / zero)) }
+    if word == "Infinity" { return Ok(Float(1.0 / zero)) }
+    if word == "-Infinity" { return Ok(Float(-1.0 / zero)) }
+    fail(path, "$float must be NaN, Infinity or -Infinity")
+}
+
+fn decode_record_tag(o JsonObject, path str, depth int) -> Result[Value, str] {
+    ro name = match text_of(o, "$record") {
+        Some(n) => n
+        None => return fail(path, "the name of a record must be a text")
+    }
+    ro fo = match object_of(o, "fields") {
+        Some(f) => f
+        None => return fail(path, "the fields of a record must be an object")
+    }
+    match decode_fields(fo, "${path}.fields", depth) {
+        Ok(fields) => Ok(make_record(name, fields))
+        Err(e) => Err(e)
+    }
+}
+
+fn decode_variant_tag(o JsonObject, path str, depth int) -> Result[Value, str] {
+    ro type_name = match text_of(o, "$variant") {
+        Some(n) => n
+        None => return fail(path, "the type of a variant must be a text")
+    }
+    ro name = match text_of(o, "name") {
+        Some(n) => n
+        None => return fail(path, "the case of a variant must be a text")
+    }
+    mut fields = []RecordField.new()
+    if o.contains("fields") {
+        ro fo = match object_of(o, "fields") {
+            Some(f) => f
+            None => return fail(path, "the fields of a variant must be an object")
+        }
+        match decode_fields(fo, "${path}.fields", depth) {
+            Ok(list) => { fields = list }
+            Err(e) => return Err(e)
+        }
+    }
+    Ok(make_variant(type_name, name, fields))
+}
+
+fn decode_tagged(o JsonObject, path str, depth int) -> Result[Value, str] {
+    if o.contains("$dict") {
+        if o.len() != 1 { return fail(path, "the tag $dict stands alone") }
+        return decode_dict_tag(o, path, depth)
+    }
+    if o.contains("$tuple") {
+        if o.len() != 1 { return fail(path, "the tag $tuple stands alone") }
+        return decode_tuple_tag(o, path, depth)
+    }
+    if o.contains("$float") {
+        if o.len() != 1 { return fail(path, "the tag $float stands alone") }
+        return decode_float_tag(o, path)
+    }
+    if o.contains("$record") {
+        if o.len() != 2 || !o.contains("fields") { return fail(path, "a record is {\"$record\": name, \"fields\": {...}}") }
+        return decode_record_tag(o, path, depth)
+    }
+    if o.contains("$variant") {
+        if !o.contains("name") || (o.len() != 2 && !(o.len() == 3 && o.contains("fields"))) {
+            return fail(path, "a variant is {\"$variant\": type, \"name\": case, \"fields\": {...}}")
+        }
+        return decode_variant_tag(o, path, depth)
+    }
+    fail(path, "unknown tag")
+}
+
+fn decode_object(o JsonObject, path str, depth int) -> Result[Value, str] {
+    mut tagged_keys = false
+    for key in o.keys() {
+        if key.starts_with("$") { tagged_keys = true }
+    }
+    if tagged_keys { return decode_tagged(o, path, depth) }
+    mut entries = []DictEntry.new()
+    for key in o.keys() {
+        match o.get(key) {
+            Some(item) => match decode(item, "${path}.${key}", depth + 1) {
+                Ok(value) => entries.push(DictEntry { key: Text(key), value })
+                Err(e) => return Err(e)
+            }
+            None => ()
+        }
+    }
+    Ok(Dict(entries))
+}
+
+fn decode(j JsonValue, path str, depth int) -> Result[Value, str] {
+    if depth > MAX_VALUE_DEPTH { return fail(path, "the value is deeper than ${MAX_VALUE_DEPTH}") }
+    if j.is_null() { return Ok(Null) }
+    match j.bool() {
+        Some(b) => return Ok(Bool(b))
+        None => ()
+    }
+    match j.int() {
+        Some(n) => return Ok(Int(n))
+        None => ()
+    }
+    if j.is_num() {
+        match j.u64() {
+            Some(big) => return fail(path, "the integer does not fit in an int")
+            None => ()
+        }
+        match j.num() {
+            Some(x) => return Ok(Float(x))
+            None => return fail(path, "the number is not exact")
+        }
+    }
+    match j.str() {
+        Some(s) => return Ok(Text(s))
+        None => ()
+    }
+    match j.array() {
+        Some(items) => {
+            mut out = []Value.new()
+            mut i = 0
+            for item in items {
+                match decode(item, "${path}[${i}]", depth + 1) {
+                    Ok(value) => out.push(value)
+                    Err(e) => return Err(e)
+                }
+                i += 1
+            }
+            return Ok(List(out))
+        }
+        None => ()
+    }
+    match j.object() {
+        Some(o) => return decode_object(o, path, depth)
+        None => ()
+    }
+    fail(path, "not a JSON value")
+}
+
+/// The value of a JSON form; the text of the error says what is wrong and where (`$.a[1]: ...`).
+export fn value_from_json(j JsonValue) -> Result[Value, str] => decode(j, "$", 0)
+
+/// Parse the JSON text of a value.
+export fn parse_value(text str) -> Result[Value, str] {
+    match Json.parse(text) {
+        Ok(j) => value_from_json(j)
+        Err(e) => Err("$: not valid JSON")
+    }
+}

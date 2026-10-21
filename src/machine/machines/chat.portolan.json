@@ -1,0 +1,125 @@
+{
+  "format": "machine/2",
+  "portolan_version": "2.12",
+  "machine": "ChatSession",
+  "version": "1",
+  "title": "A chat session with an agent: the machine of src/chat written as data",
+  "constants": [
+    { "name": "IDLE_TERM", "type": "int>=0", "value": { "op": "lit", "value": 30000 } }
+  ],
+  "data": [
+    { "name": "user", "type": "text", "initial": { "expr": { "op": "lit", "value": "" } }, "writes": "rows" },
+    { "name": "reply", "type": "text", "initial": { "expr": { "op": "lit", "value": "" } }, "writes": "rows" },
+    { "name": "stop_code", "type": "?FailCode", "initial": { "expr": { "op": "lit", "value": null } }, "writes": "rows" },
+    { "name": "stop_text", "type": "text", "initial": { "expr": { "op": "lit", "value": "" } }, "writes": "rows" },
+    { "name": "user_attempt", "type": "int>=0", "initial": { "expr": { "op": "lit", "value": 0 } }, "monotonic": true, "writes": "mechanics" },
+    { "name": "agent_attempt", "type": "int>=0", "initial": { "expr": { "op": "lit", "value": 0 } }, "monotonic": true, "writes": "mechanics" }
+  ],
+  "parties": [
+    {
+      "name": "user", "id": "user", "kind": "human", "counter": "user_attempt",
+      "words": [
+        { "name": "user_message", "fields": [ { "name": "content", "type": "text" } ] },
+        { "name": "cancel" }
+      ]
+    },
+    {
+      "name": "agent", "id": "agent", "kind": "agent", "result": "text", "counter": "agent_attempt",
+      "progress": [ { "name": "agent_chunk", "fields": [ { "name": "content", "type": "text" } ] } ]
+    }
+  ],
+  "signals": [ { "name": "cancel" } ],
+  "initial": "Idle",
+  "states": [
+    {
+      "name": "Idle", "kind": "appeal", "party": "user",
+      "rows": [
+        {
+          "n": 1, "event": { "kind": "word", "word": "user_message", "bind": { "content": "message" } },
+          "actions": [
+            { "do": "journal", "code": "user_message", "params": [ { "name": "text", "value": { "op": "name", "name": "message" } } ] },
+            { "do": "assign", "target": "user", "value": { "op": "name", "name": "message" } },
+            { "do": "assign", "target": "reply", "value": { "op": "lit", "value": "" } }
+          ],
+          "to": "Awaiting"
+        },
+        {
+          "n": 2, "event": { "kind": "word", "word": "cancel" },
+          "actions": [
+            { "do": "journal", "code": "cancelled_before_request" },
+            { "do": "assign", "target": "stop_code", "value": { "op": "variant", "type": "FailCode", "name": "StoppedByHuman" } },
+            { "do": "assign", "target": "stop_text", "value": { "op": "lit", "value": "cancelled by the user" } }
+          ],
+          "to": "Failed"
+        }
+      ]
+    },
+    {
+      "name": "Awaiting", "kind": "appeal", "party": "agent",
+      "inputs": [
+        { "field": "prompt", "value": { "op": "name", "name": "user" }, "reads": "party" },
+        { "field": "reply", "value": { "op": "name", "name": "reply" }, "reads": "executor" }
+      ],
+      "silence": { "op": "name", "name": "IDLE_TERM" },
+      "rows": [
+        {
+          "n": 1, "event": { "kind": "progress", "name": "agent_chunk", "bind": { "content": "piece" } },
+          "actions": [
+            { "do": "journal", "code": "agent_chunk", "params": [ { "name": "text", "value": { "op": "name", "name": "piece" } } ] },
+            { "do": "assign", "target": "reply", "value": { "op": "+", "left": { "op": "name", "name": "reply" }, "right": { "op": "name", "name": "piece" } } }
+          ],
+          "to": "@same"
+        },
+        {
+          "n": 2, "event": { "kind": "answer" },
+          "actions": [ { "do": "journal", "code": "agent_done" } ],
+          "to": "Done"
+        },
+        {
+          "n": 3, "event": { "kind": "failure", "bind": "code" },
+          "actions": [
+            { "do": "journal", "code": "agent_refused", "params": [ { "name": "code", "value": { "op": "call", "fn": "text", "args": [ { "op": "name", "name": "code" } ] } } ] },
+            { "do": "assign", "target": "stop_code", "value": { "op": "name", "name": "code" } },
+            { "do": "assign", "target": "stop_text", "value": { "op": "lit", "value": "the agent refused" } }
+          ],
+          "to": "Failed"
+        },
+        {
+          "n": 4, "event": { "kind": "signal", "name": "cancel" },
+          "actions": [
+            { "do": "journal", "code": "cancelled_while_waiting" },
+            { "do": "cancel_open", "party": "agent" },
+            { "do": "assign", "target": "stop_code", "value": { "op": "variant", "type": "FailCode", "name": "StoppedByHuman" } },
+            { "do": "assign", "target": "stop_text", "value": { "op": "lit", "value": "cancelled by the user" } }
+          ],
+          "to": "Failed"
+        },
+        {
+          "n": 5, "event": { "kind": "timeout" },
+          "actions": [
+            { "do": "journal", "code": "no_answer_in_time" },
+            { "do": "assign", "target": "stop_code", "value": { "op": "variant", "type": "FailCode", "name": "Timeout" } },
+            { "do": "assign", "target": "stop_text", "value": { "op": "lit", "value": "no answer in time" } }
+          ],
+          "to": "Failed"
+        }
+      ]
+    },
+    { "name": "Done", "kind": "end", "reads": [ "reply" ] },
+    { "name": "Failed", "kind": "end", "reads": [ "stop_code", "stop_text" ] }
+  ],
+  "ends": {
+    "result": "text",
+    "rows": [
+      { "state": "Done", "n": 1, "when": { "op": "lit", "value": true }, "answer": { "kind": "answer", "value": { "op": "name", "name": "reply" } } },
+      {
+        "state": "Failed", "n": 1, "when": { "op": "lit", "value": true },
+        "answer": {
+          "kind": "refusal",
+          "code": { "op": "call", "fn": "require", "args": [ { "op": "name", "name": "stop_code" } ] },
+          "text": { "op": "name", "name": "stop_text" }
+        }
+      }
+    ]
+  }
+}

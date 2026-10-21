@@ -1,0 +1,13 @@
+{
+  "format": "scenario/0",
+  "machine": "DialogSession",
+  "name": "the idle term ends the turn with Timeout and the session takes the next message",
+  "start_at": 1000,
+  "params": {"проект.срок_бездействия": 30000},
+  "steps": [
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "silent"}, "expect": {"state": "Awaiting", "open": ["agent-1"]}},
+    {"do": "advance", "ms": 31000},
+    {"do": "pump", "expect": {"state": "Idle", "journal": [{"code": "no_answer_in_time", "params": {}}], "open": [], "cancelled": ["agent-1"], "outcome": "none"}},
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "next"}, "expect": {"state": "Awaiting", "open": ["agent-2"], "sent": ["agent-1", "agent-2"]}}
+  ]
+}

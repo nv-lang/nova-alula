@@ -1,0 +1,16 @@
+{
+  "format": "scenario/0",
+  "machine": "ChatSession",
+  "name": "a chunk renews the idle term",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
+    {"do": "advance", "ms": 29000},
+    {"do": "deliver", "event": {"kind": "progress", "name": "agent_chunk", "request": "agent-1", "input": "a"}},
+    {"do": "pump", "expect": {"state": "Awaiting", "journal": [{"code": "agent_chunk", "params": {"text": "a"}}]}},
+    {"do": "advance", "ms": 29000},
+    {"do": "pump", "expect": {"state": "Awaiting", "journal": [], "outcome": "none"}},
+    {"do": "advance", "ms": 2000},
+    {"do": "pump", "expect": {"state": "Failed", "outcome": "refusal:Timeout"}}
+  ]
+}

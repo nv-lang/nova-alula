@@ -1,0 +1,178 @@
+// expr_test.nv - the tree of an expression as JSON: read, write, round trip, errors with a path.
+module alula.machine
+
+fn xparse_ok(text str) -> bool {
+    match parse_expr(text) {
+        Ok(e) => true
+        Err(err) => false
+    }
+}
+
+fn xerr(text str) -> str {
+    match parse_expr(text) {
+        Ok(e) => "ok"
+        Err(err) => "${err.path}: ${err.message}"
+    }
+}
+
+// The tree, written back, and read again, gives the same text.
+fn xround(text str) -> bool {
+    match parse_expr(text) {
+        Ok(e) => {
+            ro once = expr_json(e)
+            match parse_expr(once) {
+                Ok(again) => expr_json(again) == once
+                Err(err) => false
+            }
+        }
+        Err(err) => false
+    }
+}
+
+fn xsame(text str) -> bool {
+    match parse_expr(text) {
+        Ok(e) => expr_json(e) == text
+        Err(err) => false
+    }
+}
+
+test "tr lit name" {
+    assert(xsame("{\"op\":\"lit\",\"value\":5}"))
+    assert(xsame("{\"op\":\"lit\",\"value\":null}"))
+    assert(xsame("{\"op\":\"lit\",\"value\":\"Привет 😀\"}"))
+    assert(xsame("{\"op\":\"lit\",\"value\":2.5}"))
+    assert(xsame("{\"op\":\"name\",\"name\":\"x\"}"))
+}
+
+test "tr field index" {
+    assert(xsame("{\"op\":\"field\",\"of\":{\"op\":\"name\",\"name\":\"r\"},\"name\":\"evidence\"}"))
+    assert(xsame("{\"op\":\"index\",\"of\":{\"op\":\"name\",\"name\":\"d\"},\"index\":{\"op\":\"lit\",\"value\":1}}"))
+}
+
+test "tr call lambda" {
+    ro text = "{\"op\":\"call\",\"fn\":\"filter\",\"args\":[{\"op\":\"name\",\"name\":\"xs\"},{\"op\":\"lambda\",\"params\":[\"x\"],\"body\":{\"op\":\"name\",\"name\":\"x\"}}]}"
+    assert(xsame(text))
+    match parse_expr(text) {
+        Ok(e) => match e {
+            CallFn { name, args } => assert(name == "filter" && args.len() == 2)
+            _ => assert(false)
+        }
+        Err(err) => assert(false)
+    }
+}
+
+test "tr draft lambda" {
+    ro draft = "{\"op\":\"call\",\"fn\":\"map\",\"args\":[{\"op\":\"name\",\"name\":\"xs\"},{\"lambda\":[\"x\"],\"body\":{\"op\":\"name\",\"name\":\"x\"}}]}"
+    assert(xparse_ok(draft))
+    assert(xround(draft))
+    assert(expr_json_of(draft).contains("\"op\":\"lambda\",\"params\":[\"x\"]"))
+}
+
+fn expr_json_of(text str) -> str {
+    match parse_expr(text) {
+        Ok(e) => expr_json(e)
+        Err(err) => ""
+    }
+}
+
+test "tr primitive" {
+    assert(xsame("{\"op\":\"primitive_call\",\"name\":\"time_now\",\"args\":[]}"))
+}
+
+test "tr match" {
+    ro head = "{\"op\":\"match\",\"on\":{\"op\":\"name\",\"name\":\"r\"},\"arms\":["
+    ro arm1 = "{\"patterns\":[{\"kind\":\"case\",\"type\":\"Outcome\",\"name\":\"Done\",\"bind\":{\"text\":\"t\"}},{\"kind\":\"lit\",\"value\":3}],"
+    ro arm1b = "\"guard\":{\"op\":\"lit\",\"value\":true},\"body\":{\"op\":\"name\",\"name\":\"t\"}},"
+    ro arm2 = "{\"patterns\":[{\"kind\":\"any\"}],\"body\":{\"op\":\"lit\",\"value\":0}}]}"
+    ro text = "${head}${arm1}${arm1b}${arm2}"
+    assert(xsame(text))
+}
+
+test "tr let if" {
+    assert(xsame("{\"op\":\"let\",\"name\":\"a\",\"value\":{\"op\":\"lit\",\"value\":1},\"body\":{\"op\":\"name\",\"name\":\"a\"}}"))
+    assert(xsame("{\"op\":\"if\",\"cond\":{\"op\":\"lit\",\"value\":true},\"then\":{\"op\":\"lit\",\"value\":1},\"else\":{\"op\":\"lit\",\"value\":2}}"))
+}
+
+test "tr record variant" {
+    assert(xsame("{\"op\":\"record\",\"type\":\"Finding\",\"fields\":{\"evidence\":{\"op\":\"lit\",\"value\":\"e\"},\"repeat\":{\"op\":\"lit\",\"value\":false}}}"))
+    assert(xsame("{\"op\":\"with_field\",\"of\":{\"op\":\"name\",\"name\":\"r\"},\"fields\":{\"repeat\":{\"op\":\"lit\",\"value\":true}}}"))
+    assert(xsame("{\"op\":\"variant\",\"type\":\"Severity\",\"name\":\"Critical\"}"))
+    assert(xsame("{\"op\":\"variant\",\"type\":\"Outcome\",\"name\":\"Done\",\"fields\":{\"count\":{\"op\":\"lit\",\"value\":1}}}"))
+}
+
+test "tr with one" {
+    ro one = "{\"op\":\"with_field\",\"of\":{\"op\":\"name\",\"name\":\"r\"},\"name\":\"repeat\",\"value\":{\"op\":\"lit\",\"value\":true}}"
+    assert(xparse_ok(one))
+    assert(expr_json_of(one).contains("\"fields\":{\"repeat\":"))
+}
+
+test "tr list tuple dict" {
+    assert(xsame("{\"op\":\"list\",\"items\":[{\"op\":\"lit\",\"value\":1},{\"op\":\"lit\",\"value\":2}]}"))
+    assert(xsame("{\"op\":\"tuple\",\"items\":[{\"op\":\"lit\",\"value\":1},{\"op\":\"lit\",\"value\":\"a\"}]}"))
+    assert(xsame("{\"op\":\"dict\",\"entries\":[{\"key\":{\"op\":\"lit\",\"value\":\"k\"},\"value\":{\"op\":\"lit\",\"value\":1}}]}"))
+    assert(xsame("{\"op\":\"list\",\"items\":[]}"))
+}
+
+test "tr operators" {
+    ro ops = ["+", "-", "*", "/", "%", "==", "!=", "<", "<=", ">", ">=", "and", "or", "??"]
+    for op in ops {
+        ro text = "{\"op\":\"${op}\",\"left\":{\"op\":\"lit\",\"value\":1},\"right\":{\"op\":\"lit\",\"value\":2}}"
+        assert(xsame(text))
+    }
+    assert(xsame("{\"op\":\"not\",\"operand\":{\"op\":\"lit\",\"value\":true}}"))
+    assert(xsame("{\"op\":\"neg\",\"operand\":{\"op\":\"lit\",\"value\":1}}"))
+}
+
+test "tr builders" {
+    ro built = bin(Add, lit_int(1), call("length", [name_ref("xs")]))
+    ro text = "{\"op\":\"+\",\"left\":{\"op\":\"lit\",\"value\":1},\"right\":{\"op\":\"call\",\"fn\":\"length\",\"args\":[{\"op\":\"name\",\"name\":\"xs\"}]}}"
+    assert(expr_json(built) == text)
+    assert(xsame(text))
+}
+
+test "tr stable" {
+    ro e = if_else(lit_bool(true), bin(Coalesce, lit_null(), lit_int(2)), lit_int(3))
+    assert(expr_json(e) == expr_json(e))
+}
+
+test "tr depth" {
+    assert(expr_depth(lit_int(1)) == 1)
+    assert(expr_depth(bin(Add, lit_int(1), lit_int(2))) == 2)
+    assert(expr_depth(bin(Add, lit_int(1), bin(Mul, lit_int(2), lit_int(3)))) == 3)
+    assert(expr_depth(lambda1("x", Not(name_ref("x")))) == 3)
+}
+
+test "tr too deep" {
+    mut text = "{\"op\":\"lit\",\"value\":1}"
+    mut i = 0
+    while i < 70 {
+        text = "{\"op\":\"not\",\"operand\":${text}}"
+        i += 1
+    }
+    assert(xerr(text).contains("deeper than"))
+    mut ok = "{\"op\":\"lit\",\"value\":1}"
+    mut j = 0
+    while j < 50 {
+        ok = "{\"op\":\"not\",\"operand\":${ok}}"
+        j += 1
+    }
+    assert(xparse_ok(ok))
+}
+
+test "tr errors" {
+    assert(xerr("5") == "$: a node must be an object")
+    assert(xerr("{}") == "$: the key op is missing")
+    assert(xerr("{\"op\":\"nope\"}") == "$: unknown op nope")
+    assert(xerr("{\"op\":\"name\"}") == "$: the key name is missing")
+    assert(xerr("{\"op\":\"not\",\"operand\":{\"op\":\"nope\"}}") == "$.operand: unknown op nope")
+    assert(xerr("{\"op\":\"call\",\"fn\":\"f\",\"args\":[{\"op\":\"lit\",\"value\":1},{\"op\":\"x\"}]}") == "$.args[1]: unknown op x")
+    assert(xerr("{\"op\":\"+\",\"left\":{\"op\":\"lit\",\"value\":1}}") == "$: the key right is missing")
+    assert(xerr("{\"op\":\"lit\",\"value\":{\"$bad\":1}}").starts_with("$.value:"))
+    assert(xerr("not json").starts_with("$:"))
+}
+
+test "tr arm errors" {
+    assert(xerr("{\"op\":\"match\",\"on\":{\"op\":\"name\",\"name\":\"r\"},\"arms\":[{\"patterns\":[{\"kind\":\"zzz\"}],\"body\":{\"op\":\"lit\",\"value\":1}}]}") == "$.arms[0].patterns[0]: unknown pattern kind zzz")
+    assert(xerr("{\"op\":\"record\",\"type\":\"T\",\"fields\":{\"a\":{\"op\":\"nope\"}}}") == "$.fields.a: unknown op nope")
+    assert(xerr("{\"op\":\"lambda\",\"params\":[1],\"body\":{\"op\":\"lit\",\"value\":1}}") == "$.params[0]: a parameter name must be a text")
+}

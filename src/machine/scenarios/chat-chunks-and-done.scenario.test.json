@@ -1,0 +1,12 @@
+{
+  "format": "scenario/0",
+  "machine": "ChatSession",
+  "name": "chunks of the agent accumulate in the state and the answer ends the session",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
+    {"do": "feed", "event": {"kind": "progress", "name": "agent_chunk", "request": "agent-1", "input": "Hel"}, "expect": {"state": "Awaiting", "journal": [{"code": "agent_chunk", "params": {"text": "Hel"}}], "data": {"reply": "Hel"}, "open": ["agent-1"]}},
+    {"do": "feed", "event": {"kind": "progress", "name": "agent_chunk", "request": "agent-1", "input": "lo"}, "expect": {"state": "Awaiting", "journal": [{"code": "agent_chunk", "params": {"text": "lo"}}], "data": {"reply": "Hello"}}},
+    {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-1"}, "expect": {"state": "Done", "journal": [{"code": "agent_done", "params": {}}], "outcome": "answer:Hello", "open": [], "cancelled": []}}
+  ]
+}

@@ -1,0 +1,774 @@
+// expr.nv - the tree of an expression and its JSON form.
+//
+// (Format v2, state-machines/state-machine-portolan-spec.md, is the source; the node names are English, the schema of the
+// tree is kept by the product: section 6 of the format only lists the constructions that need nodes.)
+// The language of the expressions is closed, pure and total (draft-format-v1.md, section 3): no loops, no recursion, no
+// time, no randomness, no input and output; the depth of a tree is limited. The tree is the JSON tree of the format
+// (section 6), one object per node with the key "op":
+//
+//   {"op":"lit","value":V}                      a constant; V is the JSON form of a value (value.nv); null is `none`
+//   {"op":"name","name":"x"}                    a name of the scope (data of the machine, a bound name)
+//   {"op":"field","of":E,"name":"f"}            E.f
+//   {"op":"index","of":E,"index":E}             a list by position, a dict by key (absent key: none)
+//   {"op":"call","fn":"filter","args":[E,...]}  a function or a macro of the language; a lambda is an argument
+//   {"op":"lambda","params":["x"],"body":E}     only as an argument of a macro (the draft form {"lambda":["x"],"body":E} is read too)
+//   {"op":"primitive_call","name":"p","args":[E,...]}    a primitive of the host, by name (registry.nv)
+//   {"op":"match","on":E,"arms":[{"patterns":[P,...],"guard":E,"body":E},...]}   exhaustive; "guard" is optional
+//   {"op":"let","name":"x","value":E,"body":E}
+//   {"op":"if","cond":E,"then":E,"else":E}
+//   {"op":"record","type":"T","fields":{"f":E,...}}
+//   {"op":"with_field","of":E,"fields":{"f":E,...}}     a record with changed fields (also "name" and "value" for one field)
+//   {"op":"variant","type":"T","name":"C","fields":{"f":E,...}}   a case of a sum type or an enum value ("fields" optional)
+//   {"op":"list","items":[E,...]}   {"op":"tuple","items":[E,...]}   {"op":"dict","entries":[{"key":E,"value":E},...]}
+//   {"op":"+","left":E,"right":E}               also - * / % == != < <= > >= and or ??
+//   {"op":"not","operand":E}   {"op":"neg","operand":E}
+//
+// A pattern P: {"kind":"any"}, {"kind":"lit","value":V}, {"kind":"case","type":"T","name":"C","bind":{"field":"local"}}
+// ("type" and "bind" are optional; a case matches by the name, and by the type when the type is given).
+module alula.machine
+
+import std.encoding.json.{Json, JsonValue, JsonObject}
+
+/// The deepest tree the decoder and the evaluator take.
+export const MAX_EXPR_DEPTH = 64
+
+/// BinOp: a binary operator. `And`, `Or` and `Coalesce` are lazy: the right part is evaluated only when it is needed.
+export type BinOp enum
+    | Add
+    | Sub
+    | Mul
+    | Div
+    | Mod
+    | Eq
+    | Ne
+    | Lt
+    | Le
+    | Gt
+    | Ge
+    | And
+    | Or
+    | Coalesce
+
+/// Bind: a field of a case bound to a local name in the arm of a `match`.
+export type Bind { field str, name str }
+
+/// Pattern: what an arm of a `match` accepts.
+export type Pattern enum
+    | AnyPattern
+    | LitPattern(Value)
+    | CasePattern { type_name str, name str, binds []Bind }
+
+// ORACLE-WORKAROUND(34): the guard of an arm is a list of zero or one expression, not an `Option[Expr]` field: an `Option` of an enum held by a record declared before the enum breaks the C (item 34); use `Option[Expr]` when item 34 is fixed
+/// MatchArm: alternatives (`A | B`), an optional guard and the result.
+export type MatchArm { patterns []Pattern, guard []Expr, body Expr }
+
+/// FieldExpr: a field of a record literal.
+export type FieldExpr { name str, value Expr }
+
+/// EntryExpr: an entry of a dict literal.
+export type EntryExpr { key Expr, value Expr }
+
+/// Expr: a node of the tree of an expression.
+export type Expr enum
+    | Lit(Value)
+    | Name(str)
+    | FieldOf { target Expr, name str }
+    | IndexOf { target Expr, index Expr }
+    | CallFn { name str, args []Expr }
+    | Lambda { params []str, body Expr }
+    | CallPrimitive { name str, args []Expr }
+    | MatchOn { subject Expr, arms []MatchArm }
+    | LetIn { name str, value Expr, body Expr }
+    | IfElse { cond Expr, then_branch Expr, else_branch Expr }
+    | RecordLit { type_name str, fields []FieldExpr }
+    | WithFields { base Expr, fields []FieldExpr }
+    | VariantLit { type_name str, name str, fields []FieldExpr }
+    | ListLit([]Expr)
+    | TupleLit([]Expr)
+    | DictLit([]EntryExpr)
+    | Binary { op BinOp, left Expr, right Expr }
+    | Not(Expr)
+    | Negate(Expr)
+
+/// ExprError: the tree is not an expression; `path` is where (`$.args[1].body`).
+export type ExprError { path str, message str }
+
+// Builders: short forms for code and tests.
+
+export fn lit_int(n int) -> Expr => Lit(Int(n))
+export fn lit_float(x f64) -> Expr => Lit(Float(x))
+export fn lit_text(s str) -> Expr => Lit(Text(s))
+export fn lit_bool(b bool) -> Expr => Lit(Bool(b))
+export fn lit_null() -> Expr => Lit(Null)
+export fn name_ref(name str) -> Expr => Name(name)
+export fn field_of(target Expr, name str) -> Expr => FieldOf { target, name }
+export fn index_of(target Expr, index Expr) -> Expr => IndexOf { target, index }
+export fn call(name str, args []Expr) -> Expr => CallFn { name, args }
+export fn call_primitive(name str, args []Expr) -> Expr => CallPrimitive { name, args }
+export fn lambda1(p str, body Expr) -> Expr => Lambda { params: [p], body }
+export fn lambda2(first str, second str, body Expr) -> Expr => Lambda { params: [first, second], body }
+export fn bin(op BinOp, left Expr, right Expr) -> Expr => Binary { op, left, right }
+export fn if_else(cond Expr, then_branch Expr, else_branch Expr) -> Expr => IfElse { cond, then_branch, else_branch }
+export fn let_in(name str, value Expr, body Expr) -> Expr => LetIn { name, value, body }
+export fn field_expr(name str, value Expr) -> FieldExpr => { name, value }
+export fn arm(patterns []Pattern, guard Option[Expr], body Expr) -> MatchArm => { patterns, guard: guard_list(guard), body }
+
+fn guard_list(guard Option[Expr]) -> []Expr {
+    match guard {
+        Some(g) => [g]
+        None => []Expr.new()
+    }
+}
+
+// ---- depth ----------------------------------------------------------------------------------------------------------
+
+fn deepest(items []Expr) -> int {
+    mut best = 0
+    for item in items {
+        ro d = expr_depth(item)
+        if d > best { best = d }
+    }
+    best
+}
+
+fn deepest_fields(fields []FieldExpr) -> int {
+    mut best = 0
+    for f in fields {
+        ro d = expr_depth(f.value)
+        if d > best { best = d }
+    }
+    best
+}
+
+fn max_of(a int, b int) -> int => if a > b { a } else { b }
+
+/// The depth of a tree (a leaf is 1).
+export fn expr_depth(e Expr) -> int {
+    match e {
+        Lit(v) => 1
+        Name(n) => 1
+        FieldOf { target, name } => 1 + expr_depth(target)
+        IndexOf { target, index } => 1 + max_of(expr_depth(target), expr_depth(index))
+        CallFn { name, args } => 1 + deepest(args)
+        Lambda { params, body } => 1 + expr_depth(body)
+        CallPrimitive { name, args } => 1 + deepest(args)
+        MatchOn { subject, arms } => {
+            mut best = expr_depth(subject)
+            for a in arms {
+                best = max_of(best, expr_depth(a.body))
+                best = max_of(best, deepest(a.guard))
+            }
+            1 + best
+        }
+        LetIn { name, value, body } => 1 + max_of(expr_depth(value), expr_depth(body))
+        IfElse { cond, then_branch, else_branch } => 1 + max_of(expr_depth(cond), max_of(expr_depth(then_branch), expr_depth(else_branch)))
+        RecordLit { type_name, fields } => 1 + deepest_fields(fields)
+        WithFields { base, fields } => 1 + max_of(expr_depth(base), deepest_fields(fields))
+        VariantLit { type_name, name, fields } => 1 + deepest_fields(fields)
+        ListLit(items) => 1 + deepest(items)
+        TupleLit(items) => 1 + deepest(items)
+        DictLit(entries) => {
+            mut best = 0
+            for en in entries { best = max_of(best, max_of(expr_depth(en.key), expr_depth(en.value))) }
+            1 + best
+        }
+        Binary { op, left, right } => 1 + max_of(expr_depth(left), expr_depth(right))
+        Not(x) => 1 + expr_depth(x)
+        Negate(x) => 1 + expr_depth(x)
+    }
+}
+
+// ---- children -------------------------------------------------------------------------------------------------------
+
+/// A part of a node with its step in the path (the same steps as the paths of the errors of the evaluator).
+// ORACLE-WORKAROUND(40): named `ExprChild`, not `Child`, because `std.os` has a type `Child`; rename back to `Child` when item 40 is fixed
+type ExprChild { seg str, expr Expr }
+
+fn kids_of_list(prefix str, items []Expr) -> []ExprChild {
+    mut out = []ExprChild.new()
+    mut i = 0
+    for item in items {
+        out.push(ExprChild { seg: "${prefix}[${i}]", expr: item })
+        i += 1
+    }
+    out
+}
+
+fn kids_of_fields(fields []FieldExpr) -> []ExprChild {
+    mut out = []ExprChild.new()
+    for f in fields { out.push(ExprChild { seg: "fields.${f.name}", expr: f.value }) }
+    out
+}
+
+fn kid(seg str, e Expr) -> ExprChild => { seg, expr: e }
+
+// The parts of a node in the order they are evaluated.
+fn children(e Expr) -> []ExprChild {
+    match e {
+        Lit(v) => []ExprChild.new()
+        Name(n) => []ExprChild.new()
+        FieldOf { target, name } => [kid("of", target)]
+        IndexOf { target, index } => [kid("of", target), kid("index", index)]
+        CallFn { name, args } => kids_of_list("args", args)
+        Lambda { params, body } => [kid("body", body)]
+        CallPrimitive { name, args } => kids_of_list("args", args)
+        MatchOn { subject, arms } => {
+            mut out = [kid("on", subject)]
+            mut i = 0
+            for a in arms {
+                if a.guard.len() > 0 { out.push(kid("arms[${i}].guard", a.guard[0])) }
+                out.push(kid("arms[${i}].body", a.body))
+                i += 1
+            }
+            out
+        }
+        LetIn { name, value, body } => [kid("value", value), kid("body", body)]
+        IfElse { cond, then_branch, else_branch } => [kid("cond", cond), kid("then", then_branch), kid("else", else_branch)]
+        RecordLit { type_name, fields } => kids_of_fields(fields)
+        WithFields { base, fields } => {
+            mut out = [kid("of", base)]
+            for c in kids_of_fields(fields) { out.push(c) }
+            out
+        }
+        VariantLit { type_name, name, fields } => kids_of_fields(fields)
+        ListLit(items) => kids_of_list("items", items)
+        TupleLit(items) => kids_of_list("items", items)
+        DictLit(entries) => {
+            mut out = []ExprChild.new()
+            mut i = 0
+            for en in entries {
+                out.push(kid("entries[${i}].key", en.key))
+                out.push(kid("entries[${i}].value", en.value))
+                i += 1
+            }
+            out
+        }
+        Binary { op, left, right } => [kid("left", left), kid("right", right)]
+        Not(x) => [kid("operand", x)]
+        Negate(x) => [kid("operand", x)]
+    }
+}
+
+// ---- operators ------------------------------------------------------------------------------------------------------
+
+fn op_symbol(op BinOp) -> str {
+    match op {
+        Add => "+"
+        Sub => "-"
+        Mul => "*"
+        Div => "/"
+        Mod => "%"
+        Eq => "=="
+        Ne => "!="
+        Lt => "<"
+        Le => "<="
+        Gt => ">"
+        Ge => ">="
+        And => "and"
+        Or => "or"
+        Coalesce => "??"
+    }
+}
+
+fn op_from_symbol(symbol str) -> Option[BinOp] {
+    for op in all_ops() {
+        if op_symbol(op) == symbol { return Some(op) }
+    }
+    None
+}
+
+fn all_ops() -> []BinOp => [Add, Sub, Mul, Div, Mod, Eq, Ne, Lt, Le, Gt, Ge, And, Or, Coalesce]
+
+// ---- to JSON --------------------------------------------------------------------------------------------------------
+
+fn node(op str) -> JsonObject {
+    mut o = JsonObject.new()
+    put(o, "op", JsonValue.str(op))
+    o
+}
+
+fn items_json(items []Expr) -> JsonValue {
+    mut out = []JsonValue.new()
+    for item in items { out.push(expr_to_json(item)) }
+    JsonValue.array(out)
+}
+
+fn fields_expr_json(fields []FieldExpr) -> JsonValue {
+    mut o = JsonObject.new()
+    for f in fields { put(o, f.name, expr_to_json(f.value)) }
+    JsonValue.object(o)
+}
+
+fn pattern_json(p Pattern) -> JsonValue {
+    mut o = JsonObject.new()
+    match p {
+        AnyPattern => put(o, "kind", JsonValue.str("any"))
+        LitPattern(v) => {
+            put(o, "kind", JsonValue.str("lit"))
+            put(o, "value", value_to_json(v))
+        }
+        CasePattern { type_name, name, binds } => {
+            put(o, "kind", JsonValue.str("case"))
+            if type_name != "" { put(o, "type", JsonValue.str(type_name)) }
+            put(o, "name", JsonValue.str(name))
+            if binds.len() > 0 {
+                mut b = JsonObject.new()
+                for bind in binds { put(b, bind.field, JsonValue.str(bind.name)) }
+                put(o, "bind", JsonValue.object(b))
+            }
+        }
+    }
+    JsonValue.object(o)
+}
+
+fn arm_json(a MatchArm) -> JsonValue {
+    mut o = JsonObject.new()
+    mut patterns = []JsonValue.new()
+    for p in a.patterns { patterns.push(pattern_json(p)) }
+    put(o, "patterns", JsonValue.array(patterns))
+    if a.guard.len() > 0 { put(o, "guard", expr_to_json(a.guard[0])) }
+    put(o, "body", expr_to_json(a.body))
+    JsonValue.object(o)
+}
+
+/// The tree as JSON.
+export fn expr_to_json(e Expr) -> JsonValue {
+    match e {
+        Lit(v) => {
+            mut o = node("lit")
+            put(o, "value", value_to_json(v))
+            JsonValue.object(o)
+        }
+        Name(n) => {
+            mut o = node("name")
+            put(o, "name", JsonValue.str(n))
+            JsonValue.object(o)
+        }
+        FieldOf { target, name } => {
+            mut o = node("field")
+            put(o, "of", expr_to_json(target))
+            put(o, "name", JsonValue.str(name))
+            JsonValue.object(o)
+        }
+        IndexOf { target, index } => {
+            mut o = node("index")
+            put(o, "of", expr_to_json(target))
+            put(o, "index", expr_to_json(index))
+            JsonValue.object(o)
+        }
+        CallFn { name, args } => {
+            mut o = node("call")
+            put(o, "fn", JsonValue.str(name))
+            put(o, "args", items_json(args))
+            JsonValue.object(o)
+        }
+        Lambda { params, body } => {
+            mut o = node("lambda")
+            mut names = []JsonValue.new()
+            for p in params { names.push(JsonValue.str(p)) }
+            put(o, "params", JsonValue.array(names))
+            put(o, "body", expr_to_json(body))
+            JsonValue.object(o)
+        }
+        CallPrimitive { name, args } => {
+            mut o = node("primitive_call")
+            put(o, "name", JsonValue.str(name))
+            put(o, "args", items_json(args))
+            JsonValue.object(o)
+        }
+        MatchOn { subject, arms } => {
+            mut o = node("match")
+            put(o, "on", expr_to_json(subject))
+            mut listed = []JsonValue.new()
+            for a in arms { listed.push(arm_json(a)) }
+            put(o, "arms", JsonValue.array(listed))
+            JsonValue.object(o)
+        }
+        LetIn { name, value, body } => {
+            mut o = node("let")
+            put(o, "name", JsonValue.str(name))
+            put(o, "value", expr_to_json(value))
+            put(o, "body", expr_to_json(body))
+            JsonValue.object(o)
+        }
+        IfElse { cond, then_branch, else_branch } => {
+            mut o = node("if")
+            put(o, "cond", expr_to_json(cond))
+            put(o, "then", expr_to_json(then_branch))
+            put(o, "else", expr_to_json(else_branch))
+            JsonValue.object(o)
+        }
+        RecordLit { type_name, fields } => {
+            mut o = node("record")
+            put(o, "type", JsonValue.str(type_name))
+            put(o, "fields", fields_expr_json(fields))
+            JsonValue.object(o)
+        }
+        WithFields { base, fields } => {
+            mut o = node("with_field")
+            put(o, "of", expr_to_json(base))
+            put(o, "fields", fields_expr_json(fields))
+            JsonValue.object(o)
+        }
+        VariantLit { type_name, name, fields } => {
+            mut o = node("variant")
+            put(o, "type", JsonValue.str(type_name))
+            put(o, "name", JsonValue.str(name))
+            if fields.len() > 0 { put(o, "fields", fields_expr_json(fields)) }
+            JsonValue.object(o)
+        }
+        ListLit(items) => {
+            mut o = node("list")
+            put(o, "items", items_json(items))
+            JsonValue.object(o)
+        }
+        TupleLit(items) => {
+            mut o = node("tuple")
+            put(o, "items", items_json(items))
+            JsonValue.object(o)
+        }
+        DictLit(entries) => {
+            mut o = node("dict")
+            mut listed = []JsonValue.new()
+            for en in entries {
+                mut item = JsonObject.new()
+                put(item, "key", expr_to_json(en.key))
+                put(item, "value", expr_to_json(en.value))
+                listed.push(JsonValue.object(item))
+            }
+            put(o, "entries", JsonValue.array(listed))
+            JsonValue.object(o)
+        }
+        Binary { op, left, right } => {
+            mut o = node(op_symbol(op))
+            put(o, "left", expr_to_json(left))
+            put(o, "right", expr_to_json(right))
+            JsonValue.object(o)
+        }
+        Not(x) => {
+            mut o = node("not")
+            put(o, "operand", expr_to_json(x))
+            JsonValue.object(o)
+        }
+        Negate(x) => {
+            mut o = node("neg")
+            put(o, "operand", expr_to_json(x))
+            JsonValue.object(o)
+        }
+    }
+}
+
+/// The tree as a JSON text, one line.
+export fn expr_json(e Expr) -> str => expr_to_json(e).to_str()
+
+// ---- from JSON ------------------------------------------------------------------------------------------------------
+
+fn bad(path str, message str) -> ExprError => { path, message }
+
+fn obj_of(j JsonValue, path str) -> Result[JsonObject, ExprError] {
+    match j.object() {
+        Some(o) => Ok(o)
+        None => Err(bad(path, "a node must be an object"))
+    }
+}
+
+fn need(o JsonObject, key str, path str) -> Result[JsonValue, ExprError] {
+    match o.get(key) {
+        Some(v) => Ok(v)
+        None => Err(bad(path, "the key ${key} is missing"))
+    }
+}
+
+fn need_text(o JsonObject, key str, path str) -> Result[str, ExprError] {
+    ro v = need(o, key, path)?
+    match v.str() {
+        Some(s) => Ok(s)
+        None => Err(bad(path, "the key ${key} must be a text"))
+    }
+}
+
+fn need_array(o JsonObject, key str, path str) -> Result[[]JsonValue, ExprError] {
+    ro v = need(o, key, path)?
+    match v.array() {
+        Some(a) => Ok(a)
+        None => Err(bad(path, "the key ${key} must be a list"))
+    }
+}
+
+fn need_object(o JsonObject, key str, path str) -> Result[JsonObject, ExprError] {
+    ro v = need(o, key, path)?
+    match v.object() {
+        Some(a) => Ok(a)
+        None => Err(bad(path, "the key ${key} must be an object"))
+    }
+}
+
+fn need_expr(o JsonObject, key str, path str, depth int) -> Result[Expr, ExprError] {
+    ro v = need(o, key, path)?
+    dec(v, "${path}.${key}", depth + 1)
+}
+
+fn dec_list(items []JsonValue, path str, depth int) -> Result[[]Expr, ExprError] {
+    mut out = []Expr.new()
+    mut i = 0
+    for item in items {
+        ro e = dec(item, "${path}[${i}]", depth + 1)?
+        out.push(e)
+        i += 1
+    }
+    Ok(out)
+}
+
+fn dec_fields(o JsonObject, path str, depth int) -> Result[[]FieldExpr, ExprError] {
+    mut out = []FieldExpr.new()
+    for key in o.keys() {
+        match o.get(key) {
+            Some(item) => {
+                ro e = dec(item, "${path}.${key}", depth + 1)?
+                out.push(FieldExpr { name: key, value: e })
+            }
+            None => ()
+        }
+    }
+    Ok(out)
+}
+
+fn dec_params(items []JsonValue, path str) -> Result[[]str, ExprError] {
+    mut out = []str.new()
+    mut i = 0
+    for item in items {
+        match item.str() {
+            Some(s) => out.push(s)
+            None => return Err(bad("${path}.params[${i}]", "a parameter name must be a text"))
+        }
+        i += 1
+    }
+    Ok(out)
+}
+
+fn dec_pattern(j JsonValue, path str) -> Result[Pattern, ExprError] {
+    ro o = obj_of(j, path)?
+    ro kind = need_text(o, "kind", path)?
+    if kind == "any" { return Ok(AnyPattern) }
+    if kind == "lit" {
+        ro v = need(o, "value", path)?
+        match value_from_json(v) {
+            Ok(value) => return Ok(LitPattern(value))
+            Err(message) => return Err(bad("${path}.value", message))
+        }
+    }
+    if kind == "case" {
+        ro name = need_text(o, "name", path)?
+        mut type_name = ""
+        if o.contains("type") { type_name = need_text(o, "type", path)? }
+        mut binds = []Bind.new()
+        if o.contains("bind") {
+            ro b = need_object(o, "bind", path)?
+            for field in b.keys() {
+                match b.get(field) {
+                    Some(local) => match local.str() {
+                        Some(local_name) => binds.push(Bind { field, name: local_name })
+                        None => return Err(bad("${path}.bind.${field}", "a bound name must be a text"))
+                    }
+                    None => ()
+                }
+            }
+        }
+        return Ok(CasePattern { type_name, name, binds })
+    }
+    Err(bad(path, "unknown pattern kind ${kind}"))
+}
+
+fn dec_arm(j JsonValue, path str, depth int) -> Result[MatchArm, ExprError] {
+    ro o = obj_of(j, path)?
+    ro listed = need_array(o, "patterns", path)?
+    if listed.len() == 0 { return Err(bad(path, "an arm needs a pattern")) }
+    mut patterns = []Pattern.new()
+    mut i = 0
+    for p in listed {
+        ro pattern = dec_pattern(p, "${path}.patterns[${i}]")?
+        patterns.push(pattern)
+        i += 1
+    }
+    mut guard = []Expr.new()
+    if o.contains("guard") {
+        ro g = need_expr(o, "guard", path, depth)?
+        guard.push(g)
+    }
+    ro body = need_expr(o, "body", path, depth)?
+    Ok(MatchArm { patterns, guard, body })
+}
+
+fn dec_binary(op BinOp, o JsonObject, path str, depth int) -> Result[Expr, ExprError] {
+    ro left = need_expr(o, "left", path, depth)?
+    ro right = need_expr(o, "right", path, depth)?
+    Ok(Binary { op, left, right })
+}
+
+fn dec_match(o JsonObject, path str, depth int) -> Result[Expr, ExprError] {
+    ro subject = need_expr(o, "on", path, depth)?
+    ro listed = need_array(o, "arms", path)?
+    mut arms = []MatchArm.new()
+    mut i = 0
+    for a in listed {
+        ro parsed = dec_arm(a, "${path}.arms[${i}]", depth + 1)?
+        arms.push(parsed)
+        i += 1
+    }
+    Ok(MatchOn { subject, arms })
+}
+
+fn dec_with_field(o JsonObject, path str, depth int) -> Result[Expr, ExprError] {
+    ro base = need_expr(o, "of", path, depth)?
+    if o.contains("fields") {
+        ro fo = need_object(o, "fields", path)?
+        ro fields = dec_fields(fo, "${path}.fields", depth)?
+        return Ok(WithFields { base, fields })
+    }
+    ro name = need_text(o, "name", path)?
+    ro value = need_expr(o, "value", path, depth)?
+    Ok(WithFields { base, fields: [FieldExpr { name, value }] })
+}
+
+fn dec_dict(o JsonObject, path str, depth int) -> Result[Expr, ExprError] {
+    ro listed = need_array(o, "entries", path)?
+    mut entries = []EntryExpr.new()
+    mut i = 0
+    for item in listed {
+        ro entry_path = "${path}.entries[${i}]"
+        ro eo = obj_of(item, entry_path)?
+        ro key = need_expr(eo, "key", entry_path, depth + 1)?
+        ro value = need_expr(eo, "value", entry_path, depth + 1)?
+        entries.push(EntryExpr { key, value })
+        i += 1
+    }
+    Ok(DictLit(entries))
+}
+
+fn dec_op(op str, o JsonObject, path str, depth int) -> Result[Expr, ExprError] {
+    match op {
+        "lit" => {
+            ro v = need(o, "value", path)?
+            match value_from_json(v) {
+                Ok(value) => Ok(Lit(value))
+                Err(message) => Err(bad("${path}.value", message))
+            }
+        }
+        "name" => {
+            ro n = need_text(o, "name", path)?
+            Ok(Name(n))
+        }
+        "field" => {
+            ro target = need_expr(o, "of", path, depth)?
+            ro name = need_text(o, "name", path)?
+            Ok(FieldOf { target, name })
+        }
+        "index" => {
+            ro target = need_expr(o, "of", path, depth)?
+            ro index = need_expr(o, "index", path, depth)?
+            Ok(IndexOf { target, index })
+        }
+        "call" => {
+            ro name = need_text(o, "fn", path)?
+            ro listed = need_array(o, "args", path)?
+            ro args = dec_list(listed, "${path}.args", depth)?
+            Ok(CallFn { name, args })
+        }
+        "lambda" => {
+            ro listed = need_array(o, "params", path)?
+            ro params = dec_params(listed, path)?
+            ro body = need_expr(o, "body", path, depth)?
+            Ok(Lambda { params, body })
+        }
+        "primitive_call" => {
+            ro name = need_text(o, "name", path)?
+            ro listed = need_array(o, "args", path)?
+            ro args = dec_list(listed, "${path}.args", depth)?
+            Ok(CallPrimitive { name, args })
+        }
+        "match" => dec_match(o, path, depth)
+        "let" => {
+            ro name = need_text(o, "name", path)?
+            ro value = need_expr(o, "value", path, depth)?
+            ro body = need_expr(o, "body", path, depth)?
+            Ok(LetIn { name, value, body })
+        }
+        "if" => {
+            ro cond = need_expr(o, "cond", path, depth)?
+            ro then_branch = need_expr(o, "then", path, depth)?
+            ro else_branch = need_expr(o, "else", path, depth)?
+            Ok(IfElse { cond, then_branch, else_branch })
+        }
+        "record" => {
+            ro type_name = need_text(o, "type", path)?
+            ro fo = need_object(o, "fields", path)?
+            ro fields = dec_fields(fo, "${path}.fields", depth)?
+            Ok(RecordLit { type_name, fields })
+        }
+        "with_field" => dec_with_field(o, path, depth)
+        "variant" => {
+            ro type_name = need_text(o, "type", path)?
+            ro name = need_text(o, "name", path)?
+            mut fields = []FieldExpr.new()
+            if o.contains("fields") {
+                ro fo = need_object(o, "fields", path)?
+                fields = dec_fields(fo, "${path}.fields", depth)?
+            }
+            Ok(VariantLit { type_name, name, fields })
+        }
+        "list" => {
+            ro listed = need_array(o, "items", path)?
+            ro items = dec_list(listed, "${path}.items", depth)?
+            Ok(ListLit(items))
+        }
+        "tuple" => {
+            ro listed = need_array(o, "items", path)?
+            ro items = dec_list(listed, "${path}.items", depth)?
+            if items.len() < 2 { return Err(bad(path, "a tuple has two fields or more")) }
+            Ok(TupleLit(items))
+        }
+        "dict" => dec_dict(o, path, depth)
+        "not" => {
+            ro x = need_expr(o, "operand", path, depth)?
+            Ok(Not(x))
+        }
+        "neg" => {
+            ro x = need_expr(o, "operand", path, depth)?
+            Ok(Negate(x))
+        }
+        _ => match op_from_symbol(op) {
+            Some(bin_op) => dec_binary(bin_op, o, path, depth)
+            None => Err(bad(path, "unknown op ${op}"))
+        }
+    }
+}
+
+// The draft form of a lambda: {"lambda": ["x"], "body": E}.
+fn dec_draft_lambda(o JsonObject, path str, depth int) -> Result[Expr, ExprError] {
+    ro listed = need_array(o, "lambda", path)?
+    ro params = dec_params(listed, path)?
+    ro body = need_expr(o, "body", path, depth)?
+    Ok(Lambda { params, body })
+}
+
+fn dec(j JsonValue, path str, depth int) -> Result[Expr, ExprError] {
+    if depth > MAX_EXPR_DEPTH { return Err(bad(path, "the tree is deeper than ${MAX_EXPR_DEPTH}")) }
+    ro o = obj_of(j, path)?
+    if !o.contains("op") {
+        if o.contains("lambda") { return dec_draft_lambda(o, path, depth) }
+        return Err(bad(path, "the key op is missing"))
+    }
+    ro op = need_text(o, "op", path)?
+    dec_op(op, o, path, depth)
+}
+
+/// A tree from JSON; a node that is not part of the language, a missing key, a tree deeper than `MAX_EXPR_DEPTH` is an error with its path.
+export fn expr_from_json(j JsonValue) -> Result[Expr, ExprError] => dec(j, "$", 1)
+
+/// A tree from a JSON text.
+export fn parse_expr(text str) -> Result[Expr, ExprError] {
+    match Json.parse(text) {
+        Ok(j) => expr_from_json(j)
+        Err(e) => Err(bad("$", "not valid JSON"))
+    }
+}

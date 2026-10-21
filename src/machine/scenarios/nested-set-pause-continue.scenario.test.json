@@ -1,0 +1,121 @@
+{
+  "format": "scenario/0",
+  "machine": "fan",
+  "name": "a set: the stop of a human goes to the two running nested machines, the third still waits; continue goes to them and sends nothing; a freed place sends the third",
+  "start_at": 1000,
+  "steps": [
+    {
+      "do": "feed",
+      "event": {
+        "kind": "start",
+        "request": "up-1",
+        "input": {
+          "order": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "signal",
+        "name": "human_stop",
+        "input": {
+          "human_word": "stop",
+          "author": "ann",
+          "source": "console"
+        }
+      },
+      "expect": {
+        "state": "Pause",
+        "open": [
+          "a-1",
+          "b-1"
+        ],
+        "cancelled": [],
+        "data": {
+          "to_send": [
+            "c"
+          ],
+          "previous": "Lenses"
+        }
+      },
+      "also": {
+        "a-1": {
+          "state": "Pause"
+        },
+        "b-1": {
+          "state": "Pause"
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "word",
+        "name": "continue",
+        "input": {
+          "human_word": "go",
+          "author": "ann",
+          "source": "console"
+        }
+      },
+      "expect": {
+        "state": "Lenses",
+        "open": [
+          "a-1",
+          "b-1"
+        ],
+        "sent": [
+          "a-1",
+          "b-1"
+        ],
+        "data": {
+          "to_send": [
+            "c"
+          ]
+        }
+      },
+      "also": {
+        "a-1": {
+          "state": "Ask",
+          "sent": [
+            "agent-1",
+            "agent-2"
+          ]
+        },
+        "b-1": {
+          "state": "Ask"
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "answer",
+        "request": "agent-2",
+        "input": "ra"
+      },
+      "on": "a-1"
+    },
+    {
+      "do": "pump",
+      "expect": {
+        "state": "Lenses",
+        "open": [
+          "b-1",
+          "c-1"
+        ],
+        "data": {
+          "answered": [
+            "a"
+          ],
+          "to_send": []
+        }
+      }
+    }
+  ]
+}

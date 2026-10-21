@@ -1,0 +1,11 @@
+{
+  "format": "scenario/0",
+  "machine": "Variants",
+  "name": "a case Retry restarts the request; On accept counts every answer; a case Done ends",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start"}, "expect": {"state": "Ask", "sent": ["agent-1"], "open": ["agent-1"], "data": {"tries": 0}}},
+    {"do": "feed", "event": {"kind": "answer", "name": "answer", "request": "agent-1", "input": {"$variant": "Outcome", "name": "Retry"}}, "expect": {"state": "Ask", "journal": [{"code": "retrying", "params": {}}], "sent": ["agent-1", "agent-2"], "open": ["agent-2"], "data": {"tries": 1}}},
+    {"do": "feed", "event": {"kind": "answer", "name": "answer", "request": "agent-2", "input": {"$variant": "Outcome", "name": "Done", "fields": {"text": "ok"}}}, "expect": {"state": "Fin", "journal": [{"code": "got", "params": {"text": "ok"}}], "outcome": "answer:ok", "data": {"tries": 2, "result": "ok"}, "open": []}}
+  ]
+}

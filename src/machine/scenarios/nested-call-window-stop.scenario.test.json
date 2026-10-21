@@ -1,0 +1,110 @@
+{
+  "format": "scenario/0",
+  "machine": "caller",
+  "name": "a call: a human stops the parent in the window between the commit of the call and its send; the signal waits for the nested machine, which starts and is paused",
+  "start_at": 1000,
+  "steps": [
+    {
+      "do": "accept",
+      "event": {
+        "kind": "start",
+        "request": "up-1",
+        "input": {
+          "task": "t"
+        }
+      },
+      "expect": {
+        "state": "Call",
+        "sent": [],
+        "queue": [
+          "send callee-1"
+        ]
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "signal",
+        "name": "human_stop",
+        "input": {
+          "human_word": "stop",
+          "author": "ann",
+          "source": "console"
+        }
+      },
+      "expect": {
+        "state": "Pause",
+        "sent": [
+          "callee-1"
+        ],
+        "open": [
+          "callee-1"
+        ],
+        "data": {
+          "previous": "Call"
+        }
+      },
+      "also": {
+        "callee-1": {
+          "state": "Pause",
+          "data": {
+            "previous": "Ask"
+          },
+          "cancelled": [
+            "agent-1"
+          ]
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "word",
+        "name": "continue",
+        "input": {
+          "human_word": "go",
+          "author": "ann",
+          "source": "console"
+        }
+      },
+      "expect": {
+        "state": "Call",
+        "open": [
+          "callee-1"
+        ]
+      },
+      "also": {
+        "callee-1": {
+          "state": "Ask",
+          "sent": [
+            "agent-1",
+            "agent-2"
+          ],
+          "open": [
+            "agent-2"
+          ]
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "answer",
+        "request": "agent-2",
+        "input": "late"
+      },
+      "on": "callee-1",
+      "expect": {
+        "state": "Done",
+        "outcome": "answer:{\"$record\":\"CallOutput\",\"fields\":{\"answer\":\"late\",\"score\":3}}"
+      }
+    },
+    {
+      "do": "pump",
+      "expect": {
+        "state": "Done",
+        "outcome": "answer:late"
+      }
+    }
+  ]
+}

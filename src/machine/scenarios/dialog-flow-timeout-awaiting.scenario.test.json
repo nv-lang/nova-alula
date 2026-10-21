@@ -1,0 +1,11 @@
+{
+  "format": "scenario/0",
+  "machine": "DialogSession",
+  "name": "the idle term in Awaiting ends the turn with Timeout",
+  "start_at": 1000,
+  "params": {"проект.срок_бездействия": 30000},
+  "steps": [
+    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
+    {"do": "feed", "event": {"kind": "timeout", "name": "timeout", "request": "agent-1"}, "expect": {"state": "Idle", "journal": [{"code": "no_answer_in_time", "params": {}}], "outcome": "none", "open": [], "cancelled": ["agent-1"]}}
+  ]
+}
