@@ -1,0 +1,404 @@
+// nested_test.nv - the interpreter and a nested machine (task 119): the request to a party of the kind `machine` (the JSON of the fields of the input type, the profile, the trace and the
+// step of the caller), the answer and the refusal of the nested machine, the signals `передать` and the exception of `отменить_открытые(кроме: …)`, the entry again that sends nothing
+// while the request is open, a set of parties with the counters of its elements, the limit of the simultaneous requests, `Правит`, the parse and the returns of the form.
+module alula.machine_run
+
+import std.text
+import alula.machine.{Value, Null, Bool, Text, RecordField, make_record, enum_value, value_json, Registry, Primitive, ParamSpec, RecordType, Reading, BoolType, register, standard_registry}
+import alula.engine.{Incoming, EventKind}
+
+fn caller() -> PortolanMachine => build("caller.portolan.json")
+
+fn fan() -> PortolanMachine => build("fan.portolan.json")
+
+fn child_answer(answer str, score int) -> str => "{\"$record\":\"CallOutput\",\"fields\":{\"answer\":\"${answer}\",\"score\":${score}}}"
+
+fn answered(request str, input str) -> Incoming => stamped(EventKind.Answered, "answer", Some(request), input)
+
+fn failed(request str, code str) -> Incoming => stamped(EventKind.Refused, "failure", Some(request), code)
+
+fn human_stop_by(author str) -> Incoming => word_in("human_stop", "{\"human_word\":\"stop\",\"author\":\"${author}\",\"source\":\"console\"}")
+
+fn continued_by(author str) -> Incoming => word_in("continue", "{\"human_word\":\"go\",\"author\":\"${author}\",\"source\":\"console\"}")
+
+fn called() -> Out {
+    ro m = caller()
+    run1(m, m.initial(), stamped(EventKind.Input, "start", Some("up-1"), "{\"task\":\"t\"}"))
+}
+
+// ---- the request to a nested machine ------------------------------------------------------------------------------------------------------------
+
+test "nr call is sent" {
+    ro r = called()
+    assert(r.state.name == "Call")
+    assert(summary(r.orders) == "send:callee:{\"label\":\"t\",\"count\":3,\"profile\":\"fast\"}:0,save")
+    assert(datum_json(r.state, "open_requests") == "[\"callee-1\"]")
+    assert(datum_json(r.state, "child_attempt") == "1")
+    assert(datum_json(r.state, "call_request_id") == "\"up-1\"")
+}
+
+test "nr call has no term" {
+    // a call has no idle term (rule 35, item 5)
+    ro r = called()
+    match r.orders[0] {
+        Send(order) => assert(order.idle_term == 0)
+        _ => assert(false)
+    }
+}
+
+test "nr request order" {
+    // the fields stand in the order of the input type of the call, not of the table of the state; the profile is the column of the party
+    ro r = called()
+    match r.orders[0] {
+        Send(order) => {
+            assert(order.input.starts_with("{\"label\""))
+            assert(order.input.ends_with("\"profile\":\"fast\"}"))
+        }
+        _ => assert(false)
+    }
+}
+
+test "nr answer" {
+    ro m = caller()
+    ro r = run1(m, called().state, answered("callee-1", child_answer("hi", 3)))
+    assert(r.state.name == "Done")
+    assert(summary(r.orders) == "log:child_answered(answer=hi;score=3),finish:answer:hi,save")
+    assert(datum_json(r.state, "open_requests") == "[]")
+    assert(datum_json(r.state, "child_result").contains("\"answer\":\"hi\""))
+}
+
+test "nr answer refused" {
+    // an answer that is not a value of the result type is a malformed event
+    ro m = caller()
+    ro r = run1(m, called().state, answered("callee-1", "{\"$record\":\"CallOutput\",\"fields\":{\"answer\":1}}"))
+    assert(!r.moved)
+    assert(summary(r.orders) == "log:event_malformed(name=answer)")
+}
+
+test "nr refusal" {
+    ro m = caller()
+    ro r = run1(m, called().state, failed("callee-1", "StoppedByHuman"))
+    assert(r.state.name == "Failed")
+    assert(summary(r.orders) == "log:child_failed(code=stopped_by_human),finish:refusal:NoResult,save")
+    assert(datum_json(r.state, "child_code") == "\"stopped_by_human\"")
+}
+
+test "nr refusal codes" {
+    ro m = caller()
+    for code in ["NoResult", "Cancelled", "Timeout", "ConnectionLost", "ModelRefused", "FormNotFixed", "MaxTokens", "CeilingReached", "MaxTurnRequests"] {
+        ro r = run1(m, called().state, failed("callee-1", code))
+        assert(r.state.name == "Failed")
+    }
+}
+
+// ---- the trace and the step of the caller ------------------------------------------------------------------------------------------------------
+
+fn tracer() -> str => `{"format":"machine/2","machine":"Tracer","version":"1",
+"types":{"records":[{"name":"Req","fields":[{"name":"trace","type":"text"},{"name":"step","type":"int"}]},{"name":"Res","fields":[{"name":"ok","type":"bool"}]}]},
+"data":[{"name":"open_requests","type":"[]text","initial":{"expr":{"op":"list","items":[]}},"writes":"mechanics"},
+{"name":"c_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}],
+"parties":[{"name":"c","id":"c","kind":"machine","nested":"callee","input_type":"Req","result":"Res","counter":"c_attempt"}],
+"initial":"Ask",
+"states":[{"name":"Ask","kind":"appeal","party":"c","inputs":[{"field":"trace","value":{"op":"name","name":"trace"},"reads":"party"},{"field":"step","value":{"op":"name","name":"step"},"reads":"party"}],
+"rows":[{"n":1,"event":{"kind":"answer"},"to":"Done"}]},
+{"name":"Done","kind":"end","reads":[]}],
+"ends":{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"lit","value":"ok"}}}]}}`
+
+test "nr trace and step" {
+    // the envelope of the call (rule 35, item 1): the trace and the number of the step of the caller that sends the request
+    ro m = build_from(tracer())
+    ro r = run1(m, m.initial(), word_in("start", ""))
+    assert(summary(r.orders) == "send:c:{\"trace\":\"t-1\",\"step\":2}:0,save")
+}
+
+// ---- the signals and the cancel ------------------------------------------------------------------------------------------------------------------
+
+test "nr pass stop" {
+    // the stop of a human: the signal goes to the open request of the nested machine, the request is not cancelled (rule 35, item 8)
+    ro m = caller()
+    ro stopped = run1(m, called().state, human_stop_by("ann"))
+    assert(stopped.state.name == "Pause")
+    assert(signals_text(stopped.signals) == "callee-1:stop")
+    assert(summary(stopped.orders) == "log:human_stop(author=ann;source=console;event=e-1),save")
+    assert(datum_json(stopped.state, "open_requests") == "[\"callee-1\"]")
+    assert(datum_json(stopped.state, "previous") == "\"Call\"")
+}
+
+test "nr continue no resend" {
+    // the return to the saved state finds the request of the nested machine open: nothing is sent, the signal `continue` goes down
+    ro m = caller()
+    ro paused = run1(m, called().state, human_stop_by("ann")).state
+    ro back = run1(m, paused, continued_by("ann"))
+    assert(back.state.name == "Call")
+    assert(signals_text(back.signals) == "callee-1:continue")
+    assert(summary(back.orders) == "log:human_continue(previous=Call;author=ann;source=console;event=e-1),save")
+    assert(datum_json(back.state, "child_attempt") == "1")
+}
+
+test "nr halt" {
+    ro m = caller()
+    ro paused = run1(m, called().state, human_stop_by("ann")).state
+    ro halted = run1(m, paused, word_in("halt", ""))
+    assert(halted.state.name == "Halted")
+    assert(signals_text(halted.signals) == "callee-1:halt")
+    assert(summary(halted.orders).contains("finish:refusal:StoppedByHuman"))
+}
+
+test "nr cancel request" {
+    // the cancel of the request that started the machine: the signal `cancel` goes down, every open request is cancelled, the machine ends
+    ro m = caller()
+    ro r = run1(m, called().state, word_in("cancel_request", "up-1"))
+    assert(r.state.name == "Halted")
+    assert(signals_text(r.signals) == "callee-1:cancel")
+    assert(summary(r.orders).contains("cancel:callee"))
+    assert(summary(r.orders).contains("finish:refusal:Cancelled"))
+}
+
+test "nr cancel foreign" {
+    ro m = caller()
+    ro r = run1(m, called().state, word_in("cancel_request", "other-9"))
+    assert(r.state.name == "Call")
+    assert(signals_text(r.signals) == "")
+    assert(summary(r.orders).contains("cancel_discarded_foreign_request"))
+}
+
+test "nr parent stop" {
+    // the stop of the parent of this machine (not of a human): a pause, the signal goes down too
+    ro m = caller()
+    ro r = run1(m, called().state, word_in("parent_stop", "up-1"))
+    assert(r.state.name == "Pause")
+    assert(signals_text(r.signals) == "callee-1:stop")
+}
+
+test "nr end cancels" {
+    // the machine ends: the open request of the nested machine is cancelled by the engine (the datum is emptied)
+    ro m = caller()
+    ro r = run1(m, called().state, answered("callee-1", child_answer("a", 1)))
+    assert(datum_json(r.state, "open_requests") == "[]")
+}
+
+// ---- a set of parties, its counters and its limit ---------------------------------------------------------------------------------------------
+
+fn fan_started() -> Out {
+    ro m = fan()
+    run1(m, m.initial(), word_in("start", "{\"order\":[\"a\",\"b\",\"c\"]}"))
+}
+
+test "nr set limit" {
+    // the limit is 2: two parties go, the third waits in `to_send` (rule 21)
+    ro r = fan_started()
+    assert(r.state.name == "Lenses")
+    ro orders = summary(r.orders)
+    assert(orders.starts_with("send:a:{\"label\":\"a\",\"count\":1,\"profile\":\"lens:a\"}:0,send:b:{\"label\":\"b\",\"count\":1,\"profile\":\"lens:b\"}:0,save"))
+    assert(datum_json(r.state, "to_send") == "[\"c\"]")
+    assert(datum_json(r.state, "open_requests") == "[\"a-1\",\"b-1\"]")
+}
+
+test "nr set counters" {
+    // the counter of each element is in its record: `lenses[*].attempt`
+    ro r = fan_started()
+    ro lenses = datum_json(r.state, "lenses")
+    assert(lenses.contains("\"attempt\":1"))
+    assert(lenses.contains("\"c\""))
+}
+
+test "nr set next" {
+    // an answer frees a place: the entry again into the appeal sends the party that waits
+    ro m = fan()
+    ro one = run1(m, fan_started().state, answered("a-1", child_answer("x", 1)))
+    assert(one.state.name == "Lenses")
+    assert(summary(one.orders).contains("send:c:{\"label\":\"c\""))
+    assert(datum_json(one.state, "to_send") == "[]")
+    assert(datum_json(one.state, "open_requests") == "[\"b-1\",\"c-1\"]")
+    assert(datum_json(one.state, "answered") == "[\"a\"]")
+}
+
+test "nr set lost" {
+    // a refusal of one party: it is recorded and the others go on
+    ro m = fan()
+    ro one = run1(m, fan_started().state, failed("b-1", "NoResult"))
+    assert(summary(one.orders).contains("log:lens_lost(party=b;code=no_result)"))
+    assert(datum_json(one.state, "lost") == "[\"b\"]")
+    assert(one.state.name == "Lenses")
+}
+
+test "nr set done" {
+    ro m = fan()
+    mut st = fan_started().state
+    st = run1(m, st, answered("a-1", child_answer("x", 1))).state
+    st = run1(m, st, failed("b-1", "Cancelled")).state
+    ro last = run1(m, st, answered("c-1", child_answer("z", 3)))
+    assert(last.state.name == "Done")
+    assert(summary(last.orders).contains("finish:answer:"))
+    assert(datum_json(last.state, "lost") == "[\"b\"]")
+}
+
+test "nr set pause" {
+    // a stop of a human: the signal to every open request of the nested machine, nothing is cancelled, `to_send` stays
+    ro m = fan()
+    ro paused = run1(m, fan_started().state, human_stop_by("ann"))
+    assert(paused.state.name == "Pause")
+    assert(signals_text(paused.signals) == "a-1:stop,b-1:stop")
+    assert(datum_json(paused.state, "to_send") == "[\"c\"]")
+    assert(datum_json(paused.state, "open_requests") == "[\"a-1\",\"b-1\"]")
+}
+
+test "nr set continue" {
+    // continue: the place is taken by the open requests, nothing goes; the party in `to_send` waits for an answer
+    ro m = fan()
+    ro paused = run1(m, fan_started().state, human_stop_by("ann")).state
+    ro back = run1(m, paused, continued_by("ann"))
+    assert(back.state.name == "Lenses")
+    assert(signals_text(back.signals) == "a-1:continue,b-1:continue")
+    assert(!summary(back.orders).contains("send:"))
+    assert(datum_json(back.state, "to_send") == "[\"c\"]")
+}
+
+test "nr set cancel returns" {
+    // the cancel of the request of this machine: the signal `cancel` goes to every nested machine, every request is cancelled, the parties of the set go back to `to_send`
+    // before those not sent yet, in the order of the open requests (rule 18)
+    ro m = fan()
+    ro r = run1(m, fan_started().state, word_in("cancel_request", ""))
+    assert(r.state.name == "Halted")
+    assert(signals_text(r.signals) == "a-1:cancel,b-1:cancel")
+    assert(summary(r.orders).contains("cancel:a,cancel:b"))
+    assert(datum_json(r.state, "to_send") == "[\"a\",\"b\",\"c\"]")
+    assert(datum_json(r.state, "open_requests") == "[]")
+}
+
+test "nr set one by one" {
+    // the limit 1 makes the set a queue in the order of the list
+    ro text = machine_text("fan.portolan.json").replace("{\"op\":\"lit\",\"value\":2}", "{\"op\":\"lit\",\"value\":1}")
+    ro m = build_from(text)
+    ro r = run1(m, m.initial(), word_in("start", "{\"order\":[\"x\",\"y\"]}"))
+    assert(datum_json(r.state, "open_requests") == "[\"x-1\"]")
+    assert(datum_json(r.state, "to_send") == "[\"y\"]")
+    ro next = run1(m, r.state, answered("x-1", child_answer("q", 1)))
+    assert(datum_json(next.state, "open_requests") == "[\"y-1\"]")
+}
+
+test "nr set no limit" {
+    // without a limit every party goes at once
+    ro text = machine_text("fan.portolan.json").replace("\"request_limit\":{\"op\":\"name\",\"name\":\"LIMIT\"},", "")
+    ro m = build_from(text)
+    ro r = run1(m, m.initial(), word_in("start", "{\"order\":[\"x\",\"y\",\"z\"]}"))
+    assert(datum_json(r.state, "open_requests") == "[\"x-1\",\"y-1\",\"z-1\"]")
+    assert(datum_json(r.state, "to_send") == "[]")
+}
+
+// ---- Edits, the parse and the returns of the form ---------------------------------------------------------------------------------------------------
+
+fn fixer() -> str => `{"format":"machine/2","machine":"Fixer","version":"1",
+"types":{"records":[{"name":"Out","fields":[{"name":"answer","type":"text"}]},{"name":"In","fields":[{"name":"note","type":"text"}]}]},
+"data":[{"name":"proposal","type":"text","initial":{"expr":{"op":"lit","value":"v0"}}},
+{"name":"open_requests","type":"[]text","initial":{"expr":{"op":"list","items":[]}},"writes":"mechanics"},
+{"name":"c_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"},
+{"name":"got","type":"text","initial":{"expr":{"op":"lit","value":""}}}],
+"parties":[{"name":"c","id":"c","kind":"machine","nested":"callee","input_type":"In","result":"Out","parse":{"primitive":"parse_out","type":"Out"},"counter":"c_attempt"}],
+"primitives":["parse_out","changed"],
+"initial":"Ask",
+"states":[{"name":"Ask","kind":"appeal","party":"c","edits":"proposal","edit_check":"changed","form_returns":1,
+"inputs":[{"field":"note","value":{"op":"name","name":"proposal"},"reads":"party"}],
+"accept":[{"event":{"kind":"answer","bind":"o"},"actions":[{"do":"assign","target":"proposal","value":{"op":"field","of":{"op":"name","name":"o"},"name":"answer"}}]}],
+"rows":[{"n":1,"event":{"kind":"answer","bind":"o"},"actions":[{"do":"assign","target":"got","value":{"op":"field","of":{"op":"name","name":"o"},"name":"answer"}}],"to":"Done"},
+{"n":2,"event":{"kind":"failure","bind":"why"},"actions":[{"do":"assign","target":"got","value":{"op":"call","fn":"text","args":[{"op":"name","name":"why"}]}}],"to":"Done"}]},
+{"name":"Done","kind":"end","reads":["got"]}],
+"ends":{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"name","name":"got"}}}]}}`
+
+// The standard registry and the two primitives of the fixer: the parse takes the answer and gives the parsed one, the check says whether the object changed.
+fn fixer_registry() -> Registry {
+    mut reg = standard_registry()
+    ro out = ParamSpec { name: "out", spec: RecordType("Out") }
+    ro parse = Primitive { name: "parse_out", params: [out], result: RecordType("Out"), class: Reading, reads: []str.new(), writes: []str.new() }
+    ro changed = Primitive { name: "changed", params: []ParamSpec.new(), result: BoolType, class: Reading, reads: []str.new(), writes: []str.new() }
+    ro first = register(reg, parse)
+    ro second = register(reg, changed)
+    reg
+}
+
+fn out_json(answer str) -> str => "{\"$record\":\"Out\",\"fields\":{\"answer\":\"${answer}\"}}"
+
+fn out_value(answer str) -> Value => make_record("Out", [RecordField { name: "answer", value: Text(answer) }])
+
+fn fixer_with(replies []ScriptedReply) -> PortolanMachine {
+    match load_portolan_machine(fixer(), fixer_registry()) {
+        Ok(m) => with_replies(m, replies)
+        Err(e) => panic("the fixer does not load: ${e}")
+    }
+}
+
+fn changed_reply(b bool) -> ScriptedReply => { name: "changed", value: Bool(b) }
+
+fn parsed_reply(answer str) -> ScriptedReply => { name: "parse_out", value: out_value(answer) }
+
+test "nr fixer loads" {
+    ro m = fixer_with([changed_reply(false), parsed_reply("p")])
+    ro r = run1(m, m.initial(), word_in("start", ""))
+    assert(summary(r.orders) == "send:c:{\"note\":\"v0\"}:0,save")
+}
+
+test "nr edits accepted" {
+    ro m = fixer_with([changed_reply(false), parsed_reply("p")])
+    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro r = run1(m, st, answered("c-1", out_json("raw")))
+    assert(r.state.name == "Done")
+    assert(summary(r.orders) == "finish:answer:p,save")
+    assert(datum_json(r.state, "proposal") == "\"p\"")
+}
+
+test "nr edits rejected" {
+    // the object changed while the party worked: the answer is not accepted, the request goes again with a new identifier, the input read again
+    ro m = fixer_with([changed_reply(true), parsed_reply("p")])
+    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro r = run1(m, st, answered("c-1", out_json("raw")))
+    assert(r.state.name == "Ask")
+    assert(summary(r.orders) == "log:answer_edited(party=c;request=c-1),send:c:{\"note\":\"v0\"}:0,save")
+    assert(datum_json(r.state, "open_requests") == "[\"c-2\"]")
+    assert(datum_json(r.state, "proposal") == "\"v0\"")
+}
+
+test "nr parse value" {
+    // the value of the answer is the result of the parse
+    ro m = fixer_with([changed_reply(false), parsed_reply("fixed")])
+    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro r = run1(m, st, answered("c-1", out_json("raw")))
+    assert(datum_json(r.state, "got") == "\"fixed\"")
+}
+
+test "nr form return" {
+    // the parse fails (the answer is not by the form): the request goes again once, with a new identifier
+    ro m = fixer_with([changed_reply(false)])
+    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro r = run1(m, st, answered("c-1", out_json("raw")))
+    assert(r.state.name == "Ask")
+    assert(summary(r.orders) == "log:form_returned(party=c;returns=1;request=c-1),send:c:{\"note\":\"v0\"}:0,save")
+    assert(datum_json(r.state, "open_requests") == "[\"c-2\"]")
+}
+
+test "nr form not fixed" {
+    // no return is left: the failure `FormNotFixed`, the rows of the state take it
+    ro m = fixer_with([changed_reply(false)])
+    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro once = run1(m, st, answered("c-1", out_json("raw"))).state
+    ro r = run1(m, once, answered("c-2", out_json("raw")))
+    assert(r.state.name == "Done")
+    assert(datum_json(r.state, "got") == "\"form_not_fixed\"")
+    assert(summary(r.orders) == "finish:answer:form_not_fixed,save")
+}
+
+test "nr form count reset" {
+    // an accepted answer clears the count of the returns
+    ro m = fixer_with([changed_reply(false), parsed_reply("p")])
+    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro r = run1(m, st, answered("c-1", out_json("raw")))
+    assert(datum_json(r.state, "$form_used") == "0" || datum_json(r.state, "$form_used") == "null")
+}
+
+test "nr failure not parsed" {
+    // a refusal of the nested machine does not go through the parse or the check
+    ro m = fixer_with([changed_reply(true)])
+    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro r = run1(m, st, failed("c-1", "Timeout"))
+    assert(r.state.name == "Done")
+    assert(datum_json(r.state, "got") == "\"timeout\"")
+}

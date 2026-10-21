@@ -1,0 +1,144 @@
+// words_test.nv - P-7 of format 2.7 in the interpreter: `text(x)` of an enum value takes its word from `words`; `журнал(все_данные)` writes the data by section 5 of the format: the word of an
+// enum, `yes`/`no`, `none`, the composite values as compact JSON.
+module alula.machine_run
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine.{Value, Int, Text, TypeDefs, RecordDef, VariantDef, CaseDef, FieldDef, EnumWord, TextType, IntType, DefTable, DefFn, Binding, Lit, call, enum_value, eval_defs, NoHost, Scope, standard_registry, value_text, value_json}
+
+fn plain_case(name str) -> CaseDef => { name, fields: []FieldDef.new() }
+
+fn wdef(name str, w str) -> EnumWord => { name, word: w }
+
+fn kinds_types() -> TypeDefs {
+    ro kind = VariantDef { name: "Kind", cases: [plain_case("Read"), plain_case("Write"), plain_case("Other")], words: [wdef("Read", "read"), wdef("Write", "save")] }
+    ro plain = VariantDef { name: "Plain", cases: [plain_case("First"), plain_case("Second")], words: []EnumWord.new() }
+    TypeDefs { records: []RecordDef.new(), variants: [kind, plain] }
+}
+
+fn word_text(type_name str, case_name str) -> str {
+    ro table = DefTable { fns: []DefFn.new(), types: kinds_types(), globals: []Binding.new(), registry: standard_registry(), checked: false }
+    mut host = NoHost { unused: 0 }
+    ro scope = Scope { bindings: []Binding.new() }
+    ro expr = call("text", [Lit(enum_value(type_name, case_name))])
+    match eval_defs(expr, scope, table, host) {
+        Ok(v) => match v {
+            Text(s) => s
+            _ => "not a text"
+        }
+        Err(e) => "error"
+    }
+}
+
+test "tw word is text" {
+    assert(word_text("Kind", "Write") == "save")
+    assert(word_text("Kind", "Read") == "read")
+}
+
+test "tw no word" {
+    assert(word_text("Kind", "Other") == "other")
+    assert(word_text("Plain", "Second") == "second")
+    assert(word_text("FailCode", "StoppedByHuman") == "stopped_by_human")
+}
+
+test "tw core text" {
+    ro v = enum_value("Kind", "Write")
+    match value_text(v) {
+        Some(s) => assert(s == "write")
+        None => panic("no text")
+    }
+}
+
+// ---- the data of a machine by section 5 ---------------------------------------------------------------------------------------
+
+fn jlit(json str) -> str => `{"op":"lit","value":${json}}`
+fn jvar(type_name str, name str) -> str => `{"op":"variant","type":"${type_name}","name":"${name}"}`
+fn dat(name str, type_text str, init str) -> str => `,{"name":"${name}","type":"${type_text}","initial":{"expr":${init}}}`
+
+fn more_types() -> str => `"types":{
+  "records":[{"name":"Pair","fields":[{"name":"id","type":"text"},{"name":"kind","type":"Kind"}]}],
+  "variants":[
+    {"name":"Kind","cases":[{"name":"Read"},{"name":"Write"},{"name":"Other"}],"words":[["Read","read"],["Write","save"]]},
+    {"name":"Plain","cases":[{"name":"First"},{"name":"Second"}]},
+    {"name":"Shape","cases":[{"name":"Dot"},{"name":"Box","fields":[{"name":"w","type":"int"},{"name":"h","type":"int"}]}]}
+  ]},
+  "data": [`
+
+fn more_data() -> str {
+    ro pair = `{"op":"record","type":"Pair","fields":{"id":${jlit("\"п\\\"1\\n\\u0001\"")},"kind":${jvar("Kind", "Read")}}}`
+    ro box = `{"op":"variant","type":"Shape","name":"Box","fields":{"w":${jlit("1")},"h":${jlit("2")}}}`
+    ro by_text = `{"op":"dict","entries":[{"key":${jlit("\"k\"")},"value":${jlit("1")}}]}`
+    ro by_kind = `{"op":"dict","entries":[{"key":${jvar("Kind", "Read")},"value":${jlit("1")}}]}`
+    ro tup = `{"op":"tuple","items":[${jlit("\"a\"")},${jlit("2")}]}`
+    ro kinds = `{"op":"list","items":[${jvar("Kind", "Read")},${jvar("Kind", "Write")}]}`
+    ro opts = `{"op":"list","items":[${jlit("1")},${jlit("null")}]}`
+    ro fls = `{"op":"list","items":[${jlit("2.0")},${jlit("0.25")}]}`
+    ro parts = [
+        dat("kind", "Kind", jvar("Kind", "Write")), dat("plain", "Plain", jvar("Plain", "Second")), dat("flag", "bool", jlit("true")),
+        dat("mark", "?text", jlit("null")), dat("ratio", "float", jlit("0.5")), dat("shape", "Shape", box), dat("dot", "Shape", jvar("Shape", "Dot")),
+        dat("pair", "Pair", pair), dat("by_text", "{text: int}", by_text), dat("by_kind", "{Kind: int}", by_kind), dat("tup", "(text, int)", tup),
+        dat("kinds", "[]Kind", kinds), dat("maybe", "?Kind", jvar("Kind", "Write")), dat("opts", "[]?int", opts), dat("fls", "[]float", fls),
+        dat("blank", "text", jlit("\"\"")), dat("semi", "text", jlit("\"a; b=c\""))
+    ]
+    parts.join("")
+}
+
+// The calc machine with more data; its overflow ends in the ERROR end, which writes all the data.
+fn full_machine() -> PortolanMachine {
+    ro base = machine_text("calc.portolan.json")
+    ro with_types = base.replace("\"data\": [", more_types())
+    ro stop_end = "\"initial\": { \"expr\": { \"op\": \"lit\", \"value\": \"\" } } }"
+    ro with_data = with_types.replace(stop_end, "${stop_end}${more_data()}")
+    ro big = with_data.replace("\"default\": { \"op\": \"lit\", \"value\": 2 }", "\"default\": { \"op\": \"lit\", \"value\": 9223372036854775807 }")
+    build_from(big)
+}
+
+fn data_line() -> str {
+    ro m = full_machine()
+    ro r = run1(m, m.initial(), start_with("{\"start\":0,\"label\":\"abc\"}"))
+    for text in summary(r.orders).split(",log:") {
+        if text.starts_with("machine_data(data=") {
+            ro at = text.find("),finish:") ?? text.byte_len()
+            return text[..at + 1]
+        }
+    }
+    summary(r.orders)
+}
+
+fn data_head() -> str => "machine_data(data=count=0; label=abc; began=1000; log=[]; table={}; stop=; "
+
+test "tw data prefix" {
+    ro line = data_line()
+    assert(line.starts_with(data_head()))
+}
+
+test "tw data scalars" {
+    ro line = data_line()
+    assert(line.contains("; kind=save; plain=Second; flag=yes; mark=none; ratio=0.5; "))
+    assert(line.contains("; blank=; semi=a; b=c)"))
+}
+
+test "tw data variants" {
+    ro line = data_line()
+    assert(line.contains("; shape={\"Box\":{\"w\":1,\"h\":2}}; dot=\"Dot\"; "))
+}
+
+test "tw data composites" {
+    ro line = data_line()
+    assert(line.contains("; pair={\"id\":\"п\\\"1\\n\\u0001\",\"kind\":\"read\"}; "))
+    assert(line.contains("; by_text={\"k\":1}; by_kind=[[\"read\",1]]; tup=[\"a\",2]; "))
+    assert(line.contains("; kinds=[\"read\",\"save\"]; maybe=save; opts=[1,null]; fls=[2.0,0.25]; "))
+}
+
+test "tw data whole" {
+    ro line = data_line()
+    ro expected = "${data_head()}kind=save; plain=Second; flag=yes; mark=none; ratio=0.5; shape={\"Box\":{\"w\":1,\"h\":2}}; dot=\"Dot\"; pair={\"id\":\"п\\\"1\\n\\u0001\",\"kind\":\"read\"}; by_text={\"k\":1}; by_kind=[[\"read\",1]]; tup=[\"a\",2]; kinds=[\"read\",\"save\"]; maybe=save; opts=[1,null]; fls=[2.0,0.25]; blank=; semi=a; b=c)"
+    assert(line == expected)
+}
+
+test "tw data same as core" {
+    ro m = full_machine()
+    ro r = run1(m, m.initial(), start_with("{\"start\":0,\"label\":\"abc\"}"))
+    assert(datum_json(r.state, "kind") == "{\"$variant\":\"Kind\",\"name\":\"Write\"}")
+    assert(value_json(datum(r.state, "count")) == "0")
+}

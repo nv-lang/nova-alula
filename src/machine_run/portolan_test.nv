@@ -1,0 +1,63 @@
+// portolan_test.nv - task 113: the machine that is data is named by the language: `PortolanMachine`, `PortolanState`, `portolan_machine_with`, `load_portolan_machine`,
+// `portolan_step`; the key of its tree is `portolan_version`.
+module alula.machine_run
+
+import std.text
+import alula.machine.{standard_registry, text_of_file, machine_files}
+import alula.engine.{EventKind, StepEnvironment}
+
+fn pm_text() -> str => text_of_file(machine_files(), "calc.portolan.json")
+
+fn pm_load() -> PortolanMachine {
+    match load_portolan_machine(pm_text(), standard_registry()) {
+        Ok(m) => m
+        Err(e) => panic("calc does not load: ${e}")
+    }
+}
+
+test "pm names" {
+    ro m = pm_load()
+    ro st PortolanState = m.initial()
+    assert(m.name() == "Calc")
+    assert(m.state_name(st) == m.def.initial)
+}
+
+test "pm with params" {
+    match portolan_machine_with(pm_load().def, standard_registry(), []ProjectValue.new()) {
+        Ok(m) => assert(m.def.name == "Calc")
+        Err(e) => panic("rebuild: ${e}")
+    }
+}
+
+test "pm step" {
+    ro m = pm_load()
+    mut environment = StepEnvironment.new()
+    mut host = ScriptedHost { at: 1000, replies: m.replies, ids: 0 }
+    ro event = stamped(EventKind.Input, "user_message", None, "go")
+    ro transition = portolan_step(m, m.initial(), event, environment, host)
+    match transition {
+        Go(next) => assert(next.name != "")
+        Stay => ()
+    }
+}
+
+test "pm key" {
+    ro versioned = pm_text()
+    assert(versioned.contains("\"portolan_version\": \"2.12\""))
+    match load_portolan_machine(versioned, standard_registry()) {
+        Ok(m) => assert(m.def.name == "Calc")
+        Err(e) => panic("portolan_version: ${e}")
+    }
+    // a tree of another version is refused
+    ro older = pm_text().replace("\"portolan_version\": \"2.12\"", "\"portolan_version\": \"2.11\"")
+    match load_portolan_machine(older, standard_registry()) {
+        Ok(m) => panic("2.11 is accepted")
+        Err(e) => assert(e.contains("2.12"))
+    }
+    // the old name of the key is not accepted
+    ro old = pm_text().replace("\"format\": \"machine/2\",", "\"format\": \"machine/2\", \"table_format\": \"2.5\",")
+    match load_portolan_machine(old, standard_registry()) {
+        Ok(m) => panic("table_format is accepted")
+        Err(e) => assert(e.contains("table_format"))
+    }
+}

@@ -1,0 +1,980 @@
+// chain.nv - the chain of a step: where a row leads, the entry of the four kinds of states, the ends, the faults, the start, `portolan_step`.
+module alula.machine_run
+
+import std.text
+import std.encoding.json.{Json, JsonValue, JsonObject}
+import alula.engine.{Incoming, EventKind, Environment, Transition, SendOrder, CancelOrder, FailCode, JournalParam, journal_event, param, Go, Stay}
+import alula.machine.{Value, Null, Int, Bool, Text, List, Record, record_get, RecordField, Binding, PrimitiveHost, PrimitiveFailed, TypeSpec, TypeDefs, RecordType, OptionalType, Lit, check_call_args, value_json, value_to_json, value_from_json, make_record, check_value, enum_value, spec_text}
+import alula.machine_table.{StateDef, Goto, PartyDef, MachineDef, LValue, KeyStep, FieldStep, MachineParty, find_state, find_party, find_data}
+import alula.machine_table.{ToState}
+
+// ---- the request of an appeal ------------------------------------------------------------------------------------------------
+
+// ORACLE-WORKAROUND(39): the record has a name of its own (`ReqField`, not a short name such as `Pair`): type names are global to the program and two modules with a record of the same name clash; use a short name when item 39 is fixed
+type ReqField { name str, value Value }
+
+// The text of a request: a request with one field of text is that text, with no field is empty, else the JSON of a record of the fields.
+fn request_text(pairs []ReqField) -> str {
+    if pairs.len() == 0 { return "" }
+    if pairs.len() == 1 {
+        match pairs[0].value {
+            Text(s) => return s
+            _ => ()
+        }
+    }
+    mut fields = []RecordField.new()
+    for p in pairs { fields.push(RecordField { name: p.name, value: p.value }) }
+    value_json(make_record("Request", fields))
+}
+
+fn silence_of(mut ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[int, Fault] {
+    if st.silence.len() == 0 { return Ok(0) }
+    ro v = run_expr(ctx, st.silence[0], host)?
+    match v {
+        Null => Ok(0)
+        Int(n) => Ok(if n < 0 { 0 } else { n })
+        _ => Err(defect_fault("type_mismatch", "the silence term must be an int or none"))
+    }
+}
+
+// ---- the mechanics of the contract (rules 14, 15, 18, 21): the attempt counters, the open requests, the request of the call -----------------
+
+fn has_datum(ctx Ctx, name str) -> bool => find_data(ctx.def, name) >= 0
+
+// The texts of a datum that is a list of texts.
+fn texts_of_datum(ctx Ctx, name str) -> []str {
+    mut out = []str.new()
+    match data_get(ctx.data, name) {
+        List(xs) => {
+            for x in xs {
+                match x {
+                    Text(s) => out.push(s)
+                    _ => ()
+                }
+            }
+        }
+        _ => ()
+    }
+    out
+}
+
+// Write a list of texts into a datum without a check of the marks: the mechanics write (`writes: mechanics`).
+fn put_texts(mut ctx Ctx, name str, items []str) -> () {
+    mut values = []Value.new()
+    for s in items { values.push(Text(s)) }
+    ctx.data = data_put(ctx.data, name, List(values))
+}
+
+// A request is open: the mechanics put its id into `open_requests` when it is sent (the machine that does not hold the datum keeps none).
+fn open_add(mut ctx Ctx, id str) -> () {
+    if !has_datum(ctx, "open_requests") { return }
+    mut items = texts_of_datum(ctx, "open_requests")
+    items.push(id)
+    put_texts(ctx, "open_requests", items)
+}
+
+// A request is closed (an outcome, a cancel, an end): its id leaves `open_requests`.
+fn open_remove(mut ctx Ctx, id str) -> () {
+    if !has_datum(ctx, "open_requests") { return }
+    mut keep = []str.new()
+    for r in texts_of_datum(ctx, "open_requests") {
+        if r != id { keep.push(r) }
+    }
+    put_texts(ctx, "open_requests", keep)
+}
+
+// The counter of the attempts of a party grows by one at every send (rule 15): the new number, or 0 when the counter is not a plain datum.
+fn bump_counter(mut ctx Ctx, name str) -> int {
+    if name == "" || name.contains("[") || !has_datum(ctx, name) { return 0 }
+    mut now = 0
+    match data_get(ctx.data, name) {
+        Int(n) => { now = n }
+        _ => ()
+    }
+    ctx.data = data_put(ctx.data, name, Int(now + 1))
+    now + 1
+}
+
+// ---- the requests of an appeal (rules 12, 15, 21; format 4.2) ----------------------------------------------------------------------------
+
+// The party that holds a request, by its identifier `<party id>-<attempt>`: the index in the parties of the machine; a request whose party id is not that of a party belongs to
+// the party of the set (the party without an id; a machine has one, the check refuses more), -1 when there is none.
+fn owner_party(def MachineDef, request_id str) -> int {
+    ro prefix = party_of_request_id(request_id)
+    mut set_party = -1
+    mut i = 0
+    for p in def.parties {
+        if p.id != "" && p.id == prefix { return i }
+        if p.id == "" && set_party < 0 { set_party = i }
+        i += 1
+    }
+    set_party
+}
+
+// Is the request one of an element of a set (the party that holds it has no id of its own)?
+fn is_set_request(def MachineDef, request_id str) -> bool {
+    ro at = owner_party(def, request_id)
+    at >= 0 && def.parties[at].id == ""
+}
+
+// Does the party have a request among the open ones of the machine (rule 12: an entry again sends nothing to a party whose request is open)?
+fn party_has_open(ctx Ctx, party_ix int) -> bool {
+    for rid in texts_of_datum(ctx, "open_requests") {
+        if owner_party(ctx.def, rid) == party_ix && !is_set_request(ctx.def, rid) { return true }
+    }
+    false
+}
+
+// The fields of a record type of the machine in the order of its declaration (empty when the spec is not a record).
+fn record_field_names(types TypeDefs, spec TypeSpec) -> []str {
+    mut out = []str.new()
+    match spec {
+        RecordType(name) => {
+            for r in types.records {
+                if r.name == name {
+                    for f in r.fields { out.push(f.name) }
+                }
+            }
+        }
+        _ => ()
+    }
+    out
+}
+
+// The text of a request to a nested machine: one JSON object, the fields in the order of the record type of the input of the call, every value in the lossless form of the core.
+fn nested_request_text(types TypeDefs, party PartyDef, pairs []ReqField) -> str {
+    mut o = JsonObject.new()
+    mut used = []str.new()
+    if party.input_spec.len() > 0 {
+        for name in record_field_names(types, party.input_spec[0]) {
+            for pair in pairs {
+                if pair.name == name {
+                    ro old = o.insert(name, value_to_json(pair.value))
+                    used.push(name)
+                }
+            }
+        }
+    }
+    for pair in pairs {
+        if !used.contains(pair.name) {
+            ro old = o.insert(pair.name, value_to_json(pair.value))
+        }
+    }
+    JsonValue.object(o).to_str()
+}
+
+// The counter of the element of a set grows by one at a send (`lenses[*].attempt`, rule 15): the new number.
+fn bump_path_counter(mut ctx Ctx, counter str, element str, mut host PrimitiveHost) -> Result[int, Fault] {
+    ro cut = counter.find("[*]") ?? 0
+    ro root = counter[..cut]
+    ro field = counter[cut + 4..]
+    ro target = LValue { root, steps: [KeyStep(Lit(Text(element))), FieldStep(field)] }
+    mut now = 0
+    match read_target(ctx, target, host)? {
+        Int(n) => { now = n }
+        _ => ()
+    }
+    write_target(ctx, target, Int(now + 1), host)?
+    Ok(now + 1)
+}
+
+// The request to the party `party` (an element of the set when `element` is not the id of the party): the fields of the table "Input" that the party reads, the profile, the counter
+// of the attempts, the order to the engine and the identifier of the request in `open_requests`.
+fn send_one(mut ctx Ctx, st StateDef, party PartyDef, element str, idle_term int, mut host PrimitiveHost) -> Result[(), Fault] {
+    ro mark = ctx.locals.len()
+    ctx.locals.push(Binding { name: "party", value: Text(element) })
+    mut pairs = []ReqField.new()
+    mut failed = false
+    mut fault = defect_fault("", "")
+    for f in st.inputs {
+        if f.to_party {
+            match run_expr(ctx, f.value, host) {
+                Ok(v) => pairs.push(ReqField { name: f.field, value: v })
+                Err(x) => {
+                    failed = true
+                    fault = x
+                }
+            }
+        }
+    }
+    if !failed && party.profile.len() > 0 {
+        match run_expr(ctx, party.profile[0], host) {
+            Ok(v) => pairs.push(ReqField { name: "profile", value: v })
+            Err(x) => {
+                failed = true
+                fault = x
+            }
+        }
+    }
+    pop_to(ctx, mark)
+    if failed { return Err(fault) }
+    mut attempt = 0
+    if party.counter.contains("[*]") {
+        attempt = bump_path_counter(ctx, party.counter, element, host)?
+    } else if st.set.len() == 0 {
+        // the counter of the attempts of a party grows at every send (rule 15); the elements of a set with a plain counter are counted by the engine
+        attempt = bump_counter(ctx, party.counter)
+    }
+    ro text = if party.kind == MachineParty { nested_request_text(ctx.def.types, party, pairs) } else { request_text(pairs) }
+    plan(ctx, PSend(SendOrder { party: element, input: text, idle_term }))
+    if attempt > 0 { open_add(ctx, "${element}-${attempt}") }
+    Ok(())
+}
+
+// The elements of the set of an appeal that go now: the ids of the set, those that wait in `to_send` when the machine has that datum (rule 21: the mechanics take the parties from
+// `к_отправке` in the order of the set), at most as many as the limit of the simultaneous requests leaves room for.
+fn set_to_send(mut ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[[]str, Fault] {
+    ro v = run_expr(ctx, st.set[0], host)?
+    mut all = []str.new()
+    match v {
+        List(xs) => {
+            for x in xs { all.push(want_text(x, "an element of a set")?) }
+        }
+        _ => return Err(defect_fault("type_mismatch", "a set must be a list of texts"))
+    }
+    mut waiting = []str.new()
+    if has_datum(ctx, "to_send") {
+        ro held = texts_of_datum(ctx, "to_send")
+        for id in all {
+            if held.contains(id) { waiting.push(id) }
+        }
+    } else {
+        waiting = all
+    }
+    ro open = texts_of_datum(ctx, "open_requests").len()
+    mut room = waiting.len()
+    if ctx.limit > 0 {
+        room = ctx.limit - open
+        if room < 0 { room = 0 }
+    }
+    mut out = []str.new()
+    for id in waiting {
+        if out.len() < room { out.push(id) }
+    }
+    Ok(out)
+}
+
+// Cancel the open request of a party that has no set (rule 18): the order to the engine and the identifier leaves `open_requests`.
+fn cancel_party_open(mut ctx Ctx, party_ix int) -> () {
+    for rid in texts_of_datum(ctx, "open_requests") {
+        if owner_party(ctx.def, rid) == party_ix && !is_set_request(ctx.def, rid) {
+            plan(ctx, PCancel(CancelOrder { party: party_of_request_id(rid) }))
+            open_remove(ctx, rid)
+        }
+    }
+}
+
+fn enter_appeal(mut ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[(), Fault] {
+    ro pi = find_party(ctx.def, st.party)
+    if pi < 0 { return Err(defect_fault("unknown_name", "no party ${st.party}")) }
+    ro party = ctx.def.parties[pi]
+    if !sends_to(party.kind) { return Ok(()) }
+    // a call of a nested machine has no idle term (rule 35, item 5)
+    ro idle_term = if party.kind == MachineParty { 0 } else { silence_of(ctx, st, host)? }
+    if st.set.len() > 0 {
+        ro ids = set_to_send(ctx, st, host)?
+        for id in ids { send_one(ctx, st, party, id, idle_term, host)? }
+        // the parties that went are no longer waiting in `to_send` (the mechanics hand them over, rule 21)
+        if has_datum(ctx, "to_send") && ids.len() > 0 {
+            mut left = []str.new()
+            for id in texts_of_datum(ctx, "to_send") {
+                if !ids.contains(id) { left.push(id) }
+            }
+            put_texts(ctx, "to_send", left)
+        }
+        return Ok(())
+    }
+    // an entry again into an appeal whose request is open sends nothing (rule 12): the pause keeps the request of a nested machine open;
+    // "restart" (rule 18) cancels the open request first and sends a new one
+    if party_has_open(ctx, pi) {
+        if !ctx.again { return Ok(()) }
+        cancel_party_open(ctx, pi)
+    }
+    // the limit of the simultaneous requests (rule 21): the open requests of the machine count
+    if ctx.limit > 0 && texts_of_datum(ctx, "open_requests").len() + 1 > ctx.limit {
+        return Err(defect_fault("request_limit", "the limit of ${ctx.limit} simultaneous requests would be passed by the appeal ${st.name}"))
+    }
+    send_one(ctx, st, party, party.id, idle_term, host)
+}
+
+// ---- the end ---------------------------------------------------------------------------------------------------------------
+
+fn failure_of(v Value) -> Result[FailCode, Fault] {
+    match v {
+        Variant { type_name, name, fields } => {
+            if type_name != "FailCode" { return Err(defect_fault("type_mismatch", "the code of a refusal is a FailCode")) }
+            Ok(FailCode.of(name))
+        }
+        _ => Err(defect_fault("type_mismatch", "the code of a refusal is a FailCode"))
+    }
+}
+
+fn enter_end(mut ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[(), Fault] {
+    // an end cancels every open request (rule 22): the engine does it, the datum follows
+    if has_datum(ctx, "open_requests") { put_texts(ctx, "open_requests", []str.new()) }
+    ro mark = ctx.locals.len()
+    run_actions(ctx, st.entry, host)?
+    for er in ctx.def.end_rows {
+        if er.state != st.name { continue }
+        ro w = want_bool(run_expr(ctx, er.when, host)?)?
+        if !w { continue }
+        ctx.taken.push("end:${st.name}#${er.n}")
+        match er.answer {
+            AnswerValue(e) => {
+                ro v = run_expr(ctx, e, host)?
+                mut text = ""
+                match v {
+                    Text(s) => { text = s }
+                    _ => { text = value_json(v) }
+                }
+                finish_with(ctx, None, text)
+            }
+            RefusalValue { code: code_expr, text: text_expr } => {
+                ro c = failure_of(run_expr(ctx, code_expr, host)?)?
+                ro t = want_text(run_expr(ctx, text_expr, host)?, "the text of a refusal")?
+                finish_with(ctx, Some(c), t)
+            }
+        }
+        pop_to(ctx, mark)
+        return Ok(())
+    }
+    pop_to(ctx, mark)
+    Err(defect_fault("no_end_row", "no row of the table Ends fits the end ${st.name}"))
+}
+
+// ---- the chain -----------------------------------------------------------------------------------------------------------------
+
+fn previous_state(ctx Ctx) -> Result[str, Fault] {
+    match data_get(ctx.data, "previous") {
+        Text(s) => Ok(s)
+        _ => Err(defect_fault("no_previous", "the datum previous is empty"))
+    }
+}
+
+// The "Where" of a row that jumps by `возврат_подготовки` (rule 24, task 123): the state that the preparation of the executor saved in the datum `preparation_return` before it showed
+// the gates of the preparation (the executor is the only writer of the datum). The target is read BEFORE the actions of the row run (the row may rewrite the data), and the jump
+// empties the datum, so the next preparation starts clean. An empty datum is a defect of the executor, not of the table.
+fn take_goto(mut ctx Ctx, next Goto) -> Result[Goto, Fault] {
+    match next.target {
+        ToPrepareReturn => {
+            match data_get(ctx.data, "preparation_return") {
+                Text(s) => {
+                    ctx.data = data_put(ctx.data, "preparation_return", Null)
+                    Ok(Goto { target: ToState(s), restart: next.restart })
+                }
+                _ => Err(defect_fault("no_preparation_return", "the datum preparation_return is empty: the preparation of the executor writes it before the gates"))
+            }
+        }
+        _ => Ok(next)
+    }
+}
+
+// Go on from a "Where": enter the states one after another until an appeal waits or an end finishes (a call for every state of the chain).
+fn run_chain(mut ctx Ctx, next Goto, mut host PrimitiveHost) -> Result[(), Fault] {
+    ctx.chain += 1
+    if ctx.chain > MAX_CHAIN { return Err(defect_fault("chain_too_long", "more than ${MAX_CHAIN} transitions in one step")) }
+    mut target = ""
+    match next.target {
+        ToState(n) => { target = n }
+        ToPrevious => { target = previous_state(ctx)? }
+        ToSame => {
+            if !next.restart { return Ok(()) }
+            target = ctx.name
+        }
+        ToPrepareReturn => return Err(defect_fault("unsupported", "@prepare_return is not supported"))
+        ToNothing => return Ok(())
+    }
+    ctx.name = target
+    ctx.again = next.restart
+    ro at = find_state(ctx.def, target)
+    if at < 0 { return Err(defect_fault("unknown_name", "no state ${target}")) }
+    ro st = ctx.def.states[at]
+    match st.kind {
+        EndKind => enter_end(ctx, st, host)
+        AppealKind => enter_appeal(ctx, st, host)
+        _ => {
+            ro mark = ctx.locals.len()
+            run_actions(ctx, st.entry, host)?
+            ro onward = run_work_row(ctx, st, host)?
+            pop_to(ctx, mark)
+            run_chain(ctx, onward, host)
+        }
+    }
+}
+
+// The first row of an operation or of a fork whose condition holds: its actions run, its "Where" comes back.
+fn run_work_row(mut ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[Goto, Fault] {
+    for r in st.rows {
+        mut take = true
+        if r.cond.len() > 0 { take = want_bool(run_expr(ctx, r.cond[0], host)?)? }
+        if take {
+            ctx.taken.push("${st.name}#${r.n}")
+            ro go = take_goto(ctx, r.next)?
+            run_actions(ctx, r.actions, host)?
+            return Ok(go)
+        }
+    }
+    Err(Fault { defect: false, code: "fork_no_match", params: [param("fork", st.name)], kind: "", message: "" })
+}
+
+// ---- faults -----------------------------------------------------------------------------------------------------------------------
+
+fn handle_fault(mut ctx Ctx, f Fault, mut host PrimitiveHost) -> () {
+    if f.defect {
+        ctx.defect = true
+        ctx.planned = []Planned.new()
+        ctx.finished = false
+        note(ctx, "machine_defect", [param("kind", f.kind), param("message", f.message)])
+        finish_with(ctx, Some(FailCode.NoResult), "defect: ${f.message}")
+        return
+    }
+    ro e = journal_event(f.code, f.params)
+    plan(ctx, PNote(e))
+    ctx.record = record_of_event(e)
+    if ctx.def.error_end != "" {
+        ro at = find_state(ctx.def, ctx.def.error_end)
+        if at >= 0 {
+            ctx.name = ctx.def.error_end
+            ro r = enter_end(ctx, ctx.def.states[at], host)
+            match r {
+                Ok(u) => return
+                Err(x) => ()
+            }
+        }
+    }
+    finish_with(ctx, Some(FailCode.NoResult), "machine error: ${f.code}")
+}
+
+// ---- the bounds of the data ----------------------------------------------------------------------------------------------------
+
+fn compare_numbers(x_value Value, y_value Value) -> int {
+    match x_value {
+        Int(x) => match y_value {
+            Int(y) => if x < y { -1 } else if x > y { 1 } else { 0 }
+            _ => 0
+        }
+        Float(x) => match y_value {
+            Float(y) => if x < y { -1 } else if x > y { 1 } else { 0 }
+            _ => 0
+        }
+        _ => 0
+    }
+}
+
+fn check_bounds(mut ctx Ctx, before Value, mut host PrimitiveHost) -> Result[(), Fault] {
+    for d in ctx.def.data {
+        if d.name.contains("[") || !d.monotonic.on { continue }
+        ro old = data_get(before, d.name)
+        ro now = data_get(ctx.data, d.name)
+        if compare_numbers(now, old) < 0 { return Err(reason_fault("bound_violation")) }
+        for b in d.monotonic.bound {
+            ro limit = run_expr(ctx, b, host)?
+            if compare_numbers(now, limit) > 0 { return Err(reason_fault("bound_violation")) }
+        }
+    }
+    Ok(())
+}
+
+// ---- the start ---------------------------------------------------------------------------------------------------------------------
+
+fn reject(mut ctx Ctx, params []JournalParam, what str) -> () {
+    note(ctx, "input_rejected", params)
+    finish_with(ctx, Some(FailCode.NoResult), "input rejected: ${what}")
+}
+
+fn spec_is_optional(spec TypeSpec) -> bool {
+    match spec {
+        OptionalType(inner) => true
+        _ => false
+    }
+}
+
+// The input of the call from the text of the start event; Ok(Err(..)) is a refusal that is already written.
+fn read_input(mut ctx Ctx, text str, mut host PrimitiveHost) -> Option[Value] {
+    ro def = ctx.def
+    mut fields = []RecordField.new()
+    if def.input.present {
+        ro parsed = match Json.parse(text) {
+            Ok(j) => j
+            Err(e) => {
+                reject(ctx, [param("reason", "json")], "not JSON")
+                return None
+            }
+        }
+        ro o = match parsed.object() {
+            Some(x) => x
+            None => {
+                reject(ctx, [param("reason", "json")], "not an object")
+                return None
+            }
+        }
+        for f in def.input.fields {
+            // a field of an optional type (`?T`) that the input does not have is `none` (format section 1: `missing` is a missing REQUIRED field)
+            if !o.contains(f.name) && spec_is_optional(f.spec) {
+                fields.push(RecordField { name: f.name, value: Null })
+                continue
+            }
+            ro raw = match o.get(f.name) {
+                Some(x) => x
+                None => {
+                    reject(ctx, [param("reason", "missing"), param("field", f.name)], "${f.name} is missing")
+                    return None
+                }
+            }
+            ro v = match value_from_json(raw) {
+                Ok(x) => x
+                Err(m) => {
+                    reject(ctx, [param("reason", "type"), param("field", f.name)], "${f.name} is not a value")
+                    return None
+                }
+            }
+            match check_value(f.spec, v, def.types) {
+                Ok(u) => ()
+                Err(x) => {
+                    reject(ctx, [param("reason", "type"), param("field", f.name)], "${f.name}: ${x.message}")
+                    return None
+                }
+            }
+            fields.push(RecordField { name: f.name, value: v })
+        }
+    }
+    Some(make_record("Input", fields))
+}
+
+fn input_scope_ctx(ctx Ctx, input Value) -> Ctx {
+    mut locals = []Binding.new()
+    match input {
+        Record { name, fields } => {
+            for f in fields { locals.push(Binding { name: f.name, value: f.value }) }
+        }
+        _ => ()
+    }
+    Ctx {
+        def: ctx.def, table: ctx.table, name: ctx.name, started: ctx.started, input, data: ctx.data, event: ctx.event, locals,
+        record: ctx.record, planned: ctx.planned, fired: ctx.fired, finished: ctx.finished, defect: ctx.defect, chain: ctx.chain,
+        taken: ctx.taken, limit: ctx.limit, trace: ctx.trace, step_no: ctx.step_no, again: ctx.again
+    }
+}
+
+fn start_machine(mut ctx Ctx, event Incoming, mut host PrimitiveHost) -> Result[(), Fault] {
+    ro read = read_input(ctx, event.input, host)
+    match read {
+        None => return Ok(())
+        Some(input) => {
+            mut with_input = input_scope_ctx(ctx, input)
+            mut index = 0
+            for inv in ctx.def.input.invariants {
+                ro ok = want_bool(run_expr(with_input, inv, host)?)?
+                if !ok {
+                    reject(ctx, [param("reason", "invariant"), param("index", "${index}")], "invariant ${index}")
+                    return Ok(())
+                }
+                index += 1
+            }
+            ro data = match initial_data_of(ctx.def, ctx.table, input, false) {
+                Ok(d) => d
+                Err(m) => return Err(defect_fault("initial_data", m))
+            }
+            ctx.input = input
+            ctx.data = data
+            // the request that started the machine is the request of the call (format 9): the executor gives it with the event
+            if has_datum(ctx, "call_request_id") { ctx.data = data_put(ctx.data, "call_request_id", Text(request_text_of(event.request))) }
+            ctx.started = true
+            ctx.fired = true
+            run_chain(ctx, Goto { target: ToState(ctx.def.initial), restart: false }, host)?
+            Ok(())
+        }
+    }
+}
+
+// ---- the step ---------------------------------------------------------------------------------------------------------------------
+
+fn new_ctx(machine PortolanMachine, current PortolanState, event Incoming) -> Ctx {
+    Ctx {
+        def: machine.def, table: machine.table, name: current.name, started: current.started, input: current.input, data: current.data,
+        event: EventVal { kind: EvTimeout, name: "", id: "", request: "", party: "", fields: []RecordField.new(), value: Null, reason: "" },
+        locals: []Binding.new(), record: Null, planned: []Planned.new(), fired: false, finished: false, defect: false, chain: 0,
+        taken: []str.new(), limit: machine.limit, trace: event.trace, step_no: event.step, again: false
+    }
+}
+
+fn ignore_event(mut ctx Ctx, label str) -> () {
+    note(ctx, "event_ignored", [param("event", label), param("state", ctx.name)])
+}
+
+// "On accept" of an appeal: for an answer, a failure or a timeout, the first row that fits runs before the transition; its bindings stay.
+fn run_accept(mut ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[(), Fault] {
+    for a in st.accept {
+        ro h = hit_of(a.event, ctx.event)
+        if h.yes {
+            for b in h.binds { ctx.locals.push(b) }
+            run_actions(ctx, a.actions, host)?
+            return Ok(())
+        }
+    }
+    Ok(())
+}
+
+fn is_answer_kind(k EvKind) -> bool {
+    match k {
+        EvAnswer => true
+        EvFailure => true
+        EvTimeout => true
+        _ => false
+    }
+}
+
+// A failure that no row names is read as "no result" (format 4.3): the same event with the reason NoResult.
+fn as_no_result(ev EventVal) -> EventVal {
+    EventVal { kind: ev.kind, name: ev.name, id: ev.id, request: ev.request, party: ev.party, fields: ev.fields, value: enum_value("FailCode", "NoResult"), reason: "NoResult" }
+}
+
+// Does the appeal name the term in a row (the event `timeout`, an extension of the product)?
+fn names_timeout(st StateDef) -> bool {
+    for r in st.rows {
+        match r.event {
+            TimeoutEv => return true
+            _ => ()
+        }
+    }
+    for a in st.accept {
+        match a.event {
+            TimeoutEv => return true
+            _ => ()
+        }
+    }
+    false
+}
+
+// The term that passed is the failure "no answer in time" (format 4.3, rule 16) for an appeal whose rows do not name the term themselves.
+fn as_timeout_failure(ev EventVal) -> EventVal {
+    EventVal { kind: EvFailure, name: ev.name, id: ev.id, request: ev.request, party: ev.party, fields: ev.fields, value: enum_value("FailCode", "Timeout"), reason: "Timeout" }
+}
+
+// ---- `Правит`, the parse of an answer and the returns of the form (rule 14, format 4.2) --------------------------------------------------------
+
+// The same event with another value (the value of the answer is the result of the parse).
+fn with_value(ev EventVal, v Value) -> EventVal {
+    EventVal { kind: ev.kind, name: ev.name, id: ev.id, request: ev.request, party: ev.party, fields: ev.fields, value: v, reason: ev.reason }
+}
+
+// An answer that the party could not put in the form: a failure "form not fixed" (rule 16), the rows of the state that take a failure see it.
+fn as_form_not_fixed(ev EventVal) -> EventVal {
+    EventVal { kind: EvFailure, name: ev.name, id: ev.id, request: ev.request, party: ev.party, fields: ev.fields, value: enum_value("FailCode", "FormNotFixed"), reason: "FormNotFixed" }
+}
+
+type Parsed enum
+    | ParsedOk(Value)
+    | ParsedBad(str)
+
+// The parse of the party (`разбор`): the reading primitive gets the answer (and the literal of the role) and gives the value of the answer, or refuses: an answer that the parse does not take is
+// not by the form (the host: `PrimitiveFailed`, format 2.12, Ya-33). A value that is not of the type of the parse is a defect of the host, not an answer not by the form; so is any other failure of the host.
+fn apply_parse(ctx Ctx, party PartyDef, mut host PrimitiveHost) -> Result[Parsed, Fault] {
+    ro pr = party.parse[0]
+    mut args = [ctx.event.value]
+    if pr.role != "" { args.push(Text(pr.role)) }
+    match check_call_args(ctx.table.registry, ctx.def.types, pr.primitive, args) {
+        Ok(u) => ()
+        Err(x) => return Err(defect_fault("type_mismatch", "${pr.primitive}: ${x.path} ${x.message}"))
+    }
+    match host.call_primitive(pr.primitive, args) {
+        Ok(v) => {
+            match check_value(pr.result, v, ctx.def.types) {
+                Ok(u) => Ok(ParsedOk(v))
+                Err(x) => Err(defect_fault("type_mismatch", "the value of the parse ${pr.primitive} is not of the type ${spec_text(pr.result)}: ${x.path} ${x.message}"))
+            }
+        }
+        Err(x) => {
+            match x.kind {
+                PrimitiveFailed => Ok(ParsedBad(x.message))
+                _ => Err(eval_fault(x))
+            }
+        }
+    }
+}
+
+// The number of the returns of the form that the appeal has used for the answer it waits for (the mechanics keep it in the data).
+fn form_used(ctx Ctx) -> int {
+    match data_get(ctx.data, "$form_used") {
+        Int(n) => n
+        _ => 0
+    }
+}
+
+// The idle term of the new request of the party: a call of a nested machine has none.
+fn term_of(mut ctx Ctx, st StateDef, party PartyDef, mut host PrimitiveHost) -> Result[int, Fault] {
+    if party.kind == MachineParty { return Ok(0) }
+    silence_of(ctx, st, host)
+}
+
+// The answer is not by the form and a return is left: a new request of the same party (rule 18: for a nested machine it has a new identifier, the same one would give the ready answer,
+// rule 35), the input read again. The return is counted; the answer is not accepted.
+fn return_form(mut ctx Ctx, st StateDef, party PartyDef, why str, mut host PrimitiveHost) -> Result[(), Fault] {
+    ro used = form_used(ctx) + 1
+    ctx.data = data_put(ctx.data, "$form_used", Int(used))
+    note(ctx, "form_returned", [param("party", ctx.event.party), param("returns", "${used}"), param("request", ctx.event.request)])
+    ro idle_term = term_of(ctx, st, party, host)?
+    send_one(ctx, st, party, ctx.event.party, idle_term, host)?
+    ctx.fired = true
+    Ok(())
+}
+
+// Did the object that the answer edits change since the attempt began (`Правит`, rule 14)? The check is a reading primitive without parameters.
+fn object_edited(ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[bool, Fault] {
+    match host.call_primitive(st.edit_check, []Value.new()) {
+        Ok(v) => {
+            match v {
+                Bool(b) => Ok(b)
+                _ => Err(defect_fault("type_mismatch", "the check ${st.edit_check} of Edits must give a bool"))
+            }
+        }
+        Err(x) => Err(eval_fault(x))
+    }
+}
+
+// The answer is not accepted: the request goes again, the input read again (a new attempt).
+fn reject_edited(mut ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[(), Fault] {
+    ro pi = find_party(ctx.def, st.party)
+    if pi < 0 { return Err(defect_fault("unknown_name", "no party ${st.party}")) }
+    ro party = ctx.def.parties[pi]
+    note(ctx, "answer_edited", [param("party", ctx.event.party), param("request", ctx.event.request)])
+    ro idle_term = term_of(ctx, st, party, host)?
+    send_one(ctx, st, party, ctx.event.party, idle_term, host)?
+    ctx.fired = true
+    Ok(())
+}
+
+fn run_event(mut ctx Ctx, mut host PrimitiveHost) -> Result[(), Fault] {
+    // the common events come first, in every state
+    ro common = choose(ctx, ctx.def.common, host)?
+    if common.at >= 0 {
+        ro row = ctx.def.common[common.at]
+        ctx.taken.push("common#${row.n}")
+        ctx.fired = true
+        for b in common.binds { ctx.locals.push(b) }
+        ro common_go = take_goto(ctx, row.next)?
+        run_actions(ctx, row.actions, host)?
+        return run_chain(ctx, common_go, host)
+    }
+    ro at = find_state(ctx.def, ctx.name)
+    if at < 0 { return Err(defect_fault("unknown_name", "no state ${ctx.name}")) }
+    ro st = ctx.def.states[at]
+    match st.kind {
+        AppealKind => {
+            if ctx.event.kind == EvTimeout && !names_timeout(st) { ctx.event = as_timeout_failure(ctx.event) }
+            if ctx.event.kind == EvAnswer {
+                // the order of the acceptance (rule 14, format 4.4): the form (the decoding of the answer), `Правит`, the parse, "On accept"
+                if st.edit_check != "" {
+                    if object_edited(ctx, st, host)? { return reject_edited(ctx, st, host) }
+                }
+                ro pi = find_party(ctx.def, st.party)
+                if pi >= 0 && ctx.def.parties[pi].parse.len() > 0 {
+                    match apply_parse(ctx, ctx.def.parties[pi], host)? {
+                        ParsedOk(v) => { ctx.event = with_value(ctx.event, v) }
+                        ParsedBad(why) => {
+                            if form_used(ctx) < st.form_returns { return return_form(ctx, st, ctx.def.parties[pi], why, host) }
+                            ctx.event = as_form_not_fixed(ctx.event)
+                        }
+                    }
+                }
+            }
+            if st.form_returns > 0 && is_answer_kind(ctx.event.kind) { ctx.data = data_put(ctx.data, "$form_used", Int(0)) }
+            if is_answer_kind(ctx.event.kind) { run_accept(ctx, st, host)? }
+            mut chosen = choose(ctx, st.rows, host)?
+            if chosen.at < 0 && ctx.event.kind == EvFailure && ctx.event.reason != "NoResult" {
+                ctx.event = as_no_result(ctx.event)
+                chosen = choose(ctx, st.rows, host)?
+            }
+            if chosen.at < 0 {
+                ignore_event(ctx, ctx.event.name)
+                return Ok(())
+            }
+            ro row = st.rows[chosen.at]
+            ctx.taken.push("${st.name}#${row.n}")
+            ctx.fired = true
+            for b in chosen.binds { ctx.locals.push(b) }
+            ro row_go = take_goto(ctx, row.next)?
+            run_actions(ctx, row.actions, host)?
+            run_chain(ctx, row_go, host)
+        }
+        _ => {
+            ignore_event(ctx, ctx.event.name)
+            Ok(())
+        }
+    }
+}
+
+// ---- the answers that come while the state does not wait for them (rule 14, task 123) ---------------------------------------------------
+
+// Is the request one that the machine keeps among its open ones (the datum `open_requests`; a machine that does not hold the datum keeps none)?
+fn request_is_open(ctx Ctx, rid str) -> bool => has_datum(ctx, "open_requests") && texts_of_datum(ctx, "open_requests").contains(rid)
+
+// Does the current state wait for the answer of a request? An appeal waits for the requests of its own party; every other state - the pause, the gate of another party - does not.
+fn state_awaits(ctx Ctx, rid str) -> bool {
+    ro at = find_state(ctx.def, ctx.name)
+    if at < 0 { return true }
+    ro st = ctx.def.states[at]
+    match st.kind {
+        AppealKind => {
+            ro pi = find_party(ctx.def, st.party)
+            pi >= 0 && owner_party(ctx.def, rid) == pi
+        }
+        _ => false
+    }
+}
+
+fn held_items(ctx Ctx) -> []Value {
+    match data_get(ctx.data, "$held") {
+        List(items) => items
+        _ => []Value.new()
+    }
+}
+
+fn held_text(item Value, name str) -> str {
+    match item {
+        Record { name: record_name, fields } => match record_get(fields, name) {
+            Some(Text(s)) => s
+            _ => ""
+        }
+        _ => ""
+    }
+}
+
+fn event_kind_of(name str) -> EventKind {
+    if name == "refused" { return EventKind.Refused }
+    EventKind.Answered
+}
+
+// An answer or a refusal of a request that is open, while the state is the pause (or another that does not wait for it): the outcome is not lost (rule 14), it is kept in the hidden datum `$held`
+// and the request stays among the open ones, so that the return into the appeal (rule 12) sends nothing and takes the outcome.
+fn hold_answer(mut ctx Ctx, event Incoming) -> () {
+    ro rid = request_text_of(event.request)
+    mut items = held_items(ctx)
+    items.push(make_record("Held", [
+        RecordField { name: "id", value: Text(event.id) }, RecordField { name: "kind", value: Text(event.kind.name()) }, RecordField { name: "name", value: Text(event.name) },
+        RecordField { name: "request", value: Text(rid) }, RecordField { name: "input", value: Text(event.input) }
+    ]))
+    ctx.data = data_put(ctx.data, "$held", List(items))
+    ctx.fired = true
+    note(ctx, "answer_held", [param("request", rid), param("state", ctx.name)])
+}
+
+// The kept outcomes that the state now waits for are taken one after another, as if they had just come: the request leaves the open ones, the event runs (a chain may lead to another state that waits for another kept outcome).
+fn replay_held(mut ctx Ctx, mut host PrimitiveHost) -> Result[(), Fault] {
+    mut rounds = 0
+    while rounds < 20 && !ctx.finished && !ctx.defect {
+        ro items = held_items(ctx)
+        mut at = -1
+        mut i = 0
+        for item in items {
+            if at < 0 && state_awaits(ctx, held_text(item, "request")) { at = i }
+            i += 1
+        }
+        if at < 0 { return Ok(()) }
+        ro item = items[at]
+        mut rest = []Value.new()
+        mut j = 0
+        for other in items {
+            if j != at { rest.push(other) }
+            j += 1
+        }
+        ctx.data = data_put(ctx.data, "$held", List(rest))
+        ro rid = held_text(item, "request")
+        ro again = Incoming {
+            id: held_text(item, "id"), trace: ctx.trace, step: ctx.step_no, kind: event_kind_of(held_text(item, "kind")), name: held_text(item, "name"), request: Some(rid),
+            input: held_text(item, "input"), at: 0
+        }
+        match read_event(ctx, again) {
+            ReadReady(ev) => {
+                note(ctx, "answer_replayed", [param("request", rid)])
+                ctx.event = ev
+                ctx.locals = []Binding.new()
+                open_remove(ctx, rid)
+                run_event(ctx, host)?
+            }
+            _ => {
+                note(ctx, "event_malformed", [param("name", held_text(item, "name"))])
+            }
+        }
+        rounds += 1
+    }
+    Ok(())
+}
+
+fn flush(ctx Ctx, mut environment Environment) -> () {
+    for p in ctx.planned {
+        match p {
+            PNote(e) => environment.write_journal(e)
+            PSend(s) => environment.order_send(s)
+            PCancel(c) => environment.order_cancel(c)
+            PFinish(c) => environment.order_finish(c)
+            PPass(s) => environment.order_signal(s)
+        }
+    }
+    if ctx.fired && !ctx.defect { environment.order_save() }
+}
+
+fn result_of(ctx Ctx, current PortolanState) -> Transition[PortolanState] {
+    if ctx.defect { return Stay }
+    if !ctx.fired { return Stay }
+    Go(PortolanState { name: ctx.name, started: ctx.started, input: ctx.input, data: ctx.data, taken: ctx.taken })
+}
+
+/// One step of a machine that is data (see the top of this file). Reads only its arguments; gives its orders to the environment; the
+/// primitives of the machine go to the host.
+export fn portolan_step(machine PortolanMachine, current PortolanState, event Incoming, mut environment Environment, mut host PrimitiveHost) -> Transition[PortolanState] {
+    mut ctx = new_ctx(machine, current, event)
+    if !current.started {
+        if event.kind == EventKind.Input && event.name == "start" {
+            ctx.event = EventVal { kind: EvInput, name: "start", id: event.id, request: "", party: "", fields: []RecordField.new(), value: Null, reason: "" }
+            match start_machine(ctx, event, host) {
+                Ok(u) => ()
+                Err(f) => handle_fault(ctx, f, host)
+            }
+        } else {
+            ignore_event(ctx, event.name)
+        }
+        flush(ctx, environment)
+        return result_of(ctx, current)
+    }
+    // rule 14 (task 123): the outcome of an open request that comes while the state does not wait for it (the pause) is kept, not dropped
+    if (event.kind == EventKind.Answered || event.kind == EventKind.Refused) && request_text_of(event.request) != "" && request_is_open(ctx, request_text_of(event.request)) && !state_awaits(ctx, request_text_of(event.request)) {
+        hold_answer(ctx, event)
+        flush(ctx, environment)
+        return result_of(ctx, current)
+    }
+    match read_event(ctx, event) {
+        ReadUnknown => {
+            note(ctx, "event_unknown", [param("name", event.name)])
+            flush(ctx, environment)
+            Stay
+        }
+        ReadMalformed => {
+            note(ctx, "event_malformed", [param("name", event.name)])
+            flush(ctx, environment)
+            Stay
+        }
+        ReadReady(ev) => {
+            ctx.event = ev
+            // the outcome of a request closes it: it leaves the open requests (the engine closed it already)
+            if ev.request != "" && is_answer_kind(ev.kind) { open_remove(ctx, ev.request) }
+            ro before = ctx.data
+            ro run = run_event(ctx, host)
+            match run {
+                Ok(u) => {
+                    match replay_held(ctx, host) {
+                        Ok(v) => ()
+                        Err(f) => handle_fault(ctx, f, host)
+                    }
+                    match check_bounds(ctx, before, host) {
+                        Ok(v) => ()
+                        Err(f) => handle_fault(ctx, f, host)
+                    }
+                }
+                Err(f) => handle_fault(ctx, f, host)
+            }
+            flush(ctx, environment)
+            result_of(ctx, current)
+        }
+    }
+}

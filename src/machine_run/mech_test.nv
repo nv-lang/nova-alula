@@ -1,0 +1,118 @@
+// mech_test.nv - the mechanics of the contract that the agent step needs (format 1, 9; rules 14, 15, 18, 21): the limit of the requests, the counters of the attempts, the open
+// requests, the request of the call, the cancel of the open requests, the mark of the rows taken, the answers of the host and the parameters of a scenario.
+module alula.machine_run
+
+import std.text
+import alula.machine.{scenario_files, text_of_file, standard_registry}
+
+fn agent_text() -> str => machine_text("agent_step.portolan.json")
+
+fn load_err(text str) -> str {
+    match load_portolan_machine(text, standard_registry()) {
+        Ok(m) => "ok"
+        Err(e) => e
+    }
+}
+
+fn agent_run(file str) -> ScenarioRun {
+    ro sc = scenario_of(file)
+    run_scenario(build_from(agent_text()), sc)
+}
+
+test "mx limit is read" {
+    ro m = build_from(agent_text())
+    assert(m.limit == 1)
+    assert(build("chat.portolan.json").limit == 0)
+}
+
+test "mx limit zero" {
+    assert(load_err(agent_text().replace("\"request_limit\":{\"op\":\"lit\",\"value\":1}", "\"request_limit\":{\"op\":\"lit\",\"value\":0}")).contains("must be 1 or more"))
+    assert(load_err(agent_text().replace("\"request_limit\":{\"op\":\"lit\",\"value\":1}", "\"request_limit\":{\"op\":\"lit\",\"value\":\"x\"}")).contains("must be an int"))
+}
+
+test "mx limit with a set" {
+    // a limit with a set sends at most so many at once (task 119); it was refused before
+    ro lenses = machine_text("lenses.portolan.json")
+    assert(load_err(lenses) == "ok")
+    ro limited = lenses.replace("\"initial\": \"Prepare\",", "\"request_limit\": { \"op\": \"lit\", \"value\": 2 }, \"initial\": \"Prepare\",")
+    assert(limited != lenses)
+    assert(load_err(limited) == "ok")
+    assert(build_from(limited).limit == 2)
+}
+
+test "mx entry again sends nothing" {
+    // the pause does not cancel the request of the agent: the return to the saved state finds the request open and sends nothing (rule 12, task 119); it was a second request
+    ro m = build_from(agent_text().replace("{\"do\":\"cancel_open\"}", "{\"do\":\"cancel_open\",\"party\":\"gatekeeper\"}"))
+    ro run = run_scenario(m, scenario_of("agent-step-pause-1.scenario.test.json"))
+    ro last = run.traces[run.traces.len() - 1]
+    assert(last.journal.len() == 1)
+    assert(last.journal[0].starts_with("human_continue("))
+    assert(last.open.len() == 1)
+    assert(last.open[0] == "agent-1")
+    assert(last.sent.len() == 1)
+    assert(last.outcome == "none")
+}
+
+// Two agents, a limit of one: the state A waits for the agent a, the signal `jump` leads to B that asks the agent b while the request of a is open.
+fn two_agents() -> str => `{"format":"machine/2","machine":"Two","version":"1","request_limit":{"op":"lit","value":1},
+"data":[{"name":"open_requests","type":"[]text","initial":{"expr":{"op":"list","items":[]}},"writes":"mechanics"},
+{"name":"a_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"},
+{"name":"b_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}],
+"parties":[{"name":"a","id":"a","kind":"agent","result":"text","counter":"a_attempt"},{"name":"b","id":"b","kind":"agent","result":"text","counter":"b_attempt"}],
+"signals":[{"name":"jump"}],"initial":"A",
+"states":[{"name":"A","kind":"appeal","party":"a","rows":[{"n":1,"event":{"kind":"signal","name":"jump"},"to":"B"},{"n":2,"event":{"kind":"answer"},"to":"End"}]},
+{"name":"B","kind":"appeal","party":"b","rows":[{"n":1,"event":{"kind":"answer"},"to":"End"}]},
+{"name":"End","kind":"end","reads":[]}],
+"ends":{"result":"text","rows":[{"state":"End","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"lit","value":"done"}}}]}}`
+
+test "mx limit guards" {
+    // the limit of the requests that the machine holds open (rule 21): a second appeal that would pass it is a defect
+    ro m = build_from(two_agents())
+    assert(m.limit == 1)
+    ro first = run1(m, m.initial(), word_in("start", ""))
+    assert(first.state.name == "A")
+    ro jumped = run1(m, first.state, word_in("jump", ""))
+    assert(summary(jumped.orders).starts_with("log:machine_defect(kind=request_limit;"))
+    assert(summary(jumped.orders).contains("finish:refusal:NoResult"))
+}
+
+test "mx counters and open" {
+    ro run = agent_run("agent-step-flow-attempts.scenario.test.json")
+    assert(run_ok(run))
+    assert(run.traces[0].encoded.contains("\"taken\":[\"Start#1\"]"))
+    assert(run.traces[0].open.len() == 1)
+    assert(run.traces[2].open[0] == "agent-3")
+}
+
+test "mx call request" {
+    ro run = agent_run("agent-step-start-1.scenario.test.json")
+    assert(run_ok(run))
+    ro data = state_data_fields(run.traces[0].encoded)
+    assert(data.get("call_request_id").is_some())
+}
+
+test "mx cancel open" {
+    ro run = agent_run("agent-step-common-5.scenario.test.json")
+    assert(run_ok(run))
+    assert(run.traces[1].cancelled.len() == 1)
+    assert(run.traces[1].cancelled[0] == "agent-1")
+    assert(run.traces[1].open.len() == 0)
+}
+
+test "mx host and params keys" {
+    ro sc = scenario_of("agent-step-policy-1.scenario.test.json")
+    assert(sc.params.len() == 1)
+    assert(sc.params[0].name == "проект.политика_разрешений")
+    assert(sc.steps[0].host.len() == 2)
+    assert(sc.steps[0].host[0].name == "reply_validation")
+    assert(sc.steps[0].event.request == "call-1")
+    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"word\",\"name\":\"a\"},\"host\":[]}")).contains("object"))
+    assert(parse_err("{\"format\":\"scenario/0\",\"machine\":\"M\",\"params\":3,\"steps\":[]}").contains("object"))
+}
+
+test "mx timeout is a failure" {
+    ro run = agent_run("agent-step-flow-timeout.scenario.test.json")
+    assert(run_ok(run))
+    assert(run.traces[4].outcome == "refusal:Timeout")
+    assert(run.traces[4].journal[0] == "turn_failed(reason=timeout)")
+}

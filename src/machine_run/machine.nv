@@ -1,0 +1,134 @@
+// machine.nv - the machine for the engine: the protocol `Machine[PortolanState]` over `portolan_step`, the default host of the primitives, the text of
+// the state for the snapshot.
+module alula.machine_run
+
+import std.encoding.json.{Json, JsonValue, JsonObject}
+import std.identifiers.uuid.{Uuid}
+import std.testing.handlers as th
+import alula.engine.{Incoming, Environment, Transition}
+import alula.machine.{Value, Null, Int, Text, EvalError, PrimitiveFailed, value_to_json, value_from_json}
+import alula.machine_table.{find_state}
+
+/// ScriptedHost: the default host of the primitives of a machine (`PrimitiveHost`). The clock `time_now` is the stamp of the event it was made
+/// for (`at`): a step reads the world through its event only; any other primitive answers what the script says, or fails. `new_id` (format 2.5)
+/// is a UUID v7 made by `Uuid.v7()` under the clock `at` and a random source seeded with the stamp and the number of the call in the step (`ids`):
+/// a step is a function of the state and the event, and the same step gives the same ids. A host of the product that reads files and writes
+/// buffers is another `PrimitiveHost`, passed to `portolan_step`, and gives real random ids.
+export type ScriptedHost { at int, replies []ScriptedReply, ids int }
+
+// The UUID v7 of the n-th call of a step made at the stamp `at`.
+fn scripted_id(at int, n int) -> str {
+    ro seed = (at as u64) * 16 + (n as u64)
+    with Time = th.fixed_ms(at as u64), Random = th.seeded(seed) { Uuid.v7().to_str() }
+}
+
+export fn ScriptedHost mut @call_primitive(name str, args []Value) -> Result[Value, EvalError] {
+    if name == "time_now" { return Ok(Int(@at)) }
+    for r in @replies {
+        if r.name == name { return Ok(r.value) }
+    }
+    if name == "new_id" {
+        ro id = scripted_id(@at, @ids)
+        @ids = @ids + 1
+        return Ok(Text(id))
+    }
+    Err(EvalError { kind: PrimitiveFailed, message: "the host has no answer for the primitive ${name}", path: "" })
+}
+
+/// The name of the machine for the journal.
+export fn PortolanMachine @name() -> str => @def.name
+
+/// The initial state: the initial state of the table; it is started at once when entering it orders nothing, else the event `start` starts it.
+export fn PortolanMachine @initial() -> PortolanState => { name: @def.initial, started: @quiet_start, input: Null, data: @initial_data, taken: []str.new() }
+
+/// The name of a state for the journal line.
+export fn PortolanMachine @state_name(state PortolanState) -> str => state.name
+
+/// One step: the protocol `Machine`. The primitives go to the default host with the clock of the event.
+export fn PortolanMachine @step(current PortolanState, event Incoming, mut environment Environment) -> Transition[PortolanState] {
+    // ORACLE-WORKAROUND(45): a copy of a `ro` list (`@replies`) built by hand in a loop; write `mut replies = @replies` when item 45 is fixed
+    mut replies = []ScriptedReply.new()
+    for r in @replies { replies.push(r) }
+    mut host = ScriptedHost { at: event.at, replies, ids: 0 }
+    portolan_step(@, current, event, environment, host)
+}
+
+fn jput(mut o JsonObject, key str, value JsonValue) -> () {
+    ro replaced = o.insert(key, value)
+}
+
+/// The state as one line of JSON: `{"state":"Awaiting","started":true,"input":null,"data":{...}}`; the values in the lossless form of the core.
+export fn PortolanMachine @encode_state(state PortolanState) -> str {
+    mut o = JsonObject.new()
+    jput(o, "state", JsonValue.str(state.name))
+    jput(o, "started", JsonValue.bool(state.started))
+    jput(o, "input", value_to_json(state.input))
+    jput(o, "data", value_to_json(state.data))
+    if state.taken.len() > 0 {
+        mut rows = []JsonValue.new()
+        for t in state.taken { rows.push(JsonValue.str(t)) }
+        jput(o, "taken", JsonValue.array(rows))
+    }
+    JsonValue.object(o).to_str()
+}
+
+/// The state from its text; text that is not a state of this machine is `None`.
+export fn PortolanMachine @decode_state(text str) -> Option[PortolanState] {
+    ro parsed = match Json.parse(text) {
+        Ok(j) => j
+        Err(e) => return None
+    }
+    ro o = match parsed.object() {
+        Some(x) => x
+        None => return None
+    }
+    ro name = match o.get("state") {
+        Some(v) => match v.str() {
+            Some(s) => s
+            None => return None
+        }
+        None => return None
+    }
+    if find_state(@def, name) < 0 { return None }
+    ro started = match o.get("started") {
+        Some(v) => match v.bool() {
+            Some(b) => b
+            None => return None
+        }
+        None => return None
+    }
+    ro input_json = match o.get("input") {
+        Some(v) => v
+        None => return None
+    }
+    ro data_json = match o.get("data") {
+        Some(v) => v
+        None => return None
+    }
+    ro input = match value_from_json(input_json) {
+        Ok(v) => v
+        Err(m) => return None
+    }
+    ro data = match value_from_json(data_json) {
+        Ok(v) => v
+        Err(m) => return None
+    }
+    mut taken = []str.new()
+    match o.get("taken") {
+        Some(tv) => {
+            match tv.array() {
+                Some(items) => {
+                    for item in items {
+                        match item.str() {
+                            Some(t) => taken.push(t)
+                            None => ()
+                        }
+                    }
+                }
+                None => ()
+            }
+        }
+        None => ()
+    }
+    Some(PortolanState { name, started, input, data, taken })
+}

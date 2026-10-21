@@ -1,0 +1,21 @@
+// state.nv - the state of a machine that is data, its text form for the snapshot, and the machine for the engine (protocol `Machine[S]`).
+//
+// The state is a value: the name of the state of the table, whether the machine has started, the input of the call and the data of the
+// machine (one `Value`, a record of the data by name). It is encoded as an object under `state` of the snapshot of the engine
+// (`{"state":"Awaiting","started":true,"input":null,"data":{...}}`, the values in the lossless form of the core).
+module alula.machine_run
+
+import alula.machine.{Value, DefTable}
+import alula.machine_table.{MachineDef}
+
+/// PortolanState: where the machine is and what it holds. `taken` are the rows that the step made this state with took, `State#n` (a state or a common
+/// event, `common#n`, an end `end:State#n`): not data of the machine, a mark for the proof that every row of a table has a scenario.
+export type PortolanState { name str, started bool, input Value, data Value, taken []str }
+
+/// ScriptedReply: the answer of a scripted primitive of the default host.
+export type ScriptedReply { name str, value Value }
+
+/// PortolanMachine: a machine that is data, ready to run: the decoded table, the definitions with the constants and the parameters
+/// evaluated, the initial data. `replies` are the answers of the primitives of the default host (`ScriptedHost`); `limit` is the value of the line
+/// "Request limit" (format 1, rule 21), 0 when the line is not written.
+export type PortolanMachine { def MachineDef, table DefTable, initial_data Value, quiet_start bool, replies []ScriptedReply, limit int }

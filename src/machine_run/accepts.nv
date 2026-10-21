@@ -1,0 +1,55 @@
+// accepts.nv - the question of a caller that is not the machine: does the state take this word? (task 126)
+//
+// The hub must not know the names of the states of the table: "a message is not taken while a turn is open" is a question to the table, not a comparison of a name.
+// `accepts_word` answers it from the table alone: the word (or the signal) is declared, and the common events or the rows of the state have a row for it.
+// The condition of a row is evaluated with the data of the state and with NO bindings of the pattern: a condition that cannot be evaluated that way
+// (it reads a binding of the word, or a primitive the host does not answer) counts as taking the word - the question is "can the state take it", not "will this event".
+module alula.machine_run
+
+import alula.engine.{Incoming}
+import alula.machine_table.{TableRow, find_state}
+
+// Does a row of the list name this word or this signal, and does its condition hold (or fail to be evaluated)?
+fn rows_take(ctx Ctx, rows []TableRow, wanted str) -> bool {
+    for r in rows {
+        ro named = match r.event {
+            WordEv { word, binds } => word == wanted
+            SignalEv { name, binds } => name == wanted
+            _ => false
+        }
+        if named {
+            if r.cond.len() == 0 { return true }
+            mut host = ScriptedHost { at: 0, replies: []ScriptedReply.new(), ids: 0 }
+            match run_expr(ctx, r.cond[0], host) {
+                Ok(v) => {
+                    match want_bool(v) {
+                        Ok(yes) => { if yes { return true } }
+                        Err(f) => { return true }
+                    }
+                }
+                Err(f) => { return true }
+            }
+        }
+    }
+    false
+}
+
+/// Does the state take the word (or the signal) `name`? False: the machine has not started; the word is declared nowhere in the table (the machine would write `event_unknown`);
+/// the state is not an appeal and the common events have no row for it; no row of the common events and of the state is for it. The names of the states are the table's own:
+/// the caller does not need to know them.
+export fn PortolanMachine @accepts_word(state PortolanState, name str) -> bool {
+    if !state.started { return false }
+    match input_decl(@def, name) {
+        Some(fields) => ()
+        None => return false
+    }
+    ro ctx = new_ctx(@, state, Incoming.word(name, ""))
+    if rows_take(ctx, @def.common, name) { return true }
+    ro at = find_state(@def, state.name)
+    if at < 0 { return false }
+    ro st = @def.states[at]
+    match st.kind {
+        AppealKind => rows_take(ctx, st.rows, name)
+        _ => false
+    }
+}

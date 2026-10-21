@@ -1,0 +1,669 @@
+// scenario.nv - the scenarios `scenario/0` and their runner.
+//
+// A scenario is a file of data: events and what they must leave. The runner takes a machine, runs the events on the engine of the product over
+// the in-memory handlers (the same world as the tests of the engine), and compares after every step: the name of the state, the structural
+// journal (code and parameters, the lines the MACHINE wrote), a subset of the data, the queue, the open requests, the requests sent and cancelled
+// and the outcome. A part that the file does not name is not compared. The difference is a report that says the step, the part, what was expected
+// and what came.
+//
+//   { "format": "scenario/0", "machine": "ChatSession", "name": "...", "start_at": 1000,
+//     "steps": [ { "do": "feed", "event": { "kind": "word", "name": "user_message", "input": "hello" },
+//                  "expect": { "state": "Awaiting", "journal": [ { "code": "user_message", "params": { "text": "hello" } } ],
+//                              "data": { "user": "hello" }, "queue": [], "open": ["agent-1"], "sent": ["agent-1"], "cancelled": [],
+//                              "outcome": "none" } } ] }
+//
+// "do": `feed` (accept the event and send what it ordered), `accept` (accept only: the process dies before the send), `dispatch`, `pump`,
+// `deliver` (an event arrives at the link and waits for `pump`), `advance` (`ms` of the clock), `restart` (a new engine over the same world).
+// "event.kind": `word`, `signal` (both a word from outside), `progress`, `answer`, `failure` (`code` is the failure code), `timeout`, `start`
+// (`input` is the object of the input of the machine). `input` is a text, or an object that is written as JSON.
+module alula.machine_run
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import std.encoding.json.{Json, JsonValue, JsonObject}
+import alula.engine.{Machine, Engine, MemoryWorld, Incoming, EventKind, JournalEntry, Journal, Store, Link, start_engine, resume_engine, memory_journal, memory_store, memory_link, memory_time}
+import alula.machine.{value_equal, value_from_json, value_json}
+import alula.machine_table.{LoadError}
+
+/// ScEvent: an event of a scenario step as the file writes it.
+export type ScEvent { kind str, name str, request str, input str, code str, source str }
+
+/// ExpParam, ExpEntry: an expected journal entry: the code and the parameters in order.
+export type ExpParam { name str, value str }
+export type ExpEntry { code str, params []ExpParam }
+
+/// ExpData: an expected datum: the name and the value in the JSON form of the core.
+export type ExpData { name str, json str }
+
+/// ScExpect: what a step expects; a part that the file does not name is not compared (`has_*` is false).
+export type ScExpect {
+    has_state bool, state str, has_journal bool, journal []ExpEntry, has_data bool, data []ExpData,
+    has_queue bool, queue []str, has_open bool, open []str, has_outcome bool, outcome str,
+    has_sent bool, sent []str, has_cancelled bool, cancelled []str
+}
+
+/// ScHost: the answer of a primitive of the host that holds from this step on (the lossless JSON of the core): `"host": {"reply_validation": {...}}`.
+export type ScHost { name str, json str }
+
+/// ScAlso: what a step expects of another engine than the one it acts on (a scenario of a parent and its nested machines, task 119): the target is `parent` or the id of the
+/// request that started a nested machine (`callee-1`).
+export type ScAlso { target str, expect ScExpect }
+
+/// ScStep: one step: the operation, the event, the milliseconds, the expectation, the answers of the host that change here. `on` is the id of the request of a nested machine
+/// that the step acts on (the parent when empty); `also` are the expectations of the other engines.
+export type ScStep { op str, event ScEvent, ms int, expect ScExpect, host []ScHost, on str, also []ScAlso }
+
+/// Scenario: the file `scenario/0`. `params` are the values of parameters of the machine that the project gives, the table of format 2.7 (`"params": {"проект.<ключ>": value}`, P-9).
+/// `standalone` (task 122) is the key `"standalone": true`: the machine runs alone and the parties of the kind `machine` are played by the steps of the scenario (an `answer` or a `failure`
+/// event with the id of the request, as for an agent); no nested machine is started and none is looked for in the folder.
+export type Scenario { name str, machine str, start_at int, steps []ScStep, params []ScHost, standalone bool }
+
+/// StepTrace: what one step left in the world. `journal` are the lines the machine wrote (`code(name=value;...)`), `entries` all the lines of
+/// the step with the envelope, `queue` what waits for the dispatch (`send <id>`, `cancel <id>`) and for `pump` (`in <name>`), `outcome` is
+/// `none`, `answer:<text>` or `refusal:<Code>`.
+export type StepTrace {
+    op str, state str, encoded str, journal []str, entries []JournalEntry, open []str, sent []str, cancelled []str,
+    queue []str, outcome str, acked []str, number int
+}
+
+/// ScenarioRun: the traces of a run and the differences from what the file expects.
+export type ScenarioRun { name str, traces []StepTrace, mismatches []str }
+
+// ---- reading a file --------------------------------------------------------------------------------------------------------------
+
+fn sle(path str, message str) -> LoadError => { path, message }
+
+fn sj_obj(v JsonValue, path str) -> Result[JsonObject, LoadError] {
+    match v.object() {
+        Some(o) => Ok(o)
+        None => Err(sle(path, "an object is expected"))
+    }
+}
+
+fn sj_str(v JsonValue, path str) -> Result[str, LoadError] {
+    match v.str() {
+        Some(s) => Ok(s)
+        None => Err(sle(path, "a text is expected"))
+    }
+}
+
+fn sj_present(o JsonObject, key str) -> bool {
+    match o.get(key) {
+        Some(v) => !v.is_null()
+        None => false
+    }
+}
+
+fn sj_only(o JsonObject, allowed []str, path str) -> Result[(), LoadError] {
+    for k in o.keys() {
+        if !allowed.contains(k) { return Err(sle(path, "the key ${k} is not in the schema")) }
+    }
+    Ok(())
+}
+
+fn sj_need_str(o JsonObject, key str, path str) -> Result[str, LoadError] {
+    match o.get(key) {
+        Some(v) => sj_str(v, "${path}.${key}")
+        None => Err(sle(path, "the key ${key} is missing"))
+    }
+}
+
+fn sj_str_or(o JsonObject, key str, fallback str, path str) -> Result[str, LoadError] {
+    if !sj_present(o, key) { return Ok(fallback) }
+    sj_need_str(o, key, path)
+}
+
+fn sj_list(o JsonObject, key str, path str) -> Result[[]str, LoadError] {
+    mut out = []str.new()
+    match o.get(key) {
+        Some(v) => {
+            ro items = match v.array() {
+                Some(a) => a
+                None => return Err(sle("${path}.${key}", "a list is expected"))
+            }
+            mut i = 0
+            for item in items {
+                out.push(sj_str(item, "${path}.${key}[${i}]")?)
+                i += 1
+            }
+        }
+        None => ()
+    }
+    Ok(out)
+}
+
+fn event_kinds() -> []str => ["word", "signal", "progress", "answer", "failure", "timeout", "start"]
+
+fn step_ops() -> []str => ["feed", "accept", "dispatch", "pump", "deliver", "advance", "restart"]
+
+fn sj_event(v JsonValue, path str) -> Result[ScEvent, LoadError] {
+    ro o = sj_obj(v, path)?
+    sj_only(o, ["kind", "name", "request", "input", "code", "source"], path)?
+    ro kind = sj_need_str(o, "kind", path)?
+    if !event_kinds().contains(kind) { return Err(sle("${path}.kind", "the kind of an event must be word, signal, progress, answer, failure, timeout or start, got ${kind}")) }
+    mut fallback = ""
+    if kind == "answer" { fallback = "answer" }
+    if kind == "failure" { fallback = "failure" }
+    if kind == "timeout" { fallback = "timeout" }
+    if kind == "start" { fallback = "start" }
+    ro name = sj_str_or(o, "name", fallback, path)?
+    if name == "" { return Err(sle(path, "the key name is missing")) }
+    mut input = ""
+    match o.get("input") {
+        Some(v2) => {
+            match v2.str() {
+                Some(s) => { input = s }
+                None => {
+                    if v2.is_object() || v2.is_array() { input = v2.to_str() } else if !v2.is_null() { return Err(sle("${path}.input", "a text or an object is expected")) }
+                }
+            }
+        }
+        None => ()
+    }
+    Ok(ScEvent {
+        kind, name, request: sj_str_or(o, "request", "", path)?, input, code: sj_str_or(o, "code", "", path)?,
+        source: sj_str_or(o, "source", "", path)?
+    })
+}
+
+fn empty_event() -> ScEvent => { kind: "", name: "", request: "", input: "", code: "", source: "" }
+
+fn sj_journal(v JsonValue, path str) -> Result[[]ExpEntry, LoadError] {
+    ro items = match v.array() {
+        Some(a) => a
+        None => return Err(sle(path, "a list is expected"))
+    }
+    mut out = []ExpEntry.new()
+    mut i = 0
+    for item in items {
+        ro p = "${path}[${i}]"
+        ro o = sj_obj(item, p)?
+        sj_only(o, ["code", "params"], p)?
+        ro code = sj_need_str(o, "code", p)?
+        mut params = []ExpParam.new()
+        match o.get("params") {
+            Some(pv) => {
+                ro po = sj_obj(pv, "${p}.params")?
+                for k in po.keys() {
+                    match po.get(k) {
+                        Some(x) => params.push(ExpParam { name: k, value: sj_str(x, "${p}.params.${k}")? })
+                        None => ()
+                    }
+                }
+            }
+            None => ()
+        }
+        out.push(ExpEntry { code, params })
+        i += 1
+    }
+    Ok(out)
+}
+
+fn sj_expect(v JsonValue, path str) -> Result[ScExpect, LoadError] {
+    ro o = sj_obj(v, path)?
+    sj_only(o, ["state", "journal", "data", "queue", "open", "outcome", "sent", "cancelled"], path)?
+    mut journal = []ExpEntry.new()
+    if sj_present(o, "journal") { journal = sj_journal(o.get("journal") ?? JsonValue.null(), "${path}.journal")? }
+    mut data = []ExpData.new()
+    if sj_present(o, "data") {
+        ro d = sj_obj(o.get("data") ?? JsonValue.null(), "${path}.data")?
+        for k in d.keys() {
+            match d.get(k) {
+                Some(x) => data.push(ExpData { name: k, json: x.to_str() })
+                None => ()
+            }
+        }
+    }
+    Ok(ScExpect {
+        has_state: sj_present(o, "state"), state: sj_str_or(o, "state", "", path)?,
+        has_journal: sj_present(o, "journal"), journal,
+        has_data: sj_present(o, "data"), data,
+        has_queue: sj_present(o, "queue"), queue: sj_list(o, "queue", path)?,
+        has_open: sj_present(o, "open"), open: sj_list(o, "open", path)?,
+        has_outcome: sj_present(o, "outcome"), outcome: sj_str_or(o, "outcome", "", path)?,
+        has_sent: sj_present(o, "sent"), sent: sj_list(o, "sent", path)?,
+        has_cancelled: sj_present(o, "cancelled"), cancelled: sj_list(o, "cancelled", path)?
+    })
+}
+
+fn nothing_expected() -> ScExpect => {
+    has_state: false, state: "", has_journal: false, journal: []ExpEntry.new(), has_data: false, data: []ExpData.new(),
+    has_queue: false, queue: []str.new(), has_open: false, open: []str.new(), has_outcome: false, outcome: "",
+    has_sent: false, sent: []str.new(), has_cancelled: false, cancelled: []str.new()
+}
+
+fn sj_step(v JsonValue, path str) -> Result[ScStep, LoadError] {
+    ro o = sj_obj(v, path)?
+    sj_only(o, ["do", "event", "ms", "expect", "host", "on", "also"], path)?
+    ro op = sj_str_or(o, "do", "feed", path)?
+    if !step_ops().contains(op) { return Err(sle("${path}.do", "the operation of a step must be feed, accept, dispatch, pump, deliver, advance or restart, got ${op}")) }
+    mut event = empty_event()
+    if sj_present(o, "event") {
+        event = sj_event(o.get("event") ?? JsonValue.null(), "${path}.event")?
+    } else if op == "feed" || op == "accept" || op == "deliver" {
+        return Err(sle(path, "the operation ${op} needs an event"))
+    }
+    mut ms = 0
+    if sj_present(o, "ms") {
+        ms = match (o.get("ms") ?? JsonValue.null()).int() {
+            Some(n) => n
+            None => return Err(sle("${path}.ms", "ms is an integer"))
+        }
+        if ms < 0 { return Err(sle("${path}.ms", "ms is not negative")) }
+    }
+    mut expect = nothing_expected()
+    if sj_present(o, "expect") { expect = sj_expect(o.get("expect") ?? JsonValue.null(), "${path}.expect")? }
+    mut host = []ScHost.new()
+    if sj_present(o, "host") {
+        ro ho = sj_obj(o.get("host") ?? JsonValue.null(), "${path}.host")?
+        for k in ho.keys() {
+            match ho.get(k) {
+                Some(x) => host.push(ScHost { name: k, json: x.to_str() })
+                None => ()
+            }
+        }
+    }
+    ro on = sj_str_or(o, "on", "", path)?
+    mut also = []ScAlso.new()
+    if sj_present(o, "also") {
+        ro ao = sj_obj(o.get("also") ?? JsonValue.null(), "${path}.also")?
+        for k in ao.keys() {
+            match ao.get(k) {
+                Some(x) => also.push(ScAlso { target: k, expect: sj_expect(x, "${path}.also.${k}")? })
+                None => ()
+            }
+        }
+    }
+    Ok(ScStep { op, event, ms, expect, host, on, also })
+}
+
+/// A scenario from the text of its file; an error says the place.
+export fn parse_scenario(text str) -> Result[Scenario, LoadError] {
+    ro parsed = match Json.parse(text) {
+        Ok(j) => j
+        Err(e) => return Err(sle("$", "not valid JSON"))
+    }
+    ro o = sj_obj(parsed, "$")?
+    sj_only(o, ["format", "machine", "name", "start_at", "steps", "params", "standalone"], "$")?
+    ro format = sj_need_str(o, "format", "$")?
+    if format != "scenario/0" { return Err(sle("$.format", "the format must be scenario/0, got ${format}")) }
+    ro machine = sj_need_str(o, "machine", "$")?
+    ro name = sj_str_or(o, "name", "", "$")?
+    mut start_at = 1000
+    if sj_present(o, "start_at") {
+        start_at = match (o.get("start_at") ?? JsonValue.null()).int() {
+            Some(n) => n
+            None => return Err(sle("$.start_at", "start_at is an integer"))
+        }
+    }
+    ro raw = match o.get("steps") {
+        Some(sv) => match sv.array() {
+            Some(a) => a
+            None => return Err(sle("$.steps", "a list is expected"))
+        }
+        None => return Err(sle("$", "the key steps is missing"))
+    }
+    mut steps = []ScStep.new()
+    mut i = 0
+    for item in raw {
+        steps.push(sj_step(item, "$.steps[${i}]")?)
+        i += 1
+    }
+    mut params = []ScHost.new()
+    if sj_present(o, "params") {
+        ro po = sj_obj(o.get("params") ?? JsonValue.null(), "$.params")?
+        for k in po.keys() {
+            if !k.starts_with(PROJECT_PREFIX) { return Err(sle("$.params", "the key of a parameter is ${PROJECT_PREFIX}<key>, got ${k}")) }
+            match po.get(k) {
+                Some(x) => params.push(ScHost { name: k, json: x.to_str() })
+                None => ()
+            }
+        }
+    }
+    mut standalone = false
+    if sj_present(o, "standalone") {
+        standalone = match (o.get("standalone") ?? JsonValue.null()).bool() {
+            Some(b) => b
+            None => return Err(sle("$.standalone", "standalone is true or false"))
+        }
+    }
+    Ok(Scenario { name, machine, start_at, steps, params, standalone })
+}
+
+// ---- the events ---------------------------------------------------------------------------------------------------------------------
+
+fn request_of(id str) -> Option[str] {
+    if id == "" { return None }
+    Some(id)
+}
+
+/// The event of the engine for an event of a scenario (the envelope is empty: the engine stamps it).
+export fn scenario_incoming(ev ScEvent) -> Incoming {
+    ro request = request_of(ev.request)
+    mut incoming = Incoming.incoming(EventKind.Input, ev.name, None, ev.input)
+    if ev.kind == "start" && ev.request != "" { incoming = Incoming.incoming(EventKind.Input, ev.name, request, ev.input) }
+    if ev.kind == "progress" { incoming = Incoming.incoming(EventKind.Progress, ev.name, request, ev.input) }
+    if ev.kind == "answer" { incoming = Incoming.incoming(EventKind.Answered, ev.name, request, ev.input) }
+    if ev.kind == "failure" { incoming = Incoming.incoming(EventKind.Refused, ev.name, request, ev.code) }
+    if ev.kind == "timeout" { incoming = Incoming.incoming(EventKind.Expired, ev.name, request, "") }
+    if ev.source != "" { return Incoming.from_source(ev.source, incoming) }
+    incoming
+}
+
+// ---- the driver ----------------------------------------------------------------------------------------------------------------------
+
+fn engine_codes() -> []str => [
+    "machine_started", "event_accepted", "reply_discarded", "request_ordered", "request_sent", "request_closed", "cancel_ordered", "cancel_sent",
+    "cancel_without_request", "snapshot_ordered", "machine_finished", "engine_resumed"
+]
+
+fn entry_text(e JournalEntry) -> str {
+    if e.event.params.len() == 0 { return e.event.code }
+    mut parts = []str.new()
+    for p in e.event.params { parts.push("${p.name}=${p.value}") }
+    "${e.event.code}(${parts.join(";")})"
+}
+
+// ORACLE-WORKAROUND(12, 13, 26): the helpers (`begin_engine`, `resumed_engine`, `engine_feed`, `engine_pump`, `drive_scenario`) are generic over the machine and every call writes the type arguments out (`engine_feed[S, M](...)`); infer them when items 12 and 13 are fixed
+fn begin_engine[S, M Machine[S]](machine M, mut world MemoryWorld) -> Engine[M, S] {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        start_engine[S, M](machine, "chat-1")
+    }
+}
+
+fn resumed_engine[S, M Machine[S]](machine M, mut world MemoryWorld) -> Engine[M, S] {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        match resume_engine[S, M](machine, "chat-1") {
+            Some(e) => e
+            None => panic("no snapshot to resume from")
+        }
+    }
+}
+
+fn engine_feed[S, M Machine[S]](mut e Engine[M, S], mut world MemoryWorld, event Incoming) -> () {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        e.feed(event)
+    }
+}
+
+fn engine_accept[S, M Machine[S]](mut e Engine[M, S], mut world MemoryWorld, event Incoming) -> () {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        e.on_arrival(event)
+    }
+}
+
+fn engine_dispatch[S, M Machine[S]](mut e Engine[M, S], mut world MemoryWorld) -> () {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        e.dispatch()
+    }
+}
+
+fn engine_pump[S, M Machine[S]](mut e Engine[M, S], mut world MemoryWorld) -> int {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        e.pump()
+    }
+}
+
+// ORACLE-WORKAROUND(10): the answer is read with two nested `match`es, one level each, not `Some(Answer(reply))`: a nested pattern over a generic payload binds a NULL pointer in the C; write the nested pattern when item 10 is fixed
+fn outcome_text[S, M Machine[S]](e Engine[M, S]) -> str {
+    match e.outcome() {
+        Some(response) => match response {
+            Answer(reply) => "answer:${reply.result}"
+            Refusal(rejection) => "refusal:${rejection.reason.name()}"
+        }
+        None => "none"
+    }
+}
+
+fn trace_of[S, M Machine[S]](machine M, e Engine[M, S], world MemoryWorld, op str, from int) -> StepTrace {
+    ro all = world.journal_entries()
+    mut entries = []JournalEntry.new()
+    mut journal = []str.new()
+    mut i = 0
+    for entry in all {
+        if i >= from {
+            entries.push(entry)
+            if !engine_codes().contains(entry.event.code) { journal.push(entry_text(entry)) }
+        }
+        i += 1
+    }
+    mut sent = []str.new()
+    for r in world.sent { sent.push(r.id) }
+    mut queue = []str.new()
+    for r in e.to_send { queue.push("send ${r.id}") }
+    for id in e.to_cancel { queue.push("cancel ${id}") }
+    for ev in world.inbox { queue.push("in ${ev.name}") }
+    mut cancelled = []str.new()
+    for id in world.cancelled { cancelled.push(id) }
+    mut acked = []str.new()
+    for k in world.acked { acked.push(k) }
+    StepTrace {
+        op, state: machine.state_name(e.state()), encoded: machine.encode_state(e.state()), journal, entries, open: e.open_ids(), sent,
+        cancelled, queue, outcome: outcome_text(e), acked, number: e.step_number()
+    }
+}
+
+/// Run a scenario on the engine of the product over the in-memory world, with any machine, and give the trace of every step.
+export fn drive_scenario[S, M Machine[S]](machine M, sc Scenario) -> []StepTrace {
+    mut world = MemoryWorld.at(sc.start_at)
+    mut e = begin_engine[S, M](machine, world)
+    mut traces = []StepTrace.new()
+    for s in sc.steps {
+        ro from = world.journal.len()
+        if s.op == "feed" { engine_feed[S, M](e, world, scenario_incoming(s.event)) }
+        if s.op == "accept" { engine_accept[S, M](e, world, scenario_incoming(s.event)) }
+        if s.op == "dispatch" { engine_dispatch[S, M](e, world) }
+        if s.op == "pump" { ro made = engine_pump[S, M](e, world) }
+        if s.op == "deliver" { world.deliver(scenario_incoming(s.event)) }
+        if s.op == "advance" { world.advance(s.ms) }
+        if s.op == "restart" { e = resumed_engine[S, M](machine, world) }
+        traces.push(trace_of[S, M](machine, e, world, s.op, from))
+    }
+    traces
+}
+
+// ---- the comparison ------------------------------------------------------------------------------------------------------------------
+
+fn list_text(items []str) -> str => "[${items.join(", ")}]"
+
+fn same_strings(xs []str, ys []str) -> bool {
+    if xs.len() != ys.len() { return false }
+    mut i = 0
+    while i < xs.len() {
+        if xs[i] != ys[i] { return false }
+        i += 1
+    }
+    true
+}
+
+fn expected_text(e ExpEntry) -> str {
+    if e.params.len() == 0 { return e.code }
+    mut parts = []str.new()
+    for p in e.params { parts.push("${p.name}=${p.value}") }
+    "${e.code}(${parts.join(";")})"
+}
+
+/// The data of an encoded state as an object of the names to the values in the JSON form of the core (the record `Data` is unwrapped).
+export fn state_data_fields(encoded str) -> JsonObject {
+    match Json.parse(encoded) {
+        Ok(j) => match j.object() {
+            Some(o) => match o.get("data") {
+                Some(d) => match d.object() {
+                    Some(x) => match x.get("fields") {
+                        Some(f) => match f.object() {
+                            Some(fo) => return fo
+                            None => ()
+                        }
+                        None => ()
+                    }
+                    None => ()
+                }
+                None => ()
+            }
+            None => ()
+        }
+        Err(e) => ()
+    }
+    JsonObject.new()
+}
+
+fn compare_step(n int, s ScStep, t StepTrace, mut out []str) -> () {
+    ro at = "step ${n} (${s.op})"
+    ro x = s.expect
+    if x.has_state && x.state != t.state { out.push("${at}: state: expected ${x.state}, got ${t.state}") }
+    if x.has_journal {
+        mut want = []str.new()
+        for e in x.journal { want.push(expected_text(e)) }
+        if !same_strings(want, t.journal) { out.push("${at}: journal: expected ${list_text(want)}, got ${list_text(t.journal)}") }
+    }
+    if x.has_data {
+        ro data = state_data_fields(t.encoded)
+        for d in x.data {
+            match data.get(d.name) {
+                None => out.push("${at}: data ${d.name}: there is no such datum")
+                Some(actual) => {
+                    ro want = match Json.parse(d.json) {
+                        Ok(j) => value_from_json(j)
+                        Err(e) => Err("not JSON")
+                    }
+                    ro got = value_from_json(actual)
+                    match want {
+                        Ok(w) => match got {
+                            Ok(g) => {
+                                if !value_equal(w, g) { out.push("${at}: data ${d.name}: expected ${value_json(w)}, got ${value_json(g)}") }
+                            }
+                            Err(m) => out.push("${at}: data ${d.name}: the datum does not read: ${m}")
+                        }
+                        Err(m) => out.push("${at}: data ${d.name}: the expected value does not read: ${m}")
+                    }
+                }
+            }
+        }
+    }
+    if x.has_queue && !same_strings(x.queue, t.queue) { out.push("${at}: queue: expected ${list_text(x.queue)}, got ${list_text(t.queue)}") }
+    if x.has_open && !same_strings(x.open, t.open) { out.push("${at}: open: expected ${list_text(x.open)}, got ${list_text(t.open)}") }
+    if x.has_sent && !same_strings(x.sent, t.sent) { out.push("${at}: sent: expected ${list_text(x.sent)}, got ${list_text(t.sent)}") }
+    if x.has_cancelled && !same_strings(x.cancelled, t.cancelled) { out.push("${at}: cancelled: expected ${list_text(x.cancelled)}, got ${list_text(t.cancelled)}") }
+    if x.has_outcome && x.outcome != t.outcome { out.push("${at}: outcome: expected ${x.outcome}, got ${t.outcome}") }
+}
+
+// The machine with the parameters the scenario gives (the same machine when it gives none).
+fn with_params(machine PortolanMachine, params []ScHost) -> Result[PortolanMachine, str] {
+    if params.len() == 0 { return Ok(machine) }
+    mut values = []ProjectValue.new()
+    for h in params {
+        ro parsed = match Json.parse(h.json) {
+            Ok(j) => j
+            Err(e) => return Err("the parameter ${h.name} is not JSON")
+        }
+        ro v = match value_from_json(parsed) {
+            Ok(x) => x
+            Err(m) => return Err("the parameter ${h.name}: ${m}")
+        }
+        values.push(ProjectValue { key: h.name, value: v })
+    }
+    ro built = portolan_machine_with(machine.def, machine.table.registry, values)?
+    Ok(with_replies(built, machine.replies))
+}
+
+// The answers of the host after a step: the answers before, with the ones the step names put over them.
+fn replies_after(before []ScriptedReply, step ScStep) -> Result[[]ScriptedReply, str] {
+    mut out = []ScriptedReply.new()
+    for r in before {
+        mut replaced = false
+        for h in step.host {
+            if h.name == r.name { replaced = true }
+        }
+        if !replaced { out.push(r) }
+    }
+    for h in step.host {
+        ro parsed = match Json.parse(h.json) {
+            Ok(j) => j
+            Err(e) => return Err("the answer of the host ${h.name} is not JSON")
+        }
+        ro v = match value_from_json(parsed) {
+            Ok(x) => x
+            Err(m) => return Err("the answer of the host ${h.name}: ${m}")
+        }
+        out.push(ScriptedReply { name: h.name, value: v })
+    }
+    Ok(out)
+}
+
+/// The reason a scenario cannot be run on a machine, or "" when it can: the values of the parameters that the scenario gives and the answers of the host that its steps give must be
+/// right, or `drive_table_scenario` stops with a panic. A program that runs the scenarios of a file asks this first and reports the reason as an error of the file.
+export fn scenario_problem(first_machine PortolanMachine, sc Scenario) -> str {
+    ro machine = match with_params(first_machine, sc.params) {
+        Ok(m) => m
+        Err(m) => return m
+    }
+    // ORACLE-WORKAROUND(45): a copy of a `ro` list (`machine.replies`) built by hand in a loop; write `mut replies = machine.replies` when item 45 is fixed
+    mut replies = []ScriptedReply.new()
+    for r in machine.replies { replies.push(r) }
+    for s in sc.steps {
+        if s.host.len() > 0 {
+            match replies_after(replies, s) {
+                Ok(next) => { replies = next }
+                Err(m) => return m
+            }
+        }
+    }
+    ""
+}
+
+/// Run a scenario on a machine that is data with the answers of the primitives of the host that the steps change (`host`): like `drive_scenario`,
+/// but the machine of the engine is made again before a step that has `host`.
+export fn drive_table_scenario(first_machine PortolanMachine, sc Scenario) -> []StepTrace {
+    ro machine = match with_params(first_machine, sc.params) {
+        Ok(m) => m
+        Err(m) => panic("scenario ${sc.name}: ${m}")
+    }
+    mut world = MemoryWorld.at(sc.start_at)
+    mut e = begin_engine[PortolanState, PortolanMachine](machine, world)
+    // ORACLE-WORKAROUND(45): a copy of a `ro` list (`machine.replies`) built by hand in a loop; write `mut replies = machine.replies` when item 45 is fixed
+    mut replies = []ScriptedReply.new()
+    for r in machine.replies { replies.push(r) }
+    mut traces = []StepTrace.new()
+    for s in sc.steps {
+        ro from = world.journal.len()
+        if s.host.len() > 0 {
+            match replies_after(replies, s) {
+                Ok(next) => { replies = next }
+                Err(m) => panic("scenario ${sc.name}: ${m}")
+            }
+            e.machine = with_replies(machine, replies)
+        }
+        if s.op == "feed" { engine_feed[PortolanState, PortolanMachine](e, world, scenario_incoming(s.event)) }
+        if s.op == "accept" { engine_accept[PortolanState, PortolanMachine](e, world, scenario_incoming(s.event)) }
+        if s.op == "dispatch" { engine_dispatch[PortolanState, PortolanMachine](e, world) }
+        if s.op == "pump" { ro made = engine_pump[PortolanState, PortolanMachine](e, world) }
+        if s.op == "deliver" { world.deliver(scenario_incoming(s.event)) }
+        if s.op == "advance" { world.advance(s.ms) }
+        if s.op == "restart" { e = resumed_engine[PortolanState, PortolanMachine](e.machine, world) }
+        traces.push(trace_of[PortolanState, PortolanMachine](e.machine, e, world, s.op, from))
+    }
+    traces
+}
+
+/// Run a scenario on a machine that is data and compare every step with what the file expects.
+export fn run_scenario(machine PortolanMachine, sc Scenario) -> ScenarioRun {
+    ro traces = drive_table_scenario(machine, sc)
+    mut mismatches = []str.new()
+    mut i = 0
+    for s in sc.steps {
+        compare_step(i + 1, s, traces[i], mismatches)
+        i += 1
+    }
+    ScenarioRun { name: sc.name, traces, mismatches }
+}
+
+/// Did the run agree with the file?
+export fn run_ok(run ScenarioRun) -> bool => run.mismatches.len() == 0
+
+/// The report of a run: empty when it agrees, else the name and one line for every difference.
+export fn report_text(run ScenarioRun) -> str {
+    if run.mismatches.len() == 0 { return "" }
+    mut lines = ["scenario \"${run.name}\": ${run.mismatches.len()} difference(s)"]
+    for m in run.mismatches { lines.push("  - ${m}") }
+    lines.join("\n")
+}

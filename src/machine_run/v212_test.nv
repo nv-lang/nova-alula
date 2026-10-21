@@ -1,0 +1,121 @@
+// v212_test.nv - task 125: Portolan 2.12 in the interpreter: the failure of the parse (Ya-33: an answer that the parse did not take goes back by the returns of the form and then is the failure
+// `FormNotFixed`; a value of another type is a defect of the host), the flat input of the nested machine "Agent step" (Ya-30) in the machines and in the scenarios.
+module alula.machine_run
+
+import std.text
+import alula.machine.{Text, scenario_files, machine_files, text_of_file}
+
+// ---- the parse (Ya-33) -------------------------------------------------------------------------------------------------------------------
+
+test "v212 parse value of another type is a defect" {
+    ro wrong = ScriptedReply { name: "parse_out", value: Text("not a record") }
+    ro m = fixer_with([changed_reply(false), wrong])
+    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro r = run1(m, st, answered("c-1", out_json("raw")))
+    assert(summary(r.orders).starts_with("log:machine_defect(kind=type_mismatch"))
+}
+
+test "v212 parse value of another type does not use a return" {
+    ro wrong = ScriptedReply { name: "parse_out", value: Text("not a record") }
+    ro m = fixer_with([changed_reply(false), wrong])
+    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro r = run1(m, st, answered("c-1", out_json("raw")))
+    assert(!summary(r.orders).contains("form_returned"))
+}
+
+test "v212 parse failure with no returns" {
+    // `Возвратов формы: 0` (no key): the failure at once
+    ro text = fixer().replace("\"form_returns\":1,", "")
+    ro m = match load_portolan_machine(text, fixer_registry()) {
+        Ok(x) => with_replies(x, [changed_reply(false)])
+        Err(e) => panic("the fixer does not load: ${e}")
+    }
+    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro r = run1(m, st, answered("c-1", out_json("raw")))
+    assert(r.state.name == "Done")
+    assert(datum_json(r.state, "got") == "\"form_not_fixed\"")
+}
+
+test "v212 parse failure is not an accepted answer" {
+    // the rejected answer does not run "On accept": the datum of the proposal keeps its value
+    ro m = fixer_with([changed_reply(false)])
+    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro r = run1(m, st, answered("c-1", out_json("raw")))
+    assert(datum_json(r.state, "proposal") == "\"v0\"")
+}
+
+test "v212 parse failure after the returns is the code of the form" {
+    ro m = fixer_with([changed_reply(false)])
+    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro once = run1(m, st, answered("c-1", out_json("raw"))).state
+    ro r = run1(m, once, answered("c-2", out_json("raw")))
+    assert(datum_json(r.state, "got") == "\"form_not_fixed\"")
+    assert(datum_json(r.state, "proposal") == "\"v0\"")
+}
+
+// ---- the flat input of the nested machine "Agent step" (Ya-30) ------------------------------------------------------------------------
+
+fn agent_fields() -> []str => ["kind", "profile", "session", "dialog_kind", "context", "limits", "trace", "step"]
+
+test "v212 agent step input is the eight fields" {
+    ro text = machine_text("agent_step.portolan.json")
+    ro at = text.find("\"input\":") ?? -1
+    assert(at >= 0)
+    ro part = text[at..]
+    ro end = part.find("\"data\":") ?? part.byte_len()
+    ro input = part[..end]
+    for f in agent_fields() { assert(input.contains("\"name\":\"${f}\"")) }
+    assert(!input.contains("\"name\":\"agent_request\""))
+}
+
+test "v212 agent step builds the record" {
+    ro text = machine_text("agent_step.portolan.json")
+    assert(text.contains("\"op\":\"record\",\"type\":\"AgentRequest\""))
+}
+
+test "v212 callers send the flat record" {
+    for name in ["dialog_steps.portolan.json", "session_start.portolan.json"] {
+        ro text = machine_text(name)
+        assert(text.contains("\"input_type\":\"AgentRequest\""))
+        assert(!text.contains("StepInput"))
+    }
+}
+
+test "v212 callers give the profile by the column" {
+    for name in ["dialog_steps.portolan.json", "session_start.portolan.json"] {
+        ro text = machine_text(name)
+        assert(text.contains("\"nested\":\"agent_step\""))
+        assert(text.contains("\"profile\":{"))
+    }
+}
+
+test "v212 scenarios of the agent step start with the flat input" {
+    mut seen = 0
+    for f in scenario_files() {
+        if !f.name.starts_with("agent-step-") { continue }
+        assert(!f.text.contains("\"input\": {\"agent_request\""))
+        assert(!f.text.contains("\"input\":{\"agent_request\""))
+        if f.text.contains("\"kind\": \"start\"") { seen += 1 }
+    }
+    assert(seen > 50)
+}
+
+test "v212 scenarios of the agent step name the fields" {
+    ro text = text_of_scenario("agent-step-flow-happy.scenario.test.json")
+    assert(text.contains("\"input\": {\"kind\": {\"$variant\": \"CallerKind\""))
+    assert(text.contains("\"dialog_kind\": \"main\""))
+}
+
+fn text_of_scenario(name str) -> str => text_of_file(scenario_files(), name)
+
+test "v212 the missing field of the input is named" {
+    ro text = text_of_scenario("agent-step-flow-input-missing.scenario.test.json")
+    assert(!text.contains("\"field\": \"agent_request\""))
+}
+
+test "v212 machines hold no old version" {
+    for f in machine_files() {
+        assert(!f.text.contains("portolan-2.11"))
+        assert(!f.text.contains("\"2.11\""))
+    }
+}

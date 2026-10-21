@@ -1,0 +1,819 @@
+// step.nv - the interpreter: one step of a machine that is data.
+//
+// `portolan_step(machine, state, event, environment, host)` is the whole of the protocol `Machine`'s `step`: it reads the state and the event
+// (nothing else: the clock is the stamp of the event, the primitives are the host's), gives its orders to the environment and returns the
+// transition. The order of a step is the order of the format:
+//   1. the event of the engine is read as the event of the machine (a word, a signal, a part of an answer, the answer, the failure,
+//      the term); a name the machine does not know is the journal event `event_unknown`, a text that does not fit the fields of the word is
+//      `event_malformed`;
+//   2. the common events (format 9) come first, then "On accept" of the appeal, then the first row of the state that fits (the pattern of the
+//      event and the condition); no row - the journal event `event_ignored`;
+//   3. the actions of the row run in the order of writing, each sees the results of the previous (format 5); a datum is checked against its
+//      type at every write;
+//   4. the chain: the "Where" of the row leads to the next state; an operation and a fork do their work and go on, an appeal orders its
+//      requests and waits, an end orders the finish of the machine with the answer of the table "Ends";
+//   5. after the chain the bounds of the data are checked ("does not decrease", `<= bound`); a row has been taken - a snapshot is ordered.
+// An error of the machine (an overflow, a missing key, a bound, `machine_error`) writes the event `machine_error` (or the event of the action),
+// goes to the error end and finishes there; a defect (`require(none)`, a table the checks would refuse) writes `machine_defect`, finishes the
+// machine with the code NoResult and leaves the state as it was. The orders are collected and given to the environment at the end of the
+// step, so a defect gives nothing but its own two.
+module alula.machine_run
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import std.encoding.json.{Json}
+import std.encoding.json.{JsonValue, JsonObject}
+import alula.engine.{Incoming, SendOrder, CancelOrder, SignalOrder, Conclusion, FailCode, JournalParam, JournalEvent, journal_event, param}
+import alula.machine.{Value, Null, Int, Text, List, Dict, DictEntry, RecordField, Binding, Scope, DefTable, Expr, TypeSpec, PrimitiveHost, EvalError, Binary, Add}
+import alula.machine.{eval_defs, kind_word, make_record, make_tuple, enum_value, value_text, value_json, value_to_json, value_compare, parse_value, value_from_json, record_get, dict_get, check_value, FieldDef, TypeDefs, check_call_args, check_call_result, Lit}
+import alula.machine_table.{MachineDef, TableRow, EventPat, Action, LValue, PathStep, NamedExpr, Bind, WordDef, PartyDef, MachineParty}
+import alula.machine_table.{find_state, find_party, find_data}
+
+/// The longest chain of transitions in one step (a loop of forks that never ends is a defect of the table).
+const MAX_CHAIN = 1000
+
+type EvKind enum
+    | EvInput
+    | EvProgress
+    | EvAnswer
+    | EvFailure
+    | EvTimeout
+
+// The event of the engine read as the event of the machine: `name` is the label of the journal, `fields` the data of a word or of a part,
+// `value` the answer or the reason of the failure, `reason` the case of the failure.
+type EventVal { kind EvKind, name str, id str, request str, party str, fields []RecordField, value Value, reason str }
+
+type Planned enum
+    | PNote(JournalEvent)
+    | PSend(SendOrder)
+    | PCancel(CancelOrder)
+    | PFinish(Conclusion)
+    | PPass(SignalOrder)
+
+type Ctx {
+    def MachineDef, table DefTable, name str, started bool, input Value, data Value,
+    event EventVal, locals []Binding, record Value, planned []Planned,
+    fired bool, finished bool, defect bool, chain int, taken []str, limit int, trace str, step_no int, again bool
+}
+
+type Fault { defect bool, code str, params []JournalParam, kind str, message str }
+
+type Hit { yes bool, binds []Binding }
+
+type Chosen { at int, binds []Binding }
+
+// ---- faults ---------------------------------------------------------------------------------------------------------------
+
+fn reason_fault(reason str) -> Fault => { defect: false, code: "machine_error", params: [param("reason", reason)], kind: "", message: "" }
+
+fn defect_fault(kind str, message str) -> Fault => { defect: true, code: "", params: []JournalParam.new(), kind, message }
+
+fn eval_fault(x EvalError) -> Fault {
+    match x.kind {
+        Overflow => reason_fault("overflow")
+        DivisionByZero => reason_fault("division_by_zero")
+        DuplicateKey => reason_fault("duplicate_key")
+        _ => defect_fault(kind_word(x.kind), "${x.path}: ${x.message}")
+    }
+}
+
+// ---- values ---------------------------------------------------------------------------------------------------------------
+
+fn data_get(data Value, name str) -> Value {
+    match data {
+        Record { name: record_name, fields } => match record_get(fields, name) {
+            Some(v) => v
+            None => Null
+        }
+        _ => Null
+    }
+}
+
+fn data_put(data Value, name str, value Value) -> Value {
+    match data {
+        Record { name: record_name, fields } => {
+            mut out = []RecordField.new()
+            mut found = false
+            for f in fields {
+                if f.name == name {
+                    out.push(RecordField { name, value })
+                    found = true
+                } else {
+                    out.push(f)
+                }
+            }
+            if !found { out.push(RecordField { name, value }) }
+            make_record(record_name, out)
+        }
+        _ => data
+    }
+}
+
+fn event_record(ev EventVal) -> Value {
+    // ORACLE-WORKAROUND(45): a copy of a `ro` list (`ev.fields`) built by hand in a loop; write `mut fields = ev.fields` when item 45 is fixed
+    mut fields = []RecordField.new()
+    for f in ev.fields { fields.push(f) }
+    fields.push(RecordField { name: "id", value: Text(ev.id) })
+    fields.push(RecordField { name: "party", value: Text(ev.party) })
+    make_record("Event", fields)
+}
+
+fn scope_of(ctx Ctx) -> Scope {
+    // ORACLE-WORKAROUND(45): a copy of a `ro` list (`ctx.table.globals`) built by hand in a loop; write `mut bs = ctx.table.globals` when item 45 is fixed
+    mut bs = []Binding.new()
+    for g in ctx.table.globals { bs.push(g) }
+    match ctx.data {
+        Record { name, fields } => {
+            for f in fields { bs.push(Binding { name: f.name, value: f.value }) }
+        }
+        _ => ()
+    }
+    bs.push(Binding { name: "input", value: ctx.input })
+    bs.push(Binding { name: "trace", value: Text(ctx.trace) })
+    bs.push(Binding { name: "step", value: Int(ctx.step_no) })
+    bs.push(Binding { name: "state", value: Text(ctx.name) })
+    bs.push(Binding { name: "party", value: Text(ctx.event.party) })
+    bs.push(Binding { name: "event", value: event_record(ctx.event) })
+    bs.push(Binding { name: "transition_note", value: ctx.record })
+    bs.push(Binding { name: "all_data", value: ctx.data })
+    for l in ctx.locals { bs.push(l) }
+    Scope { bindings: bs }
+}
+
+fn run_expr(ctx Ctx, e Expr, mut host PrimitiveHost) -> Result[Value, Fault] {
+    match eval_defs(e, scope_of(ctx), ctx.table, host) {
+        Ok(v) => Ok(v)
+        Err(x) => Err(eval_fault(x))
+    }
+}
+
+fn want_bool(v Value) -> Result[bool, Fault] {
+    match v {
+        Bool(b) => Ok(b)
+        _ => Err(defect_fault("type_mismatch", "a condition must be bool"))
+    }
+}
+
+fn want_text(v Value, what str) -> Result[str, Fault] {
+    match v {
+        Text(s) => Ok(s)
+        _ => Err(defect_fault("type_mismatch", "${what} must be a text"))
+    }
+}
+
+fn pop_to(mut ctx Ctx, mark int) -> () {
+    while ctx.locals.len() > mark {
+        ro dropped = ctx.locals.pop()
+    }
+}
+
+fn plan(mut ctx Ctx, p Planned) -> () {
+    ctx.planned.push(p)
+}
+
+fn note(mut ctx Ctx, code str, params []JournalParam) -> () {
+    plan(ctx, PNote(journal_event(code, params)))
+}
+
+fn finish_with(mut ctx Ctx, failure Option[FailCode], text str) -> () {
+    if ctx.finished { return }
+    ctx.finished = true
+    plan(ctx, PFinish(Conclusion { failure, text }))
+}
+
+// ---- the event of the machine -------------------------------------------------------------------------------------------
+
+fn find_word(words []WordDef, name str) -> int {
+    mut i = 0
+    while i < words.len() {
+        if words[i].name == name { return i }
+        i += 1
+    }
+    -1
+}
+
+// The declaration of a word or a signal by name: Some(fields).
+fn input_decl(def MachineDef, name str) -> Option[[]FieldDef] {
+    for p in def.parties {
+        ro at = find_word(p.words, name)
+        if at >= 0 { return Some(p.words[at].fields) }
+    }
+    ro at = find_word(def.signals, name)
+    if at >= 0 { return Some(def.signals[at].fields) }
+    None
+}
+
+fn progress_decl(def MachineDef, name str) -> Option[[]FieldDef] {
+    for p in def.parties {
+        ro at = find_word(p.progress, name)
+        if at >= 0 { return Some(p.progress[at].fields) }
+    }
+    None
+}
+
+// One value of the single field of a word from the text of the input.
+fn field_from_text(spec TypeSpec, input str, defs TypeDefs) -> Result[Value, str] {
+    mut v = Text(input)
+    match spec {
+        TextType => ()
+        TextSet(words) => ()
+        IdType => ()
+        IntType => { v = int_of(input)? }
+        IntMin(n) => { v = int_of(input)? }
+        _ => { v = parse_value(input)? }
+    }
+    match check_value(spec, v, defs) {
+        Ok(u) => Ok(v)
+        Err(x) => Err("${x.path} ${x.message}")
+    }
+}
+
+fn int_of(input str) -> Result[Value, str] {
+    match input.to_int() {
+        Ok(n) => Ok(Int(n))
+        Err(e) => Err("not an integer")
+    }
+}
+
+// The fields of a word from the text of the input: a word with one field takes the text as the field, with more - an object of the JSON.
+fn decode_fields(fields []FieldDef, input str, defs TypeDefs) -> Result[[]RecordField, str] {
+    mut out = []RecordField.new()
+    if fields.len() == 0 { return Ok(out) }
+    if fields.len() == 1 {
+        ro v = field_from_text(fields[0].spec, input, defs)?
+        out.push(RecordField { name: fields[0].name, value: v })
+        return Ok(out)
+    }
+    ro parsed = match Json.parse(input) {
+        Ok(j) => j
+        Err(e) => return Err("not a JSON object")
+    }
+    ro o = match parsed.object() {
+        Some(x) => x
+        None => return Err("not a JSON object")
+    }
+    for f in fields {
+        ro raw = match o.get(f.name) {
+            Some(x) => x
+            None => return Err("the field ${f.name} is missing")
+        }
+        ro v = value_from_json(raw)?
+        match check_value(f.spec, v, defs) {
+            Ok(u) => ()
+            Err(x) => return Err("${f.name}: ${x.path} ${x.message}")
+        }
+        out.push(RecordField { name: f.name, value: v })
+    }
+    Ok(out)
+}
+
+// The party of a request id: `lens-2` - `lens` (the id is the party or the element of a set, `-`, the attempt).
+fn request_text_of(request Option[str]) -> str {
+    match request {
+        Some(id) => id
+        None => ""
+    }
+}
+
+fn party_of_request_id(id str) -> str {
+    match id.rfind("-") {
+        Some(at) => id[..at]
+        None => id
+    }
+}
+
+fn request_party_of(request Option[str]) -> str {
+    match request {
+        Some(id) => party_of_request_id(id)
+        None => ""
+    }
+}
+
+// ORACLE-WORKAROUND(37, 39): the type has a name of its own (`EventRead`, not `Reading`): type names and case names share one table of the program, and a type named like a case of an enum of another module (`Class.Reading`) breaks every use of that case; use a short name when items 37 and 39 are fixed
+type EventRead enum
+    | ReadUnknown
+    | ReadMalformed
+    | ReadReady(EventVal)
+
+fn answer_value(def MachineDef, state_party str, input str) -> Option[Value] {
+    ro pi = find_party(def, state_party)
+    if pi < 0 || def.parties[pi].result_spec.len() == 0 { return Some(Text(input)) }
+    match def.parties[pi].result_spec[0] {
+        TextType => Some(Text(input))
+        TextSet(words) => Some(Text(input))
+        IdType => Some(Text(input))
+        spec => {
+            match parse_value(input) {
+                Ok(v) => {
+                    match check_value(spec, v, def.types) {
+                        Ok(u) => Some(v)
+                        Err(x) => None
+                    }
+                }
+                Err(m) => None
+            }
+        }
+    }
+}
+
+fn read_event(ctx Ctx, event Incoming) -> EventRead {
+    ro def = ctx.def
+    ro from_party = request_party_of(event.request)
+    match event.kind {
+        EventKind.Input => {
+            match input_decl(def, event.name) {
+                Some(fields) => match decode_fields(fields, event.input, def.types) {
+                    Ok(vals) => ReadReady(EventVal { kind: EvInput, name: event.name, id: event.id, request: request_text_of(event.request), party: from_party, fields: vals, value: Null, reason: "" })
+                    Err(m) => ReadMalformed
+                }
+                None => ReadUnknown
+            }
+        }
+        EventKind.Progress => {
+            match progress_decl(def, event.name) {
+                Some(fields) => match decode_fields(fields, event.input, def.types) {
+                    Ok(vals) => ReadReady(EventVal { kind: EvProgress, name: event.name, id: event.id, request: request_text_of(event.request), party: from_party, fields: vals, value: Null, reason: "" })
+                    Err(m) => ReadMalformed
+                }
+                None => ReadUnknown
+            }
+        }
+        EventKind.Answered => {
+            ro at = find_state(def, ctx.name)
+            ro party = if at >= 0 { def.states[at].party } else { "" }
+            match answer_value(def, party, event.input) {
+                Some(v) => ReadReady(EventVal { kind: EvAnswer, name: event.name, id: event.id, request: request_text_of(event.request), party: from_party, fields: []RecordField.new(), value: v, reason: "" })
+                None => ReadMalformed
+            }
+        }
+        EventKind.Refused => {
+            ro code = FailCode.of(event.input).name()
+            ReadReady(EventVal {
+                kind: EvFailure, name: event.name, id: event.id, request: request_text_of(event.request), party: from_party, fields: []RecordField.new(),
+                value: enum_value("FailCode", code), reason: code
+            })
+        }
+        EventKind.Expired => ReadReady(EventVal { kind: EvTimeout, name: event.name, id: event.id, request: request_text_of(event.request), party: from_party, fields: []RecordField.new(), value: Null, reason: "" })
+    }
+}
+
+// ---- patterns -----------------------------------------------------------------------------------------------------------------
+
+fn binds_of(binds []Bind, fields []RecordField) -> []Binding {
+    mut out = []Binding.new()
+    for b in binds {
+        for f in fields {
+            if f.name == b.field { out.push(Binding { name: b.name, value: f.value }) }
+        }
+    }
+    out
+}
+
+fn no_hit() -> Hit => { yes: false, binds: []Binding.new() }
+
+fn hit_of(pat EventPat, ev EventVal) -> Hit {
+    match pat {
+        AnswerEv { bind } => {
+            if ev.kind != EvAnswer { return no_hit() }
+            mut binds = []Binding.new()
+            if bind != "" { binds.push(Binding { name: bind, value: ev.value }) }
+            Hit { yes: true, binds }
+        }
+        AnswerVariantEv { variant, binds } => {
+            if ev.kind != EvAnswer { return no_hit() }
+            match ev.value {
+                Variant { type_name, name, fields } => {
+                    if name != variant { return no_hit() }
+                    Hit { yes: true, binds: binds_of(binds, fields) }
+                }
+                _ => no_hit()
+            }
+        }
+        FailureEv { reasons, bind } => {
+            if ev.kind != EvFailure { return no_hit() }
+            if reasons.len() > 0 && !reasons.contains(ev.reason) { return no_hit() }
+            mut binds = []Binding.new()
+            if bind != "" { binds.push(Binding { name: bind, value: ev.value }) }
+            Hit { yes: true, binds }
+        }
+        TimeoutEv => Hit { yes: ev.kind == EvTimeout, binds: []Binding.new() }
+        ProgressEv { name, binds } => {
+            if ev.kind != EvProgress || ev.name != name { return no_hit() }
+            Hit { yes: true, binds: binds_of(binds, ev.fields) }
+        }
+        WordEv { word, binds } => {
+            if ev.kind != EvInput || ev.name != word { return no_hit() }
+            Hit { yes: true, binds: binds_of(binds, ev.fields) }
+        }
+        SignalEv { name, binds } => {
+            if ev.kind != EvInput || ev.name != name { return no_hit() }
+            Hit { yes: true, binds: binds_of(binds, ev.fields) }
+        }
+        NowEv => no_hit()
+    }
+}
+
+// The first row of a list that fits the event (the pattern and the condition); at < 0 - none. The bindings of the pattern are in the chosen.
+fn choose(mut ctx Ctx, rows []TableRow, mut host PrimitiveHost) -> Result[Chosen, Fault] {
+    mut i = 0
+    for r in rows {
+        ro h = hit_of(r.event, ctx.event)
+        if h.yes {
+            if r.cond.len() == 0 { return Ok(Chosen { at: i, binds: h.binds }) }
+            ro mark = ctx.locals.len()
+            for b in h.binds { ctx.locals.push(b) }
+            ro c = run_expr(ctx, r.cond[0], host)
+            pop_to(ctx, mark)
+            ro yes = want_bool(c?)?
+            if yes { return Ok(Chosen { at: i, binds: h.binds }) }
+        }
+        i += 1
+    }
+    Ok(Chosen { at: -1, binds: []Binding.new() })
+}
+
+// ---- the writes -------------------------------------------------------------------------------------------------------------
+
+fn missing_key() -> Fault => reason_fault("missing_key")
+
+// A value with the place at `steps[at..]` replaced: `x[key] = v` inserts or replaces in a dict, replaces an existing position of a list; with
+// more steps the element must be there (the short form `x[key].field = v`, format 5).
+fn update_at(cur Value, steps []PathStep, at int, v Value, ctx Ctx, mut host PrimitiveHost) -> Result[Value, Fault] {
+    if at >= steps.len() { return Ok(v) }
+    match steps[at] {
+        KeyStep(ke) => {
+            ro key = run_expr(ctx, ke, host)?
+            match cur {
+                Dict(entries) => {
+                    ro last = at == steps.len() - 1
+                    mut out = []DictEntry.new()
+                    mut found = false
+                    for en in entries {
+                        if value_compare(en.key, key) == 0 {
+                            found = true
+                            ro inner = update_at(en.value, steps, at + 1, v, ctx, host)?
+                            out.push(DictEntry { key: en.key, value: inner })
+                        } else {
+                            out.push(en)
+                        }
+                    }
+                    if !found {
+                        if !last { return Err(missing_key()) }
+                        out.push(DictEntry { key, value: v })
+                    }
+                    Ok(Dict(out))
+                }
+                List(items) => {
+                    match key {
+                        Int(n) => {
+                            if n < 0 || n >= items.len() { return Err(reason_fault("list_index")) }
+                            mut out = []Value.new()
+                            mut i = 0
+                            for x in items {
+                                if i == n {
+                                    ro inner = update_at(x, steps, at + 1, v, ctx, host)?
+                                    out.push(inner)
+                                } else {
+                                    out.push(x)
+                                }
+                                i += 1
+                            }
+                            Ok(List(out))
+                        }
+                        _ => Err(defect_fault("type_mismatch", "the index of a list must be an int"))
+                    }
+                }
+                _ => Err(defect_fault("type_mismatch", "an index needs a list or a dict"))
+            }
+        }
+        FieldStep(f) => {
+            match cur {
+                Record { name, fields } => {
+                    mut out = []RecordField.new()
+                    mut found = false
+                    for x in fields {
+                        if x.name == f {
+                            found = true
+                            ro inner = update_at(x.value, steps, at + 1, v, ctx, host)?
+                            out.push(RecordField { name: f, value: inner })
+                        } else {
+                            out.push(x)
+                        }
+                    }
+                    if !found { return Err(defect_fault("unknown_field", "no field ${f}")) }
+                    Ok(make_record(name, out))
+                }
+                _ => Err(defect_fault("type_mismatch", "a field needs a record"))
+            }
+        }
+    }
+}
+
+fn data_def(ctx Ctx, name str) -> int => find_data(ctx.def, name)
+
+// Write a value into a datum (by the path) and check the datum against its type.
+fn write_target(mut ctx Ctx, target LValue, v Value, mut host PrimitiveHost) -> Result[(), Fault] {
+    ro at = data_def(ctx, target.root)
+    if at < 0 { return Err(defect_fault("unknown_name", "no datum ${target.root}")) }
+    ro cur = data_get(ctx.data, target.root)
+    ro next = update_at(cur, target.steps, 0, v, ctx, host)?
+    match check_value(ctx.def.data[at].spec, next, ctx.def.types) {
+        Ok(u) => ()
+        Err(x) => return Err(reason_fault("bound_violation"))
+    }
+    ctx.data = data_put(ctx.data, target.root, next)
+    Ok(())
+}
+
+fn read_target(ctx Ctx, target LValue, mut host PrimitiveHost) -> Result[Value, Fault] {
+    mut cur = data_get(ctx.data, target.root)
+    for s in target.steps {
+        match s {
+            KeyStep(ke) => {
+                ro key = run_expr(ctx, ke, host)?
+                match cur {
+                    Dict(entries) => {
+                        match dict_get(entries, key) {
+                            Some(x) => { cur = x }
+                            None => return Err(missing_key())
+                        }
+                    }
+                    List(items) => {
+                        match key {
+                            Int(n) => {
+                                if n < 0 || n >= items.len() { return Err(reason_fault("list_index")) }
+                                cur = items[n]
+                            }
+                            _ => return Err(defect_fault("type_mismatch", "the index of a list must be an int"))
+                        }
+                    }
+                    _ => return Err(defect_fault("type_mismatch", "an index needs a list or a dict"))
+                }
+            }
+            FieldStep(f) => {
+                match cur {
+                    Record { name, fields } => {
+                        match record_get(fields, f) {
+                            Some(x) => { cur = x }
+                            None => return Err(defect_fault("unknown_field", "no field ${f}"))
+                        }
+                    }
+                    _ => return Err(defect_fault("type_mismatch", "a field needs a record"))
+                }
+            }
+        }
+    }
+    Ok(cur)
+}
+
+// ---- the journal -------------------------------------------------------------------------------------------------------------
+
+fn params_of(mut ctx Ctx, params []NamedExpr, mut host PrimitiveHost) -> Result[[]JournalParam, Fault] {
+    mut out = []JournalParam.new()
+    for q in params {
+        ro v = run_expr(ctx, q.value, host)?
+        out.push(param(q.name, want_text(v, "the parameter ${q.name} of a journal event")?))
+    }
+    Ok(out)
+}
+
+// The record `JournalEvent { code, params }` of the language for an event of the journal.
+fn record_of_event(e JournalEvent) -> Value {
+    mut ps = []Value.new()
+    for p in e.params { ps.push(make_tuple([Text(p.name), Text(p.value)])) }
+    make_record("JournalEvent", [RecordField { name: "code", value: Text(e.code) }, RecordField { name: "params", value: List(ps) }])
+}
+
+fn event_of_record(v Value) -> Result[JournalEvent, Fault] {
+    match v {
+        Record { name, fields } => {
+            if name != "JournalEvent" { return Err(defect_fault("type_mismatch", "journal(value) needs first_text JournalEvent")) }
+            ro code = match record_get(fields, "code") {
+                Some(Text(s)) => s
+                _ => return Err(defect_fault("type_mismatch", "first_text JournalEvent has first_text text code"))
+            }
+            mut params = []JournalParam.new()
+            match record_get(fields, "params") {
+                Some(List(items)) => {
+                    for item in items {
+                        match item {
+                            Record { name: tn, fields: tf } => {
+                                ro first_text = match record_get(tf, "0") {
+                                    Some(Text(s)) => s
+                                    _ => return Err(defect_fault("type_mismatch", "first_text parameter of first_text JournalEvent is first_text pair of texts"))
+                                }
+                                ro second_text = match record_get(tf, "1") {
+                                    Some(Text(s)) => s
+                                    _ => return Err(defect_fault("type_mismatch", "first_text parameter of first_text JournalEvent is first_text pair of texts"))
+                                }
+                                params.push(param(first_text, second_text))
+                            }
+                            _ => return Err(defect_fault("type_mismatch", "first_text parameter of first_text JournalEvent is first_text pair"))
+                        }
+                    }
+                }
+                _ => return Err(defect_fault("type_mismatch", "first_text JournalEvent has first_text list of parameters"))
+            }
+            Ok(journal_event(code, params))
+        }
+        _ => Err(defect_fault("type_mismatch", "journal(value) needs first_text JournalEvent"))
+    }
+}
+
+fn all_data_text(ctx Ctx) -> str {
+    mut parts = []str.new()
+    for d in ctx.def.data {
+        if d.name.contains("[") { continue }
+        parts.push("${d.name}=${datum_line(data_get(ctx.data, d.name), ctx.def.types)}")
+    }
+    parts.join("; ")
+}
+
+// ---- the actions -------------------------------------------------------------------------------------------------------------
+
+fn party_id_of(ctx Ctx, name str) -> str {
+    ro at = find_party(ctx.def, name)
+    if at < 0 { return "" }
+    ctx.def.parties[at].id
+}
+
+fn run_actions(mut ctx Ctx, actions []Action, mut host PrimitiveHost) -> Result[(), Fault] {
+    for a in actions {
+        match a {
+            AssignAct { target, value } => {
+                ro v = run_expr(ctx, value, host)?
+                write_target(ctx, target, v, host)?
+            }
+            AddAct { target, value } => {
+                ro cur = read_target(ctx, target, host)?
+                ro delta = run_expr(ctx, value, host)?
+                ro sum = run_expr(ctx_with(ctx, "$left", cur, "$right", delta), Binary { op: Add, left: Name("$left"), right: Name("$right") }, host)?
+                write_target(ctx, target, sum, host)?
+            }
+            JournalAct { code, params } => {
+                ro ps = params_of(ctx, params, host)?
+                note(ctx, code, ps)
+            }
+            JournalValueAct(value) => {
+                ro v = run_expr(ctx, value, host)?
+                ro e = event_of_record(v)?
+                plan(ctx, PNote(e))
+            }
+            JournalAllAct => note(ctx, "machine_data", [param("data", all_data_text(ctx))])
+            ForEachAct { var, list, body } => {
+                ro items = run_expr(ctx, list, host)?
+                match items {
+                    List(xs) => {
+                        for x in xs {
+                            ro mark = ctx.locals.len()
+                            ctx.locals.push(Binding { name: var, value: x })
+                            ro r = run_actions(ctx, body, host)
+                            pop_to(ctx, mark)
+                            r?
+                        }
+                    }
+                    _ => return Err(defect_fault("type_mismatch", "for each needs a list"))
+                }
+            }
+            LetAct { name, value, body } => {
+                ro v = run_expr(ctx, value, host)?
+                ro mark = ctx.locals.len()
+                ctx.locals.push(Binding { name, value: v })
+                ro r = run_actions(ctx, body, host)
+                pop_to(ctx, mark)
+                r?
+            }
+            BindAct { name, value } => {
+                ro v = run_expr(ctx, value, host)?
+                ctx.locals.push(Binding { name, value: v })
+            }
+            IfAct { cond, then_actions, else_actions } => {
+                ro c = want_bool(run_expr(ctx, cond, host)?)?
+                if c { run_actions(ctx, then_actions, host)? } else { run_actions(ctx, else_actions, host)? }
+            }
+            CallAct { name, args } => {
+                mut values = []Value.new()
+                for e in args { values.push(run_expr(ctx, e, host)?) }
+                match check_call_args(ctx.table.registry, ctx.def.types, name, values) {
+                    Ok(u) => ()
+                    Err(x) => return Err(defect_fault("type_mismatch", "${name}: ${x.path} ${x.message}"))
+                }
+                ro r = match host.call_primitive(name, values) {
+                    Ok(x) => x
+                    Err(x) => return Err(eval_fault(x))
+                }
+                match check_call_result(ctx.table.registry, ctx.def.types, name, r) {
+                    Ok(u) => ()
+                    Err(x) => return Err(defect_fault("type_mismatch", "the result of ${name}: ${x.path} ${x.message}"))
+                }
+            }
+            MachineErrorAct { code, params } => {
+                ro ps = params_of(ctx, params, host)?
+                return Err(Fault { defect: false, code, params: ps, kind: "", message: "" })
+            }
+            CancelOpenAct { party, except } => {
+                if has_datum(ctx, "open_requests") {
+                    // the open requests of the machine (the datum of the contract): all of them, or those of the named party, except the requests to the nested machines
+                    // that `except` names (`кроме: вложенные`); the party of a set that was cancelled goes back to `to_send` before the ones not sent yet (rule 18)
+                    ro wanted = party_id_of(ctx, party)
+                    mut spared = []str.new()
+                    for e in except {
+                        for n in nested_names_of_value(run_expr(ctx, e, host)?) { spared.push(n) }
+                    }
+                    mut keep = []str.new()
+                    mut returned = []str.new()
+                    for rid in texts_of_datum(ctx, "open_requests") {
+                        ro owner = party_of_request_id(rid)
+                        ro at = owner_party(ctx.def, rid)
+                        ro is_spared = at >= 0 && ctx.def.parties[at].kind == MachineParty && spared.contains(ctx.def.parties[at].nested)
+                        if !is_spared && (party == "" || owner == wanted) {
+                            plan(ctx, PCancel(CancelOrder { party: owner }))
+                            if is_set_request(ctx.def, rid) { returned.push(owner) }
+                        } else {
+                            keep.push(rid)
+                        }
+                    }
+                    put_texts(ctx, "open_requests", keep)
+                    if returned.len() > 0 && has_datum(ctx, "to_send") {
+                        mut front = []str.new()
+                        for id in returned { front.push(id) }
+                        for id in texts_of_datum(ctx, "to_send") {
+                            if !returned.contains(id) { front.push(id) }
+                        }
+                        put_texts(ctx, "to_send", front)
+                    }
+                    continue
+                }
+                ro at = find_state(ctx.def, ctx.name)
+                mut who = party
+                if who == "" && at >= 0 { who = ctx.def.states[at].party }
+                mut skip = false
+                for e in except {
+                    ro v = run_expr(ctx, e, host)?
+                    match v {
+                        Text(s) => {
+                            if s == who { skip = true }
+                        }
+                        List(xs) => {
+                            for x in xs {
+                                match x {
+                                    Text(s) => {
+                                        if s == who { skip = true }
+                                    }
+                                    _ => ()
+                                }
+                            }
+                        }
+                        _ => ()
+                    }
+                }
+                ro id = party_id_of(ctx, who)
+                if !skip && id != "" { plan(ctx, PCancel(CancelOrder { party: id })) }
+            }
+            PassAct { nested, signal } => {
+                // the signal goes to every open request of the nested machines of the list, at the moment of the action (format 5, T4); the engine journals it and holds it for the
+                // caller that runs the nested machines, which passes it on after the commit of the step (rule 35, item 8)
+                ro names = nested_names_of_value(run_expr(ctx, nested, host)?)
+                for rid in texts_of_datum(ctx, "open_requests") {
+                    ro at = owner_party(ctx.def, rid)
+                    if at >= 0 && ctx.def.parties[at].kind == MachineParty && names.contains(ctx.def.parties[at].nested) {
+                        plan(ctx, PPass(SignalOrder { request: rid, signal }))
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+// A copy of the context with two more names in the scope (used to add by the operator of the language).
+fn ctx_with(ctx Ctx, left_name str, left_value Value, right_name str, right_value Value) -> Ctx {
+    // ORACLE-WORKAROUND(45): a copy of a `ro` list (`ctx.locals`) built by hand in a loop; write `mut locals = ctx.locals` when item 45 is fixed
+    mut locals = []Binding.new()
+    for l in ctx.locals { locals.push(l) }
+    locals.push(Binding { name: left_name, value: left_value })
+    locals.push(Binding { name: right_name, value: right_value })
+    Ctx {
+        def: ctx.def, table: ctx.table, name: ctx.name, started: ctx.started, input: ctx.input, data: ctx.data, event: ctx.event, locals,
+        record: ctx.record, planned: ctx.planned, fired: ctx.fired, finished: ctx.finished, defect: ctx.defect, chain: ctx.chain,
+        taken: ctx.taken, limit: ctx.limit, trace: ctx.trace, step_no: ctx.step_no, again: ctx.again
+    }
+}
+
+// The names of the nested machines in a value: a list of texts, or one text (a name that is not a list is a name).
+fn nested_names_of_value(v Value) -> []str {
+    mut out = []str.new()
+    match v {
+        List(xs) => {
+            for x in xs {
+                match x {
+                    Text(s) => out.push(s)
+                    _ => ()
+                }
+            }
+        }
+        Text(s) => out.push(s)
+        _ => ()
+    }
+    out
+}

@@ -1,0 +1,158 @@
+// more_test.nv - the common events, the pause and the previous state, the set, the restart, the fallback of a failure, the constants and the parameters.
+module alula.machine_run
+
+import std.text
+import alula.machine.{Null, Int, standard_registry}
+import alula.engine.{Incoming, EventKind}
+
+fn gate() -> PortolanMachine => build("gate.portolan.json")
+
+fn gate_started() -> Out {
+    ro m = gate()
+    run1(m, m.initial(), start_with(""))
+}
+
+fn stop_by(author str) -> Incoming => word_in("stop", "{\"author\":\"${author}\",\"source\":\"console\"}")
+
+test "gate start" {
+    ro m = gate()
+    assert(!m.initial().started)
+    assert(m.initial().name == "Work")
+    ro r = gate_started()
+    assert(r.state.name == "Work")
+    assert(r.state.started)
+    assert(summary(r.orders) == "send:agent:work:0,save")
+}
+
+test "common stop" {
+    ro m = gate()
+    ro working = gate_started().state
+    ro r = run1(m, working, stop_by("ann"))
+    assert(r.state.name == "Pause")
+    assert(summary(r.orders) == "log:human_stop(author=ann;source=console;event=e-1),cancel:agent,save")
+    assert(datum_json(r.state, "previous") == "\"Work\"")
+    ro again = run1(m, r.state, stop_by("ann"))
+    assert(summary(again.orders) == "log:stop_discarded(author=ann),save")
+    assert(again.state.name == "Pause")
+    ro done = run1(m, working, stop_by("x"))
+    ro ended = run1(m, run1(m, working, stamped(EventKind.Answered, "answer", Some("agent-1"), "")).state, stop_by("late"))
+    assert(summary(ended.orders) == "log:stop_discarded(author=late),save")
+    assert(ended.state.name == "Done")
+}
+
+test "pause words" {
+    ro m = gate()
+    ro working = gate_started().state
+    assert(summary(run1(m, working, word_in("halt", "")).orders) == "log:event_ignored(event=halt;state=Work)")
+    ro paused = run1(m, working, stop_by("ann")).state
+    ro back = run1(m, paused, word_in("continue", "{\"author\":\"ann\",\"source\":\"console\"}"))
+    assert(back.state.name == "Work")
+    assert(summary(back.orders) == "log:human_continue(previous=Work;author=ann;source=console;event=e-1),send:agent:work:0,save")
+    ro halted = run1(m, paused, word_in("halt", ""))
+    assert(halted.state.name == "Halted")
+    assert(summary(halted.orders) == "finish:refusal:StoppedByHuman,save")
+}
+
+test "no previous" {
+    ro m = gate()
+    ro lost = PortolanState { name: "Pause", started: true, input: Null, data: m.initial().data, taken: []str.new() }
+    ro r = run1(m, lost, word_in("continue", "{\"author\":\"a\",\"source\":\"s\"}"))
+    assert(!r.moved)
+    assert(r.state.name == "Pause")
+    assert(summary(r.orders).starts_with("log:machine_defect(kind=unreachable"))
+    assert(summary(r.orders).contains("finish:refusal:NoResult"))
+}
+
+test "before the start" {
+    ro m = gate()
+    ro r = run1(m, m.initial(), word_in("halt", ""))
+    assert(!r.moved)
+    assert(summary(r.orders) == "log:event_ignored(event=halt;state=Work)")
+    ro started = gate_started().state
+    assert(summary(run1(m, started, word_in("start", "")).orders) == "log:event_unknown(name=start)")
+}
+
+test "failure fallback" {
+    ro text = machine_text("gate.portolan.json").replace("\"kind\": \"failure\", \"bind\": \"why\"", "\"kind\": \"failure\", \"reasons\": [ \"NoResult\" ], \"bind\": \"why\"")
+    ro m = build_from(text)
+    ro working = run1(m, m.initial(), start_with("")).state
+    ro r = run1(m, working, refused("ModelRefused"))
+    assert(r.state.name == "Halted")
+    assert(summary(r.orders) == "log:work_failed(reason=no_result),finish:refusal:NoResult,save")
+    ro none = build_from(machine_text("gate.portolan.json").replace("\"kind\": \"failure\", \"bind\": \"why\"", "\"kind\": \"failure\", \"reasons\": [ \"Timeout\" ], \"bind\": \"why\""))
+    ro w2 = run1(none, none.initial(), start_with("")).state
+    ro ignored = run1(none, w2, refused("ModelRefused"))
+    assert(!ignored.moved)
+    assert(summary(ignored.orders) == "log:event_ignored(event=agent_refused;state=Work)")
+}
+
+test "set of parties" {
+    ro m = build("lenses.portolan.json")
+    ro r = run1(m, m.initial(), start_with("{\"order\":[\"a\",\"b\",\"c\"]}"))
+    assert(r.state.name == "Ask")
+    assert(summary(r.orders) == "send:a:a:0,send:b:b:0,send:c:c:0,save")
+    assert(datum_json(r.state, "to_send") == "[]")
+    assert(datum_json(r.state, "order") == "[\"a\",\"b\",\"c\"]")
+    ro one = run1(m, r.state, stamped(EventKind.Answered, "answer", Some("b-1"), "two"))
+    assert(summary(one.orders) == "log:lens_answered(party=b;text=two),save")
+    assert(datum_json(one.state, "done") == "[\"b\"]")
+    assert(one.state.name == "Ask")
+    ro lost = run1(m, one.state, stamped(EventKind.Refused, "failure", Some("a-1"), "Timeout"))
+    assert(summary(lost.orders) == "log:lens_lost(party=a;reason=timeout),save")
+    ro last = run1(m, lost.state, stamped(EventKind.Answered, "answer", Some("c-1"), "three"))
+    assert(last.state.name == "Finished")
+    assert(summary(last.orders) == "log:lens_answered(party=c;text=three),finish:answer:[\"b\",\"a\",\"c\"],save")
+}
+
+test "restart request" {
+    ro m = build("variants.portolan.json")
+    ro started = run1(m, m.initial(), start_with(""))
+    assert(summary(started.orders) == "send:agent:go:5000,save")
+    ro retry = run1(m, started.state, stamped(EventKind.Answered, "answer", Some("agent-1"), "{\"$variant\":\"Outcome\",\"name\":\"Retry\"}"))
+    assert(summary(retry.orders) == "log:retrying,send:agent:go:5000,save")
+    assert(datum_json(retry.state, "tries") == "1")
+    ro done = run1(m, retry.state, stamped(EventKind.Answered, "answer", Some("agent-2"), "{\"$variant\":\"Outcome\",\"name\":\"Done\",\"fields\":{\"text\":\"ok\"}}"))
+    assert(summary(done.orders) == "log:got(text=ok),finish:answer:ok,save")
+    ro bad = run1(m, started.state, stamped(EventKind.Answered, "answer", Some("agent-1"), "{\"$variant\":\"Outcome\",\"name\":\"Nope\"}"))
+    assert(summary(bad.orders) == "log:event_malformed(name=answer)")
+    assert(datum_json(bad.state, "tries") == "0")
+}
+
+test "constants" {
+    ro text = machine_text("calc.portolan.json").replace("\"value\": 3 }", "\"value\": 5 }")
+    ro m = build_from(text)
+    ro r = run1(m, m.initial(), start_with("{\"start\":0,\"label\":\"x\"}"))
+    assert(summary(r.orders) == "log:started(label=x),log:stepped(count=4),log:stepped(count=8),log:reached_limit(count=8),finish:answer:8,save")
+    ro wrong = machine_text("calc.portolan.json").replace("\"value\": 3 }", "\"value\": -1 }")
+    match load_portolan_machine(wrong, standard_registry()) {
+        Ok(x) => assert(false)
+        Err(e) => assert(e.contains("the constant LIMIT"))
+    }
+    ro bad_param = machine_text("calc.portolan.json").replace("\"default\": { \"op\": \"lit\", \"value\": 2 }", "\"default\": { \"op\": \"lit\", \"value\": 0 }")
+    match load_portolan_machine(bad_param, standard_registry()) {
+        Ok(x) => assert(false)
+        Err(e) => assert(e.contains("the parameter STEP"))
+    }
+    ro bad_initial = machine_text("calc.portolan.json").replace("{ \"name\": \"began\", \"type\": \"int\", \"initial\": { \"expr\": { \"op\": \"lit\", \"value\": 0 } } }", "{ \"name\": \"began\", \"type\": \"int\", \"initial\": { \"expr\": { \"op\": \"lit\", \"value\": \"zero\" } } }")
+    match load_portolan_machine(bad_initial, standard_registry()) {
+        Ok(x) => assert(false)
+        Err(e) => assert(e.contains("the initial value of began"))
+    }
+}
+
+test "with replies" {
+    ro m = with_replies(calc(), [ScriptedReply { name: "time_now", value: Int(1) }])
+    assert(m.replies.len() == 1)
+    ro r = run1(m, m.initial(), start_with("{\"start\":9,\"label\":\"t\"}"))
+    assert(datum_json(r.state, "began") == "1000")
+}
+
+test "event at an end" {
+    ro m = chat()
+    ro r1 = run1(m, m.initial(), said("hi"))
+    ro ended = run1(m, r1.state, done()).state
+    assert(summary(run1(m, ended, done()).orders) == "log:event_ignored(event=agent_done;state=Done)")
+    assert(summary(run1(m, ended, expired()).orders) == "log:event_ignored(event=timeout;state=Done)")
+    assert(summary(run1(m, ended, cancelled()).orders) == "log:event_ignored(event=cancel;state=Done)")
+    assert(!run1(m, ended, said("x")).moved)
+}

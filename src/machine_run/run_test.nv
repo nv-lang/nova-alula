@@ -1,0 +1,353 @@
+// run_test.nv - the interpreter: every construction of the rows and of the actions, the start, the chain, the ends, the errors.
+module alula.machine_run
+
+import alula.machine.{Value, Int, value_equal}
+import alula.engine.{FailCode, Incoming, EventKind, StepEnvironment, fail_code_word}
+import alula.machine.{standard_registry}
+
+test "loads" {
+    for name in ["chat.portolan.json", "calc.portolan.json", "actions.portolan.json", "gate.portolan.json", "lenses.portolan.json", "variants.portolan.json"] {
+        match load_portolan_machine(machine_text(name), standard_registry()) {
+            Ok(m) => assert(m.def.states.len() >= 3)
+            Err(e) => assert(e == "")
+        }
+    }
+    match load_portolan_machine("{}", standard_registry()) {
+        Ok(m) => assert(false)
+        Err(e) => assert(e.contains("format"))
+    }
+}
+
+test "chat start" {
+    ro m = chat()
+    assert(m.name() == "ChatSession")
+    ro st = m.initial()
+    assert(st.name == "Idle")
+    assert(st.started)
+    assert(m.state_name(st) == "Idle")
+    assert(datum_json(st, "reply") == "\"\"")
+    assert(datum_json(st, "stop_code") == "null")
+}
+
+test "chat send" {
+    ro r = run1(chat(), chat().initial(), said("hello"))
+    assert(r.state.name == "Awaiting")
+    assert(r.moved)
+    assert(summary(r.orders) == "log:user_message(text=hello),send:agent:hello:30000,save")
+    assert(datum_json(r.state, "user") == "\"hello\"")
+}
+
+test "chat chunks" {
+    ro m = chat()
+    ro r1 = run1(m, m.initial(), said("hi"))
+    ro r2 = run1(m, r1.state, chunk("Hel"))
+    ro r3 = run1(m, r2.state, chunk("lo"))
+    assert(r3.state.name == "Awaiting")
+    assert(summary(r3.orders) == "log:agent_chunk(text=lo),save")
+    assert(datum_json(r3.state, "reply") == "\"Hello\"")
+    ro r4 = run1(m, r3.state, done())
+    assert(r4.state.name == "Done")
+    assert(summary(r4.orders) == "log:agent_done,finish:answer:Hello,save")
+}
+
+test "chat refusals" {
+    ro m = chat()
+    for code in FailCode.all() {
+        ro r1 = run1(m, m.initial(), said("hi"))
+        ro r2 = run1(m, r1.state, refused(code.name()))
+        assert(r2.state.name == "Failed")
+        assert(summary(r2.orders) == "log:agent_refused(code=${fail_code_word(code)}),finish:refusal:${code.name()},save")
+    }
+    ro r1 = run1(m, m.initial(), said("hi"))
+    assert(summary(run1(m, r1.state, refused("TotallyNew")).orders) == "log:agent_refused(code=no_result),finish:refusal:NoResult,save")
+}
+
+test "chat cancels" {
+    ro m = chat()
+    ro r1 = run1(m, m.initial(), said("hi"))
+    assert(summary(run1(m, r1.state, cancelled()).orders) == "log:cancelled_while_waiting,cancel:agent,finish:refusal:StoppedByHuman,save")
+    assert(summary(run1(m, r1.state, expired()).orders) == "log:no_answer_in_time,finish:refusal:Timeout,save")
+    assert(summary(run1(m, m.initial(), cancelled()).orders) == "log:cancelled_before_request,finish:refusal:StoppedByHuman,save")
+}
+
+test "chat ignored" {
+    ro m = chat()
+    ro idle = m.initial()
+    ro r1 = run1(m, idle, chunk("late"))
+    assert(!r1.moved)
+    assert(r1.state.name == "Idle")
+    assert(summary(r1.orders) == "log:event_ignored(event=agent_chunk;state=Idle)")
+    ro waiting = run1(m, idle, said("hi")).state
+    assert(summary(run1(m, waiting, said("second")).orders) == "log:event_ignored(event=user_message;state=Awaiting)")
+    ro ended = run1(m, waiting, done()).state
+    assert(summary(run1(m, ended, said("again")).orders) == "log:event_ignored(event=user_message;state=Done)")
+    assert(summary(run1(m, idle, done()).orders) == "log:event_ignored(event=agent_done;state=Idle)")
+    assert(summary(run1(m, idle, word_in("weather_report", "rain")).orders) == "log:event_unknown(name=weather_report)")
+    ro tool = stamped(EventKind.Progress, "tool_call", Some("agent-1"), "{}")
+    assert(summary(run1(m, waiting, tool).orders) == "log:event_unknown(name=tool_call)")
+}
+
+test "death between" {
+    ro m = chat()
+    ro idle = m.initial()
+    ro before = m.encode_state(idle)
+    // a pass that is discarded (the process died before the commit) changes nothing in the state it was given...
+    ro lost = run1(m, idle, said("hi"))
+    assert(m.encode_state(idle) == before)
+    // ...and the repeated pass gives the same orders and the same state, so nothing is written twice
+    ro again = run1(m, idle, said("hi"))
+    assert(summary(again.orders) == summary(lost.orders))
+    assert(m.encode_state(again.state) == m.encode_state(lost.state))
+}
+
+test "step is pure" {
+    ro m = chat()
+    ro first = run1(m, m.initial(), said("hi"))
+    ro late = Incoming { id: "e-99", trace: "t-other", step: 77, kind: EventKind.Input, name: "user_message", request: None, input: "hi", at: 99999999 }
+    ro second = run1(m, m.initial(), late)
+    assert(summary(first.orders) == summary(second.orders))
+    assert(m.encode_state(first.state) == m.encode_state(second.state))
+    ro c = run1(m, first.state, chunk("x"))
+    ro d = run1(m, second.state, chunk("x"))
+    assert(m.encode_state(c.state) == m.encode_state(d.state))
+}
+
+test "state text" {
+    ro m = chat()
+    ro r1 = run1(m, m.initial(), said("вопрос"))
+    ro r2 = run1(m, r1.state, chunk("отве"))
+    // ORACLE-WORKAROUND(36): the list of records made by calls is bound before the loop: `for s in [make(1), make(2)]` over an array literal of calls does not compile; loop over the literal when item 36 is fixed
+    ro states = [m.initial(), r1.state, r2.state, run1(m, r2.state, done()).state]
+    for s in states {
+        ro text = m.encode_state(s)
+        assert(!text.contains("\n"))
+        match m.decode_state(text) {
+            Some(back) => {
+                assert(m.encode_state(back) == text)
+                assert(back.name == s.name)
+            }
+            None => assert(false)
+        }
+    }
+    assert(m.encode_state(r2.state).contains("отве"))
+    assert(m.decode_state("not json") == None)
+    assert(m.decode_state("{\"state\":1}") == None)
+    assert(m.decode_state("") == None)
+}
+
+test "calc start" {
+    ro m = calc()
+    ro st = m.initial()
+    assert(st.name == "Start")
+    assert(!st.started)
+    ro r = started_calc(0)
+    assert(r.moved)
+    assert(r.state.name == "Finish")
+    assert(r.state.started)
+    assert(summary(r.orders) == "log:started(label=abc),log:stepped(count=4),log:reached_limit(count=4),finish:answer:4,save")
+    assert(datum_json(r.state, "count") == "4")
+    assert(datum_json(r.state, "began") == "1000")
+    assert(datum_json(r.state, "log") == "[\"up\"]")
+    assert(datum_json(r.state, "table") == "{\"k\":4}")
+    assert(datum_json(r.state, "stop") == "\"done\"")
+}
+
+test "calc direct" {
+    ro r = started_calc(5)
+    assert(r.state.name == "Finish")
+    assert(summary(r.orders) == "log:started(label=abc),log:reached_limit(count=5),finish:answer:5,save")
+    assert(datum_json(r.state, "log") == "[]")
+    assert(datum_json(started_calc(100).state, "count") == "100")
+}
+
+test "calc before start" {
+    ro m = calc()
+    ro r = run1(m, m.initial(), word_in("go", ""))
+    assert(!r.moved)
+    assert(summary(r.orders) == "log:event_ignored(event=go;state=Start)")
+    assert(!r.state.started)
+}
+
+test "calc bad input" {
+    ro m = calc()
+    ro st = m.initial()
+    assert(summary(run1(m, st, start_with("{\"start\":500,\"label\":\"x\"}")).orders) == "log:input_rejected(reason=invariant;index=0),finish:refusal:NoResult")
+    assert(summary(run1(m, st, start_with("{\"start\":1}")).orders) == "log:input_rejected(reason=missing;field=label),finish:refusal:NoResult")
+    assert(summary(run1(m, st, start_with("{\"start\":\"x\",\"label\":\"a\"}")).orders) == "log:input_rejected(reason=type;field=start),finish:refusal:NoResult")
+    assert(summary(run1(m, st, start_with("{\"start\":-1,\"label\":\"a\"}")).orders) == "log:input_rejected(reason=type;field=start),finish:refusal:NoResult")
+    assert(summary(run1(m, st, start_with("not json")).orders) == "log:input_rejected(reason=json),finish:refusal:NoResult")
+    assert(summary(run1(m, st, start_with("[1]")).orders) == "log:input_rejected(reason=json),finish:refusal:NoResult")
+    assert(!run1(m, st, start_with("{}")).moved)
+}
+
+test "calc overflow" {
+    ro text = machine_text("calc.portolan.json").replace("\"default\": { \"op\": \"lit\", \"value\": 2 }", "\"default\": { \"op\": \"lit\", \"value\": 9223372036854775807 }")
+    ro m = build_from(text)
+    ro r = run1(m, m.initial(), start_with("{\"start\":0,\"label\":\"abc\"}"))
+    assert(r.state.name == "Errored")
+    assert(summary(r.orders) == "log:started(label=abc),log:machine_error(reason=overflow),log:machine_data(data=count=0; label=abc; began=1000; log=[]; table={}; stop=),finish:refusal:NoResult,save")
+}
+
+test "calc deterministic" {
+    ro first = started_calc(1)
+    ro second = started_calc(1)
+    assert(summary(first.orders) == summary(second.orders))
+    assert(calc().encode_state(first.state) == calc().encode_state(second.state))
+}
+
+test "calc state text" {
+    ro m = calc()
+    // ORACLE-WORKAROUND(36): the list of records made by calls is bound before the loop: `for s in [make(1), make(2)]` over an array literal of calls does not compile; loop over the literal when item 36 is fixed
+    ro states = [m.initial(), started_calc(0).state, started_calc(7).state]
+    for st in states {
+        ro text = m.encode_state(st)
+        match m.decode_state(text) {
+            Some(back) => assert(m.encode_state(back) == text)
+            None => assert(false)
+        }
+    }
+}
+
+test "actions add tag" {
+    ro m = actions()
+    ro r = run_all(m, m.initial(), [word_in("add", "5"), word_in("add", "-2")])
+    assert(datum_json(r.state, "total") == "3")
+    assert(summary(r.orders) == "save")
+    assert(r.state.name == "Wait")
+    ro t = run_all(m, m.initial(), [word_in("tag", "ab"), word_in("tag", "cd")])
+    assert(datum_json(t.state, "label") == "\"abcd\"")
+}
+
+test "actions push" {
+    ro m = actions()
+    ro r = run_all(m, m.initial(), [word_in("push", "x"), word_in("push", "y"), word_in("push", "x")])
+    assert(datum_json(r.state, "log") == "[\"x\",\"y\",\"x\"]")
+    assert(datum_json(r.state, "counts") == "{\"x\":2,\"y\":1}")
+}
+
+test "actions path" {
+    ro m = actions()
+    ro put = run_all(m, m.initial(), [word_in("put", "{\"key\":\"k\",\"val\":\"v\"}")])
+    assert(datum_json(put.state, "items") == "{\"k\":{\"$record\":\"Item\",\"fields\":{\"name\":\"v\"}}}")
+    ro renamed = run1(m, put.state, word_in("rename", "{\"key\":\"k\",\"val\":\"w\"}"))
+    assert(datum_json(renamed.state, "items") == "{\"k\":{\"$record\":\"Item\",\"fields\":{\"name\":\"w\"}}}")
+    ro missing = run1(m, put.state, word_in("rename", "{\"key\":\"zz\",\"val\":\"w\"}"))
+    assert(missing.state.name == "Errored")
+    assert(summary(missing.orders).starts_with("log:machine_error(reason=missing_key),log:machine_error(reason=missing_key)"))
+}
+
+test "actions journal" {
+    ro m = actions()
+    ro pushed = run_all(m, m.initial(), [word_in("push", "x"), word_in("push", "y")])
+    ro each = run1(m, pushed.state, word_in("each", ""))
+    assert(summary(each.orders) == "log:seen(item=x),log:seen(item=y),save")
+    assert(summary(run1(m, m.initial(), word_in("branch", "9")).orders) == "log:big,save")
+    assert(summary(run1(m, m.initial(), word_in("branch", "1")).orders) == "log:small,save")
+    ro let_it = run1(m, m.initial(), word_in("letit", "4"))
+    assert(summary(let_it.orders) == "log:doubled(value=8),save")
+    assert(datum_json(let_it.state, "total") == "8")
+}
+
+test "actions call" {
+    ro m = actions()
+    mut host = RecHost { calls: []str.new() }
+    ro r = run_with(m, m.initial(), word_in("shut", ""), host)
+    assert(host.calls.len() == 1)
+    assert(host.calls[0] == "close_agent_turn/0")
+    assert(summary(r.orders) == "save")
+}
+
+test "actions error" {
+    ro m = actions()
+    ro r = run1(m, m.initial(), word_in("boom", ""))
+    assert(r.state.name == "Errored")
+    assert(summary(r.orders) == "log:boom(why=asked),log:boom(why=asked),log:machine_data(data=total=99; label=; log=[]; counts={}; items={}; p_attempt=0),finish:refusal:NoResult,save")
+    assert(datum_json(r.state, "total") == "99")
+}
+
+test "actions finish" {
+    ro m = actions()
+    ro r = run_all(m, m.initial(), [word_in("add", "7"), word_in("finish", "")])
+    assert(r.state.name == "Done")
+    assert(summary(r.orders) == "finish:answer:7,save")
+}
+
+test "actions bad words" {
+    ro m = actions()
+    assert(summary(run1(m, m.initial(), word_in("add", "x")).orders) == "log:event_malformed(name=add)")
+    assert(summary(run1(m, m.initial(), word_in("put", "{\"key\":\"k\"}")).orders) == "log:event_malformed(name=put)")
+    assert(summary(run1(m, m.initial(), word_in("put", "[]")).orders) == "log:event_malformed(name=put)")
+    assert(summary(run1(m, m.initial(), word_in("nothing", "")).orders) == "log:event_unknown(name=nothing)")
+}
+
+test "bound on write" {
+    ro text = machine_text("actions.portolan.json").replace("{ \"name\": \"total\", \"type\": \"int\"", "{ \"name\": \"total\", \"type\": \"int>=0\"")
+    ro m = build_from(text)
+    ro r = run1(m, m.initial(), word_in("add", "-5"))
+    assert(r.state.name == "Errored")
+    assert(summary(r.orders).starts_with("log:machine_error(reason=bound_violation)"))
+    ro ok = run1(m, m.initial(), word_in("add", "5"))
+    assert(ok.state.name == "Wait")
+}
+
+test "does not decrease" {
+    ro plain = "{ \"name\": \"total\", \"type\": \"int\", \"initial\": { \"expr\": { \"op\": \"lit\", \"value\": 0 } }"
+    ro text = machine_text("actions.portolan.json").replace(plain, "${plain}, \"monotonic\": true")
+    ro m = build_from(text)
+    ro up = run1(m, m.initial(), word_in("add", "5"))
+    assert(up.state.name == "Wait")
+    ro down = run1(m, up.state, word_in("add", "-1"))
+    assert(down.state.name == "Errored")
+    assert(summary(down.orders).starts_with("log:machine_error(reason=bound_violation)"))
+    ro capped = machine_text("actions.portolan.json").replace(plain, "${plain}, \"monotonic\": { \"bound\": { \"op\": \"lit\", \"value\": 10 } }")
+    ro c = build_from(capped)
+    assert(run1(c, c.initial(), word_in("add", "10")).state.name == "Wait")
+    assert(run1(c, c.initial(), word_in("add", "11")).state.name == "Errored")
+}
+
+test "fork no match" {
+    ro text = machine_text("calc.portolan.json").replace("{ \"n\": 2, \"event\": { \"kind\": \"now\" }, \"else\": true, \"to\": \"Step\" }", "{ \"n\": 2, \"event\": { \"kind\": \"now\" }, \"cond\": { \"op\": \"lit\", \"value\": false }, \"to\": \"Step\" }")
+    ro m = build_from(text)
+    ro r = run1(m, m.initial(), start_with("{\"start\":0,\"label\":\"abc\"}"))
+    assert(r.state.name == "Errored")
+    assert(summary(r.orders).contains("log:fork_no_match(fork=Check)"))
+}
+
+test "defect stops" {
+    ro text = machine_text("actions.portolan.json")
+    ro m = build_from(text.replace("{ \"op\": \"lit\", \"value\": 99 }", "{ \"op\": \"call\", \"fn\": \"require\", \"args\": [ { \"op\": \"lit\", \"value\": null } ] }"))
+    ro r = run1(m, m.initial(), word_in("boom", ""))
+    assert(summary(r.orders).starts_with("log:machine_defect(kind=unreachable"))
+    assert(summary(r.orders).contains("finish:refusal:NoResult"))
+    assert(r.state.name == "Wait")
+}
+
+test "scripted host" {
+    ro m = calc()
+    mut host = ScriptedHost { at: 4242, replies: [], ids: 0 }
+    ro r = run_with(m, m.initial(), start_with("{\"start\":9,\"label\":\"t\"}"), host)
+    assert(datum_json(r.state, "began") == "4242")
+    mut scripted = ScriptedHost { at: 1, replies: [ScriptedReply { name: "other", value: Int(5) }], ids: 0 }
+    match scripted.call_primitive("other", []Value.new()) {
+        Ok(v) => assert(value_equal(v, Int(5)))
+        Err(e) => assert(false)
+    }
+    match scripted.call_primitive("missing", []Value.new()) {
+        Ok(v) => assert(false)
+        Err(e) => assert(e.message.contains("missing"))
+    }
+}
+
+test "machine for engine" {
+    ro m = calc()
+    assert(m.name() == "Calc")
+    assert(m.state_name(m.initial()) == "Start")
+    ro r = m.initial()
+    mut environment = StepEnvironment.new()
+    ro t = m.step(r, start_with("{\"start\":0,\"label\":\"q\"}"), environment)
+    match t {
+        Go(next) => assert(next.name == "Finish")
+        Stay => assert(false)
+    }
+    assert(environment.orders.len() > 0)
+}

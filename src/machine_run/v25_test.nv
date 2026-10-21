@@ -1,0 +1,198 @@
+// v25_test.nv - format 2.5 in the interpreter: `new_id` in the entry of an operation (the same step gives the same ids, two calls differ), the type `id` in
+// the input and in the data, a datum that is a set of literals.
+module alula.machine_run
+
+import alula.machine.{Value, Int, Text, Null, standard_registry, is_uuid}
+import alula.engine.{Incoming, EventKind}
+
+// A machine that opens with an operation: two new ids in one step, kept in the data; then it waits for a word.
+fn ids_text(second_id str) -> str {
+    ro bind_a = `{"do":"bind","name":"first","value":{"op":"primitive_call","name":"new_id","args":[]}}`
+    ro bind_b = `{"do":"bind","name":"second","value":${second_id}}`
+    ro keep = `{"do":"assign","target":"sid","value":{"op":"name","name":"first"}},{"do":"assign","target":"sid2","value":{"op":"name","name":"second"}}`
+    ro open = `{"name":"Open","kind":"operation","reads":[],"entry":[${bind_a},${bind_b}],"rows":[{"n":1,"event":{"kind":"now"},"actions":[${keep}],"to":"Wait"}]}`
+    ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"word","word":"go"},"to":"Done"}]}`
+    ro done = `{"name":"Done","kind":"end","reads":["sid"]}`
+    ro data = `{"name":"sid","type":"?id","initial":{"expr":{"op":"lit","value":null}}},{"name":"sid2","type":"?id","initial":{"expr":{"op":"lit","value":null}}},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}`
+    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","words":[{"name":"go"}]}`
+    ro ends = `{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"call","fn":"text","args":[{"op":"name","name":"sid"}]}}}]}`
+    `{"format":"machine/2","machine":"Ids","version":"1","input":{"fields":[]},"primitives":["new_id"],"data":[${data}],"parties":[${party}],"initial":"Open","states":[${open},${wait},${done}],"ends":${ends}}`
+}
+
+fn ids_machine() -> PortolanMachine => build_from(ids_text(`{"op":"primitive_call","name":"new_id","args":[]}`))
+
+fn opened_at(m PortolanMachine, at int) -> Out {
+    mut host = ScriptedHost { at, replies: m.replies, ids: 0 }
+    run_with(m, m.initial(), start_with("{}"), host)
+}
+
+fn text_of(v Value) -> str {
+    match v {
+        Text(s) => s
+        _ => "?"
+    }
+}
+
+test "v25 ids made" {
+    ro m = ids_machine()
+    ro r = opened_at(m, 1000)
+    assert(r.moved)
+    assert(r.state.name == "Wait")
+    ro a = text_of(datum(r.state, "sid"))
+    ro b = text_of(datum(r.state, "sid2"))
+    assert(is_uuid(a) && is_uuid(b))
+    assert(a != b)
+    assert(a[14..15] == "7" && b[14..15] == "7")
+}
+
+test "v25 ids same step" {
+    ro m = ids_machine()
+    ro one = opened_at(m, 1000)
+    ro two = opened_at(m, 1000)
+    assert(m.encode_state(one.state) == m.encode_state(two.state))
+    assert(summary(one.orders) == summary(two.orders))
+    ro later = opened_at(m, 2000)
+    assert(text_of(datum(later.state, "sid")) != text_of(datum(one.state, "sid")))
+}
+
+test "v25 ids order" {
+    ro m = ids_machine()
+    ro early = text_of(datum(opened_at(m, 1000).state, "sid"))
+    ro late = text_of(datum(opened_at(m, 9000000).state, "sid"))
+    assert(early < late)
+}
+
+test "v25 ids scripted" {
+    ro text = ids_text(`{"op":"primitive_call","name":"new_id","args":[]}`)
+    ro m = with_replies(build_from(text), [ScriptedReply { name: "new_id", value: Text("00000000-0000-7000-8000-000000000001") }])
+    ro r = opened_at(m, 5)
+    assert(text_of(datum(r.state, "sid")) == "00000000-0000-7000-8000-000000000001")
+    assert(text_of(datum(r.state, "sid2")) == "00000000-0000-7000-8000-000000000001")
+}
+
+test "v25 ids finish" {
+    ro m = ids_machine()
+    ro r1 = opened_at(m, 1000)
+    ro r2 = run1(m, r1.state, word_in("go", ""))
+    assert(r2.state.name == "Done")
+    assert(summary(r2.orders) == "finish:answer:${text_of(datum(r1.state, "sid"))},save")
+}
+
+test "v25 bad scripted id" {
+    ro text = ids_text(`{"op":"primitive_call","name":"new_id","args":[]}`)
+    ro m = with_replies(build_from(text), [ScriptedReply { name: "new_id", value: Text("not-an-id") }])
+    ro r = opened_at(m, 5)
+    assert(r.state.name == "Open")
+    assert(summary(r.orders).contains("machine_defect"))
+}
+
+// ---- the type id in the input ---------------------------------------------------------------------------------------------------
+
+fn input_ids() -> PortolanMachine {
+    ro data = `{"name":"session","type":"id","initial":{"from_input":"session"}},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}`
+    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","words":[{"name":"go"}]}`
+    ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"word","word":"go"},"to":"Done"}]}`
+    ro done = `{"name":"Done","kind":"end","reads":["session"]}`
+    ro ends = `{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"name","name":"session"}}}]}`
+    build_from(`{"format":"machine/2","machine":"Sess","version":"1","input":{"fields":[{"name":"session","type":"id"}]},"data":[${data}],"parties":[${party}],"initial":"Wait","states":[${wait},${done}],"ends":${ends}}`)
+}
+
+test "v25 input id" {
+    ro m = input_ids()
+    ro good = run1(m, m.initial(), start_with("{\"session\":\"0192f3a0-7c1e-7b2a-9d4e-5a6b7c8d9e0f\"}"))
+    assert(good.state.name == "Wait")
+    assert(datum_json(good.state, "session") == "\"0192f3a0-7c1e-7b2a-9d4e-5a6b7c8d9e0f\"")
+}
+
+test "v25 input id bad" {
+    ro m = input_ids()
+    for bad in ["not-an-id", "0192F3A0-7C1E-7B2A-9D4E-5A6B7C8D9E0F", "", "0192f3a07c1e7b2a9d4e5a6b7c8d9e0f"] {
+        ro r = run1(m, m.initial(), start_with("{\"session\":\"${bad}\"}"))
+        assert(summary(r.orders).starts_with("log:input_rejected(reason=type;field=session),finish:refusal:NoResult"))
+        assert(!r.state.started)
+    }
+    ro missing = run1(m, m.initial(), start_with("{}"))
+    assert(summary(missing.orders).starts_with("log:input_rejected(reason=missing;field=session)"))
+    ro number = run1(m, m.initial(), start_with("{\"session\":5}"))
+    assert(summary(number.orders).starts_with("log:input_rejected(reason=type;field=session)"))
+}
+
+// ---- an optional field of the input (task 121) ------------------------------------------------------------------------------------
+
+fn input_optional() -> PortolanMachine {
+    ro data = `{"name":"session","type":"text","initial":{"from_input":"session"}},{"name":"note","type":"?text","initial":{"from_input":"note"}},{"name":"level","type":"?int>=0","initial":{"from_input":"level"}},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}`
+    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","words":[{"name":"go"}]}`
+    ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"word","word":"go"},"to":"Done"}]}`
+    ro done = `{"name":"Done","kind":"end","reads":["session"]}`
+    ro ends = `{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"name","name":"session"}}}]}`
+    build_from(`{"format":"machine/2","machine":"Opt","version":"1","input":{"fields":[{"name":"session","type":"text"},{"name":"note","type":"?text"},{"name":"level","type":"?int>=0"}]},"data":[${data}],"parties":[${party}],"initial":"Wait","states":[${wait},${done}],"ends":${ends}}`)
+}
+
+test "v25 input optional absent" {
+    // a field of an optional type that the input does not have is none; a required one is still missing
+    ro m = input_optional()
+    ro bare = run1(m, m.initial(), start_with("{\"session\":\"a\"}"))
+    assert(bare.state.name == "Wait")
+    assert(bare.state.started)
+    assert(datum_json(bare.state, "note") == "null")
+    assert(datum_json(bare.state, "level") == "null")
+    assert(datum_json(bare.state, "session") == "\"a\"")
+    ro none = run1(m, m.initial(), start_with("{\"note\":\"x\"}"))
+    assert(summary(none.orders).starts_with("log:input_rejected(reason=missing;field=session),finish:refusal:NoResult"))
+}
+
+test "v25 input optional given" {
+    ro m = input_optional()
+    ro full = run1(m, m.initial(), start_with("{\"session\":\"a\",\"note\":\"n\",\"level\":2}"))
+    assert(full.state.name == "Wait")
+    assert(datum_json(full.state, "note") == "\"n\"")
+    assert(datum_json(full.state, "level") == "2")
+    ro explicit = run1(m, m.initial(), start_with("{\"session\":\"a\",\"note\":null}"))
+    assert(explicit.state.name == "Wait")
+    assert(datum_json(explicit.state, "note") == "null")
+    // the type of a field that is given is still checked: a negative level is refused
+    ro bad = run1(m, m.initial(), start_with("{\"session\":\"a\",\"level\":-1}"))
+    assert(summary(bad.orders).starts_with("log:input_rejected(reason=type;field=level),finish:refusal:NoResult"))
+}
+
+// ---- a set of literals in a word and in the data -------------------------------------------------------------------------------
+
+fn set_machine() -> PortolanMachine {
+    ro data = `{"name":"mode","type":"\"fast\" | \"slow\"","initial":{"expr":{"op":"lit","value":"fast"}}},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}`
+    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","words":[{"name":"pick","fields":[{"name":"kind","type":"\"fast\" | \"slow\""}]}]}`
+    ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"word","word":"pick","bind":{"kind":"k"}},"actions":[{"do":"assign","target":"mode","value":{"op":"name","name":"k"}}],"to":"Done"}]}`
+    ro done = `{"name":"Done","kind":"end","reads":["mode"]}`
+    ro ends = `{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"name","name":"mode"}}}]}`
+    build_from(`{"format":"machine/2","machine":"Sets","version":"1","data":[${data}],"parties":[${party}],"initial":"Wait","states":[${wait},${done}],"ends":${ends}}`)
+}
+
+test "v25 word set" {
+    ro m = set_machine()
+    ro r = run1(m, m.initial(), word_in("pick", "slow"))
+    assert(r.state.name == "Done")
+    assert(datum_json(r.state, "mode") == "\"slow\"")
+    ro bad = run1(m, m.initial(), word_in("pick", "medium"))
+    assert(bad.state.name == "Wait")
+    assert(summary(bad.orders).starts_with("log:event_malformed"))
+}
+
+// A value that is not in the set cannot be written, whatever its way: the write is checked against the type of the datum (a machine error `bound_violation`).
+fn set_write_machine() -> PortolanMachine {
+    ro data = `{"name":"mode","type":"\"fast\" | \"slow\"","initial":{"expr":{"op":"lit","value":"fast"}}},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}`
+    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","words":[{"name":"pick","fields":[{"name":"kind","type":"text"}]}]}`
+    ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"word","word":"pick","bind":{"kind":"k"}},"actions":[{"do":"assign","target":"mode","value":{"op":"name","name":"k"}}],"to":"Done"}]}`
+    ro done = `{"name":"Done","kind":"end","reads":["mode"]}`
+    ro failed = `{"name":"Errored","kind":"end","reads_all":true}`
+    ro ends = `{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"name","name":"mode"}}},{"state":"Errored","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"refusal","code":{"op":"variant","type":"FailCode","name":"NoResult"},"text":{"op":"lit","value":"error"}}}]}`
+    build_from(`{"format":"machine/2","machine":"SetWrite","version":"1","data":[${data}],"parties":[${party}],"initial":"Wait","error_end":"Errored","states":[${wait},${done},${failed}],"ends":${ends}}`)
+}
+
+test "v25 set write" {
+    ro m = set_write_machine()
+    ro good = run1(m, m.initial(), word_in("pick", "slow"))
+    assert(good.state.name == "Done")
+    assert(datum_json(good.state, "mode") == "\"slow\"")
+    ro bad = run1(m, m.initial(), word_in("pick", "medium"))
+    assert(bad.state.name == "Errored")
+    assert(summary(bad.orders).contains("machine_error(reason=bound_violation"))
+}

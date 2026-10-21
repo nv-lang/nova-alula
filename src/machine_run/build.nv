@@ -1,0 +1,258 @@
+// build.nv - a machine that is data made ready to run: the constants and the parameters evaluated, the definitions with the type
+// names, the registry that checks the primitives, the initial data.
+module alula.machine_run
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine.{Value, Expr, Binding, Scope, DefTable, DefFn, Registry, TextType, BoolType, check_value}
+import alula.machine.{Null, Int, Text, List, RecordField, eval_defs, make_record, error_text, NoHost, call, name_ref, bin, lambda1, expr_json}
+import alula.machine_table.{MachineDef, ParamDef, load_machine, issue_text, find_state, find_party}
+
+/// The names of the end states as a list of texts: the global `end_states` and the definition `end(s)` of the catalog (format 12) use it.
+fn end_state_names(def MachineDef) -> Value {
+    mut names = []Value.new()
+    for st in def.states {
+        if state_is_end(st.kind) { names.push(Text(st.name)) }
+    }
+    List(names)
+}
+
+fn end_definition() -> DefFn {
+    ro same = bin(Eq, name_ref("x"), name_ref("s"))
+    ro body = call("any", [name_ref("end_states"), lambda1("x", same)])
+    DefFn { name: "end", params: ["s"], specs: [TextType], result: BoolType, body }
+}
+
+fn base_table(def MachineDef, registry Registry, globals []Binding) -> DefTable {
+    // ORACLE-WORKAROUND(45): a copy of a `ro` list (`def.definitions`) built by hand in a loop; write `mut fns = def.definitions` when item 45 is fixed
+    mut fns = []DefFn.new()
+    for d in def.definitions { fns.push(d) }
+    fns.push(end_definition())
+    DefTable { fns, types: def.types, globals, registry, checked: true }
+}
+
+fn eval_global(e Expr, globals []Binding, table DefTable) -> Result[Value, str] {
+    mut host = NoHost { unused: 0 }
+    ro scope = Scope { bindings: globals }
+    match eval_defs(e, scope, table, host) {
+        Ok(v) => Ok(v)
+        Err(x) => Err(error_text(x))
+    }
+}
+
+fn with_binding(globals []Binding, name str, value Value) -> []Binding {
+    // ORACLE-WORKAROUND(45): a copy of a `ro` list (`globals`) built by hand in a loop; write `mut out = globals` when item 45 is fixed
+    mut out = []Binding.new()
+    for g in globals { out.push(g) }
+    out.push(Binding { name, value })
+    out
+}
+
+/// A machine ready to run. The constants and the parameters are evaluated in order (a later one may read an earlier one); a wrong
+/// value of a type, an error of the evaluator or an initial value that does not fit its datum refuses the machine.
+export fn portolan_machine(def MachineDef, registry Registry) -> Result[PortolanMachine, str] => portolan_machine_with(def, registry, []ProjectValue.new())
+
+/// ProjectValue: a row of the table of the parameters of the project (format 2.7, P-9): the key `проект.<ключ>` and the value.
+export type ProjectValue { key str, value Value }
+
+/// The beginning of the key of a parameter of the project (format 2.7, section 1: `проект.<ключ>`).
+export const PROJECT_PREFIX = "проект."
+
+// The full key of a parameter: `проект.` and the key of the column "project override"; empty when the column is `—`.
+fn project_key_full(p ParamDef) -> str {
+    if p.project_key == "" { return "" }
+    "${PROJECT_PREFIX}${p.project_key}"
+}
+
+// The table of the project against the machine: every key has the form `проект.<ключ>`, stands once, and is a key of the column "project override" of some parameter.
+fn project_table_checked(def MachineDef, given_table []ProjectValue) -> Result[(), str] {
+    mut seen = []str.new()
+    for o in given_table {
+        if !o.key.starts_with(PROJECT_PREFIX) { return Err("the key of the project is ${PROJECT_PREFIX}<key>, got ${o.key}") }
+        if seen.contains(o.key) { return Err("the key ${o.key} is given twice") }
+        seen.push(o.key)
+        mut known = false
+        for p in def.params {
+            if project_key_full(p) == o.key { known = true }
+        }
+        if !known { return Err("no parameter has the key ${o.key} in the column \"project override\"") }
+    }
+    Ok(())
+}
+
+/// The same with the table "key -> value" of the project (format 2.7, P-9): a key is `проект.<ключ>` of the column "project override" of a parameter, the value is checked against the
+/// type of that parameter like a default; a key the column does not have refuses the machine.
+export fn portolan_machine_with(def MachineDef, registry Registry, overrides []ProjectValue) -> Result[PortolanMachine, str] {
+    project_table_checked(def, overrides)?
+    mut globals = []Binding.new()
+    globals.push(Binding { name: "end_states", value: end_state_names(def) })
+    ro first = base_table(def, registry, globals)
+    for c in def.constants {
+        ro v = match eval_global(c.value, globals, first) {
+            Ok(x) => x
+            Err(m) => return Err("the constant ${c.name}: ${m}")
+        }
+        match check_value(c.spec, v, def.types) {
+            Ok(u) => ()
+            Err(x) => return Err("the constant ${c.name}: ${x.path} ${x.message}")
+        }
+        globals = with_binding(globals, c.name, v)
+    }
+    for p in def.params {
+        mut given = false
+        mut given_value Value = Null
+        for o in overrides {
+            if project_key_full(p) != "" && o.key == project_key_full(p) {
+                given = true
+                given_value = o.value
+            }
+        }
+        mut v Value = given_value
+        if !given {
+            v = match eval_global(p.default_value, globals, first) {
+                Ok(x) => x
+                Err(m) => return Err("the parameter ${p.name}: ${m}")
+            }
+        }
+        match check_value(p.spec, v, def.types) {
+            Ok(u) => ()
+            Err(x) => return Err("the parameter ${p.name}: ${x.path} ${x.message}")
+        }
+        globals = with_binding(globals, p.name, v)
+    }
+    ro table = base_table(def, registry, globals)
+    // a machine with an input has its data made at the start; an initial value that reads the input cannot be evaluated before (it is evaluated then, and may fail then)
+    ro data = match initial_data_of(def, table, Null, def.input.present) {
+        Ok(d) => d
+        Err(m) => return Err(m)
+    }
+    ro at = find_state(def, def.initial)
+    mut quiet = false
+    if at >= 0 && !def.input.present && state_is_appeal(def.states[at].kind) {
+        ro pi = find_party(def, def.states[at].party)
+        if pi >= 0 && !sends_to(def.parties[pi].kind) { quiet = true }
+    }
+    mut limit = 0
+    if def.request_limit.len() > 0 {
+        ro lv = match eval_global(def.request_limit[0], globals, table) {
+            Ok(x) => x
+            Err(m) => return Err("the request limit: ${m}")
+        }
+        match lv {
+            Int(n) => {
+                if n < 1 { return Err("the request limit must be 1 or more, got ${n}") }
+                limit = n
+            }
+            _ => return Err("the request limit must be an int")
+        }
+    }
+    Ok(PortolanMachine { def, table, initial_data: data, quiet_start: quiet, replies: []ScriptedReply.new(), limit })
+}
+
+// Does the expression read the input of the call: the name `input` or one of the fields of the input?
+fn reads_input(def MachineDef, e Expr) -> bool {
+    ro text = expr_json(e)
+    if text.contains("\"op\":\"name\",\"name\":\"input\"") { return true }
+    for f in def.input.fields {
+        if text.contains("\"op\":\"name\",\"name\":\"${f.name}\"") { return true }
+    }
+    false
+}
+
+/// The initial data. `input` is the record of the input fields (or Null): a datum `from_input` takes its field, an expression may read `input`.
+fn initial_data_of(def MachineDef, table DefTable, input Value, lenient bool) -> Result[Value, str] {
+    mut fields = []RecordField.new()
+    // ORACLE-WORKAROUND(45): a copy of a `ro` list (`table.globals`) built by hand in a loop; write `mut globals = table.globals` when item 45 is fixed
+    mut globals = []Binding.new()
+    for g in table.globals { globals.push(g) }
+    globals.push(Binding { name: "input", value: input })
+    match input {
+        Record { name, fields: input_fields } => {
+            for f in input_fields { globals.push(Binding { name: f.name, value: f.value }) }
+        }
+        _ => ()
+    }
+    for d in def.data {
+        if d.name.contains("[") { continue }
+        match d.initial {
+            NoInitial => fields.push(RecordField { name: d.name, value: Null })
+            InitialFromInput(f) => {
+                mut v Value = Null
+                match input {
+                    Record { name, fields: input_fields } => {
+                        for g in input_fields {
+                            if g.name == f { v = g.value }
+                        }
+                    }
+                    _ => ()
+                }
+                fields.push(RecordField { name: d.name, value: v })
+            }
+            InitialExpr(e) => {
+                // before the start there is no input: an expression that reads it is evaluated at the start (it may fail then), the others now
+                ro early = lenient && reads_input(def, e)
+                match eval_global(e, globals, table) {
+                    Ok(v) => {
+                        match check_value(d.spec, v, def.types) {
+                            Ok(u) => fields.push(RecordField { name: d.name, value: v })
+                            Err(x) => {
+                                if !early { return Err("the initial value of ${d.name}: ${x.path} ${x.message}") }
+                                fields.push(RecordField { name: d.name, value: Null })
+                            }
+                        }
+                    }
+                    Err(m) => {
+                        if !early { return Err("the initial value of ${d.name}: ${m}") }
+                        fields.push(RecordField { name: d.name, value: Null })
+                    }
+                }
+            }
+        }
+    }
+    Ok(make_record("Data", fields))
+}
+
+/// The machine from the text of its JSON tree: decoded, checked as a table, made ready. The error is every issue in one text.
+export fn load_portolan_machine(text str, registry Registry) -> Result[PortolanMachine, str] => load_portolan_machine_with(text, registry, []ProjectValue.new())
+
+/// The same with the table "key -> value" of the project (format 2.7, P-9): the server gives the idle term of a chat turn this way (`проект.срок_бездействия`).
+export fn load_portolan_machine_with(text str, registry Registry, overrides []ProjectValue) -> Result[PortolanMachine, str] {
+    match load_machine(text, registry) {
+        Ok(def) => portolan_machine_with(def, registry, overrides)
+        Err(issues) => {
+            mut lines = []str.new()
+            for e in issues { lines.push(issue_text(e)) }
+            Err(lines.join(" | "))
+        }
+    }
+}
+
+/// The same machine with the answers of the primitives of its default host (`ScriptedHost`).
+export fn with_replies(machine PortolanMachine, replies []ScriptedReply) -> PortolanMachine {
+    PortolanMachine {
+        def: machine.def, table: machine.table, initial_data: machine.initial_data, quiet_start: machine.quiet_start, replies, limit: machine.limit
+    }
+}
+
+fn state_is_end(kind StateKind) -> bool {
+    match kind {
+        EndKind => true
+        _ => false
+    }
+}
+
+fn state_is_appeal(kind StateKind) -> bool {
+    match kind {
+        AppealKind => true
+        _ => false
+    }
+}
+
+// Does a party of this kind get requests (the engine sends them), or does it speak by words?
+fn sends_to(kind PartyKind) -> bool {
+    match kind {
+        AgentParty => true
+        MachineParty => true
+        _ => false
+    }
+}

@@ -1,0 +1,196 @@
+// encode.nv - the data of a machine as text, by section 5 of format 2.7 (`журнал(все_данные)`, the event `machine_data` with the one parameter `data`).
+//
+// The value of a datum: an integer is its decimal form; a float is `text(x)` (`1.0`, `0.5`); a text, a set of literals and an `id` are as they are, without quotes (an empty text is
+// nothing after `=`); a bool is `yes` or `no`; an absent optional value is `none`; an enum value is its WORD (the key `words` of the type, P-7; an enum without words - the name of the
+// value as the tree has it; the built-in `FailCode` - the word of the engine); a list, a dict, a record, a variant with fields and a tuple are compact JSON (no spaces, UTF-8, only
+// the control signs, the quote and the backslash escaped, RFC 8259): a text is a JSON string, `none` is `null`, a bool is `true` or `false`, a float is a number by `text(x)`, an enum
+// value and a variant without fields are a string of the word / of the name, a variant with fields is `{"Name":{fields}}`, a record is an object whose keys are the fields in the
+// order of the type, a dict is an object (text keys) or the array of the pairs `[[key,value],...]` (other keys), a tuple is an array.
+module alula.machine_run
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine.{Value, Null, Bool, Int, Float, Text, List, Dict, Record, Variant, DictEntry, RecordField, TypeDefs, VariantDef, RecordDef, enum_word, is_enum_type, value_text, code_word}
+
+fn enc_hex(n int) -> str {
+    ro digits = "0123456789abcdef"
+    ro hi = n / 16
+    ro lo = n % 16
+    "${digits[hi..hi + 1]}${digits[lo..lo + 1]}"
+}
+
+/// A text as a JSON string: the quote, the backslash, `\b \f \n \r \t` and the other control signs `\u00xx` (lower case) are escaped, every other sign is as it is.
+fn enc_string(s str) -> str {
+    mut out = []str.new()
+    out.push("\"")
+    for c in s.chars() {
+        ro one = "${c}"
+        ro points = one.to_code_points()
+        ro cp = points[0]
+        if one == "\"" {
+            out.push("\\\"")
+        } else if one == "\\" {
+            out.push("\\\\")
+        } else if cp == 8 {
+            out.push("\\b")
+        } else if cp == 12 {
+            out.push("\\f")
+        } else if cp == 10 {
+            out.push("\\n")
+        } else if cp == 13 {
+            out.push("\\r")
+        } else if cp == 9 {
+            out.push("\\t")
+        } else if cp < 32 {
+            out.push("\\u00${enc_hex(cp)}")
+        } else {
+            out.push(one)
+        }
+    }
+    out.push("\"")
+    out.join("")
+}
+
+// The word of an enum value: from `words`; the built-in FailCode has the words of the engine; an enum without a word is the name of the value.
+fn enc_word(defs TypeDefs, type_name str, case_name str) -> str {
+    match enum_word(defs, type_name, case_name) {
+        Some(w) => w
+        None => if type_name == "FailCode" { code_word(case_name) } else { case_name }
+    }
+}
+
+fn enc_find_record(defs TypeDefs, name str) -> Option[RecordDef] {
+    for r in defs.records {
+        if r.name == name { return Some(r) }
+    }
+    None
+}
+
+fn enc_find_variant(defs TypeDefs, name str) -> Option[VariantDef] {
+    for v in defs.variants {
+        if v.name == name { return Some(v) }
+    }
+    None
+}
+
+fn enc_field_value(fields []RecordField, name str) -> Value {
+    for f in fields {
+        if f.name == name { return f.value }
+    }
+    Null
+}
+
+// The fields of a record in the order of its type (a tuple, a record the type does not know: the order the value keeps).
+fn enc_ordered_fields(defs TypeDefs, name str, fields []RecordField) -> []RecordField {
+    match enc_find_record(defs, name) {
+        Some(r) => {
+            mut out = []RecordField.new()
+            for fd in r.fields { out.push(RecordField { name: fd.name, value: enc_field_value(fields, fd.name) }) }
+            out
+        }
+        None => {
+            // ORACLE-WORKAROUND(45): a copy of a `ro` list (`fields`) built by hand in a loop; write `mut same = fields` when item 45 is fixed
+            mut same = []RecordField.new()
+            for f in fields { same.push(f) }
+            same
+        }
+    }
+}
+
+// The fields of a case in the order of its declaration.
+fn enc_case_fields(defs TypeDefs, type_name str, case_name str, fields []RecordField) -> []RecordField {
+    mut out = []RecordField.new()
+    match enc_find_variant(defs, type_name) {
+        Some(vd) => {
+            for c in vd.cases {
+                if c.name == case_name {
+                    for fd in c.fields { out.push(RecordField { name: fd.name, value: enc_field_value(fields, fd.name) }) }
+                }
+            }
+        }
+        None => ()
+    }
+    if out.len() == 0 {
+        for f in fields { out.push(f) }
+    }
+    out
+}
+
+fn enc_object(pairs []RecordField, defs TypeDefs) -> str {
+    mut parts = []str.new()
+    for f in pairs { parts.push("${enc_string(f.name)}:${enc_json(f.value, defs)}") }
+    "{${parts.join(",")}}"
+}
+
+fn enc_dict(entries []DictEntry, defs TypeDefs) -> str {
+    if entries.len() == 0 { return "{}" }
+    mut text_keys = true
+    for e in entries {
+        match e.key {
+            Text(k) => ()
+            _ => { text_keys = false }
+        }
+    }
+    mut parts = []str.new()
+    if text_keys {
+        for e in entries {
+            match e.key {
+                Text(k) => parts.push("${enc_string(k)}:${enc_json(e.value, defs)}")
+                _ => ()
+            }
+        }
+        return "{${parts.join(",")}}"
+    }
+    for e in entries { parts.push("[${enc_json(e.key, defs)},${enc_json(e.value, defs)}]") }
+    "[${parts.join(",")}]"
+}
+
+/// A value as compact JSON by section 5.
+fn enc_json(v Value, defs TypeDefs) -> str {
+    match v {
+        Null => "null"
+        Bool(b) => if b { "true" } else { "false" }
+        Int(n) => "${n}"
+        Float(x) => value_text(v) ?? "null"
+        Text(s) => enc_string(s)
+        List(items) => {
+            mut parts = []str.new()
+            for item in items { parts.push(enc_json(item, defs)) }
+            "[${parts.join(",")}]"
+        }
+        Dict(entries) => enc_dict(entries, defs)
+        Record { name, fields } => {
+            if name == "" {
+                mut parts = []str.new()
+                for f in fields { parts.push(enc_json(f.value, defs)) }
+                return "[${parts.join(",")}]"
+            }
+            enc_object(enc_ordered_fields(defs, name, fields), defs)
+        }
+        Variant { type_name, name, fields } => {
+            if fields.len() == 0 {
+                if is_enum_type(defs, type_name) { return enc_string(enc_word(defs, type_name, name)) }
+                return enc_string(name)
+            }
+            "{${enc_string(name)}:${enc_object(enc_case_fields(defs, type_name, name, fields), defs)}}"
+        }
+    }
+}
+
+/// The text of a datum in `все_данные`: a scalar by its rule, the rest as compact JSON.
+fn datum_line(v Value, defs TypeDefs) -> str {
+    match v {
+        Bool(b) => if b { "yes" } else { "no" }
+        Variant { type_name, name, fields } => {
+            if fields.len() == 0 && is_enum_type(defs, type_name) { return enc_word(defs, type_name, name) }
+            enc_json(v, defs)
+        }
+        List(items) => enc_json(v, defs)
+        Dict(entries) => enc_json(v, defs)
+        Record { name, fields } => enc_json(v, defs)
+        _ => match value_text(v) {
+            Some(s) => s
+            None => enc_json(v, defs)
+        }
+    }
+}
