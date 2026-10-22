@@ -1,0 +1,214 @@
+// v217_rows_test.nv - task 151: the section `## Имена` (AL-60) and the brackets after the names that are not written any more.
+module alula.machine_text_lang
+
+import std.text
+
+// ---- AL-60: the section `## Имена` ------------------------------------------------------------------------------------------------------------
+
+test "v217 a row sets the JSON name" {
+    ro text = ru17_data("| число_повторов | число>=0 | 0 | да | строки |").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| число_повторов | retries |\n")
+    assert(is_clean(text))
+    assert(has17(text, "\"name\":\"retries\""))
+    assert(!has17(text, "\"name\":\"retry_count\""))
+}
+
+test "v217 the rows give the names of the states" {
+    ro j = json_of(v217_ru())
+    assert(j.contains("\"initial\":\"Wait\""))
+    assert(j.contains("\"name\":\"Decide\",\"kind\":\"fork\""))
+    assert(j.contains("\"name\":\"Finished\",\"kind\":\"end\""))
+}
+
+test "v217 a row sets the name of the setting of the keeper" {
+    assert(has17(v217_ru(), "\"setting\":\"attention_executor\""))
+}
+
+test "v217 the names without the section are built by themselves" {
+    ro text = ru17("## Имена\n\n| имя | JSON-имя |\n|---|---|\n| ЖДАТЬ | Wait |\n| РЕШИТЬ | Decide |\n| КОНЕЦ | Finished |\n| СТОП | Stopped |\n| исполнитель_повышенного_внимания | attention_executor |\n\n", "")
+    assert(is_clean(text))
+    assert(has17(text, "\"initial\":\"Zhdat\""))
+    assert(has17(text, "\"setting\":\"ispolnitel_povyshennogo_vnimaniya\""))
+}
+
+test "v217 a qualified row names one field" {
+    ro text = ru17_types_names("тип Токены { вход число, выход число }", "| Токены.вход | input_tokens |")
+    assert(is_clean(text))
+    assert(has17(text, "{\"name\":\"input_tokens\",\"type\":\"int\"}"))
+    assert(has17(text, "{\"name\":\"vykhod\",\"type\":\"int\"}") || has17(text, "{\"name\":\"output\",\"type\":\"int\"}"))
+}
+
+test "v217 a qualified row is stronger than a simple one" {
+    ro text = ru17_types_names("тип Токены { вход число }\nтип Другое { вход число }", "| вход | in_x |\n| Токены.вход | input_tokens |")
+    assert(is_clean(text))
+    assert(has17(text, "\"name\":\"Tokeny\"") || has17(text, "\"name\":\"TokenUsage\""))
+    assert(has17(text, "\"fields\":[{\"name\":\"input_tokens\",\"type\":\"int\"}]"))
+    assert(has17(text, "\"fields\":[{\"name\":\"in_x\",\"type\":\"int\"}]"))
+}
+
+test "v217 a simple row renames every declaration of the name" {
+    ro text = ru17_types_names("тип Итог { расход число }", "| расход | usage |").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| расход | число>=0 | 0 | да | строки |\n")
+    assert(is_clean(text))
+    assert(has17(text, "{\"name\":\"usage\",\"type\":\"int\"}"))
+    assert(has17(text, "{\"name\":\"usage\",\"type\":\"int>=0\""))
+}
+
+test "v217 a row that changes nothing is an extra row" {
+    ro text = ru17_names("| число_ходов | turn_count |")
+    assert(!is_clean(text))
+    assert(note_says(text, "лишняя строка"))
+    assert(note_says(text, "число_ходов"))
+}
+
+test "v217 a row for a Latin name that is its own name is extra" {
+    ro text = ru17_data("| start_x | число>=0 | 0 | да | строки |").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| start_x | start_x |\n")
+    assert(note_says(text, "лишняя строка"))
+}
+
+test "v217 a row equal to the automatic name of a state is extra" {
+    ro text = ru17_names("| ПОВТОР | Retry |").replace("### СТОП — конец\n", "### ПОВТОР — конец\n- Читает: остановка\n\n### СТОП — конец\n")
+    assert(note_says(text, "лишняя строка"))
+}
+
+test "v217 a row for an undeclared name is an error" {
+    ro text = ru17_names("| нет_такого | no_such |")
+    assert(!is_clean(text))
+    assert(note_says(text, "нет_такого"))
+    assert(note_says(text, "объявлен"))
+}
+
+test "v217 a row for an internal name is an error" {
+    ro text = ru17("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| ЧИСЛО_ПОВТОРОВ | RETRIES |\n").replace("## Данные\n", "## Константы\n\n| имя | тип | значение |\n|---|---|---|\n| ЧИСЛО_ПОВТОРОВ | число>=0 | 3 |\n\n## Данные\n")
+    assert(!is_clean(text))
+    assert(note_says(text, "ЧИСЛО_ПОВТОРОВ"))
+    assert(note_says(text, "объявлен"))
+}
+
+test "v217 a row for a readable name is an error" {
+    ro text = ru17_names("| остановка | stop |")
+    assert(!is_clean(text))
+    assert(note_says(text, "остановка"))
+}
+
+test "v217 a name repeated in the section is an error" {
+    ro text = ru17_names("| ЖДАТЬ | Waiting |")
+    assert(!is_clean(text))
+    assert(note_says(text, "повторен"))
+    assert(note_says(text, "ЖДАТЬ"))
+}
+
+test "v217 a JSON name that is not Latin is an error" {
+    ro text = ru17("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Ожидание |\n")
+    assert(!is_clean(text))
+    assert(note_says(text, "не латинское"))
+}
+
+test "v217 a qualified row for a path that is not there is an error" {
+    ro text = ru17_types_names("тип Токены { вход число }", "| Токены.нет | no |")
+    assert(!is_clean(text))
+    assert(note_says(text, "Токены.нет"))
+}
+
+test "v217 a row of a qualified name that equals the simple row is extra" {
+    ro text = ru17_types_names("тип Токены { вход число }\nтип Другое { вход число }", "| вход | in_x |\n| Токены.вход | in_x |")
+    assert(note_says(text, "лишняя строка"))
+}
+
+test "v217 the section of the names with other columns is an error" {
+    ro text = ru17("| имя | JSON-имя |", "| имя | json |")
+    assert(!is_clean(text))
+    assert(note_says(text, "столбцы"))
+}
+
+test "v217 the section of the names twice is an error" {
+    ro text = ru17("## Данные\n", "## Имена\n\n| имя | JSON-имя |\n|---|---|\n| нет | no |\n\n## Данные\n")
+    assert(note_says(text, "повторён"))
+}
+
+test "v217 the section of the names in English" {
+    ro text = en17("## Data\n", "## Names\n\n| name | json_name |\n|---|---|\n| start_x | start |\n\n## Data\n").replace("| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n", "| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n| start_x | int>=0 | 0 | yes | rows |\n")
+    assert(is_clean(text))
+    assert(has17(text, "{\"name\":\"start\",\"type\":\"int>=0\""))
+}
+
+test "v217 the section of the names of the other language is an error" {
+    ro text = en17("## Data\n", "## Имена\n\n| name | json_name |\n|---|---|\n| start_x | start |\n\n## Data\n")
+    assert(!is_clean(text))
+    assert(note_says(text, "английск") || note_says(text, "Имена"))
+}
+
+test "v217 the column json name in the table of words" {
+    ro text = en17("| name | json_name |", "| name | json_name |").replace("## Data\n", "## Names\n\n| name | JSON-имя |\n|---|---|\n| start_x | start |\n\n## Data\n")
+    assert(!is_clean(text))
+}
+
+// ---- AL-60: the brackets after a name are an error --------------------------------------------------------------------------------------------
+
+test "v217 brackets at a state are refused" {
+    ro text = ru17("### РЕШИТЬ — развилка\n", "### РЕШИТЬ — развилка (Decide)\n")
+    assert(!is_clean(text))
+    assert(note_says(text, "скобки"))
+    assert(note_says(text, "## Имена"))
+}
+
+test "v217 brackets at a datum are refused" {
+    ro text = ru17("| число_ходов | число>=0 |", "| число_ходов (turn_count) | число>=0 |")
+    assert(!is_clean(text))
+    assert(note_says(text, "скобки"))
+    assert(note_says(text, "## Имена"))
+}
+
+test "v217 brackets at a Latin datum are refused too" {
+    ro text = ru17_data("| start_x (start_x) | число>=0 | 0 | да | строки |")
+    assert(note_says(text, "скобки"))
+}
+
+test "v217 brackets at a type are refused" {
+    ro text = ru17_types("тип Токены (TokenUsage) { вход число }")
+    assert(note_says(text, "скобки"))
+}
+
+test "v217 brackets at a field are refused" {
+    ro text = ru17_types("тип Токены { вход (input) число }")
+    assert(note_says(text, "скобки"))
+}
+
+test "v217 brackets at an element of an enum are refused" {
+    ro text = ru17_types("перечисление Цвет = Красный (Red) | Синий")
+    assert(note_says(text, "скобки"))
+}
+
+test "v217 brackets at a case of a variant are refused" {
+    ro text = ru17_types("вариант Знак {\n  Плюс (Plus)\n  Минус\n}")
+    assert(note_says(text, "скобки"))
+}
+
+test "v217 brackets at a signal are refused" {
+    ro text = ru17("разрешить, отказать |", "разрешить (allow), отказать |")
+    assert(note_says(text, "скобки"))
+}
+
+test "v217 brackets at the field of a signal are refused" {
+    ro text = ru17("разрешить, отказать |", "разрешить(автор (author) текст), отказать |")
+    assert(note_says(text, "скобки"))
+}
+
+test "v217 brackets at the setting of the keeper are refused" {
+    ro text = ru17("исполнитель_повышенного_внимания(итог", "исполнитель_повышенного_внимания (attention_executor)(итог")
+    assert(note_says(text, "скобки"))
+}
+
+test "v217 brackets at a field of the input are refused" {
+    ro text = ru17("## Данные\n", "## Вход\n\n| имя | тип | примечание |\n|---|---|---|\n| глубина (depth) | число>=0 | — |\n\n## Данные\n")
+    assert(note_says(text, "скобки"))
+}
+
+test "v217 brackets at a primitive are refused" {
+    ro text = ru17("## Данные\n", "## Примитивы\n\n| имя | параметры | результат | класс | читает | пишет |\n|---|---|---|---|---|---|\n| время (time_now) | — | число | reading | — | — |\n\n## Данные\n")
+    assert(note_says(text, "скобки"))
+}
+
+test "v217 brackets in English are refused" {
+    ro text = en17("### Decide — fork\n", "### Decide — fork (Decide)\n")
+    assert(note_says(text, "скобки"))
+}
+

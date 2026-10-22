@@ -1,0 +1,131 @@
+// v217_test.nv - task 151: the program `alula` and Alula 2.17: the brackets after the names of 2.14 are refused with the message that names `## Имена`, a file that says `format: 2.14` is not read, `check` shows
+// the warnings (an explicit `x | x` in `Запрос`, an `иначе` that cannot be reached), a party of a free input is compiled, rendered and converted, the machines of the folder are read, `version` names 2.17.
+module alula.alula_cli
+
+import std.text
+import alula.machine.{NamedText, table_files, text_of_file}
+
+fn fence_217() -> str => "```"
+
+// A file at 2.17: a party of a free input, a fork over an enum with all its values and an `иначе` that cannot be reached.
+fn file217() -> str {
+    ro lines = [
+        "# Машина: Малая", "", "- machine: Tiny", "- machine_version: 1", "- format: 2.17", "",
+        "## Типы", "", fence_217(), "перечисление Цвет = Красный | Синий", fence_217(), "",
+        "## Данные", "",
+        "| имя | тип | начальное | не убывает | пишет |", "|---|---|---|---|---|",
+        "| число | число>=0 | 0 | да | строки |", "| цвет | Цвет | Цвет.Красный | — | строки |", "",
+        "## Стороны", "",
+        "| имя | идентификатор | вид | профиль | сигналы | счётчик |", "|---|---|---|---|---|---|",
+        "| собеседник | human | human(итог ИсходВорот) | — | сказать, закрыть | — |", "",
+        "## Состояния", "",
+        "Начальное состояние: ЖДАТЬ", "",
+        "### ЖДАТЬ — обращение", "- Сторона: собеседник", "",
+        "| № | Событие | Условие | Действия | Куда |", "|---|---|---|---|---|",
+        "| 1 | сигнал(сказать) | — | число += 1 | ВЫБРАТЬ |", "| 2 | сигнал(закрыть) | — | — | КОНЕЦ |", "",
+        "### ВЫБРАТЬ — развилка", "- Читает: цвет", "",
+        "| № | Условие | Действия | Куда |", "|---|---|---|---|",
+        "| 1 | цвет == Цвет.Красный | — | ЖДАТЬ |", "| 2 | цвет == Цвет.Синий | — | КОНЕЦ |",
+        "| 3 | иначе | ошибка_машины(\"fork_no_match\", fork: \"Choose\") | — |", "",
+        "### КОНЕЦ — конец", "- Читает: число", "",
+        "## Концы", "", "- Результат: число", "",
+        "| конец | № | когда | ответ |", "|---|---|---|---|", "| КОНЕЦ | 1 | истина | Ответ(число) |", ""
+    ]
+    lines.join("\n")
+}
+
+fn path217() -> str => "/work/free.alula.md"
+
+fn run217(args []str, text str) -> Ran => run_with(args, one(path217(), text))
+
+test "v217 a file of 2.17 is checked" {
+    ro ran = run217(["check", path217()], file217())
+    if ran.code != 0 { panic(ran.err) }
+    assert(ran.code == 0)
+}
+
+test "v217 check shows the warning about an else that cannot be reached" {
+    ro ran = run217(["check", path217()], file217())
+    assert(ran.out.contains("warning"))
+    assert(ran.out.contains("иначе") || ran.out.contains("else"))
+}
+
+test "v217 compile gives a tree with no counter at the free party" {
+    ro ran = run217(["compile", path217()], file217())
+    assert(ran.code == 0)
+    assert(!ran.out.contains("\"counter\""))
+    assert(ran.out.contains("\"alula_version\":\"2.17\""))
+}
+
+test "v217 render writes the dash of the free party" {
+    ro compiled = run217(["compile", path217()], file217())
+    ro ran = run_with(["render", "/work/free.alula.json"], one("/work/free.alula.json", compiled.out))
+    assert(ran.code == 0)
+    assert(ran.out.contains("| human(итог ИсходВорот) | — |"))
+    assert(ran.out.contains("format: 2.17"))
+}
+
+test "v217 convert to English and back keeps the tree" {
+    ro first = run217(["compile", path217()], file217())
+    ro en = run217(["convert", path217(), "--language", "en"], file217())
+    assert(en.code == 0)
+    assert(en.out.contains("language: en"))
+    assert(en.out.contains("| human(result GateOutcome) | — |"))
+    ro second = run_with(["compile", "/work/free.en.alula.md"], one("/work/free.en.alula.md", en.out))
+    assert(second.code == 0)
+    assert(!second.out.contains("\"counter\""))
+}
+
+test "v217 version names the format 2.17" {
+    ro ran = run0(["version"])
+    assert(ran.out.contains("Alula 2.17"))
+    assert(!ran.out.contains("2.14"))
+}
+
+test "v217 the program is of the version 0.4.0" {
+    assert(PROGRAM_VERSION == "0.4.0")
+    assert(run0(["version"]).out.contains("alula 0.4.0"))
+}
+
+test "v217 a file of 2.14 is not read" {
+    ro ran = run217(["check", path217()], file217().replace("format: 2.17", "format: 2.14"))
+    assert(ran.code == 1)
+    assert(ran.err.contains("версия не известна"))
+}
+
+test "v217 brackets after a name are refused with the new way" {
+    ro ran = run217(["check", path217()], file217().replace("| число | число>=0 |", "| число (count) | число>=0 |"))
+    assert(ran.code == 1)
+    assert(ran.err.contains("скобки"))
+    assert(ran.err.contains("## Имена"))
+}
+
+test "v217 a dash for the counter of an agent is refused" {
+    ro text = file217().replace("| собеседник | human | human(итог ИсходВорот) | — | сказать, закрыть | — |", "| агент | agent | agent(итог текст) | — | — | — |")
+    ro ran = run217(["check", path217()], text)
+    assert(ran.code == 1)
+    assert(ran.err.contains("счётчик"))
+}
+
+test "v217 a fork without else over numbers is refused" {
+    ro rows = "| 1 | цвет == Цвет.Красный | — | ЖДАТЬ |\n| 2 | цвет == Цвет.Синий | — | КОНЕЦ |\n| 3 | иначе | ошибка_машины(\"fork_no_match\", fork: \"Choose\") | — |"
+    ro text = file217().replace(rows, "| 1 | число >= 2 | — | КОНЕЦ |")
+    ro ran = run217(["check", path217()], text)
+    assert(ran.code == 1)
+    assert(ran.err.contains("иначе"))
+}
+
+test "v217 the machines of the folder are read" {
+    for name in ["chat.alula.md", "dialog.alula.md", "callee.alula.md", "caller.alula.md", "fan.alula.md"] {
+        ro ran = run_with(["check", "/m/${name}"], one("/m/${name}", text_of_file(table_files(), name)))
+        if ran.code != 0 { panic("check ${name}: ${ran.err}") }
+        assert(ran.code == 0)
+    }
+}
+
+test "v217 the tables of the folder say format 2.17" {
+    for f in table_files() {
+        assert(f.text.contains("format: 2.17"))
+        assert(!f.text.contains("format: 2.14"))
+    }
+}

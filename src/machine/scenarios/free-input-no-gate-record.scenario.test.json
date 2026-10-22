@@ -1,0 +1,10 @@
+{
+  "format": "scenario/0",
+  "machine": "ChatSession",
+  "name": "free input: the only request that is open is the one to the agent, nothing is sent to the user",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "signal", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting", "open": ["agent-1"], "sent": ["agent-1"], "cancelled": []}},
+    {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-1"}, "expect": {"state": "Done", "open": [], "outcome": "answer:", "sent": ["agent-1"]}}
+  ]
+}

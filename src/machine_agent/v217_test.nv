@@ -1,0 +1,399 @@
+// v217_test.nv - task 151: the samples of the methodology at the state of the format 2.17 (the illustration of the agent step in both languages and the record of the machine "Meeting"), copied as they
+// are into `cases/`, go through the translator without a hand edit and give the numbers that the methodology gives (the agent step: 13 states, 37 rows of transitions, 13 rows of ends, 16 definitions,
+// 21 codes of the journal, 149 JSON names, 2 rows of `## Имена`; the meeting: 30 states, 67 rows of transitions, 12 rows of ends, 29 data, 22 primitives, 225 JSON names, 14 rows of `## Имена`). The JSON names
+// that the translator builds are the names of the reference script of the methodology (`check-alula-keywords.py`): the files `cases/*-names-217*.tsv` are its output.
+module alula.machine_agent
+
+import std.text
+import std.encoding.json.{Json, JsonValue, JsonObject}
+import alula.machine.{standard_registry}
+import alula.machine_text.{translate_checked, translate_report, translate_names, TranslateReport, JsonName, error_text, render}
+
+fn lf17(text str) -> str => text.replace("\r\n", "\n")
+
+fn ru17s() -> str => lf17(methodology_217_text())
+
+fn en17s() -> str => lf17(methodology_217_en_text())
+
+fn meeting17s() -> str => lf17(meeting_217_text())
+
+// The record of the machine "Meeting" writes a note in brackets after the default of four parameters (`0 (заглушка источника)`: the source does not fix the value); a default is a value, so the translator is
+// given the record without these notes. Nothing else is changed.
+fn meeting17_text() -> str => meeting17s().replace(" (заглушка источника; 0 — срока тишины нет)", "").replace(" (заглушка источника)", "")
+
+fn ru17_report() -> TranslateReport => translate_checked(ru17s(), standard_registry())
+
+fn en17_report() -> TranslateReport => translate_checked(en17s(), standard_registry())
+
+fn first17(report TranslateReport) -> str {
+    if report.errors.len() == 0 { return "ok" }
+    error_text(report.errors[0], "sample")
+}
+
+fn names_file17(name str) -> str {
+    if name == "ru" { return lf17(embed_str("cases/agent-step-names-217.tsv")) }
+    if name == "en" { return lf17(embed_str("cases/agent-step-names-217.en.tsv")) }
+    lf17(embed_str("cases/meeting-names-217.tsv"))
+}
+
+// The lines of a file of the reference: `kind of the declaration|path|JSON name`.
+fn reference17(name str) -> []str {
+    mut out = []str.new()
+    for line in names_file17(name).split("\n") {
+        if line == "" || line.starts_with("#") { continue }
+        ro cells = line.split("\t")
+        mut parts = []str.new()
+        for c in cells { parts.push(c) }
+        out.push("${parts[1]}|${parts[2]}|${parts[3]}")
+    }
+    out
+}
+
+fn ours17(names []JsonName) -> []str {
+    mut out = []str.new()
+    for n in names { out.push("${n.where}|${n.path}|${n.json}") }
+    out
+}
+
+fn same_set17(left []str, right []str) -> bool {
+    if left.len() != right.len() { return false }
+    for l in left {
+        if !right.contains(l) { return false }
+    }
+    for r in right {
+        if !left.contains(r) { return false }
+    }
+    true
+}
+
+fn missing17(left []str, right []str) -> str {
+    for l in left {
+        if !right.contains(l) { return l }
+    }
+    ""
+}
+
+// ---- the text of a sample: the numbers by counting ---------------------------------------------------------------------------------------------
+
+fn count_lines_starting17(text str, prefix str) -> int {
+    mut n = 0
+    mut in_code = false
+    for line in text.split("\n") {
+        if line.starts_with("```") { in_code = !in_code }
+        if !in_code && line.starts_with(prefix) { n += 1 }
+    }
+    n
+}
+
+fn count_lines_anywhere17(text str, prefix str) -> int {
+    mut n = 0
+    for line in text.split("\n") {
+        if line.starts_with(prefix) { n += 1 }
+    }
+    n
+}
+
+// ORACLE-WORKAROUND(127): `text.to_int() != None` is true for a text that is no number; the digits are checked one by one; use `text.to_int() != None` when item 127 is fixed
+fn is_number_text17(text str) -> bool {
+    if text == "" { return false }
+    for c in text.chars() {
+        ro one = "${c}"
+        if !(one >= "0" && one <= "9") { return false }
+    }
+    true
+}
+
+fn count_transition_rows17(text str) -> int {
+    mut n = 0
+    mut in_states = false
+    for line in text.split("\n") {
+        if line.starts_with("## ") { in_states = line.starts_with("## Состояния") || line.starts_with("## States") }
+        if in_states && line.starts_with("| ") {
+            ro cells = line.split("|")
+            mut first = ""
+            mut k = 0
+            for c in cells {
+                if k == 1 { first = c.trim_ascii() }
+                k += 1
+            }
+            if is_number_text17(first) { n += 1 }
+        }
+    }
+    n
+}
+
+fn count_table_rows17(text str, section_prefix str) -> int {
+    mut n = 0
+    mut inside = false
+    mut seen_header = false
+    for line in text.split("\n") {
+        if line.starts_with("## ") {
+            inside = line.starts_with(section_prefix)
+            seen_header = false
+        }
+        if inside && line.starts_with("|") {
+            if line.starts_with("|---") || line.starts_with("|:--") { continue }
+            if !seen_header {
+                seen_header = true
+                continue
+            }
+            n += 1
+        }
+    }
+    n
+}
+
+fn journal_codes17(text str) -> []str {
+    mut out = []str.new()
+    for marker in ["журнал(", "journal("] {
+        mut rest = text
+        while true {
+            ro at = rest.find(marker) ?? -1
+            if at < 0 { break }
+            rest = rest[at + marker.byte_len()..]
+            mut code = []str.new()
+            for c in rest.chars() {
+                ro one = "${c}"
+                if (one >= "a" && one <= "z") || one == "_" { code.push(one) } else { break }
+            }
+            ro word = code.join("")
+            ro end_ok = rest[word.byte_len()..].starts_with(",") || rest[word.byte_len()..].starts_with(")")
+            if word != "" && end_ok && !["usage_event", "transition_note", "all_data"].contains(word) && !out.contains(word) { out.push(word) }
+        }
+    }
+    if text.contains("журнал(событие_расхода(") || text.contains("journal(usage_event(") { out.push("usage_event") }
+    out
+}
+
+test "v217 agent step ru numbers" {
+    ro text = ru17s()
+    assert(count_lines_starting17(text, "### ") == 13)
+    assert(count_transition_rows17(text) == 37)
+    assert(count_table_rows17(text, "## Концы") == 13)
+    assert(count_lines_anywhere17(text, "определение ") == 16)
+    assert(journal_codes17(text).len() == 21)
+    assert(count_table_rows17(text, "## Имена") == 2)
+}
+
+test "v217 agent step en numbers" {
+    ro text = en17s()
+    assert(count_lines_starting17(text, "### ") == 13)
+    assert(count_transition_rows17(text) == 37)
+    assert(count_table_rows17(text, "## Ends") == 13)
+    assert(count_lines_anywhere17(text, "define ") == 16)
+    assert(journal_codes17(text).len() == 21)
+    assert(journal_codes17(text) == journal_codes17(ru17s()))
+    assert(!text.contains("## Names"))
+}
+
+test "v217 meeting numbers" {
+    ro text = meeting17s()
+    assert(count_lines_starting17(text, "### ") == 29)
+    assert(count_transition_rows17(text) == 67)
+    assert(count_table_rows17(text, "## Концы") == 12)
+    assert(count_table_rows17(text, "## Данные") == 29)
+    assert(count_table_rows17(text, "## Примитивы") == 22)
+    assert(count_table_rows17(text, "## Имена") == 14)
+}
+
+// ---- the translation --------------------------------------------------------------------------------------------------------------------
+
+test "v217 agent step ru is clean" {
+    ro report = ru17_report()
+    if report.errors.len() > 0 { panic(first17(report)) }
+    assert(report.errors.len() == 0)
+    assert(report.warnings.len() == 0)
+    assert(report.rows_noted == 0)
+}
+
+test "v217 agent step en is clean" {
+    ro report = en17_report()
+    if report.errors.len() > 0 { panic(first17(report)) }
+    assert(report.errors.len() == 0)
+    assert(report.warnings.len() == 0)
+}
+
+test "v217 agent step tree numbers" {
+    ro j = ru17_report().json
+    assert(j.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.17\",\"machine\":\"agent_step\",\"version\":\"alula-2.17\""))
+    ro o = obj17(j)
+    assert(items17(o, "states").len() == 14)
+    assert(items17(o, "data").len() == 21)
+    assert(items17(o, "definitions").len() == 16)
+    assert(items17(o, "common_events").len() == 6)
+}
+
+fn obj17(text str) -> JsonObject {
+    match Json.parse(text) {
+        Ok(v) => {
+            match v.object() {
+                Some(o) => o
+                None => panic("not an object")
+            }
+        }
+        Err(e) => panic("not a JSON")
+    }
+}
+
+fn items17(o JsonObject, key str) -> []JsonValue {
+    match (o.get(key) ?? JsonValue.null()).array() {
+        Some(items) => items
+        None => []JsonValue.new()
+    }
+}
+
+fn names17(o JsonObject, key str, field str) -> []str {
+    mut out = []str.new()
+    for item in items17(o, key) {
+        match item.object() {
+            Some(x) => out.push((x.get(field) ?? JsonValue.null()).str() ?? "")
+            None => ()
+        }
+    }
+    out
+}
+
+// ---- AC-1: the names of the translator are the names of the reference ---------------------------------------------------------------------
+
+test "v217 agent step ru has 149 JSON names" {
+    assert(translate_names(ru17s()).len() == 149)
+}
+
+test "v217 agent step en has 149 JSON names" {
+    assert(translate_names(en17s()).len() == 149)
+}
+
+test "v217 agent step ru names are the names of the reference" {
+    ro left = ours17(translate_names(ru17s()))
+    ro right = reference17("ru")
+    assert(missing17(left, right) == "")
+    assert(missing17(right, left) == "")
+    assert(same_set17(left, right))
+}
+
+test "v217 agent step en names are the names of the reference" {
+    ro left = ours17(translate_names(en17s()))
+    ro right = reference17("en")
+    assert(missing17(left, right) == "")
+    assert(same_set17(left, right))
+}
+
+fn json_part17(entry str) -> str {
+    ro at = entry.rfind("|") ?? -1
+    entry[at + 1..]
+}
+
+fn jsons17(entries []str) -> []str {
+    mut out = []str.new()
+    for e in entries { out.push(json_part17(e)) }
+    out
+}
+
+test "v217 agent step ru and en have one set of JSON names" {
+    ro ru = jsons17(reference17("ru"))
+    ro en = jsons17(reference17("en"))
+    assert(ru.len() == 149)
+    assert(missing17(ru, en) == "")
+    assert(missing17(en, ru) == "")
+}
+
+test "v217 meeting has 225 JSON names" {
+    assert(translate_names(meeting17_text()).len() == 225)
+}
+
+test "v217 meeting names are the names of the reference" {
+    ro left = ours17(translate_names(meeting17_text()))
+    ro right = reference17("meeting")
+    assert(missing17(left, right) == "")
+    assert(missing17(right, left) == "")
+    assert(same_set17(left, right))
+}
+
+test "v217 the two rows of the agent step set the names" {
+    ro j = ru17_report().json
+    assert(j.contains("\"setting\":\"elevated_attention_executor\""))
+    assert(j.contains("\"name\":\"transport_usage\""))
+}
+
+test "v217 the dictionary gives the names of the agent step that need no row" {
+    ro j = ru17_report().json
+    assert(j.contains("\"name\":\"Retry\""))
+    assert(j.contains("\"name\":\"retry_count\""))
+    assert(j.contains("\"name\":\"turn_count\""))
+}
+
+test "v217 the names of the meeting by the rows" {
+    ro j = translate_report(meeting17_text()).json
+    assert(j.contains("\"name\":\"Claim\""))
+    assert(j.contains("\"name\":\"keep_edit\""))
+    assert(j.contains("\"name\":\"restore_copy\""))
+    assert(j.contains("\"name\":\"lens_findings\""))
+    assert(j.contains("\"name\":\"WitnessContext\""))
+    assert(j.contains("\"name\":\"QuestionContext\""))
+    assert(j.contains("\"name\":\"Asked\""))
+}
+
+test "v217 the names of the meeting by the dictionary" {
+    ro j = translate_report(meeting17_text()).json
+    assert(j.contains("\"name\":\"halt_meeting\""))
+    assert(j.contains("\"name\":\"counted\""))
+    assert(j.contains("\"name\":\"not_counted\""))
+    assert(j.contains("\"name\":\"another_pass\""))
+}
+
+test "v217 meeting is read but for the fields with two JSON names" {
+    ro report = translate_report(meeting17_text())
+    for e in report.errors {
+        if !e.message.contains("разными JSON-именами") { panic(error_text(e, "sample")) }
+    }
+    assert(report.warnings.len() == 0)
+}
+
+test "v217 meeting states and primitives in the tree" {
+    ro report = translate_report(meeting17_text())
+    ro o = obj17(report.json)
+    assert(items17(o, "states").len() == 30)
+    assert(items17(o, "primitives").len() == 22)
+}
+
+// ---- the two languages: one machine ------------------------------------------------------------------------------------------------------------
+
+test "v217 ru and en have one surface" {
+    ro ru = obj17(ru17_report().json)
+    ro en = obj17(en17_report().json)
+    assert(names17(ru, "states", "name") == names17(en, "states", "name"))
+    assert(names17(ru, "data", "name") == names17(en, "data", "name"))
+    assert(names17(ru, "parties", "id") == names17(en, "parties", "id"))
+    assert(names17(ru, "signals", "name") == names17(en, "signals", "name"))
+}
+
+test "v217 the parties of the agent step keep their counters" {
+    ro j = ru17_report().json
+    assert(j.contains("\"counter\":\"agent_attempt\""))
+    assert(j.contains("\"counter\":\"gatekeeper_attempt\""))
+    assert(j.contains("\"counter\":\"enhanced_attempt\""))
+}
+
+test "v217 circle of the agent step sample" {
+    for lang in ["ru", "en"] {
+        ro tree = ru17_report().json
+        ro made = render(tree, lang)
+        ro back = translate_checked(made, standard_registry())
+        if back.errors.len() > 0 { panic(first17(back)) }
+        assert(back.errors.len() == 0)
+        assert(back.warnings.len() == 0)
+    }
+}
+
+test "v217 the circle gives the same tree" {
+    ro tree = ru17_report().json
+    for lang in ["ru", "en"] {
+        ro back = translate_checked(render(tree, lang), standard_registry())
+        assert(back.errors.len() == 0)
+        ro first = obj17(tree)
+        ro second = obj17(back.json)
+        assert(names17(first, "states", "name") == names17(second, "states", "name"))
+        assert(names17(first, "data", "name") == names17(second, "data", "name"))
+        assert(items17(first, "definitions").len() == items17(second, "definitions").len())
+    }
+}

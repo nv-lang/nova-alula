@@ -1,0 +1,132 @@
+// v217_test.nv - task 151: the reverse generator writes Alula 2.17: the header `format: 2.17`, `—` for the expression of a field of the request that is the name of the field (AL-56), `—` for the counter
+// of a party of a free input (AL-52), no brackets after the names and no section `## Имена` for the names that lie in the tree (1b (ж), AL-60), the circles "tree -> file -> tree" and "ru -> en -> ru"
+// equal for the new constructions in both languages.
+module alula.machine_text_render
+
+import std.text
+import alula.machine_text.{render, render_machine, translate_report}
+
+// A small tree of 2.17: a party of gates with a counter and a party of a free input without one; the state of the gates asks for two fields, one named as its expression and one not.
+fn tree17() -> str => `{"format":"machine/2","alula_version":"2.17","machine":"Tiny","version":"1","data":[{"name":"n","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":{"bound":{"op":"lit","value":5}},"writes":"rows"},{"name":"stop","type":"\"\" | \"a\" | \"b\"","initial":{"expr":{"op":"lit","value":""}},"writes":"rows"},{"name":"g_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}],"parties":[{"name":"gate","id":"gate","kind":"human","counter":"g_attempt","signals":[{"name":"go"},{"name":"halt"}]},{"name":"talker","id":"talker","kind":"human","signals":[{"name":"say","fields":[{"name":"content","type":"text"}]},{"name":"close"}]}],"initial":"Wait","states":[{"name":"Wait","kind":"appeal","party":"gate","inputs":[{"field":"n","value":{"op":"name","name":"n"},"reads":"executor"},{"field":"turn","value":{"op":"name","name":"n"},"reads":"party"}],"rows":[{"n":1,"event":{"kind":"signal","name":"go"},"actions":[{"do":"assign","target":"n","value":{"op":"+","left":{"op":"name","name":"n"},"right":{"op":"lit","value":1}}}],"to":"Chat"},{"n":2,"event":{"kind":"signal","name":"halt"},"actions":[{"do":"assign","target":"stop","value":{"op":"lit","value":"a"}}],"to":"Stopped"}]},{"name":"Chat","kind":"appeal","party":"talker","rows":[{"n":1,"event":{"kind":"signal","name":"say","bind":{"content":"text"}},"to":"Decide"},{"n":2,"event":{"kind":"signal","name":"close"},"to":"Finished"}]},{"name":"Decide","kind":"fork","reads":["n"],"rows":[{"n":1,"event":{"kind":"now"},"cond":{"op":">=","left":{"op":"name","name":"n"},"right":{"op":"lit","value":2}},"to":"Finished"},{"n":2,"event":{"kind":"now"},"else":true,"to":"Wait"}]},{"name":"Finished","kind":"end","reads":["n"]},{"name":"Stopped","kind":"end","reads":["stop"],"except":{"field":"stop","values":[""]}}],"ends":{"result":"int","rows":[{"state":"Finished","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"name","name":"n"}}},{"state":"Stopped","n":1,"when":{"op":"==","left":{"op":"name","name":"stop"},"right":{"op":"lit","value":"a"}},"answer":{"kind":"refusal","code":{"op":"variant","type":"FailCode","name":"StoppedByHuman"},"text":{"op":"lit","value":"stopped"}}},{"state":"Stopped","n":2,"when":{"op":"==","left":{"op":"name","name":"stop"},"right":{"op":"lit","value":"b"}},"answer":{"kind":"refusal","code":{"op":"variant","type":"FailCode","name":"NoResult"},"text":{"op":"lit","value":"b"}}}]}}`
+
+fn written17(lang str) -> str {
+    ro made = render_machine(tree17(), lang)
+    if made.notes.len() > 0 { panic(made.notes.join(" ## ")) }
+    made.text
+}
+
+// ---- the header ----------------------------------------------------------------------------------------------------------------------------
+
+test "v217 render writes the format 2.17" {
+    assert(written17("ru").contains("- format: 2.17\n"))
+    assert(written17("en").contains("- format: 2.17\n"))
+    assert(!written17("ru").contains("2.14"))
+}
+
+test "v217 render of a tree keeps the version of the generator" {
+    ro tree = tree17().replace("\"alula_version\":\"2.17\",", "")
+    assert(render(tree, "ru").contains("- format: 2.17\n"))
+}
+
+// ---- AL-56: a dash for the expression that is the name of the field ----------------------------------------------------------------------------
+
+test "v217 render writes a dash for the same name" {
+    ro ru = written17("ru")
+    assert(ru.contains("| n | — | исполнитель |"))
+    ro en = written17("en")
+    assert(en.contains("| n | — | executor |"))
+}
+
+test "v217 render writes another expression as it is" {
+    assert(written17("ru").contains("| turn | n | сторона |"))
+    assert(written17("en").contains("| turn | n | party |"))
+}
+
+test "v217 render of a field with a dash and the party" {
+    ro tree = tree17().replace("{\"field\":\"turn\",\"value\":{\"op\":\"name\",\"name\":\"n\"},\"reads\":\"party\"}", "{\"field\":\"n\",\"value\":{\"op\":\"name\",\"name\":\"n\"},\"reads\":\"party\"}")
+    assert(render(tree, "ru").contains("| n | — | сторона |"))
+}
+
+test "v217 the file with dashes gives no warning" {
+    ro made = written17("ru")
+    assert(translate_report(made).warnings.len() == 0)
+}
+
+test "v217 a request field that is a call keeps its expression" {
+    ro tree = tree17().replace("{\"field\":\"turn\",\"value\":{\"op\":\"name\",\"name\":\"n\"},\"reads\":\"party\"}", "{\"field\":\"turn\",\"value\":{\"op\":\"call\",\"fn\":\"length\",\"args\":[{\"op\":\"list\",\"items\":[]}]},\"reads\":\"party\"}")
+    assert(render(tree, "en").contains("| turn | length([]) | party |"))
+}
+
+// ---- AL-52: a dash for the counter of a party of a free input ---------------------------------------------------------------------------------
+
+test "v217 render writes a dash for the counter of a free input" {
+    assert(written17("ru").contains("| talker | talker | human(итог ИсходВорот) | — | say(content текст), close | — |"))
+    assert(written17("en").contains("| talker | talker | human(result GateOutcome) | — | say(content text), close | — |"))
+}
+
+test "v217 render keeps the counter of the gates" {
+    assert(written17("ru").contains("| gate | gate | human(итог ИсходВорот) | — | go, halt | g_attempt |"))
+}
+
+test "v217 render of the state of a free input has no request" {
+    ro ru = written17("ru")
+    assert(ru.contains("### Chat — обращение\n- Сторона: talker\n\n| № | Событие | Условие | Действия | Куда |"))
+}
+
+// ---- AL-60: no brackets and no section of the names -----------------------------------------------------------------------------------------
+
+test "v217 render writes no brackets after the names" {
+    for lang in ["ru", "en"] {
+        ro text = written17(lang)
+        assert(!text.contains(" (Wait)"))
+        assert(!text.contains("(turn_count)"))
+        assert(!text.contains(" (go)"))
+    }
+}
+
+test "v217 render writes no section of the names" {
+    assert(!written17("ru").contains("## Имена"))
+    assert(!written17("en").contains("## Names"))
+}
+
+test "v217 the written file is a clean file of the format" {
+    for lang in ["ru", "en"] {
+        ro report = translate_report(written17(lang))
+        assert(report.errors.len() == 0)
+    }
+}
+
+// ---- the circles ------------------------------------------------------------------------------------------------------------------------
+
+test "v217 the circle of the tree in Russian" {
+    assert(circle(tree17(), "ru") == "")
+}
+
+test "v217 the circle of the tree in English" {
+    assert(circle(tree17(), "en") == "")
+}
+
+test "v217 the circle ru en ru of the tree" {
+    ro ru = render_machine(tree17(), "ru").text
+    ro en_tree = json_of(ru)
+    ro en = render_machine(en_tree, "en").text
+    ro back = json_of(en)
+    assert(same_tree(tree17(), back) == "")
+}
+
+test "v217 the circle of the chat machine" {
+    ro json = machine_json("chat.alula.json")
+    assert(circle(json, "ru") == "")
+    assert(circle(json, "en") == "")
+}
+
+test "v217 the chat machine writes its user as a free input" {
+    ro ru = render(machine_json("chat.alula.json"), "ru")
+    assert(ru.contains("| user | user | human(итог ИсходВорот) | — | user_message(content текст), cancel | — |"))
+}
+
+test "v217 the tree of the chat has no counter for the user" {
+    ro json = machine_json("chat.alula.json")
+    assert(json.contains("\"name\":\"user\"") || json.contains("\"name\": \"user\""))
+    assert(!json.contains("\"counter\": \"user_attempt\"") && !json.contains("\"counter\":\"user_attempt\""))
+}

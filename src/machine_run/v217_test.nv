@@ -1,0 +1,159 @@
+// v217_test.nv - task 151: the party of a free input in the interpreter and the runner of the scenarios (AL-51, AL-52): the machine has no counter of the party and no record of a gate, the word is taken
+// by the name of the signal in the current state, the counter of the party does not grow, the machine may have a party with gates and a party of a free input together. The chat machine of the data
+// directory is the machine of a free input (the user writes when he wants to).
+module alula.machine_run
+
+import std.text
+import alula.machine.{machine_files, scenario_files, text_of_file}
+
+// The chat machine as the file has it; and the same machine with the counter of the user put back (a party with gates).
+fn chat_free() -> AlulaMachine => chat()
+
+fn chat_gated() -> AlulaMachine => build_from(machine_text("chat.alula.json").replace("\"kind\": \"human\"", "\"kind\": \"human\", \"counter\": \"user_attempt\""))
+
+test "v217 the chat machine has a user without a counter" {
+    ro m = chat_free()
+    mut found = false
+    for p in m.def.parties {
+        if p.id == "user" {
+            found = true
+            assert(p.counter == "")
+        }
+    }
+    assert(found)
+}
+
+test "v217 the chat machine still loads and starts" {
+    ro m = chat_free()
+    assert(m.initial().name == "Idle")
+}
+
+test "v217 a word of the free input is taken by its name" {
+    ro r = run1(chat_free(), chat_free().initial(), said("hello"))
+    assert(r.moved)
+    assert(r.state.name == "Awaiting")
+    assert(summary(r.orders) == "log:user_message(text=hello),send:agent:hello:30000,save")
+}
+
+test "v217 the word of a free input has no gate record" {
+    ro r = run1(chat_free(), chat_free().initial(), said("hello"))
+    for o in r.orders {
+        match o {
+            Send(order) => assert(order.party == "agent")
+            _ => ()
+        }
+    }
+}
+
+test "v217 the counter of the party of a free input does not grow" {
+    ro m = chat_free()
+    ro r1 = run1(m, m.initial(), said("one"))
+    assert(datum_json(r1.state, "user_attempt") == "0")
+    ro r2 = run1(m, r1.state, done())
+    assert(datum_json(r2.state, "user_attempt") == "0")
+}
+
+test "v217 the counter of the agent grows as before" {
+    ro m = chat_free()
+    ro r1 = run1(m, m.initial(), said("one"))
+    assert(datum_json(r1.state, "agent_attempt") == "1")
+}
+
+test "v217 a word with no row in the state is thrown away" {
+    ro m = chat_free()
+    ro r1 = run1(m, m.initial(), said("hi"))
+    ro r2 = run1(m, r1.state, said("second"))
+    assert(summary(r2.orders).contains("event_ignored"))
+    assert(r2.state.name == "Awaiting")
+}
+
+test "v217 the hub asks the table about a word of a free input" {
+    ro m = chat_free()
+    assert(m.accepts_word(m.initial(), "user_message"))
+    assert(m.accepts_word(m.initial(), "cancel"))
+}
+
+test "v217 the hub is told that a waiting state takes no word" {
+    ro m = chat_free()
+    ro r1 = run1(m, m.initial(), said("hi"))
+    assert(!m.accepts_word(r1.state, "user_message"))
+}
+
+test "v217 the stop word of a free input is a common signal" {
+    ro m = chat_free()
+    ro r = run1(m, m.initial(), cancelled())
+    assert(r.state.name == "Failed")
+}
+
+test "v217 the same machine with gates gives the same orders" {
+    ro a = run1(chat_free(), chat_free().initial(), said("hello"))
+    ro b = run1(chat_gated(), chat_gated().initial(), said("hello"))
+    assert(summary(a.orders) == summary(b.orders))
+}
+
+test "v217 the machine with gates keeps its counter" {
+    ro m = chat_gated()
+    for p in m.def.parties {
+        if p.id == "user" { assert(p.counter == "user_attempt") }
+    }
+}
+
+test "v217 the dialog machine has a free input too" {
+    ro m = dialog()
+    for p in m.def.parties {
+        if p.id == "user" { assert(p.counter == "") }
+    }
+}
+
+test "v217 the dialog machine closes by a word of the free input" {
+    ro m = dialog()
+    ro r = run1(m, m.initial(), word_in("close_session", ""))
+    assert(r.state.name == "Closed")
+}
+
+// ---- the scenarios of the free input -------------------------------------------------------------------------------------------------------
+
+fn scenario_named(name str) -> str => text_of_file(scenario_files(), name)
+
+test "v217 the scenarios of the free input are in the directory" {
+    mut found = 0
+    for f in scenario_files() {
+        if f.name.starts_with("free-input-") { found += 1 }
+    }
+    assert(found >= 5)
+}
+
+test "v217 the scenario of a free input runs" {
+    ro text = scenario_named("free-input-chat-message.scenario.test.json")
+    assert(text != "")
+    assert(run_ok(run_text(chat(), text)))
+}
+
+test "v217 the scenario of a free input without a gate record" {
+    ro text = scenario_named("free-input-no-gate-record.scenario.test.json")
+    assert(text != "")
+    assert(run_ok(run_text(chat(), text)))
+}
+
+test "v217 the scenario of the counters that stay" {
+    ro text = scenario_named("free-input-counter-stays.scenario.test.json")
+    assert(text != "")
+    assert(run_ok(run_text(dialog(), text)))
+}
+
+test "v217 the scenario of the close word of the dialog" {
+    ro text = scenario_named("free-input-dialog-close.scenario.test.json")
+    assert(text != "")
+    assert(run_ok(run_text(dialog(), text)))
+}
+
+test "v217 the scenario of a word without a row" {
+    ro text = scenario_named("free-input-word-without-row.scenario.test.json")
+    assert(text != "")
+    assert(run_ok(run_text(chat(), text)))
+}
+
+test "v217 the step of a scenario names the party of a free input" {
+    ro run = run_text(chat(), scenario_named("free-input-chat-message.scenario.test.json").replace("\"party\": \"user\"", "\"party\": \"agent\""))
+    assert(!run_ok(run))
+}

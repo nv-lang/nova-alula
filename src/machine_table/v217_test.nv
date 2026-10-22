@@ -1,0 +1,300 @@
+// v217_test.nv - Alula 2.15 - 2.17 on the side of the tree and of the checks (task 151): the version 2.17 of the tree, the counter of a party that is not required for a human (AL-52: no key
+// `counter` is a party of a free input, AL-51), the constructions of the gates that a state of a free input does not have, the fork that needs `else` only where the type does not prove the exhaustion
+// (AL-57) and the warning about an `else` that cannot be reached. Every check is red on the tree of 2.14 and green on the one of 2.17.
+module alula.machine_table
+
+import std.text
+import alula.machine.{standard_registry, schema_files, text_of_file, machine_files}
+
+// The tiny machine of the support file with a party of a free input: no counter at the party, no request fields at the state.
+fn free17() -> str => tiny().replace("\"counter\":\"u_attempt\",", "").replace("\"inputs\":[{\"field\":\"n\",\"value\":${jn("n")},\"reads\":\"executor\"}],", "")
+
+fn with17(old str, new str) -> str => free17().replace(old, new)
+
+fn warnings17(text str) -> []str {
+    mut out = []str.new()
+    match parse_machine(text) {
+        Ok(def) => {
+            for w in machine_warnings(def, standard_registry()) { out.push(issue_text(w)) }
+        }
+        Err(e) => out.push("does not decode: ${issue_text(e)}")
+    }
+    out
+}
+
+// ---- the version -------------------------------------------------------------------------------------------------------------------------------
+
+test "v217 the version of the language is 2.17" {
+    assert(ALULA_VERSION == "2.17")
+    assert(alula_versions() == ["2.17"])
+}
+
+test "v217 a tree of the version 2.17 loads" {
+    assert(ok_text(tiny().replace("\"format\":\"machine/2\"", "\"format\":\"machine/2\",\"alula_version\":\"2.17\"")))
+}
+
+test "v217 a tree of the version 2.14 is refused" {
+    ro text = tiny().replace("\"format\":\"machine/2\"", "\"format\":\"machine/2\",\"alula_version\":\"2.14\"")
+    assert(!ok_text(text))
+    assert(says(text, "2.14"))
+    assert(says(text, "2.17"))
+}
+
+test "v217 the schema names the version 2.17" {
+    ro schema = text_of_file(schema_files(), "machine-2.schema.json")
+    assert(schema.contains("\"enum\": [\"2.17\"]"))
+    assert(!schema.contains("2.14"))
+}
+
+// ---- AL-52: the counter is not required of a human -----------------------------------------------------------------------------------------
+
+test "v217 a party of a free input loads" {
+    assert(ok_text(free17()))
+}
+
+test "v217 a party of a free input has no counter" {
+    ro def = decoded(free17())
+    assert(def.parties[0].counter == "")
+    assert(def.parties[0].kind == HumanParty)
+}
+
+test "v217 a party with a counter still loads" {
+    assert(ok_text(tiny()))
+    assert(decoded(tiny()).parties[0].counter == "u_attempt")
+}
+
+test "v217 an agent needs a counter" {
+    ro text = free17().replace("\"kind\":\"human\"", "\"kind\":\"agent\",\"result\":\"text\"").replace(",\"signals\":[{\"name\":\"go\"},{\"name\":\"halt\"}]", "")
+    assert(!ok_text(text))
+    assert(says(text, "counter"))
+}
+
+test "v217 a keeper needs a counter" {
+    ro text = free17().replace("\"kind\":\"human\"", "\"kind\":\"gatekeeper\",\"setting\":\"s\"")
+    assert(!ok_text(text))
+    assert(says(text, "counter"))
+}
+
+test "v217 an enhanced party needs a counter" {
+    ro text = free17().replace("\"kind\":\"human\"", "\"kind\":\"enhanced\"")
+    assert(!ok_text(text))
+    assert(says(text, "counter"))
+}
+
+test "v217 the message about a missing counter names the human" {
+    ro text = free17().replace("\"kind\":\"human\"", "\"kind\":\"enhanced\"")
+    assert(says(text, "human"))
+}
+
+test "v217 a human may also have the counter of a gate" {
+    ro text = tiny()
+    assert(ok_text(text))
+    assert(!says(text, "free input"))
+}
+
+test "v217 the party keys keep counter" {
+    assert(party_keys().contains("counter"))
+}
+
+test "v217 a human counter that is not declared is still refused" {
+    ro text = tiny().replace("\"counter\":\"u_attempt\"", "\"counter\":\"nowhere\"")
+    assert(says(text, "nowhere"))
+}
+
+// ---- AL-51, AL-52: what a state of a free input does not have ------------------------------------------------------------------------------
+
+test "v217 a free input state with a request is refused" {
+    ro text = tiny().replace("\"counter\":\"u_attempt\",", "")
+    assert(!ok_text(text))
+    assert(says(text, "free input"))
+}
+
+test "v217 a free input state with a set is refused" {
+    ro text = with17("\"party\":\"user\",", "\"party\":\"user\",\"set\":${jn("n")},")
+    assert(says(text, "free input"))
+}
+
+test "v217 a free input state with an idle term is refused" {
+    ro text = with17("\"party\":\"user\",", "\"party\":\"user\",\"silence\":${jl("5")},")
+    assert(!ok_text(text))
+    assert(says(text, "free input"))
+}
+
+test "v217 a free input state with edits is refused" {
+    ro text = with17("\"party\":\"user\",", "\"party\":\"user\",\"edits\":\"n\",\"edit_check\":\"time_now\",")
+    assert(!ok_text(text))
+    assert(says(text, "free input"))
+}
+
+test "v217 a free input state with form returns is refused" {
+    ro text = with17("\"party\":\"user\",", "\"party\":\"user\",\"form_returns\":1,")
+    assert(says(text, "free input"))
+}
+
+test "v217 a free input state with an answer row is refused" {
+    ro answer = `{"n":3,"event":{"kind":"answer"},"to":"Stopped"}`
+    ro text = with17("\"to\":\"Stopped\"}]", "\"to\":\"Stopped\"},${answer}]")
+    assert(!ok_text(text))
+    assert(says(text, "free input"))
+}
+
+test "v217 a free input state with a failure row is refused" {
+    ro failure = `{"n":3,"event":{"kind":"failure"},"to":"Stopped"}`
+    ro text = with17("\"to\":\"Stopped\"}]", "\"to\":\"Stopped\"},${failure}]")
+    assert(says(text, "free input"))
+}
+
+test "v217 a free input state with an answer variant row is refused" {
+    ro variant = `{"n":3,"event":{"kind":"answer_variant","variant":"X"},"to":"Stopped"}`
+    ro text = with17("\"to\":\"Stopped\"}]", "\"to\":\"Stopped\"},${variant}]")
+    assert(!ok_text(text))
+}
+
+test "v217 a free input state with On accept is refused" {
+    ro accept = `"accept":[{"event":{"kind":"answer"}}],`
+    ro text = with17("\"party\":\"user\",", "\"party\":\"user\",${accept}")
+    assert(!ok_text(text))
+}
+
+test "v217 the rows by the signals of a free input are fine" {
+    ro def = decoded(free17())
+    assert(def.states[0].rows.len() == 2)
+    assert(ok_text(free17()))
+}
+
+test "v217 a state of a party with gates keeps its request" {
+    assert(ok_text(tiny()))
+    assert(decoded(tiny()).states[0].inputs.len() == 1)
+}
+
+// ---- AL-57: the fork needs else only where the type does not prove the exhaustion ---------------------------------------------------------------
+
+fn enum_types() -> str => `"types":{"variants":[{"name":"Color","cases":[{"name":"Red"},{"name":"Green"},{"name":"Blue"}]},{"name":"Node","cases":[{"name":"Leaf"},{"name":"Branch","fields":[{"name":"depth","type":"int"}]}]}]},`
+
+fn color_is(case str) -> str => jb("==", jn("color"), `{"op":"variant","type":"Color","name":"${case}"}`)
+
+fn row_to(n int, cond str, to str) -> str => `{"n":${n},"event":{"kind":"now"},"cond":${cond},"to":"${to}"}`
+
+fn else_to(n int, to str) -> str => `{"n":${n},"event":{"kind":"now"},"else":true,"to":"${to}"}`
+
+// The tiny machine with the datum `color` of the enum and the fork `Decide` with the given rows.
+fn forked(rows str) -> str {
+    ro with_types = tiny().replace("\"data\":[", "${enum_types()}\"data\":[{\"name\":\"color\",\"type\":\"Color\",\"initial\":{\"expr\":{\"op\":\"variant\",\"type\":\"Color\",\"name\":\"Red\"}}},{\"name\":\"label\",\"type\":${jstr("\"a\" | \"b\" | \"c\"")},\"initial\":{\"expr\":${jl(jstr("a"))}}},")
+    ro fork = `{"name":"Decide","kind":"fork","reads":["n","color","label"],"rows":[${rows}]}`
+    ro start = with_types.find("{\"name\":\"Decide\"") ?? 0
+    ro finish = with_types.find(",{\"name\":\"Finished\"") ?? 0
+    "${with_types[..start]}${fork}${with_types[finish..]}"
+}
+
+fn all_colors17() -> str => "${row_to(1, color_is("Red"), "Finished")},${row_to(2, color_is("Green"), "Wait")},${row_to(3, color_is("Blue"), "Finished")}"
+
+test "v217 a fork over all the elements of an enum needs no else" {
+    assert(ok_text(forked(all_colors17())))
+}
+
+test "v217 a fork over the elements of an enum with one missing needs else" {
+    ro text = forked("${row_to(1, color_is("Red"), "Finished")},${row_to(2, color_is("Green"), "Wait")}")
+    assert(!ok_text(text))
+    assert(says(text, "else"))
+}
+
+test "v217 a fork over the elements of an enum with one missing and else is fine" {
+    ro text = forked("${row_to(1, color_is("Red"), "Finished")},${row_to(2, color_is("Green"), "Wait")},${else_to(3, "Wait")}")
+    assert(ok_text(text))
+}
+
+test "v217 else after the proved exhaustion is a warning and no error" {
+    ro text = forked("${all_colors17()},${else_to(4, "Wait")}")
+    assert(ok_text(text))
+    assert(warnings17(text).len() == 1)
+    assert(warnings17(text)[0].contains("else"))
+}
+
+test "v217 no warning for an else that is needed" {
+    ro text = forked("${row_to(1, color_is("Red"), "Finished")},${else_to(2, "Wait")}")
+    assert(warnings17(text).len() == 0)
+}
+
+test "v217 the fork of the tiny machine keeps its else without a warning" {
+    assert(ok_text(tiny()))
+    assert(warnings17(tiny()).len() == 0)
+}
+
+test "v217 a fork over numbers needs else" {
+    ro rows = "${row_to(1, jb(">=", jn("n"), jl("2")), "Finished")},${row_to(2, jb("<", jn("n"), jl("2")), "Wait")}"
+    ro text = forked(rows)
+    assert(!ok_text(text))
+    assert(says(text, "else"))
+}
+
+test "v217 a fork over a literal set with all the values needs no else" {
+    ro rows = "${row_to(1, jb("==", jn("label"), jl(jstr("a"))), "Finished")},${row_to(2, jb("==", jn("label"), jl(jstr("b"))), "Wait")},${row_to(3, jb("==", jn("label"), jl(jstr("c"))), "Finished")}"
+    assert(ok_text(forked(rows)))
+}
+
+test "v217 a fork over a literal set with one value missing needs else" {
+    ro rows = "${row_to(1, jb("==", jn("label"), jl(jstr("a"))), "Finished")},${row_to(2, jb("==", jn("label"), jl(jstr("b"))), "Wait")}"
+    assert(!ok_text(forked(rows)))
+}
+
+test "v217 a fork over a literal outside the set does not prove the exhaustion" {
+    ro rows = "${row_to(1, jb("==", jn("label"), jl(jstr("a"))), "Finished")},${row_to(2, jb("==", jn("label"), jl(jstr("b"))), "Wait")},${row_to(3, jb("==", jn("label"), jl(jstr("z"))), "Finished")}"
+    assert(!ok_text(forked(rows)))
+}
+
+test "v217 a fork over the cases of a variant without fields needs no else" {
+    ro node_is = jb("==", jn("color"), `{"op":"variant","type":"Color","name":"Red"}`)
+    assert(ok_text(forked(all_colors17())))
+    assert(node_is.contains("Color"))
+}
+
+test "v217 a fork over the cases of a variant with fields needs else" {
+    ro leaf = jb("==", jn("node"), `{"op":"variant","type":"Node","name":"Leaf"}`)
+    ro text = forked(row_to(1, leaf, "Finished")).replace("{\"name\":\"label\"", "{\"name\":\"node\",\"type\":\"Node\",\"initial\":{\"expr\":{\"op\":\"variant\",\"type\":\"Node\",\"name\":\"Leaf\"}}},{\"name\":\"label\"")
+    assert(says(text, "else"))
+}
+
+test "v217 a fork with not equal needs else" {
+    ro rows = "${row_to(1, jb("!=", jn("color"), `{"op":"variant","type":"Color","name":"Red"}`), "Finished")},${row_to(2, color_is("Red"), "Wait")}"
+    assert(!ok_text(forked(rows)))
+}
+
+test "v217 a fork with a joined condition needs else" {
+    ro joined = jb("and", color_is("Red"), jb(">=", jn("n"), jl("1")))
+    ro rows = "${row_to(1, joined, "Finished")},${row_to(2, color_is("Green"), "Wait")},${row_to(3, color_is("Blue"), "Finished")}"
+    assert(!ok_text(forked(rows)))
+}
+
+test "v217 a fork over two names needs else" {
+    ro other = jb("==", jn("label"), jl(jstr("a")))
+    ro rows = "${row_to(1, color_is("Red"), "Finished")},${row_to(2, other, "Wait")},${row_to(3, color_is("Green"), "Wait")},${row_to(4, color_is("Blue"), "Finished")}"
+    assert(!ok_text(forked(rows)))
+}
+
+test "v217 a duplicated value does not prove the exhaustion" {
+    ro rows = "${row_to(1, color_is("Red"), "Finished")},${row_to(2, color_is("Red"), "Wait")},${row_to(3, color_is("Green"), "Finished")}"
+    assert(!ok_text(forked(rows)))
+}
+
+test "v217 a fork of an unknown type does not prove the exhaustion" {
+    ro rows = "${row_to(1, jb("==", jn("n"), jl("1")), "Finished")},${row_to(2, jb("==", jn("n"), jl("2")), "Wait")}"
+    assert(!ok_text(forked(rows)))
+}
+
+test "v217 an appeal does not need else" {
+    assert(ok_text(tiny()))
+}
+
+test "v217 the else row is the last one still" {
+    ro text = forked("${else_to(1, "Wait")},${row_to(2, color_is("Red"), "Finished")}")
+    assert(!ok_text(text))
+}
+
+test "v217 the machines of the data directory have no warnings of an else" {
+    for f in machine_files() {
+        match parse_machine(f.text) {
+            Ok(def) => assert(machine_warnings(def, standard_registry()).len() == 0)
+            Err(e) => assert(false)
+        }
+    }
+}

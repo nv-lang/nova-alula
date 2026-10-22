@@ -1,0 +1,163 @@
+// v217_support_test.nv - the fixtures of the tests of Alula 2.17 (task 151): the small machine in Russian and in English and the ways to change it.
+module alula.machine_text_lang
+
+import std.text
+
+fn fence17() -> str => "```"
+
+fn v217_ru() -> str => `# Машина: Малая
+
+- machine: Tiny
+- machine_version: 1
+- format: 2.17
+
+## Имена
+
+| имя | JSON-имя |
+|---|---|
+| ЖДАТЬ | Wait |
+| РЕШИТЬ | Decide |
+| КОНЕЦ | Finished |
+| СТОП | Stopped |
+| исполнитель_повышенного_внимания | attention_executor |
+
+## Данные
+
+| имя | тип | начальное | не убывает | пишет |
+|---|---|---|---|---|
+| число_ходов | число>=0 | 0 | да, <= 5 | строки |
+| остановка | "" \| "a" \| "b" | "" | — | строки |
+| попытка_вратаря | число>=0 | 0 | да | механика |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | сигналы | счётчик |
+|---|---|---|---|---|---|
+| gatekeeper | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — | разрешить, отказать | попытка_вратаря |
+
+## Состояния
+
+Начальное состояние: ЖДАТЬ
+
+### ЖДАТЬ — обращение
+- Сторона: gatekeeper
+- Запрос:
+
+| поле запроса | выражение | читает |
+|---|---|---|
+| число_ходов | число_ходов | исполнитель |
+
+| № | Событие | Условие | Действия | Куда |
+|---|---|---|---|---|
+| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |
+| 2 | сигнал(отказать) | — | остановка = "a" | СТОП |
+
+### РЕШИТЬ — развилка
+- Читает: число_ходов
+
+| № | Условие | Действия | Куда |
+|---|---|---|---|
+| 1 | число_ходов >= 2 | — | КОНЕЦ |
+| 2 | иначе | — | ЖДАТЬ |
+
+### КОНЕЦ — конец
+- Читает: число_ходов
+
+### СТОП — конец
+- Читает: остановка
+- Кроме: остановка in {""}
+
+## Концы
+
+- Результат: число
+
+| конец | № | когда | ответ |
+|---|---|---|---|
+| КОНЕЦ | 1 | истина | Ответ(число_ходов) |
+| СТОП | 1 | остановка == "a" | Отказ(FailCode.StoppedByHuman, "stopped") |
+| СТОП | 2 | остановка == "b" | Отказ(FailCode.NoResult, "b") |
+`
+
+fn v217_en() -> str => `# Machine: Tiny
+
+- machine: Tiny
+- machine_version: 1
+- format: 2.17
+- language: en
+
+## Data
+
+| name | type | initial | non_decreasing | writes |
+|---|---|---|---|---|
+| turn_count | int>=0 | 0 | yes, <= 5 | rows |
+| stop_reason | "" \| "a" \| "b" | "" | — | rows |
+| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |
+
+## Parties
+
+| name | id | kind | profile | signals | counter |
+|---|---|---|---|---|---|
+| gatekeeper | gatekeeper | human or agent by setting attention_executor(result GateOutcome) | — | allow, deny | gatekeeper_attempt |
+
+## States
+
+Initial state: Wait
+
+### Wait — appeal
+- Party: gatekeeper
+- Request:
+
+| request_field | expression | reads |
+|---|---|---|
+| turn_count | turn_count | executor |
+
+| № | Event | Condition | Actions | To |
+|---|---|---|---|---|
+| 1 | signal(allow) | — | turn_count += 1 | Decide |
+| 2 | signal(deny) | — | stop_reason = "a" | Stopped |
+
+### Decide — fork
+- Reads: turn_count
+
+| № | Condition | Actions | To |
+|---|---|---|---|
+| 1 | turn_count >= 2 | — | Finished |
+| 2 | else | — | Wait |
+
+### Finished — end
+- Reads: turn_count
+
+### Stopped — end
+- Reads: stop_reason
+- Except: stop_reason in {""}
+
+## Ends
+
+- Result: int
+
+| end | № | when | response |
+|---|---|---|---|
+| Finished | 1 | true | Response(turn_count) |
+| Stopped | 1 | stop_reason == "a" | Refusal(FailCode.StoppedByHuman, "stopped") |
+| Stopped | 2 | stop_reason == "b" | Refusal(FailCode.NoResult, "b") |
+`
+
+fn ru17(old str, new str) -> str => v217_ru().replace(old, new)
+
+fn en17(old str, new str) -> str => v217_en().replace(old, new)
+
+// A row added to the table of data (Russian / English).
+fn ru17_data(row str) -> str => v217_ru().replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n${row}\n")
+
+fn en17_data(row str) -> str => v217_en().replace("| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n", "| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n${row}\n")
+
+// A row added to the table `## Имена`.
+fn ru17_names(row str) -> str => v217_ru().replace("| исполнитель_повышенного_внимания | attention_executor |\n", "| исполнитель_повышенного_внимания | attention_executor |\n${row}\n")
+
+// A section `## Типы` with the body (a block of code) before `## Имена`.
+fn ru17_types(body str) -> str => v217_ru().replace("## Имена\n", "## Типы\n\n${fence17()}\n${body}\n${fence17()}\n\n## Имена\n")
+
+fn ru17_types_names(body str, row str) -> str => ru17_types(body).replace("| исполнитель_повышенного_внимания | attention_executor |\n", "| исполнитель_повышенного_внимания | attention_executor |\n${row}\n")
+
+fn has17(text str, needle str) -> bool => json_of(text).contains(needle)
+

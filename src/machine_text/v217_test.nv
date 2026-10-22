@@ -1,0 +1,330 @@
+// v217_test.nv - task 151: the dictionary of the names of the methodology (the version 11, section 2.16 of the glossary, AL-61) pinned by the hash of its normative part (AL-62), the transliteration
+// and the case of the automatic JSON name (AL-53, AL-59), the table of words of 2.17 with the group `kind_param` (AL-63). The reference is the script `check-alula-keywords.py` of the methodology:
+// the hash `60383c370415` of 1268 pairs, the names of the samples. Every check is red before the translator of 2.17 and green after it.
+module alula.machine_text
+
+import std.text
+
+// The glossary in the form of the methodology (the normative tables and the records of 2.10, a column of notes that the hash does not see, a section that is not normative).
+fn glossary_fixture() -> str {
+    ro lines = [
+        "# Словарь", "",
+        "## 2. Имена", "",
+        "### 2.1 Первая таблица", "",
+        "| Русское имя | Английское имя | Где | Заметка |", "|---|---|---|---|",
+        "| `число_повторов` | `retry_count` | код | первая заметка |",
+        "| `ПОВТОР` | `Retry` | код | вторая заметка |", "",
+        "### 2.10 Записи", "",
+        "`ходов` → `turns`, `слов` → `words`", "",
+        "### 2.13 Не нормативная таблица", "",
+        "| `пропуск` | `skipped` | код | не входит |", "",
+        "### 2.16 Имена Алулы", "",
+        "| Русское имя | Английское имя | Где | Заметка |", "|---|---|---|---|",
+        "| `разрешить` | `allow` | ворота | заметка |", ""
+    ]
+    lines.join("\n")
+}
+
+fn fixture_hash() -> str => glossary_hash_text(glossary_markdown_pairs(glossary_fixture()))
+
+// ---- the normative part ---------------------------------------------------------------------------------------------------------------------------
+
+test "v217 the normative part of the dictionary has 1268 pairs" {
+    ro lines = glossary_table_text().split("\n")
+    mut n = 0
+    for l in lines {
+        if l != "" && !l.starts_with("#") { n += 1 }
+    }
+    assert(n == 1268)
+}
+
+test "v217 the hash of the dictionary is the one of the format" {
+    assert(glossary_hash_text(glossary_table_text()) == "60383c370415")
+}
+
+test "v217 the format 2.17 pins the hash 60383c370415" {
+    assert(glossary_pinned_hash("2.17") == "60383c370415")
+    assert(glossary_pinned_hash("2.14") == "")
+}
+
+test "v217 every format that is read has a pinned hash that is the hash of the dictionary" {
+    for v in format_versions() {
+        assert(glossary_pinned_hash(v) == glossary_hash_text(glossary_table_text()))
+    }
+}
+
+test "v217 the dictionary is checked by the translator" {
+    assert(glossary_check() == "")
+}
+
+test "v217 a changed pair gives another hash" {
+    ro text = glossary_table_text().replace("число_повторов\tretry_count", "число_повторов\tretries")
+    assert(text != glossary_table_text())
+    assert(glossary_hash_text(text) != "60383c370415")
+}
+
+test "v217 a changed pair is found by the check" {
+    ro text = glossary_table_text().replace("число_повторов\tretry_count", "число_повторов\tretries")
+    assert(glossary_check_text(text, "2.17").contains("словарь изменён без смены формата"))
+}
+
+test "v217 an added pair gives another hash" {
+    assert(glossary_hash_text("${glossary_table_text()}новое_имя\tnew_name\n") != "60383c370415")
+}
+
+test "v217 a removed pair gives another hash" {
+    ro text = glossary_table_text().replace("число_повторов\tretry_count\n", "")
+    assert(glossary_hash_text(text) != "60383c370415")
+}
+
+test "v217 the order of the pairs counts" {
+    ro first = "а\tb\nв\tc\n"
+    ro second = "в\tc\nа\tb\n"
+    assert(glossary_hash_text(first) != glossary_hash_text(second))
+}
+
+test "v217 the hash is twelve letters" {
+    assert(glossary_hash_text("а\tb\n").byte_len() == 12)
+}
+
+test "v217 the hash is the SHA-256 of the lines joined by LF" {
+    // the text of the hash: `русское → английское` per pair, joined by LF, no LF at the end
+    assert(glossary_hash_text("а\tb\n") == glossary_hash_text("а\tb"))
+    assert(glossary_hash_text("а\tb\nв\tc\n") != glossary_hash_text("а\tb\n"))
+}
+
+test "v217 the check of the hash is for the version of the format" {
+    assert(glossary_check_text(glossary_table_text(), "2.17") == "")
+    assert(glossary_check_text(glossary_table_text(), "2.99").contains("2.99"))
+}
+
+// ---- the normative part of the glossary of the methodology -------------------------------------------------------------------------------
+
+test "v217 the pairs of the tables of the normative sections" {
+    ro tsv = glossary_markdown_pairs(glossary_fixture())
+    assert(tsv.contains("число_повторов\tretry_count\n"))
+    assert(tsv.contains("ПОВТОР\tRetry\n"))
+    assert(tsv.contains("разрешить\tallow\n"))
+}
+
+test "v217 the records of the section 2.10 are pairs" {
+    ro tsv = glossary_markdown_pairs(glossary_fixture())
+    assert(tsv.contains("ходов\tturns\n"))
+    assert(tsv.contains("слов\twords\n"))
+}
+
+test "v217 a section that is not normative gives no pair" {
+    assert(!glossary_markdown_pairs(glossary_fixture()).contains("пропуск"))
+}
+
+test "v217 the pairs are in the order of the file" {
+    ro tsv = glossary_markdown_pairs(glossary_fixture())
+    ro first = tsv.find("число_повторов") ?? -1
+    ro second = tsv.find("ходов") ?? -1
+    ro third = tsv.find("разрешить") ?? -1
+    assert(first >= 0 && first < second && second < third)
+}
+
+test "v217 a changed normative pair changes the hash of the glossary" {
+    ro changed = glossary_fixture().replace("`retry_count`", "`retries`")
+    assert(glossary_hash_text(glossary_markdown_pairs(changed)) != fixture_hash())
+}
+
+test "v217 a changed pair of the records changes the hash of the glossary" {
+    ro changed = glossary_fixture().replace("`ходов` → `turns`", "`ходов` → `moves`")
+    assert(glossary_hash_text(glossary_markdown_pairs(changed)) != fixture_hash())
+}
+
+test "v217 a changed note does not change the hash of the glossary" {
+    ro changed = glossary_fixture().replace("первая заметка", "совсем другая заметка").replace("| ворота | заметка |", "| ворота | другая |")
+    assert(changed != glossary_fixture())
+    assert(glossary_hash_text(glossary_markdown_pairs(changed)) == fixture_hash())
+}
+
+test "v217 a changed column Where does not change the hash of the glossary" {
+    ro changed = glossary_fixture().replace("| код | вторая заметка |", "| другое место | вторая заметка |")
+    assert(glossary_hash_text(glossary_markdown_pairs(changed)) == fixture_hash())
+}
+
+test "v217 a changed pair of a section that is not normative does not change the hash" {
+    ro changed = glossary_fixture().replace("`skipped`", "`passed`")
+    assert(glossary_hash_text(glossary_markdown_pairs(changed)) == fixture_hash())
+}
+
+test "v217 the prose of the glossary does not change the hash" {
+    ro changed = glossary_fixture().replace("# Словарь", "# Словарь версии 12\n\nНовая проза.")
+    assert(glossary_hash_text(glossary_markdown_pairs(changed)) == fixture_hash())
+}
+
+// ---- the dictionary for the names ----------------------------------------------------------------------------------------------------------------
+
+test "v217 the dictionary gives the English name of the whole name" {
+    ro g = glossary_load()
+    assert(glossary_get(g, "число_повторов") == "retry_count")
+    assert(glossary_get(g, "ПОВТОР") == "Retry")
+    assert(glossary_get(g, "стоп человека") == "human_stop")
+}
+
+test "v217 the dictionary has the names of the section 2.16" {
+    ro g = glossary_load()
+    assert(glossary_get(g, "разрешить") == "allow")
+    assert(glossary_get(g, "засчитан") == "counted")
+    assert(glossary_get(g, "остановить совещание") == "halt_meeting")
+    assert(glossary_get(g, "усиленный") == "enhanced")
+    assert(glossary_get(g, "ОбъёмЗапуска") == "LaunchScope")
+}
+
+test "v217 the dictionary has no name with two English names" {
+    assert(glossary_get(glossary_load(), "расход") == "")
+}
+
+test "v217 the dictionary does not look for a part of a name" {
+    assert(glossary_get(glossary_load(), "число") != "number")
+    assert(glossary_get(glossary_load(), "число_ходов_плюс") == "")
+}
+
+test "v217 the dictionary keeps the case" {
+    assert(glossary_get(glossary_load(), "повтор") != "Retry")
+}
+
+// ---- the transliteration ----------------------------------------------------------------------------------------------------------------------------
+
+test "v217 the table of the transliteration" {
+    ro pairs = [
+        ("а", "a"), ("б", "b"), ("в", "v"), ("г", "g"), ("д", "d"), ("е", "e"), ("ё", "e"), ("ж", "zh"), ("з", "z"), ("и", "i"), ("й", "y"),
+        ("к", "k"), ("л", "l"), ("м", "m"), ("н", "n"), ("о", "o"), ("п", "p"), ("р", "r"), ("с", "s"), ("т", "t"), ("у", "u"), ("ф", "f"),
+        ("х", "kh"), ("ц", "ts"), ("ч", "ch"), ("ш", "sh"), ("щ", "shch"), ("ъ", ""), ("ы", "y"), ("ь", ""), ("э", "e"), ("ю", "yu"), ("я", "ya")
+    ]
+    for p in pairs {
+        assert(jn_translit(p.0) == p.1)
+    }
+}
+
+test "v217 a capital letter gives a capital first letter" {
+    assert(jn_translit("Ж") == "Zh")
+    assert(jn_translit("Щ") == "Shch")
+    assert(jn_translit("Ёж") == "Ezh")
+    assert(jn_translit("А") == "A")
+}
+
+test "v217 Latin letters and digits stay" {
+    assert(jn_translit("abcXYZ_09") == "abcXYZ_09")
+}
+
+test "v217 a name of a value is written in snake case" {
+    assert(jn_auto("оставить правку", false, glossary_load()) == "ostavit_pravku")
+    assert(jn_auto("находки_В3", false, glossary_load()) == "nakhodki_v3")
+}
+
+test "v217 a name of a type is written in Pascal case" {
+    assert(jn_auto("ХОД_АГЕНТА", true, glossary_load()) == "KhodAgenta")
+    assert(jn_auto("ВидВызывающего", true, glossary_load()) == "VidVyzyvayushchego")
+    assert(jn_auto("НетОтветаВСрок", true, glossary_load()) == "NetOtvetaVSrok")
+    assert(jn_auto("В3", true, glossary_load()) == "V3")
+}
+
+test "v217 the empty words of a name are dropped" {
+    assert(jn_auto("ход__агента", false, glossary_load()) == "khod_agenta")
+    assert(jn_auto("_ход_агента_", false, glossary_load()) == "khod_agenta")
+}
+
+test "v217 a Latin name is its own name" {
+    assert(jn_auto("retry_count", false, glossary_load()) == "retry_count")
+    assert(jn_auto("TurnResult", true, glossary_load()) == "TurnResult")
+}
+
+test "v217 a Latin name is not looked up in the dictionary" {
+    assert(jn_auto("число_повторов", false, glossary_load()) == "retry_count")
+    assert(jn_auto("input", false, glossary_load()) == "input")
+}
+
+test "v217 a Latin word between Cyrillic words stays a word" {
+    assert(jn_auto("запрос_Agent", false, glossary_load()) == "zapros_agent")
+    assert(jn_auto("запрос_Agent", true, glossary_load()) == "ZaprosAgent")
+}
+
+test "v217 a mixed word is found" {
+    assert(jn_mixed("ЗапросAgent") == "ЗапросAgent")
+    assert(jn_mixed("ХодV2") == "ХодV2")
+    assert(jn_mixed("запрос_Agent") == "")
+    assert(jn_mixed("ход_v2") == "")
+    assert(jn_mixed("В3") == "")
+    assert(jn_mixed("запрос агента") == "")
+}
+
+test "v217 the first mixed word of several is named" {
+    assert(jn_mixed("хорошее слово_ЗапросAgent") == "ЗапросAgent")
+}
+
+// ---- the table of words of 2.17 ----------------------------------------------------------------------------------------------------------------
+
+fn count_kind17(kind str) -> int {
+    mut n = 0
+    for r in words_rows() {
+        if r.kind == kind { n += 1 }
+    }
+    n
+}
+
+test "v217 the table of words has the group kind_param" {
+    assert(count_kind17("kind_param") == 5)
+}
+
+test "v217 the kinds of the parameters of a fragment" {
+    ro w = words_load("ru")
+    for key in ["signal", "text", "[]machine", "behavior", "note"] {
+        assert(kw_has(w, "kind_param", kw(w, "kind_param", key)))
+    }
+    assert(kw(w, "kind_param", "[]machine") == "[]машина")
+    assert(kw(w, "kind_param", "behavior") == "поведение")
+}
+
+test "v217 the kinds of the parameters are not types" {
+    ro w = words_load("ru")
+    assert(!kw_has(w, "type", "сигнал"))
+    assert(!kw_has(w, "type", "[]машина"))
+    assert(!kw_has(w, "type", "поведение"))
+    assert(!kw_has(w, "type", "примечание"))
+}
+
+test "v217 the word text is in both groups" {
+    ro w = words_load("ru")
+    assert(kw_has(w, "type", "текст"))
+    assert(kw_has(w, "kind_param", "текст"))
+}
+
+test "v217 the English kinds of the parameters" {
+    ro w = words_load("en")
+    assert(kw(w, "kind_param", "signal") == "signal")
+    assert(kw(w, "kind_param", "[]machine") == "[]machine")
+    assert(kw_has(w, "kind_param", "behavior"))
+}
+
+test "v217 the table of words has the section Names and the column json name" {
+    ro ru = words_load("ru")
+    ro en = words_load("en")
+    assert(kw(ru, "section", "Names") == "Имена")
+    assert(kw(en, "section", "Names") == "Names")
+    assert(kw(ru, "column", "json_name") == "JSON-имя")
+    assert(kw(en, "column", "json_name") == "json_name")
+}
+
+test "v217 the table of words has 17 groups" {
+    mut kinds = []str.new()
+    for r in words_rows() {
+        if !kinds.contains(r.kind) { kinds.push(r.kind) }
+    }
+    mut methodology = 0
+    for k in kinds {
+        if k != "fragment" && k != "fragment_param" { methodology += 1 }
+    }
+    assert(methodology == 17)
+}
+
+test "v217 the table of the methodology has 219 words" {
+    mut n = 0
+    for line in keywords_text().split("\n") {
+        if line != "" && !line.starts_with("kind\t") { n += 1 }
+    }
+    assert(n == 219)
+}

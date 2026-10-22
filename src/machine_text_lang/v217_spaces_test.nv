@@ -1,0 +1,88 @@
+// v217_spaces_test.nv - task 151: the ten spaces of the distinctness of the JSON names (AL-58): a collision inside a space is an error, the same JSON name in two spaces is not.
+module alula.machine_text_lang
+
+import std.text
+
+// ---- AL-58: the ten spaces of the distinctness ------------------------------------------------------------------------------------------------
+
+test "v217 two states with one JSON name collide" {
+    ro text = ru17_names("| СТОП | Wait |")
+    assert(!is_clean(text))
+    assert(note_says(text, "коллизия"))
+}
+
+test "v217 two data with one JSON name collide" {
+    ro text = ru17_data("| хвост | число>=0 | 0 | да | строки |").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| хвост | turn_count |\n")
+    assert(note_says(text, "коллизия"))
+}
+
+test "v217 a datum and a datum of the contract collide" {
+    ro text = ru17_data("| ожидание | число>=0 | 0 | да | строки |").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| ожидание | stop_reason |\n")
+    assert(note_says(text, "коллизия"))
+}
+
+test "v217 two fields of the input collide" {
+    ro text = ru17("## Данные\n", "## Вход\n\n| имя | тип | примечание |\n|---|---|---|\n| глубина | число>=0 | — |\n| ширина | число>=0 | — |\n\n## Данные\n").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| ширина | depth |\n| глубина | depth |\n")
+    assert(note_says(text, "коллизия"))
+}
+
+test "v217 two types collide with a record and an enum" {
+    ro text = ru17_types_names("тип Токены { вход число }\nперечисление Цвет = Красный | Синий", "| Цвет | Токены |")
+    assert(note_says(text, "коллизия") || note_says(text, "повторён"))
+}
+
+test "v217 two fields of one record collide" {
+    ro text = ru17_types_names("тип Токены { вход число, выход число }", "| Токены.вход | same |\n| Токены.выход | same |")
+    assert(note_says(text, "коллизия"))
+}
+
+test "v217 two cases of one variant collide" {
+    ro text = ru17_types_names("вариант Знак {\n  Плюс\n  Минус\n}", "| Знак.Плюс | Same |\n| Знак.Минус | Same |")
+    assert(note_says(text, "коллизия"))
+}
+
+test "v217 two elements of one enum collide" {
+    ro text = ru17_types_names("перечисление Цвет = Красный | Синий", "| Цвет.Красный | Same |\n| Цвет.Синий | Same |")
+    assert(note_says(text, "коллизия"))
+}
+
+test "v217 two signals of one party collide" {
+    ro text = ru17_names("| gatekeeper.разрешить | same |\n| gatekeeper.отказать | same |")
+    assert(note_says(text, "коллизия"))
+}
+
+test "v217 two fields of one signal collide" {
+    ro text = ru17("разрешить, отказать |", "разрешить(автор текст, имя текст), отказать |").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| gatekeeper.разрешить.автор | same |\n| gatekeeper.разрешить.имя | same |\n").replace("сигнал(разрешить)", "сигнал(разрешить(автор, имя: другое))")
+    assert(note_says(text, "коллизия"))
+}
+
+test "v217 two signals of the machine collide" {
+    ro text = ru17("## Данные\n", "## Сигналы\n\n| имя | поля |\n|---|---|\n| отмена | — |\n| пауза | — |\n\n## Данные\n").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| отмена | same |\n| пауза | same |\n")
+    assert(note_says(text, "коллизия"))
+}
+
+test "v217 two primitives collide" {
+    ro text = ru17("## Данные\n", "## Примитивы\n\n| имя | параметры | результат | класс | читает | пишет |\n|---|---|---|---|---|---|\n| время_сейчас | — | число | reading | — | — |\n| время_потом | — | число | reading | — | — |\n\n## Данные\n").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| время_сейчас | now_x |\n| время_потом | now_x |\n")
+    assert(note_says(text, "коллизия"))
+}
+
+test "v217 a constant and the setting of the keeper collide" {
+    ro text = ru17("## Данные\n", "## Константы\n\n| имя | тип | значение |\n|---|---|---|\n| attention_executor | число>=0 | 3 |\n\n## Данные\n")
+    assert(note_says(text, "коллизия"))
+}
+
+test "v217 one JSON name in different spaces is allowed" {
+    ro text = ru17_types_names("тип Токены { вход число }", "| Токены.вход | turn_count |")
+    assert(is_clean(text))
+}
+
+test "v217 a state and a datum may share a JSON name" {
+    ro text = ru17("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | turn_count |\n")
+    assert(is_clean(text))
+}
+
+test "v217 the fields of different records may share a JSON name" {
+    ro text = ru17_types("тип Один { вход число }\nтип Два { вход число }")
+    assert(is_clean(text))
+}
+

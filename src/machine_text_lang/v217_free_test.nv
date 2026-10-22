@@ -1,0 +1,137 @@
+// v217_free_test.nv - task 151: `—` in the table `Запрос` (AL-56) and the party of a free input (AL-51, AL-52).
+module alula.machine_text_lang
+
+import std.text
+
+// ---- AL-56: `—` in the table `Запрос` ---------------------------------------------------------------------------------------------------------
+
+fn ru17_dash() -> str => v217_ru().replace("| число_ходов | число_ходов | исполнитель |", "| число_ходов | — | исполнитель |")
+
+test "v217 a dash in the request is the same name" {
+    assert(is_clean(ru17_dash()))
+    assert(json_of(ru17_dash()) == json_of(v217_ru()))
+}
+
+test "v217 a dash gives no warning" {
+    assert(warning_texts(ru17_dash()).len() == 0)
+}
+
+test "v217 the same name written out is a warning" {
+    ro warnings = warning_texts(v217_ru())
+    assert(warnings.len() == 1)
+    assert(warnings[0].contains("число_ходов"))
+    assert(warnings[0].contains("—"))
+}
+
+test "v217 a dash for a name that cannot be read is an error" {
+    ro text = v217_ru().replace("| число_ходов | число_ходов | исполнитель |", "| turn | — | исполнитель |")
+    assert(!is_clean(text))
+    assert(note_says(text, "turn"))
+}
+
+test "v217 a dash and the field of the party" {
+    ro text = v217_ru().replace("| число_ходов | число_ходов | исполнитель |", "| число_ходов | — | сторона |")
+    assert(is_clean(text))
+    assert(json_of(text).contains("\"reads\":\"party\""))
+}
+
+test "v217 a dash in English" {
+    ro text = v217_en().replace("| turn_count | turn_count | executor |", "| turn_count | — | executor |")
+    assert(is_clean(text))
+    assert(json_of(text) == json_of(v217_en()))
+    assert(warning_texts(text).len() == 0)
+}
+
+test "v217 the explicit name in English is a warning" {
+    assert(warning_texts(v217_en()).len() == 1)
+}
+
+test "v217 another expression is no warning" {
+    ro text = v217_ru().replace("| число_ходов | число_ходов | исполнитель |", "| число_ходов | число_ходов + 1 | исполнитель |")
+    assert(warning_texts(text).len() == 0)
+}
+
+// ---- AL-51, AL-52: the party of a free input ---------------------------------------------------------------------------------------------------
+
+fn ru17_free() -> str => v217_ru().replace("| gatekeeper | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — | разрешить, отказать | попытка_вратаря |", "| собеседник | human | human(итог ИсходВорот) | — | сообщение(содержание текст), закрыть | — |").replace("- Сторона: gatekeeper\n- Запрос:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| число_ходов | число_ходов | исполнитель |\n\n", "- Сторона: собеседник\n\n").replace("сигнал(разрешить)", "сигнал(сообщение(содержание: слово))").replace("сигнал(отказать)", "сигнал(закрыть)")
+
+test "v217 a party of a free input is clean" {
+    assert(is_clean(ru17_free()))
+}
+
+test "v217 a party of a free input has no counter in the tree" {
+    ro j = json_of(ru17_free())
+    assert(j.contains("{\"name\":\"собеседник\",\"id\":\"human\",\"kind\":\"human\",\"signals\":"))
+    assert(!j.contains("\"counter\""))
+}
+
+test "v217 a party with gates keeps the counter" {
+    assert(json_of(v217_ru()).contains("\"counter\":\"gatekeeper_attempt\""))
+}
+
+test "v217 a signal of a free input has its fields" {
+    ro j = json_of(ru17_free())
+    assert(j.contains("\"signals\":[{\"name\":\"message\",\"fields\":[{\"name\":\"soderzhanie\",\"type\":\"text\"}]},{\"name\":\"zakryt\"}]"))
+}
+
+test "v217 a dash for the counter of an agent is an error" {
+    ro text = v217_ru().replace("| gatekeeper | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — | разрешить, отказать | попытка_вратаря |", "| агент | agent | agent(итог текст) | — | — | — |")
+    assert(!is_clean(text))
+    assert(note_says(text, "счётчик"))
+    assert(note_says(text, "human"))
+}
+
+test "v217 a dash for the counter of the keeper is an error" {
+    ro text = v217_ru().replace("| разрешить, отказать | попытка_вратаря |", "| разрешить, отказать | — |")
+    assert(!is_clean(text))
+    assert(note_says(text, "счётчик"))
+}
+
+test "v217 a dash for the counter of the enhanced party is an error" {
+    ro text = ru17_free().replace("| собеседник | human | human(итог ИсходВорот) |", "| собеседник | human | enhanced(итог ИсходВорот) |")
+    assert(note_says(text, "счётчик"))
+}
+
+test "v217 a request at a free input is an error" {
+    ro text = ru17_free().replace("- Сторона: собеседник\n\n", "- Сторона: собеседник\n- Запрос:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| число_ходов | — | исполнитель |\n\n")
+    assert(!is_clean(text))
+    assert(note_says(text, "свободн"))
+}
+
+test "v217 an idle term at a free input is an error" {
+    ro text = ru17_free().replace("- Сторона: собеседник\n", "- Сторона: собеседник\n- Срок тишины: 5\n")
+    assert(note_says(text, "свободн"))
+}
+
+test "v217 a set at a free input is an error" {
+    ro text = ru17_free().replace("- Сторона: собеседник\n", "- Сторона: собеседник; набор: [\"a\"]\n")
+    assert(note_says(text, "свободн"))
+}
+
+test "v217 an answer row at a free input is an error" {
+    ro text = ru17_free().replace("| 2 | сигнал(закрыть) | — | остановка = \"a\" | СТОП |", "| 2 | сигнал(закрыть) | — | остановка = \"a\" | СТОП |\n| 3 | ответ | — | — | СТОП |")
+    assert(note_says(text, "свободн"))
+}
+
+test "v217 a failure row at a free input is an error" {
+    ro text = ru17_free().replace("| 2 | сигнал(закрыть) | — | остановка = \"a\" | СТОП |", "| 2 | сигнал(закрыть) | — | остановка = \"a\" | СТОП |\n| 3 | сбой | — | — | СТОП |")
+    assert(note_says(text, "свободн"))
+}
+
+test "v217 form returns at a free input is an error" {
+    ro text = ru17_free().replace("- Сторона: собеседник\n", "- Сторона: собеседник\n- Возвратов формы: 1\n")
+    assert(note_says(text, "свободн"))
+}
+
+test "v217 a machine may have a gate and a free input" {
+    ro text = ru17_free().replace("| собеседник | human | human(итог ИсходВорот) | — | сообщение(содержание текст), закрыть | — |", "| собеседник | human | human(итог ИсходВорот) | — | сообщение(содержание текст), закрыть | — |\n| gatekeeper | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — | разрешить, отказать | попытка_вратаря |")
+    assert(is_clean(text))
+    assert(json_of(text).contains("\"counter\":\"gatekeeper_attempt\""))
+}
+
+test "v217 a free input in English" {
+    ro text = v217_en().replace("| gatekeeper | gatekeeper | human or agent by setting attention_executor(result GateOutcome) | — | allow, deny | gatekeeper_attempt |", "| talker | human | human(result GateOutcome) | — | message(content text), close | — |").replace("- Party: gatekeeper\n- Request:\n\n| request_field | expression | reads |\n|---|---|---|\n| turn_count | turn_count | executor |\n\n", "- Party: talker\n\n").replace("signal(allow)", "signal(message(content: word))").replace("signal(deny)", "signal(close)")
+    assert(is_clean(text))
+    assert(!json_of(text).contains("\"counter\""))
+}
+

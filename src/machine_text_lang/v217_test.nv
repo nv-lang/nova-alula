@@ -1,0 +1,111 @@
+// v217_test.nv - task 151: the `иначе` of a fork that is needed only where the type does not prove the exhaustion (AL-57).
+module alula.machine_text_lang
+
+import std.text
+
+// ---- AL-57: `иначе` only where the type does not prove the exhaustion ---------------------------------------------------------------------------
+
+fn fork17(types_body str, datum_row str, rows str) -> str {
+    ro with_types = v217_ru().replace("## Имена\n", "## Типы\n\n${fence17()}\n${types_body}\n${fence17()}\n\n## Имена\n")
+    ro with_datum = with_types.replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n${datum_row}\n")
+    with_datum.replace("- Читает: число_ходов\n\n| № | Условие | Действия | Куда |\n|---|---|---|---|\n| 1 | число_ходов >= 2 | — | КОНЕЦ |\n| 2 | иначе | — | ЖДАТЬ |\n", "- Читает: число_ходов, цвет, знак, метка, узел\n\n| № | Условие | Действия | Куда |\n|---|---|---|---|\n${rows}\n")
+}
+
+fn color_data() -> str => "| цвет | Цвет | Цвет.Красный | — | строки |\n| знак | Знак | Знак.Плюс | — | строки |\n| метка | \"a\" \\| \"b\" \\| \"c\" | \"a\" | — | строки |\n| узел | Узел | Узел.Лист | — | строки |"
+
+fn color_types() -> str => "перечисление Цвет = Красный | Зелёный | Синий\nвариант Знак {\n  Плюс\n  Минус\n}\nвариант Узел {\n  Лист\n  Ветка { глубина число }\n}"
+
+fn color_fork(rows str) -> str => fork17(color_types(), color_data(), rows)
+
+fn all_colors() -> str => "| 1 | цвет == Цвет.Красный | — | КОНЕЦ |\n| 2 | цвет == Цвет.Зелёный | — | ЖДАТЬ |\n| 3 | цвет == Цвет.Синий | — | КОНЕЦ |"
+
+test "v217 a fork over all values of an enum needs no else" {
+    ro text = color_fork(all_colors())
+    assert(is_clean(text))
+    assert(warning_texts(text).len() == 1)
+}
+
+test "v217 an else after the proved exhaustion is a warning" {
+    ro text = color_fork("${all_colors()}\n| 4 | иначе | — | КОНЕЦ |")
+    assert(is_clean(text))
+    assert(warning_texts(text).len() == 2)
+    assert(warning_texts(text)[1].contains("иначе"))
+}
+
+test "v217 a fork with a missing value and no else is an error" {
+    ro text = color_fork("| 1 | цвет == Цвет.Красный | — | КОНЕЦ |\n| 2 | цвет == Цвет.Зелёный | — | ЖДАТЬ |")
+    assert(!is_clean(text))
+    assert(note_says(text, "иначе"))
+}
+
+test "v217 a fork with a missing value and an else is clean" {
+    ro text = color_fork("| 1 | цвет == Цвет.Красный | — | КОНЕЦ |\n| 2 | цвет == Цвет.Зелёный | — | ЖДАТЬ |\n| 3 | иначе | — | КОНЕЦ |")
+    assert(is_clean(text))
+    assert(warning_texts(text).len() == 1)
+}
+
+test "v217 a fork over the numbers needs else" {
+    ro text = color_fork("| 1 | число_ходов >= 2 | — | КОНЕЦ |\n| 2 | число_ходов < 2 | — | ЖДАТЬ |")
+    assert(!is_clean(text))
+    assert(note_says(text, "иначе"))
+}
+
+test "v217 a fork over the cases of a variant without fields needs no else" {
+    ro text = color_fork("| 1 | знак == Знак.Плюс | — | КОНЕЦ |\n| 2 | знак == Знак.Минус | — | ЖДАТЬ |")
+    assert(is_clean(text))
+}
+
+test "v217 a fork over a variant with fields needs else" {
+    ro text = color_fork("| 1 | узел == Узел.Лист | — | КОНЕЦ |")
+    assert(note_says(text, "иначе"))
+}
+
+test "v217 a fork over a set of literals with all values needs no else" {
+    ro text = color_fork("| 1 | метка == \"a\" | — | КОНЕЦ |\n| 2 | метка == \"b\" | — | ЖДАТЬ |\n| 3 | метка == \"c\" | — | КОНЕЦ |")
+    assert(is_clean(text))
+}
+
+test "v217 a fork over a set of literals with a missing value needs else" {
+    ro text = color_fork("| 1 | метка == \"a\" | — | КОНЕЦ |\n| 2 | метка == \"b\" | — | ЖДАТЬ |")
+    assert(note_says(text, "иначе"))
+}
+
+test "v217 a fork with not equal needs else" {
+    ro text = color_fork("| 1 | цвет != Цвет.Красный | — | КОНЕЦ |\n| 2 | цвет == Цвет.Красный | — | ЖДАТЬ |")
+    assert(note_says(text, "иначе"))
+}
+
+test "v217 a fork over two names needs else" {
+    ro text = color_fork("| 1 | цвет == Цвет.Красный | — | КОНЕЦ |\n| 2 | знак == Знак.Плюс | — | ЖДАТЬ |\n| 3 | цвет == Цвет.Зелёный | — | ЖДАТЬ |\n| 4 | цвет == Цвет.Синий | — | КОНЕЦ |")
+    assert(note_says(text, "иначе"))
+}
+
+test "v217 a fork with a joined condition needs else" {
+    ro text = color_fork("| 1 | цвет == Цвет.Красный и число_ходов >= 1 | — | КОНЕЦ |\n| 2 | цвет == Цвет.Зелёный | — | ЖДАТЬ |\n| 3 | цвет == Цвет.Синий | — | КОНЕЦ |")
+    assert(note_says(text, "иначе"))
+}
+
+test "v217 a fork over a text needs else" {
+    ro text = v217_ru().replace("| 1 | число_ходов >= 2 | — | КОНЕЦ |\n| 2 | иначе | — | ЖДАТЬ |", "| 1 | остановка == \"a\" | — | КОНЕЦ |\n| 2 | остановка == \"b\" | — | ЖДАТЬ |")
+    assert(note_says(text, "иначе"))
+}
+
+test "v217 a fork over an optional value needs else" {
+    ro text = color_fork("| 1 | цвет == Цвет.Красный | — | КОНЕЦ |").replace("| цвет | Цвет | Цвет.Красный | — | строки |", "| цвет | ?Цвет | пусто | — | строки |")
+    assert(note_says(text, "иначе"))
+}
+
+test "v217 a duplicated value does not prove the exhaustion" {
+    ro text = color_fork("| 1 | цвет == Цвет.Красный | — | КОНЕЦ |\n| 2 | цвет == Цвет.Красный | — | ЖДАТЬ |\n| 3 | цвет == Цвет.Зелёный | — | КОНЕЦ |")
+    assert(note_says(text, "иначе"))
+}
+
+test "v217 a fork over an enum in English" {
+    ro text = v217_en().replace("## Data\n", "## Types\n\n${fence17()}\nenum Color = Red | Green\n${fence17()}\n\n## Data\n").replace("| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n", "| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n| color | Color | Color.Red | — | rows |\n").replace("- Reads: turn_count\n\n| № | Condition | Actions | To |\n|---|---|---|---|\n| 1 | turn_count >= 2 | — | Finished |\n| 2 | else | — | Wait |\n", "- Reads: color\n\n| № | Condition | Actions | To |\n|---|---|---|---|\n| 1 | color == Color.Red | — | Finished |\n| 2 | color == Color.Green | — | Wait |\n")
+    assert(is_clean(text))
+}
+
+test "v217 the fork of the fixture keeps its else" {
+    assert(is_clean(v217_ru()))
+    assert(warning_texts(v217_ru()).len() == 1)
+}

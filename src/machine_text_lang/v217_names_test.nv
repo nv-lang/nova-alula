@@ -1,0 +1,156 @@
+// v217_names_test.nv - task 151: the JSON name built by itself (AL-53, AL-59): the dictionary of the methodology, the transliteration and the case; the fixture itself.
+module alula.machine_text_lang
+
+import std.text
+
+// ---- the fixture itself -----------------------------------------------------------------------------------------------------------------------
+
+test "v217 fixture ru is clean" {
+    assert(is_clean(v217_ru()))
+    assert(json_of(v217_ru()).starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.17\",\"machine\":\"Tiny\""))
+}
+
+test "v217 fixture en is clean" {
+    assert(is_clean(v217_en()))
+}
+
+test "v217 fixture ru and en give one tree" {
+    assert(no_title(json_of(v217_ru())) == no_title(json_of(v217_en())))
+}
+
+test "v217 format 2.14 is refused" {
+    ro text = ru17("- format: 2.17", "- format: 2.14")
+    assert(!is_clean(text))
+    assert(note_says(text, "версия не известна"))
+    assert(note_says(text, "2.17"))
+}
+
+test "v217 format 2.16 is refused" {
+    assert(note_says(ru17("- format: 2.17", "- format: 2.16"), "версия не известна"))
+}
+
+// ---- AL-53: the JSON name is built by itself -------------------------------------------------------------------------------------------------
+
+test "v217 a name of the dictionary gives the English name" {
+    ro text = ru17_data("| число_повторов | число>=0 | 0 | да | строки |")
+    assert(is_clean(text))
+    assert(has17(text, "\"name\":\"retry_count\""))
+}
+
+test "v217 a Latin name is its own JSON name" {
+    ro text = ru17_data("| my_data | число>=0 | 0 | да | строки |")
+    assert(is_clean(text))
+    assert(has17(text, "\"name\":\"my_data\""))
+}
+
+test "v217 a name out of the dictionary is transliterated" {
+    ro text = ru17_data("| хвост_змеи | число>=0 | 0 | да | строки |")
+    assert(is_clean(text))
+    assert(has17(text, "\"name\":\"khvost_zmei\""))
+}
+
+test "v217 the soft and the hard sign are dropped" {
+    ro text = ru17_data("| объём_ящика | число>=0 | 0 | да | строки |")
+    assert(has17(text, "\"name\":\"obem_yashchika\""))
+}
+
+test "v217 the dictionary is searched for the whole name" {
+    ro text = ru17_data("| ход_агента | число>=0 | 0 | да | строки |").replace("| число_ходов | число>=0 | 0 | да, <= 5 | строки |\n", "| число_ходов | число>=0 | 0 | да, <= 5 | строки |\n| ход | число>=0 | 0 | да | строки |\n")
+    assert(has17(text, "\"name\":\"turn\""))
+    assert(has17(text, "\"name\":\"khod_agenta\""))
+}
+
+test "v217 the empty words of a name are dropped" {
+    ro text = ru17_data("| ход__агента | число>=0 | 0 | да | строки |")
+    assert(has17(text, "\"name\":\"khod_agenta\""))
+}
+
+test "v217 a state name is written in Pascal case" {
+    ro text = ru17("### СТОП — конец\n", "### ХВОСТ_ЗМЕИ — конец\n- Читает: остановка\n\n### СТОП — конец\n")
+    assert(has17(text, "\"name\":\"KhvostZmei\""))
+}
+
+test "v217 a word in capitals keeps only the first capital" {
+    ro text = ru17("### СТОП — конец\n", "### В3 — конец\n- Читает: остановка\n\n### СТОП — конец\n")
+    assert(has17(text, "\"name\":\"V3\""))
+}
+
+test "v217 a type name is written in Pascal case" {
+    ro text = ru17_types("тип ВидВызывающего { сессия текст }")
+    assert(is_clean(text))
+    assert(has17(text, "\"name\":\"VidVyzyvayushchego\""))
+}
+
+test "v217 a capital letter gives a capital Latin letter" {
+    ro text = ru17_types("тип Жук { сессия текст }\nтип Щука { сессия текст }")
+    assert(has17(text, "\"name\":\"Zhuk\""))
+    assert(has17(text, "\"name\":\"Shchuka\""))
+}
+
+test "v217 a field is written in snake case" {
+    ro text = ru17_types("тип Токены { вход_данных число, выход_данных число }")
+    assert(has17(text, "\"name\":\"vkhod_dannykh\""))
+    assert(has17(text, "\"name\":\"vykhod_dannykh\""))
+}
+
+test "v217 a signal of several words is written in snake case" {
+    ro text = ru17("разрешить, отказать |", "разрешить, оставить правку |").replace("| 2 | сигнал(отказать) |", "| 2 | сигнал(оставить правку) |")
+    assert(is_clean(text))
+    assert(has17(text, "{\"name\":\"ostavit_pravku\"}"))
+    assert(has17(text, "\"event\":{\"kind\":\"signal\",\"name\":\"ostavit_pravku\"}"))
+}
+
+test "v217 an element of an enum is written in Pascal case" {
+    ro text = ru17_types("перечисление Цвет = Красный | Зелёный | Синий")
+    assert(is_clean(text))
+    assert(has17(text, "{\"name\":\"Krasnyy\"}"))
+    assert(has17(text, "{\"name\":\"Zelenyy\"}"))
+}
+
+test "v217 a name with a mixed word is refused" {
+    ro text = ru17_data("| запросAgent | число>=0 | 0 | да | строки |")
+    assert(!is_clean(text))
+    assert(note_says(text, "смешаны"))
+    assert(note_says(text, "запросAgent"))
+}
+
+test "v217 a mixed word in a state name is refused" {
+    ro text = ru17("### СТОП — конец\n", "### ХодV2 — конец\n- Читает: остановка\n\n### СТОП — конец\n")
+    assert(note_says(text, "смешаны"))
+}
+
+test "v217 a Latin word between Cyrillic words is allowed" {
+    ro text = ru17_data("| запрос_Agent | число>=0 | 0 | да | строки |")
+    assert(is_clean(text))
+    assert(has17(text, "\"name\":\"zapros_agent\""))
+}
+
+test "v217 a Latin word in a type name stays" {
+    ro text = ru17_types("тип Запрос_Agent { сессия текст }")
+    assert(is_clean(text))
+    assert(has17(text, "\"name\":\"ZaprosAgent\""))
+}
+
+test "v217 digits are allowed in a word" {
+    ro text = ru17_data("| находки_v3 | число>=0 | 0 | да | строки |")
+    assert(is_clean(text))
+    assert(has17(text, "\"name\":\"nakhodki_v3\""))
+}
+
+test "v217 a sign outside the table needs a row" {
+    ro text = ru17_data("| α_данные | число>=0 | 0 | да | строки |")
+    assert(!is_clean(text))
+    assert(note_says(text, "не латинское"))
+    assert(note_says(text, "## Имена"))
+}
+
+test "v217 the dictionary gives a state name" {
+    ro text = ru17("### СТОП — конец\n", "### ПОВТОР — конец\n- Читает: остановка\n\n### СТОП — конец\n")
+    assert(has17(text, "\"name\":\"Retry\""))
+}
+
+test "v217 the dictionary is not read for a name with two English names" {
+    ro text = ru17_data("| расход | число>=0 | 0 | да | строки |")
+    assert(has17(text, "\"name\":\"raskhod\""))
+}
+
