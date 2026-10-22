@@ -108,7 +108,23 @@ fn tx_sym3() -> []str => ["..."]
 
 fn tx_sym2() -> []str => ["==", "!=", "<=", ">=", "+=", "??", "->"]
 
-fn tx_sym1() -> []str => ["(", ")", "[", "]", "{", "}", ",", ":", ";", ".", "?", "|", "+", "-", "*", "/", "%", "<", ">", "=", "≥", "≤", "≠", "∈", "→", "—", "…", "!"]
+fn tx_sym1() -> []str => ["(", ")", "[", "]", "{", "}", ",", ":", ";", ".", "?", "|", "+", "-", "*", "/", "%", "<", ">", "=", "—", "!"]
+
+// The signs of the operators of 2.12 (AL-42): the format 2.14 has only the ASCII ones, `>=` `<=` `!=` `->` `...` `in`; each old sign and the sign that stands for it.
+fn tx_former_signs() -> []str => ["≥", "≤", "≠", "→", "…", "∈"]
+
+fn tx_ascii_signs() -> []str => [">=", "<=", "!=", "->", "...", "in"]
+
+/// The message about a sign of the former writing (AL-42): what to write instead; there is no transition period.
+fn tx_former_sign_message(sign str) -> str {
+    mut at = 0
+    mut k = 0
+    for f in tx_former_signs() {
+        if f == sign { at = k }
+        k += 1
+    }
+    "знак `${sign}` в формате 2.14 не бывает: знаки операторов только ASCII, пишется `${tx_ascii_signs()[at]}` (Я-42); переходного периода нет"
+}
 
 /// The tokens of a piece of text that stands in the line `line` from the column `col0`; a comment `//` ends the piece.
 /// `i` is the byte offset in the text and `col` the column (in letters) of the char at `i`; they go on together.
@@ -211,6 +227,7 @@ fn tx_lex(text str, line int, col0 int) -> Result[[]TxTok, TranslateError] {
             continue
         }
         ro one = text[i..i + w]
+        if tx_former_signs().contains(one) { return Err(tx_err(line, col, "syntax", tx_former_sign_message(one))) }
         if tx_sym1().contains(one) {
             out.push(TxTok { kind: TK_SYM, text: one, line, col })
             i += w
@@ -293,7 +310,7 @@ type TxClassified { entries []TxEntry, warnings []TranslateError, errors []Trans
 // ---- the key lines ---------------------------------------------------------------------------------------------------------------
 
 /// The keys of the state, the section and the connection lines that begin a line `Ключ: значение` (the English word of the key, the same in both languages of the file).
-fn line_keys() -> []str => ["Initial state", "Party", "Idle term", "Edits", "Form returns", "Input", "On accept", "On entry", "Except", "Result", "Request limit", "Invariant", "definitions"]
+fn line_keys() -> []str => ["Initial state", "Party", "Idle term", "Edits", "Form returns", "Request", "Reads", "On accept", "On entry", "Except", "Result", "Request limit", "Invariant", "definitions"]
 
 /// The keys of the header of a file.
 fn header_keys() -> []str => ["machine", "machine_version", "format", "definitions_version", "fragment", "language"]
@@ -348,6 +365,19 @@ fn kv_hit_foreign(text str, w TxWords) -> TxKvHit {
     kv_none()
 }
 
+/// The key of the former writing of 2.12 (AL-39): `Вход:` / `Input:` stood in a state; the format 2.14 has `Запрос:` for an appeal and `Читает:` for the other states. The word is the one of the section `Вход`.
+fn kv_hit_former_input(text str, w TxWords) -> TxKvHit {
+    ro head = kv_head(text)
+    if head.colon < 0 { return kv_none() }
+    if head.key == kw(w, "section", "Input") { return TxKvHit { key: "Former input", colon: head.colon } }
+    kv_none()
+}
+
+/// The message about the former key of the state (AL-39): what to write instead.
+fn former_input_message(w TxWords) -> str {
+    "ключ `${kw(w, "section", "Input")}:` в формате 2.14 не бывает: у обращения пишется `${kw(w, "key", "Request")}:` (таблица полей запроса), у операции, развилки и конца — `${kw(w, "key", "Reads")}:` (имена, которые читает состояние) (Я-39); переходного периода нет"
+}
+
 /// The error "a word of the other language": the file is written in one language (section 1a), a keyword that is not of it is an error at its place.
 fn foreign_error(w TxWords, line int, col int, word str, kind str, key str) -> TranslateError {
     ro message = "ключевое слово `${word}` не из языка файла (${lang_name(w.lang)}, `language: ${w.lang}`): здесь пишется `${kw(w, kind, key)}`; ключевые слова файла пишутся целиком на одном языке"
@@ -357,7 +387,7 @@ fn foreign_error(w TxWords, line int, col int, word str, kind str, key str) -> T
 // ---- the paragraphs ------------------------------------------------------------------------------------------------------------
 
 /// The closed list of the key words of a state, a section and a connection (format 4.1; `Куда` is a column, not a key, AL-14): a paragraph that starts with one of them without the list marker is warned about.
-fn prose_keys(w TxWords) -> []str => kw_all(w, "key", ["Party", "Idle term", "Input", "Edits", "Form returns", "On entry", "On accept", "Result", "Except", "Request limit"])
+fn prose_keys(w TxWords) -> []str => kw_all(w, "key", ["Party", "Idle term", "Request", "Reads", "Edits", "Form returns", "On entry", "On accept", "Result", "Except", "Request limit"])
 
 // A line that begins a declaration of the sections `Типы` and `Определения`.
 fn is_decl_start(text str, w TxWords) -> bool {
@@ -427,9 +457,12 @@ fn cls_flush(mut st TxClsState, touching bool, what str, w TxWords) -> () {
     st.forced = false
 }
 
-// The name in the heading of an expansion section: the words after `Раскрытие фрагмента` without the quotes `« »` and `"`.
-fn expansion_name(head_text str, prefix str) -> str {
-    head_text[prefix.byte_len()..].replace("\"", "").replace("«", "").replace("»", "").trim_ascii()
+// The heading of the section of the expansion of a fragment (`Раскрытие фрагмента «Имя»`, `Fragment expansion "Name"`): the section of 2.12 that 2.13 removed (AL-44).
+fn is_expansion_heading(head_text str) -> bool => head_text.starts_with("Раскрытие фрагмента") || head_text.starts_with("Fragment expansion")
+
+/// The error about such a section: it is removed, what a fragment brings is described by its file.
+fn expansion_error(line int, title str) -> TranslateError {
+    tx_err(line, 4, "structure", "раздел «${title}» в формате 2.14 убран (Я-44): что приносит фрагмент, описывает его файл; переходного периода нет")
 }
 
 /// The entries of the lines of a file, in order, the warnings and the errors of the language. `lines` are the lines without the line feed (a carriage return at the end is cut here).
@@ -445,7 +478,6 @@ fn tx_classify_in(lines []str, w TxWords, strict bool, decl_comment bool) -> TxC
     mut prev_blank = false
     mut includes = false
     mut skipping = false
-    ro expansion_word = kw(w, "section", "Fragment expansion")
     ro includes_word = kw(w, "section", "Includes")
     for raw in lines {
         no += 1
@@ -478,9 +510,9 @@ fn tx_classify_in(lines []str, w TxWords, strict bool, decl_comment bool) -> TxC
             while text[level..].starts_with("#") { level += 1 }
             ro head_text = text[level..].trim_ascii()
             if level <= 2 && !in_fence {
-                skipping = level == 2 && head_text.starts_with(expansion_word)
+                skipping = level == 2 && is_expansion_heading(head_text)
                 includes = level == 2 && head_text == includes_word
-                if skipping { expansions.push(TxExpansion { line: no, name: expansion_name(head_text, expansion_word) }) }
+                if skipping { expansions.push(TxExpansion { line: no, name: head_text }) }
             }
             prev_blank = false
             if skipping && level > 2 { continue }
@@ -529,6 +561,14 @@ fn tx_classify_in(lines []str, w TxWords, strict bool, decl_comment bool) -> TxC
                 st.out.push(TxEntry { kind: EN_TEXT, level: 0, line: no, indent: 0, shift: k, text: rest, cells: []TxCell.new(), key: hit.key, colon: hit.colon })
                 continue
             }
+            ro former_marked = kv_hit_former_input(rest, w)
+            if former_marked.colon >= 0 && !in_fence {
+                cls_flush(st, strict, "элементу списка", w)
+                prev_blank = false
+                errors.push(tx_err(no, k + 1, "structure", former_input_message(w)))
+                st.out.push(TxEntry { kind: EN_TEXT, level: 0, line: no, indent: 0, shift: k, text: rest, cells: []TxCell.new(), key: former_marked.key, colon: former_marked.colon })
+                continue
+            }
             if !in_fence {
                 ro foreign = kv_hit_foreign(rest, w)
                 if foreign.colon >= 0 { errors.push(foreign_error(w, no, k + 1, rest[..foreign.colon].trim_ascii(), "key", foreign.key)) }
@@ -540,6 +580,14 @@ fn tx_classify_in(lines []str, w TxWords, strict bool, decl_comment bool) -> TxC
                 cls_flush(st, false, "", w)
                 prev_blank = false
                 st.out.push(TxEntry { kind: EN_TEXT, level: 0, line: no, indent, shift: 0, text, cells: []TxCell.new(), key: hit.key, colon: hit.colon })
+                continue
+            }
+            ro former_plain = kv_hit_former_input(text, w)
+            if former_plain.colon >= 0 && !in_fence {
+                cls_flush(st, false, "", w)
+                prev_blank = false
+                errors.push(tx_err(no, 1, "structure", former_input_message(w)))
+                st.out.push(TxEntry { kind: EN_TEXT, level: 0, line: no, indent, shift: 0, text, cells: []TxCell.new(), key: former_plain.key, colon: former_plain.colon })
                 continue
             }
             if !in_fence {

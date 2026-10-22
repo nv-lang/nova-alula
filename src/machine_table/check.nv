@@ -10,6 +10,7 @@ module alula.machine_table
 
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
+import std.unicode.{GeneralCategory}
 import alula.machine.{Expr, TypeDefs, FieldDef, Bind, DefFn, Registry, Position, check_expr_positions, check_call_position, find_primitive, primitive_names, class_word, journal_find, find_role, has_roles}
 import alula.machine.{ConditionPos, InputPos, ProfilePos, ForkEntryPos, OperationEntryPos, EndEntryPos, AcceptPos, ActionPos}
 import alula.machine.{Pure, Reading, Value, Text, TypeSpec, TextSet, IdType, OptionalType, spec_text, is_uuid}
@@ -56,6 +57,20 @@ fn is_identifier(s str) -> bool {
         ro digit = one >= "0" && one <= "9"
         if first && !letter { return false }
         if !letter && !digit && one != "_" { return false }
+        first = false
+    }
+    true
+}
+
+// Is the text a name of the language: a letter of any alphabet or `_` first, then letters, digits and `_` (the internal names of a machine are written to the tree as the author wrote them, AL-46)?
+fn is_name(s str) -> bool {
+    if s.byte_len() == 0 { return false }
+    mut first = true
+    for c in s.chars() {
+        ro letter = c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || ((c as int) >= 128 && c.is_alphabetic())
+        ro digit = c >= '0' && c <= '9'
+        if first && !letter { return false }
+        if !letter && !digit { return false }
         first = false
     }
     true
@@ -241,9 +256,6 @@ fn bind_names_of(ev EventPat) -> []str {
             if bind != "" { out.push(bind) }
         }
         ProgressEv { name, binds } => {
-            for b in binds { out.push(b.name) }
-        }
-        WordEv { word, binds } => {
             for b in binds { out.push(b.name) }
         }
         SignalEv { name, binds } => {
@@ -469,12 +481,28 @@ fn check_names(mut cx Checker) -> () {
         seen.push(st.name)
         i += 1
     }
+    // the names that leave the machine are Latin (AL-46): a type, a field, a case
+    for r in def.types.records {
+        if !is_identifier(r.name) { cx_issue(cx, "$.types", "the name of a type must be a latin identifier, got ${r.name}") }
+        for f in r.fields {
+            if !is_identifier(f.name) { cx_issue(cx, "$.types", "the name of a field of ${r.name} must be a latin identifier, got ${f.name}") }
+        }
+    }
+    for v in def.types.variants {
+        if !is_identifier(v.name) { cx_issue(cx, "$.types", "the name of a type must be a latin identifier, got ${v.name}") }
+        for c in v.cases {
+            if !is_identifier(c.name) { cx_issue(cx, "$.types", "the name of a case of ${v.name} must be a latin identifier, got ${c.name}") }
+            for f in c.fields {
+                if !is_identifier(f.name) { cx_issue(cx, "$.types", "the name of a field of ${v.name}.${c.name} must be a latin identifier, got ${f.name}") }
+            }
+        }
+    }
     mut globals = []str.new()
     for b in builtin_names() { globals.push(b) }
     i = 0
     for c in def.constants {
         ro p = "$.constants[${i}].name"
-        if !is_identifier(c.name) { cx_issue(cx, p, "the name ${c.name} is not an identifier") }
+        if !is_name(c.name) { cx_issue(cx, p, "the name ${c.name} is not an identifier") }
         if globals.contains(c.name) { cx_issue(cx, p, "the name ${c.name} is taken (a constant, a parameter, a datum or a name of the executor)") }
         globals.push(c.name)
         i += 1
@@ -482,7 +510,7 @@ fn check_names(mut cx Checker) -> () {
     i = 0
     for pr in def.params {
         ro p = "$.params[${i}].name"
-        if !is_identifier(pr.name) { cx_issue(cx, p, "the name ${pr.name} is not an identifier") }
+        if !is_name(pr.name) { cx_issue(cx, p, "the name ${pr.name} is not an identifier") }
         if globals.contains(pr.name) { cx_issue(cx, p, "the name ${pr.name} is taken (a constant, a parameter, a datum or a name of the executor)") }
         globals.push(pr.name)
         i += 1
@@ -508,7 +536,7 @@ fn check_names(mut cx Checker) -> () {
     i = 0
     for d in def.definitions {
         ro p = "$.definitions[${i}].name"
-        if !is_identifier(d.name) { cx_issue(cx, p, "the name ${d.name} is not an identifier") }
+        if !is_name(d.name) { cx_issue(cx, p, "the name ${d.name} is not an identifier") }
         if catalog_names().contains(d.name) || d.name == "end" { cx_issue(cx, p, "the name ${d.name} is a function of the catalog") }
         if fns.contains(d.name) { cx_issue(cx, p, "the definition ${d.name} is declared twice") }
         fns.push(d.name)
@@ -519,7 +547,7 @@ fn check_names(mut cx Checker) -> () {
     i = 0
     for pt in def.parties {
         ro p = "$.parties[${i}]"
-        if !is_identifier(pt.name) { cx_issue(cx, "${p}.name", "the name of a party must be a latin identifier, got ${pt.name}") }
+        if !is_name(pt.name) { cx_issue(cx, "${p}.name", "the name of a party must be an identifier, got ${pt.name}") }
         if party_names.contains(pt.name) { cx_issue(cx, "${p}.name", "the party ${pt.name} is declared twice") }
         party_names.push(pt.name)
         if pt.id == "" {
@@ -563,7 +591,6 @@ fn event_label(ev EventPat) -> str {
         FailureEv { reasons, bind } => "failure"
         TimeoutEv => "timeout"
         ProgressEv { name, binds } => "progress"
-        WordEv { word, binds } => "word"
         SignalEv { name, binds } => "signal"
         NowEv => "now"
     }
@@ -786,23 +813,27 @@ fn check_event_for(mut cx Checker, ev EventPat, party_ix int, path str, mut used
     ro def = cx.def
     check_bind_shadow(cx, ev, path)
     match ev {
-        WordEv { word, binds } => {
-            if party_ix < 0 {
-                cx_issue(cx, path, "a word is for the rows of an appeal")
-                return
-            }
-            ro party = def.parties[party_ix]
-            ro at = word_decl(party.words, word)
-            if at < 0 {
-                cx_issue(cx, path, "the word ${word} is not a word of the party ${party.name}")
-            } else {
-                check_binds(cx, binds, party.words[at].fields, path)
-                used_words.push("${party.name}/${word}")
-            }
-        }
         SignalEv { name, binds } => {
+            // a signal of the party of the appeal (AL-38), else a signal of the machine (a common event, the protocol of a fragment)
+            if party_ix >= 0 {
+                ro party = def.parties[party_ix]
+                ro at = word_decl(party.signals, name)
+                if at >= 0 {
+                    check_binds(cx, binds, party.signals[at].fields, path)
+                    used_words.push("${party.name}/${name}")
+                    return
+                }
+            }
             ro at = word_decl(def.signals, name)
-            if at < 0 { cx_issue(cx, path, "the signal ${name} is not declared in signals") } else { check_binds(cx, binds, def.signals[at].fields, path) }
+            if at < 0 {
+                if party_ix >= 0 {
+                    cx_issue(cx, path, "the signal ${name} is not a signal of the party ${def.parties[party_ix].name} and is not declared in signals")
+                } else {
+                    cx_issue(cx, path, "the signal ${name} is not declared in signals")
+                }
+            } else {
+                check_binds(cx, binds, def.signals[at].fields, path)
+            }
         }
         ProgressEv { name, binds } => {
             if party_ix < 0 || !sends_requests(def.parties[party_ix].kind) {
@@ -905,19 +936,19 @@ fn check_events(mut cx Checker) -> () {
         check_targets_of_row(cx, r, "$.common_events[${ci}]", true)
         ci += 1
     }
-    // every word of a party is used by a row (format 4.3)
+    // every signal of a party is used by a row (format 4.3)
     mut pi = 0
     for pt in def.parties {
-        for w in pt.words {
+        for w in pt.signals {
             if !used_words.contains("${pt.name}/${w.name}") && !word_used_in_signal(def, w.name) {
-                cx_issue(cx, "$.parties[${pi}].words", "the word ${w.name} of the party ${pt.name} is used by no row")
+                cx_issue(cx, "$.parties[${pi}].signals", "the signal ${w.name} of the party ${pt.name} is used by no row")
             }
         }
         pi += 1
     }
 }
 
-// A word that stands in the rows of a state of another party as a signal is used.
+// A signal that stands in the rows of a state of another party is used.
 fn word_used_in_signal(def MachineDef, word str) -> bool {
     for st in def.states {
         for r in st.rows {
@@ -1830,7 +1861,7 @@ fn check_parties(mut cx Checker) -> () {
             }
         }
         if !sends_requests(pt.kind) && pt.progress.len() > 0 { cx_issue(cx, "${p}.progress", "only a party that gets requests has progress events") }
-        if sends_requests(pt.kind) && pt.words.len() > 0 { cx_issue(cx, "${p}.words", "words are for the gates (human, enhanced, gatekeeper)") }
+        if sends_requests(pt.kind) && pt.signals.len() > 0 { cx_issue(cx, "${p}.signals", "signals of a party are for the gates (human, enhanced, gatekeeper)") }
         i += 1
     }
     // a state with a set of parties needs a party without an id
@@ -2170,9 +2201,69 @@ fn check_nested_use(mut cx Checker) -> () {
 /// NestedProblem: why a parent machine does not fit the machine it calls: the place in the tree of the parent and the reason.
 export type NestedProblem { path str, message str }
 
-// The structural equality of two types of two machines: the same spec text, and the same fields for the named types (a record is told by its name, as the wire form tells it).
+// Do two types fit each other as the types of one field of a call (format 2, 2.13, AL-47): the same text of the spec, but `int` and `int>=n` fit each other both ways (the called machine checks the bound
+// when it takes the input), at any depth: under `?`, `[]`, in a dict, in a tuple; two bounds fit only when they are equal.
+fn specs_fit(a TypeSpec, b TypeSpec) -> bool {
+    match a {
+        IntType => {
+            match b {
+                IntType => return true
+                IntMin(n) => return true
+                _ => return false
+            }
+        }
+        IntMin(n) => {
+            match b {
+                IntType => return true
+                IntMin(m) => return n == m
+                _ => return false
+            }
+        }
+        OptionalType(inner) => {
+            match b {
+                OptionalType(other) => return specs_fit(inner, other)
+                _ => return false
+            }
+        }
+        ListType(inner) => {
+            match b {
+                ListType(other) => return specs_fit(inner, other)
+                _ => return false
+            }
+        }
+        DictType { key, value } => {
+            match b {
+                DictType { key: other_key, value: other_value } => return specs_fit(key, other_key) && specs_fit(value, other_value)
+                _ => return false
+            }
+        }
+        FullDictType { key, value } => {
+            match b {
+                FullDictType { key: other_key, value: other_value } => return specs_fit(key, other_key) && specs_fit(value, other_value)
+                _ => return false
+            }
+        }
+        TupleType(items) => {
+            match b {
+                TupleType(others) => {
+                    if items.len() != others.len() { return false }
+                    mut k = 0
+                    while k < items.len() {
+                        if !specs_fit(items[k], others[k]) { return false }
+                        k += 1
+                    }
+                    return true
+                }
+                _ => return false
+            }
+        }
+        _ => spec_text(a) == spec_text(b)
+    }
+}
+
+// The structural equality of two types of two machines: the same spec (`int` and `int>=n` fit each other, AL-47), and the same fields for the named types (a record is told by its name, as the wire form tells it).
 fn same_type(a TypeSpec, adefs TypeDefs, b TypeSpec, bdefs TypeDefs, depth int) -> bool {
-    if spec_text(a) != spec_text(b) { return false }
+    if !specs_fit(a, b) { return false }
     if depth > 8 { return true }
     match a {
         RecordType(name) => {

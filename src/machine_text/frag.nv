@@ -4,13 +4,34 @@ module alula.machine_text
 
 import std.text
 
-// The context for a fragment: the table of names and the Russian names of the data that the fragment may read (their Latin words by the dictionary).
+// The context for a fragment: the names that the piece may use. An entry is `имя`, `имя (json)` (a datum, a constant or a parameter), or with a word before the name: `field имя (json)`, `type имя (json)`,
+// `case имя (json)` (a field, a type, a case of a variant the piece mentions); a name without brackets is its own JSON name (AL-46).
 fn frag_cx(data []str, lang str) -> TxCx {
     mut cx = cx_new_in(lang)
-    for ru in data {
-        match names_first(cx.names, kinds_data(), ru) {
-            Some(en) => pair_add(cx.env.globals, ru, en)
-            None => pair_add(cx.env.globals, ru, if is_identifier_latin(ru) { ru } else { tx_translit(ru) })
+    for entry in data {
+        mut kind = "data"
+        mut rest = entry
+        for k in ["field", "type", "case"] {
+            if entry.starts_with("${k} ") {
+                kind = k
+                rest = entry[k.byte_len() + 1..]
+            }
+        }
+        mut name = rest
+        mut json = rest
+        ro open = rest.find(" (") ?? -1
+        if open > 0 && rest.ends_with(")") {
+            name = rest[..open]
+            json = rest[open + 2..rest.byte_len() - 1]
+        }
+        if kind == "field" {
+            pair_add(cx.env.fields, name, json)
+        } else if kind == "type" {
+            pair_add(cx.env.types, name, json)
+        } else if kind == "case" {
+            pair_add(cx.env.cases, name, json)
+        } else {
+            pair_add(cx.env.globals, name, json)
         }
     }
     cx
@@ -26,12 +47,15 @@ fn frag_errors(cx TxCx, hard Option[TranslateError], text str) -> []TranslateErr
     out
 }
 
-/// A type of the format as the type string of the JSON: `число≥0` -> `int>=0`.
+/// A type of the format as the type string of the JSON: `число>=0` -> `int>=0`.
 export fn translate_type(text str) -> Result[str, []TranslateError] => translate_type_in(text, "ru")
 
 /// The same for a text in the language `lang` (`ru` or `en`).
-export fn translate_type_in(text str, lang str) -> Result[str, []TranslateError] {
-    mut cx = frag_cx([], lang)
+export fn translate_type_in(text str, lang str) -> Result[str, []TranslateError] => translate_type_with(text, []str.new(), lang)
+
+/// The same with the names of the types that the piece mentions (entries as in `frag_cx`: `type имя (json)`).
+export fn translate_type_with(text str, names []str, lang str) -> Result[str, []TranslateError] {
+    mut cx = frag_cx(names, lang)
     match tx_lex(text, 1, 1) {
         Ok(toks) => {
             mut p = p_new(toks, 1, text.chars().count() + 1)
@@ -83,10 +107,12 @@ export fn translate_actions(text str, data []str, parties []str, empty_lists []s
 /// The same for a text in the language `lang`.
 export fn translate_actions_in(text str, data []str, parties []str, empty_lists []str, lang str) -> Result[str, []TranslateError] {
     mut cx = frag_cx(data, lang)
-    for ru in parties {
-        match names_first(cx.names, ["party", "type", "variable"], ru) {
-            Some(en) => pair_add(cx.env.parties, ru, en)
-            None => pair_add(cx.env.parties, ru, if is_identifier_latin(ru) { ru } else { tx_translit(ru) })
+    for entry in parties {
+        ro open = entry.find(" (") ?? -1
+        if open > 0 && entry.ends_with(")") {
+            pair_add(cx.env.parties, entry[..open], entry[open + 2..entry.byte_len() - 1])
+        } else {
+            pair_add(cx.env.parties, entry, entry)
         }
     }
     for n in empty_lists { cx.env.empty_lists.push(n) }

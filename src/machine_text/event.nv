@@ -1,7 +1,7 @@
 // event.nv - the events of the rows of an appeal and of "On accept" (format 4.3), the conditions and the "Where" of a row.
 //
-// Events: `ответ`, `ответ(имя)`, `ответ: Вариант(поле, поле: имя)`, `ответ: Тип.Вариант(…)`, `сбой`, `сбой(причина)`, `сбой(причина ∈ {КодСбоя.…})`,
-// `слово(слово(поле, поле: имя))`, `сигнал(сигнал(поле, …))`, `сразу`. Two events are not in the format (the proposals of its section 14, И-4) and the
+// Events: `ответ`, `ответ(имя)`, `ответ: Вариант(поле, поле: имя)`, `ответ: Тип.Вариант(…)`, `сбой`, `сбой(причина)`, `сбой(причина in {КодСбоя.…})`,
+// `сигнал(сигнал(поле, поле: имя))` (a signal of a party or of the machine, AL-38; the event `слово(…)` of 2.12 is gone), `сразу`. Two events are not in the format (the proposals of its section 14, И-4) and the
 // interpreter has them: `часть(имя(поле: имя))` for a part of an answer that keeps the request open, and `срок` for the term made by the executor.
 module alula.machine_text
 
@@ -29,8 +29,8 @@ fn ev_phrase(mut p TxP) -> Result[str, TranslateError] {
 }
 
 // The binds `(поле, поле: имя)` of an event; no parentheses is no binds.
-fn ev_binds(mut p TxP, mut cx TxCx, sc TxScope, kinds []str) -> Result[TxBinds, TranslateError] {
-    ex_pattern_binds(p, cx, sc, kinds)
+fn ev_binds(mut p TxP, mut cx TxCx, sc TxScope, owner str) -> Result[TxBinds, TranslateError] {
+    ex_pattern_binds(p, cx, sc, owner)
 }
 
 fn ev_bind_object(binds TxBinds) -> TxKV => kv("bind", TxObj(binds.pairs))
@@ -47,19 +47,19 @@ fn ev_one_name(mut p TxP, mut cx TxCx, pairs []TxPair, what str) -> Result[TxTok
     Ok(t)
 }
 
-fn ev_word_en(mut cx TxCx, t TxTok, ru str, known []TxPair, kind str, what str) -> str {
+// The JSON name of a signal or a part named in a row: declared in the machine (the table of the parties, the section of the signals), the signals of the protocol of the fragment, a Latin name as it is.
+fn ev_phrase_json(mut cx TxCx, t TxTok, ru str, known []TxPair, also []TxPair, what str) -> str {
     match pair_get(known, ru) {
-        Some(en) => en
-        None => {
-            match names_get(cx.names, kind, ru) {
-                Some(en) => en
-                None => {
-                    cx_error(cx, t, "name", "${what} `${ru}` не объявлено в этой машине${names_hint(cx.names, [kind], ru)}")
-                    ru
-                }
-            }
-        }
+        Some(en) => return en
+        None => ()
     }
+    match pair_get(also, ru) {
+        Some(en) => return en
+        None => ()
+    }
+    if is_identifier_latin(ru) { return ru }
+    cx_error(cx, t, "name", "${what} `${ru}` не объявлено в этой машине${env_hint(cx, ru)}")
+    ru
 }
 
 /// The event of a row of an appeal (or of "On accept"). `sc` is the scope outside the row.
@@ -73,14 +73,16 @@ fn ev_parse(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxEvent, TranslateErro
     if t_is_kw(t, words, "event", "deadline") { return Ok(TxEvent { json: ev_json("timeout", []), scope: sc }) }
     if t_is_kw(t, words, "event", "response") { return ev_answer(p, cx, sc) }
     if t_is_kw(t, words, "event", "failure") { return ev_failure(p, cx, sc) }
-    if t_is_kw(t, words, "event", "word") { return ev_named(p, cx, sc, "word") }
+    if t.text == "слово" || t.text == "word" {
+        return Err(tx_err(t.line, t.col, "syntax", "событие `${t.text}(…)` в формате 2.14 не бывает: сигнал стороны пишется `${kw(words, "event", "signal")}(…)` (Я-38), сигнал, объявленный в столбце `${kw(words, "column", "signals")}` стороны; переходного периода нет"))
+    }
     if t_is_kw(t, words, "event", "signal") { return ev_named(p, cx, sc, "signal") }
     if t_is_kw(t, words, "event", "part") { return ev_named(p, cx, sc, "part") }
     match foreign_find(cx, t, ["event"]) {
         Some(e) => return Err(e)
         None => ()
     }
-    Err(tx_err(t.line, t.col, "syntax", "неизвестное событие `${w}`: ожидается ${kw_all(words, "event", ["response", "failure", "word", "signal", "immediate"]).join(", ")}"))
+    Err(tx_err(t.line, t.col, "syntax", "неизвестное событие `${w}`: ожидается ${kw_all(words, "event", ["response", "failure", "signal", "immediate"]).join(", ")}"))
 }
 
 fn ev_answer(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxEvent, TranslateError] {
@@ -89,15 +91,17 @@ fn ev_answer(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxEvent, TranslateErr
         if first.kind != TK_NAME { return Err(p_fail(p, "после `ответ:` ожидается вариант")) }
         p_adv(p)
         mut case_en = ""
+        mut case_ru = first.text
         if p_is(p, ".") && p_ahead(p, 1).kind == TK_NAME {
             p_adv(p)
             ro second = p_tok(p)
             p_adv(p)
             case_en = tr_case_name(cx, second)
+            case_ru = second.text
         } else {
             case_en = tr_case_name(cx, first)
         }
-        ro binds = ev_binds(p, cx, sc, kinds_field())?
+        ro binds = ev_binds(p, cx, sc, case_ru)?
         mut rest = [kv("variant", js(case_en))]
         if binds.pairs.len() > 0 { rest.push(ev_bind_object(binds)) }
         return Ok(TxEvent { json: ev_json("answer_variant", rest), scope: binds.scope })
@@ -153,27 +157,22 @@ fn ev_failure(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxEvent, TranslateEr
     Ok(TxEvent { json: ev_json("failure", rest), scope: sc_with(sc, n.text, en) })
 }
 
-// `слово(слово(поле, …))`, `сигнал(сигнал(поле, …))`, `часть(имя(поле, …))`; `head` is the key of the event word: `word`, `signal`, `part`.
+// `сигнал(сигнал(поле, …))`, `часть(имя(поле, …))`; `head` is the key of the event word: `signal`, `part`. A signal is a signal of a party (the column of the table of the parties) or a signal of the machine
+// (a common event, the protocol of a fragment): both are the event `signal` of the tree (AL-38).
 fn ev_named(mut p TxP, mut cx TxCx, sc TxScope, head str) -> Result[TxEvent, TranslateError] {
     p_expect(p, "(")?
     ro first = p_tok(p)
     ro phrase = ev_phrase(p)?
-    mut kinds = kinds_field()
     mut en = ""
-    mut kind_word = "word"
-    if head == "word" {
-        en = ev_word_en(cx, first, phrase, cx.env.words, "word", kw(cx.words, "event", "word"))
-    } else if head == "signal" {
-        kinds = ["signal_field", "field", "data", "variable"]
-        kind_word = "signal"
-        en = ev_word_en(cx, first, phrase, cx.env.signals, "signal", kw(cx.words, "event", "signal"))
+    mut kind_word = "signal"
+    if head == "signal" {
+        en = ev_phrase_json(cx, first, phrase, cx.env.psignals, cx.env.signals, "сигнал")
     } else {
         kind_word = "progress"
-        en = ev_word_en(cx, first, phrase, cx.env.parts, "part", kw(cx.words, "event", "part"))
+        en = ev_phrase_json(cx, first, phrase, cx.env.parts, cx.env.parts, "часть ответа")
     }
-    ro binds = ev_binds(p, cx, sc, kinds)?
+    ro binds = ev_binds(p, cx, sc, phrase)?
     p_expect(p, ")")?
-    if head == "word" { return Ok(TxEvent { json: ev_with_binds("word", "word", en, binds), scope: binds.scope }) }
     Ok(TxEvent { json: ev_with_binds(kind_word, "name", en, binds), scope: binds.scope })
 }
 

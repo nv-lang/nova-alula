@@ -6,21 +6,35 @@ import std.text
 
 // ---- the parties -----------------------------------------------------------------------------------------------------------------------
 
-/// TxPartyRow: a party read from its row: the names and the pairs of its JSON object.
+/// TxPartyRow: a party read from its row: the names, the id and the pairs of its JSON object.
 type TxPartyRow { ru str, en str, pairs []TxKV }
 
-// The word list of the column `слова ворот`: `—`, or `слово`, `слово(поле тип, …)`, … separated by commas. Returns the JSON of the words.
-fn party_words(cell TxCell, line int, mut cx TxCx) -> Result[[]TxJ, TranslateError] {
+fn party_id_of(row TxPartyRow) -> str {
+    for q in row.pairs {
+        if q.key == "id" {
+            match q.value {
+                TxStr(x) => return x
+                _ => ()
+            }
+        }
+    }
+    ""
+}
+
+// The list of the column `сигналы`: `—`, or `сигнал (json)`, `сигнал (json)(поле (json) тип, …)`, … separated by commas (AL-38, AL-46). Returns the JSON of the signals.
+fn party_signals(cell TxCell, line int, mut cx TxCx) -> Result[[]TxJ, TranslateError] {
     mut out = []TxJ.new()
     if cell.text == "—" || cell.text == "" { return Ok(out) }
     mut p = cell_p(cell, line)?
     while true {
         ro first = p_tok(p)
         ro phrase = ev_phrase(p)?
-        ro en = decl_name_phrase(cx, first, phrase, "word", "слово")
-        pair_add(cx.env.words, phrase, en)
+        ro en = decl_json_text(p, cx, first, phrase, "сигнала", true)?
+        pair_add(cx.env.psignals, phrase, en)
         if p_eat(p, "(") {
-            ro fields = decl_fields(p, cx, ")")?
+            cx.env.owner = phrase
+            ro fields = decl_fields(p, cx, ")", "поля сигнала")?
+            cx.env.owner = ""
             p_expect(p, ")")?
             out.push(jobj([kv("name", js(en)), kv("fields", TxArr(fields))]))
         } else {
@@ -33,31 +47,10 @@ fn party_words(cell TxCell, line int, mut cx TxCx) -> Result[[]TxJ, TranslateErr
     Ok(out)
 }
 
-// The Latin word of a phrase under a kind of the table of names, else a soft error.
-fn decl_name_phrase(mut cx TxCx, t TxTok, phrase str, kind str, what str) -> str => decl_name_phrase_in(cx, t, phrase, [kind], what)
-
-// The same under the first of the kinds that has the phrase.
-fn decl_name_phrase_in(mut cx TxCx, t TxTok, phrase str, kinds []str, what str) -> str {
-    match names_first(cx.names, kinds, phrase) {
-        Some(en) => en
-        None => {
-            // a word of the author in Latin letters is the name of the JSON as it is (section 1a)
-            if is_identifier_latin(phrase) { return phrase }
-            cx_error(cx, t, "name", "${what} `${phrase}` нет в таблице имён${names_hint(cx.names, kinds, phrase)}")
-            phrase
-        }
-    }
-}
-
+// A party: its name is internal (AL-46): the tree has it as it is written.
 fn party_en(mut cx TxCx, n TxTok, id str) -> str {
-    match names_first(cx.names, ["party", "type", "variable"], n.text) {
-        Some(en) => en
-        None => {
-            if id != "" && is_latin_code(id) { return id }
-            if is_identifier_latin(n.text) { return n.text }
-            tx_translit(n.text)
-        }
-    }
+    if is_keyword(cx.words, n.text) { cx_error(cx, n, "name", "`${n.text}` — служебное слово, именем быть не может") }
+    n.text
 }
 
 // The counter: a datum (`попытка_агента`) or a path (`линзы[*].попытка`).
@@ -89,28 +82,18 @@ type TxKind { kind str, result str, setting str, nested str, input_type str, par
 
 fn kind_plain(kind str, result str, setting str) -> TxKind => { kind, result, setting, nested: "", input_type: "", parse_primitive: "", parse_role: "", parse_type: "" }
 
-// The name of the nested machine in the registry of the caller: the table of names (kind `machine`), else a Latin name as it is.
-fn nested_name(mut cx TxCx, t TxTok) -> str {
-    match names_first(cx.names, ["machine"], t.text) {
-        Some(en) => en
-        None => {
-            if is_identifier_latin(t.text) { return t.text }
-            cx_error(cx, t, "name", "машины `${t.text}` нет в таблице имён${names_hint(cx.names, ["machine"], t.text)}")
-            t.text
-        }
-    }
-}
+// The name of the nested machine in the registry of the caller: the registry of the host (kind `machine` of `names_host.tsv`), else a Latin name as it is.
+fn nested_name(mut cx TxCx, t TxTok) -> str => nested_name_text(cx, t, t.text)
 
 // The same for a name given as a text (a list of the machines in the parameter of a fragment) at the place of a token.
 fn nested_name_text(mut cx TxCx, at TxTok, name str) -> str {
-    match names_first(cx.names, ["machine"], name) {
-        Some(en) => en
-        None => {
-            if is_identifier_latin(name) { return name }
-            cx_error(cx, at, "name", "машины `${name}` нет в таблице имён${names_hint(cx.names, ["machine"], name)}")
-            name
-        }
+    match names_get(cx.names, "machine", name) {
+        Some(en) => return en
+        None => ()
     }
+    if is_identifier_latin(name) { return name }
+    cx_error(cx, at, "name", "вложенной машины `${name}` нет в реестре хозяина; латинское имя читается само")
+    name
 }
 
 fn party_machine(mut p TxP, mut cx TxCx) -> Result[TxKind, TranslateError] {
@@ -163,7 +146,7 @@ fn party_kind(cell TxCell, line int, mut cx TxCx) -> Result[TxKind, TranslateErr
         ro s = p_tok(p)
         if s.kind != TK_NAME { return Err(p_fail(p, "ожидается имя настройки проекта")) }
         p_adv(p)
-        setting = tr_word(cx, s, ["variable", "data", "function"], "настройка")
+        setting = decl_json(p, cx, s, "настройки", true)?
         kind = "gatekeeper"
     } else if p_eat_kw(p, words, "kind_party", "agent") {
         kind = "agent"
@@ -200,7 +183,7 @@ fn party_row(r TxEntry, mut cx TxCx) -> Result[TxPartyRow, TranslateError] {
         profile = cell_expr(r.cells[3], r.line, cx, sc_empty())?
         has_profile = true
     }
-    ro words = party_words(r.cells[4], r.line, cx)?
+    ro words = party_signals(r.cells[4], r.line, cx)?
     ro counter = party_counter(r.cells[5], r.line, cx)?
     mut pairs = [kv("name", js(en)), kv("id", js(id)), kv("kind", js(k.kind))]
     if k.nested != "" { pairs.push(kv("nested", js(k.nested))) }
@@ -215,11 +198,11 @@ fn party_row(r TxEntry, mut cx TxCx) -> Result[TxPartyRow, TranslateError] {
     if has_profile { pairs.push(kv("profile", profile)) }
     if k.setting != "" { pairs.push(kv("setting", js(k.setting))) }
     pairs.push(kv("counter", js(counter)))
-    if words.len() > 0 { pairs.push(kv("words", TxArr(words))) }
+    if words.len() > 0 { pairs.push(kv("signals", TxArr(words))) }
     Ok(TxPartyRow { ru: n.text, en, pairs })
 }
 
-fn party_columns() -> []str => ["name", "id", "kind", "profile", "gate_words", "counter"]
+fn party_columns() -> []str => ["name", "id", "kind", "profile", "signals", "counter"]
 
 fn limit_expression(line TxKv, mut cx TxCx) -> Result[TxJ, TranslateError] {
     mut p = lex_segs(line.segs)?
@@ -287,17 +270,11 @@ fn decl_parties(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxPartyRow {
             i += 1
         }
     }
-    // a party that the table names by its Latin name (the canonical form) is also called by its word of the dictionary: the text of a fragment (`усиленный`) says so
+    // a party is also called by its id (the identifier of the party is its external name, spec section 1): the text of a fragment says `enhanced`
     mut aliases = []TxPair.new()
-    for pr in cx.env.parties {
-        for kind in ["party", "type", "variable"] {
-            match names_file_word(cx.names, kind, pr.en) {
-                Some(w) => {
-                    if w != pr.ru && !pair_has(cx.env.parties, w) { aliases.push(TxPair { ru: w, en: pr.en }) }
-                }
-                None => ()
-            }
-        }
+    for row in out {
+        ro id = party_id_of(row)
+        if id != "" && !pair_has(cx.env.parties, id) { aliases.push(TxPair { ru: id, en: row.en }) }
     }
     for al in aliases {
         if !pair_has(cx.env.parties, al.ru) { pair_add(cx.env.parties, al.ru, al.en) }
@@ -308,12 +285,12 @@ fn decl_parties(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxPartyRow {
 // ---- the signals and the parts of an answer (not in the format: the proposals of its section 14) --------------------------------------------
 
 // Fields in a cell: `—` or `поле тип, поле тип`.
-fn cell_fields(cell TxCell, line int, mut cx TxCx) -> Result[[]TxJ, TranslateError] {
+fn cell_fields(cell TxCell, line int, mut cx TxCx, what str) -> Result[[]TxJ, TranslateError] {
     mut out = []TxJ.new()
     if cell.text == "—" || cell.text == "" { return Ok(out) }
     mut p = cell_p(cell, line)?
     while !p_done(p) {
-        out.push(decl_field(p, cx)?)
+        out.push(decl_field(p, cx, what)?)
         if p_eat(p, ",") { continue }
         break
     }
@@ -321,15 +298,16 @@ fn cell_fields(cell TxCell, line int, mut cx TxCx) -> Result[[]TxJ, TranslateErr
     Ok(out)
 }
 
-fn cell_phrase(cell TxCell, line int) -> Result[TxPhrase, TranslateError] {
+fn cell_phrase(cell TxCell, line int, mut cx TxCx, what str) -> Result[TxPhrase, TranslateError] {
     mut p = cell_p(cell, line)?
     ro first = p_tok(p)
     ro phrase = ev_phrase(p)?
+    ro json = decl_json_text(p, cx, first, phrase, what, true)?
     p_end(p)?
-    Ok(TxPhrase { text: phrase, first })
+    Ok(TxPhrase { text: phrase, first, json })
 }
 
-type TxPhrase { text str, first TxTok }
+type TxPhrase { text str, first TxTok, json str }
 
 /// The section `## Сигналы`: `| имя | поля |`; returns the JSON of the signals.
 fn decl_signals(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
@@ -347,9 +325,11 @@ fn decl_signals(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
 }
 
 fn signal_row(r TxEntry, mut cx TxCx) -> Result[TxJ, TranslateError] {
-    ro ph = cell_phrase(r.cells[0], r.line)?
-    ro en = decl_name_phrase_in(cx, ph.first, ph.text, ["word", "signal"], "сигнал")
-    ro fields = cell_fields(r.cells[1], r.line, cx)?
+    ro ph = cell_phrase(r.cells[0], r.line, cx, "сигнала")?
+    ro en = ph.json
+    cx.env.owner = ph.text
+    ro fields = cell_fields(r.cells[1], r.line, cx, "поля сигнала")?
+    cx.env.owner = ""
     pair_add(cx.env.signals, ph.text, en)
     if fields.len() == 0 { return Ok(jobj([kv("name", js(en))])) }
     Ok(jobj([kv("name", js(en)), kv("fields", TxArr(fields))]))
@@ -376,9 +356,11 @@ fn decl_parts(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxPartItem {
 fn part_row(r TxEntry, mut cx TxCx) -> Result[TxPartItem, TranslateError] {
     ro party = cell_name(r.cells[0], r.line)?
     if !pair_has(cx.env.parties, party.text) { cx_error(cx, party, "name", "стороны `${party.text}` нет в таблице «Стороны»") }
-    ro ph = cell_phrase(r.cells[1], r.line)?
-    ro en = decl_name_phrase(cx, ph.first, ph.text, "part", "часть ответа")
-    ro fields = cell_fields(r.cells[2], r.line, cx)?
+    ro ph = cell_phrase(r.cells[1], r.line, cx, "части ответа")?
+    ro en = ph.json
+    cx.env.owner = ph.text
+    ro fields = cell_fields(r.cells[2], r.line, cx, "поля части ответа")?
+    cx.env.owner = ""
     pair_add(cx.env.parts, ph.text, en)
     ro item = if fields.len() == 0 { jobj([kv("name", js(en))]) } else { jobj([kv("name", js(en)), kv("fields", TxArr(fields))]) }
     Ok(TxPartItem { party_ru: party.text, item })
@@ -410,7 +392,7 @@ fn defs_register(entries []TxEntry, sec TxSection, mut cx TxCx) -> () {
             while k + 1 < p0.toks.len() {
                 if t_is_kw(p0.toks[k], cx.words, "decl", "define") && p0.toks[k + 1].kind == TK_NAME {
                     ro n = p0.toks[k + 1]
-                    ro en = decl_name(cx, n, ["function", "method", "variable"], "функция")
+                    ro en = decl_internal(cx, n)
                     if pair_has(cx.env.defs, n.text) {
                         cx_error(cx, n, "name", "определение `${n.text}` повторено")
                     } else {
@@ -498,19 +480,12 @@ fn decl_definitions(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
 fn primitive_classes() -> []str => ["pure", "reading", "writing", "irreversible"]
 
 fn prim_row(r TxEntry, mut cx TxCx) -> Result[str, TranslateError] {
-    ro n = cell_name(r.cells[0], r.line)?
-    mut en = n.text
-    if !is_latin_code(n.text) {
-        match names_first(cx.names, ["primitive", "function", "effect"], n.text) {
-            Some(x) => { en = x }
-            None => { cx_error(cx, n, "name", "примитива `${n.text}` нет в таблице имён${names_hint(cx.names, ["primitive", "function", "effect"], n.text)}") }
-        }
-    }
+    ro d = cell_decl_json(r.cells[0], r.line, cx, "примитива", true)?
     if !primitive_classes().contains(r.cells[3].text) {
         return Err(tx_err(r.line, r.cells[3].col, "syntax", "класс примитива: ${primitive_classes().join(", ")}"))
     }
-    pair_add(cx.env.prims, n.text, en)
-    Ok(en)
+    pair_add(cx.env.prims, d.tok.text, d.json)
+    Ok(d.json)
 }
 
 /// The section `## Примитивы`: the names of the primitives (the host's registry has their signatures).

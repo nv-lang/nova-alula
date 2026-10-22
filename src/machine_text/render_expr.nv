@@ -5,19 +5,15 @@ module alula.machine_text
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
 
-/// RnCx: the context of one generation: the language, the words, the names, the notes about what the file cannot say, and the words that the file chose for the names it declared (a name is
-/// written the same way in every place: the declaration and the uses).
-type RnCx { lang str, words TxWords, names TxNames, notes []str, catalog []str, defs []TxPair, globals []TxPair, parties []TxPair, gate_words []TxPair, signal_words []TxPair, part_words []TxPair }
+/// RnCx: the context of one generation: the language, the words, the names of the host, the notes about what the file cannot say. Every name is written as it lies in the tree (section 1b (ж), AL-46).
+type RnCx { lang str, words TxWords, names TxNames, notes []str, catalog []str }
 
 fn rn_cx(lang str) -> RnCx {
     mut catalog = []str.new()
     for r in words_rows() {
         if r.kind == "catalog" { catalog.push(r.en) }
     }
-    RnCx {
-        lang, words: words_load(lang), names: names_load_for(lang), notes: []str.new(), catalog, defs: []TxPair.new(), globals: []TxPair.new(), parties: []TxPair.new(), gate_words: []TxPair.new(),
-        signal_words: []TxPair.new(), part_words: []TxPair.new()
-    }
+    RnCx { lang, words: words_load(lang), names: names_load_for(lang), notes: []str.new(), catalog }
 }
 
 // ORACLE-WORKAROUND(45): a copy of a `ro` list built by hand in a loop; `mut out = items` when item 45 is fixed (the same in `rn_with`)
@@ -33,50 +29,25 @@ fn rn_note(mut cx RnCx, text str) -> () {
 
 fn rn_kw(cx RnCx, kind str, key str) -> str => kw(cx.words, kind, key)
 
-/// The word of the file for a name of the JSON under the kinds of the table of names: the dictionary word that the reader would take back to the same Latin name, else the Latin name.
-fn rn_name(cx RnCx, kinds []str, en str) -> str {
-    if cx.lang == "en" { return en }
-    for kind in kinds {
-        match names_file_word(cx.names, kind, en) {
-            Some(w) => {
-                match names_first(cx.names, kinds, w) {
-                    Some(back) => {
-                        if back == en { return w }
-                    }
-                    None => ()
-                }
-            }
-            None => ()
-        }
+/// The name of the JSON as the file writes it: as it is (section 1b (ж): a name lies in the tree as it is written, the brackets of JSON names are not written).
+fn rn_name(cx RnCx, kinds []str, en str) -> str => en
+
+/// A datum, a constant or a parameter: the name of the tree; in a Russian file a readable name of the contract and of the executor (`stop_reason`, `input`) is written by its word of the table of words.
+fn rn_global(cx RnCx, en str) -> str {
+    if cx.lang == "ru" {
+        ro word = kw(cx.words, "readable", en)
+        if word != en && !en.contains(".") { return word }
     }
     en
 }
 
-fn rn_pair_ru(pairs_in []TxPair, en str) -> Option[str] {
-    for q in pairs_in {
-        if q.en == en { return Some(q.ru) }
-    }
-    None
-}
+fn rn_type_name(cx RnCx, en str) -> str => en
 
-/// A datum, a constant or a parameter: the word chosen at its declaration, else the dictionary.
-fn rn_global(cx RnCx, en str) -> str {
-    match rn_pair_ru(cx.globals, en) {
-        Some(w) => w
-        None => rn_name(cx, kinds_data(), en)
-    }
-}
+fn rn_case_name(cx RnCx, en str) -> str => en
 
-fn rn_type_name(cx RnCx, en str) -> str => rn_name(cx, kinds_type(), en)
+fn rn_field_name(cx RnCx, en str) -> str => en
 
-fn rn_case_name(cx RnCx, en str) -> str => rn_name(cx, kinds_case(), en)
-
-fn rn_field_name(cx RnCx, en str) -> str {
-    if en != "" && tx_is_digit(tx_at(en, 0)) { return en }
-    rn_name(cx, kinds_field(), en)
-}
-
-fn rn_arrow(cx RnCx) -> str => if cx.lang == "ru" { "→" } else { "->" }
+fn rn_arrow(cx RnCx) -> str => "->"
 
 /// The text of a string literal: double quotes, `"` and `\` escaped, a line feed and a tab as `\n` and `\t`.
 fn rn_quote(s str) -> str {
@@ -206,7 +177,7 @@ fn rn_ty_read(cx RnCx, mut t RnTy) -> str {
             while k < n && tx_is_digit(tx_at(t.text, k)) { k += 1 }
             ro bound = t.text[t.pos..k]
             t.pos = k
-            return if cx.lang == "ru" { "${rn_kw(cx, "type", "int")}≥${bound}" } else { "int>=${bound}" }
+            return if cx.lang == "ru" { "${rn_kw(cx, "type", "int")}>=${bound}" } else { "int>=${bound}" }
         }
         return rn_kw(cx, "type", "int")
     }
@@ -219,7 +190,7 @@ fn rn_ty_read(cx RnCx, mut t RnTy) -> str {
     rn_type_name(cx, name)
 }
 
-/// A type string of the JSON as the type of Alula in the language: `int>=0` -> `число≥0` / `int>=0`.
+/// A type string of the JSON as the type of Alula in the language: `int>=0` -> `число>=0` / `int>=0`.
 fn rn_type(cx RnCx, ty str) -> str {
     mut t = RnTy { text: ty, pos: 0 }
     rn_ty_read(cx, t)
@@ -377,13 +348,7 @@ fn rn_call(mut cx RnCx, v RJ, locals []str) -> str {
         }
         return "${rn_kw(cx, "catalog", "journal_event")}(${parts.join(", ")})"
     }
-    ro declared = rn_pair_ru(cx.defs, fn_en)
-    ro word = if cx.catalog.contains(fn_en) { rn_kw(cx, "catalog", fn_en) } else {
-        match declared {
-            Some(w) => w
-            None => rn_name(cx, kinds_function(), fn_en)
-        }
-    }
+    ro word = if cx.catalog.contains(fn_en) { rn_kw(cx, "catalog", fn_en) } else { fn_en }
     "${word}(${rn_args(cx, args, locals)})"
 }
 
@@ -399,12 +364,6 @@ fn rn_expr(mut cx RnCx, v RJ, locals []str) -> str {
     if op == "name" {
         ro name = rj_gstr(v, "name")
         if locals.contains(name) { return name }
-        if cx.lang == "ru" {
-            match names_file_word(cx.names, "executor", name) {
-                Some(w) => return w
-                None => ()
-            }
-        }
         return rn_global(cx, name)
     }
     if op == "field" {
@@ -561,7 +520,7 @@ fn rn_nested_list(mut cx RnCx, v RJ, locals []str) -> str {
                 match rj_get(item, "value") {
                     Some(x) => {
                         match x {
-                            RStr(name) => names.push(rn_name(cx, ["machine"], name))
+                            RStr(name) => names.push(name)
                             _ => { plain = false }
                         }
                     }
@@ -667,11 +626,7 @@ fn rn_action(mut cx RnCx, a RJ, locals []str) -> str {
         ro except = rj_garr(a, "except")
         if party == "" && except.len() > 0 { return "${rn_kw(cx, "action", "cancel_open")}(${rn_kw(cx, "action", "except")}: ${rn_nested_list(cx, except[0], locals)})" }
         if party == "" { return rn_kw(cx, "action", "cancel_open") }
-        ro word = match rn_pair_ru(cx.parties, party) {
-            Some(w) => w
-            None => rn_name(cx, ["party", "type", "variable"], party)
-        }
-        return "${rn_kw(cx, "action", "cancel_open")}(${rn_kw(cx, "action", "party")}: ${word})"
+        return "${rn_kw(cx, "action", "cancel_open")}(${rn_kw(cx, "action", "party")}: ${party})"
     }
     if kind == "call" {
         ro args = rj_garr(a, "args")

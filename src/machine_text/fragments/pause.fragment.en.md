@@ -12,7 +12,7 @@
 
 | name | kind | allowed_values |
 |---|---|---|
-| halt_word | word | the gate word of the party "enhanced" |
+| halt_signal | signal | the party signal of the party "enhanced" |
 | halt_code | text | a value of the set `stop_reason` of the machine |
 | nested | []machine | the machines that get the signals of the chain (rule 35, item 8) |
 | cancel_requests | behavior | `mechanics`, `without_return_to_send`, `stop_transport_turn` |
@@ -42,8 +42,7 @@
 
 ### Pause — appeal
 - Party: enhanced
-- Idle term: —
-- Input:
+- Request:
 
 | request_field | expression | reads |
 |---|---|---|
@@ -52,7 +51,7 @@
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|
-| 1 | word(continue(author, source)) | — | journal(human_continue, previous: text(require(previous)), author: author, source: source, event: event.id); pass(nested, continue) | previous |
-| 2 | word(<halt_word>) | — | stop_reason = <halt_code>; pass(nested, halt) | Halted |
+| 1 | signal(continue(author, source)) | — | journal(human_continue, previous: text(require(previous)), author: author, source: source, event: event.id); pass(nested, continue) | previous |
+| 2 | signal(<halt_signal>) | — | stop_reason = <halt_code>; pass(nested, halt) | Halted |
 | 3 | signal(parent_continue(id)) | id == call_request_id | journal(parent_continue, previous: text(require(previous)), request: id, event: event.id); pass(nested, continue) | previous |
 | 4 | signal(parent_halt(id)) | id == call_request_id | stop_reason = <halt_code>; pass(nested, halt) | Halted |

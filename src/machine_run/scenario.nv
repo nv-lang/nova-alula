@@ -7,14 +7,14 @@
 // and what came.
 //
 //   { "format": "scenario/0", "machine": "ChatSession", "name": "...", "start_at": 1000,
-//     "steps": [ { "do": "feed", "event": { "kind": "word", "name": "user_message", "input": "hello" },
+//     "steps": [ { "do": "feed", "event": { "kind": "signal", "name": "user_message", "input": "hello" },
 //                  "expect": { "state": "Awaiting", "journal": [ { "code": "user_message", "params": { "text": "hello" } } ],
 //                              "data": { "user": "hello" }, "queue": [], "open": ["agent-1"], "sent": ["agent-1"], "cancelled": [],
 //                              "outcome": "none" } } ] }
 //
 // "do": `feed` (accept the event and send what it ordered), `accept` (accept only: the process dies before the send), `dispatch`, `pump`,
 // `deliver` (an event arrives at the link and waits for `pump`), `advance` (`ms` of the clock), `restart` (a new engine over the same world).
-// "event.kind": `word`, `signal` (both a word from outside), `progress`, `answer`, `failure` (`code` is the failure code), `timeout`, `start`
+// "event.kind": `signal` (a signal of a party or of the machine, AL-38), `progress`, `answer`, `failure` (`code` is the failure code), `timeout`, `start`
 // (`input` is the object of the input of the machine). `input` is a text, or an object that is written as JSON.
 module alula.machine_run
 
@@ -23,10 +23,10 @@ import std.text
 import std.encoding.json.{Json, JsonValue, JsonObject}
 import alula.engine.{Machine, Engine, MemoryWorld, Incoming, EventKind, JournalEntry, Journal, Store, Link, start_engine, resume_engine, memory_journal, memory_store, memory_link, memory_time}
 import alula.machine.{value_equal, value_from_json, value_json}
-import alula.machine_table.{LoadError}
+import alula.machine_table.{LoadError, MachineDef}
 
-/// ScEvent: an event of a scenario step as the file writes it.
-export type ScEvent { kind str, name str, request str, input str, code str, source str }
+/// ScEvent: an event of a scenario step as the file writes it. `party` is, for a signal, the name or the id of the party that declared it (format 2.13, AL-38); empty when the step does not say.
+export type ScEvent { kind str, name str, request str, input str, code str, source str, party str }
 
 /// ExpParam, ExpEntry: an expected journal entry: the code and the parameters in order.
 export type ExpParam { name str, value str }
@@ -132,15 +132,16 @@ fn sj_list(o JsonObject, key str, path str) -> Result[[]str, LoadError] {
     Ok(out)
 }
 
-fn event_kinds() -> []str => ["word", "signal", "progress", "answer", "failure", "timeout", "start"]
+fn event_kinds() -> []str => ["signal", "progress", "answer", "failure", "timeout", "start"]
 
 fn step_ops() -> []str => ["feed", "accept", "dispatch", "pump", "deliver", "advance", "restart"]
 
 fn sj_event(v JsonValue, path str) -> Result[ScEvent, LoadError] {
     ro o = sj_obj(v, path)?
-    sj_only(o, ["kind", "name", "request", "input", "code", "source"], path)?
+    sj_only(o, ["kind", "name", "request", "input", "code", "source", "party"], path)?
     ro kind = sj_need_str(o, "kind", path)?
-    if !event_kinds().contains(kind) { return Err(sle("${path}.kind", "the kind of an event must be word, signal, progress, answer, failure, timeout or start, got ${kind}")) }
+    if kind == "word" { return Err(sle("${path}.kind", "the step word is gone: a signal of a party is the event signal (format 2.13, AL-38; there is no transition period)")) }
+    if !event_kinds().contains(kind) { return Err(sle("${path}.kind", "the kind of an event must be signal, progress, answer, failure, timeout or start, got ${kind}")) }
     mut fallback = ""
     if kind == "answer" { fallback = "answer" }
     if kind == "failure" { fallback = "failure" }
@@ -162,11 +163,11 @@ fn sj_event(v JsonValue, path str) -> Result[ScEvent, LoadError] {
     }
     Ok(ScEvent {
         kind, name, request: sj_str_or(o, "request", "", path)?, input, code: sj_str_or(o, "code", "", path)?,
-        source: sj_str_or(o, "source", "", path)?
+        source: sj_str_or(o, "source", "", path)?, party: sj_str_or(o, "party", "", path)?
     })
 }
 
-fn empty_event() -> ScEvent => { kind: "", name: "", request: "", input: "", code: "", source: "" }
+fn empty_event() -> ScEvent => { kind: "", name: "", request: "", input: "", code: "", source: "", party: "" }
 
 fn sj_journal(v JsonValue, path str) -> Result[[]ExpEntry, LoadError] {
     ro items = match v.array() {
@@ -600,15 +601,33 @@ export fn scenario_problem(first_machine AlulaMachine, sc Scenario) -> str {
     // ORACLE-WORKAROUND(45): a copy of a `ro` list (`machine.replies`) built by hand in a loop; write `mut replies = machine.replies` when item 45 is fixed
     mut replies = []ScriptedReply.new()
     for r in machine.replies { replies.push(r) }
+    mut at = 0
     for s in sc.steps {
+        at += 1
         if s.host.len() > 0 {
             match replies_after(replies, s) {
                 Ok(next) => { replies = next }
                 Err(m) => return m
             }
         }
+        ro bad = signal_party_problem(machine.def, s.event)
+        if bad != "" { return "step ${at}: ${bad}" }
     }
     ""
+}
+
+// The party of a signal step (format 2.13, AL-38): it exists (by its name or by its id) and declares the signal.
+fn signal_party_problem(def MachineDef, ev ScEvent) -> str {
+    if ev.kind != "signal" || ev.party == "" { return "" }
+    for p in def.parties {
+        if p.name == ev.party || p.id == ev.party {
+            for w in p.signals {
+                if w.name == ev.name { return "" }
+            }
+            return "the party ${ev.party} does not declare the signal ${ev.name}"
+        }
+    }
+    "the machine has no party ${ev.party} (the signal ${ev.name})"
 }
 
 /// Run a scenario on a machine that is data with the answers of the primitives of the host that the steps change (`host`): like `drive_scenario`,
@@ -647,6 +666,8 @@ export fn drive_table_scenario(first_machine AlulaMachine, sc Scenario) -> []Ste
 
 /// Run a scenario on a machine that is data and compare every step with what the file expects.
 export fn run_scenario(machine AlulaMachine, sc Scenario) -> ScenarioRun {
+    ro problem = scenario_problem(machine, sc)
+    if problem != "" { return ScenarioRun { name: sc.name, traces: []StepTrace.new(), mismatches: [problem] } }
     ro traces = drive_table_scenario(machine, sc)
     mut mismatches = []str.new()
     mut i = 0

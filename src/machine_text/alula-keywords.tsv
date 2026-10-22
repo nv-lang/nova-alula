@@ -1,4 +1,3 @@
-# A copy of state-machines/alula-keywords.tsv of the methodology, as it is for the notation of 2.12 that this package reads (the table has not changed since 2.10: 219 rows, 16 kinds; the table of the methodology 2.14 has the changes of 2.13, which are not read here yet). The columns are kind, ru, en. Not edited here: what the product adds is in keywords_product.tsv.
 kind	ru	en
 header	Машина	Machine
 header	Определения	Definitions
@@ -20,7 +19,6 @@ section	Подключения	Includes
 section	Состояния	States
 section	Концы	Ends
 section	Примитивы	Primitives
-section	Раскрытие фрагмента	Fragment expansion
 section	Обязывает	Requires
 section	Общие события	Common events
 column	имя	name
@@ -35,7 +33,7 @@ column	пишет	writes
 column	идентификатор	id
 column	вид	kind
 column	профиль	profile
-column	слова ворот	gate_words
+column	сигналы	signals
 column	счётчик	counter
 column	№	№
 column	Событие	Event
@@ -64,7 +62,8 @@ key	Срок тишины	Idle term
 key	Правит	Edits
 key	проверка	check
 key	Возвратов формы	Form returns
-key	Вход	Input
+key	Запрос	Request
+key	Читает	Reads
 key	При входе	On entry
 key	При приёме	On accept
 key	Результат	Result
@@ -88,10 +87,8 @@ kind_party	вход	input
 event	ответ	response
 event	сбой	failure
 event	сразу	immediate
-event	слово	word
 event	сигнал	signal
 event	причина	reason
-event	∈	in
 event	иначе	else
 destination	предыдущее	previous
 destination	возврат_подготовки	preparation_return
@@ -102,7 +99,7 @@ decl	перечисление	enum
 decl	вариант	variant
 decl	определение	define
 type	число	int
-type	число≥	int>=
+type	число>=	int>=
 type	дробное	float
 type	текст	text
 type	да/нет	bool
@@ -114,7 +111,7 @@ type	Состояние	State
 type	Сигнал	Signal
 type	СобытиеЖурнала	JournalEvent
 type	ИсходВорот	GateOutcome
-type	слово	word
+type	сигнал	signal
 type	[]машина	[]machine
 type	поведение	behavior
 type	примечание	note
@@ -147,19 +144,18 @@ action	если	if
 action	то	then
 action	иначе	else
 action	пусть	let
-operator	≥	>=
-operator	≤	<=
-operator	≠	!=
-operator	→	->
-operator	…	...
-operator	∈	in
+operator	>=	>=
+operator	<=	<=
+operator	!=	!=
+operator	->	->
+operator	...	...
+operator	in	in
 operator	??	??
 operator	_	_
 readable	вход	input
 readable	сторона	party
 readable	событие.сторона	event.party
 readable	событие.идентификатор	event.id
-readable	идентификатор_запроса	id
 readable	запрос_вызова	call_request_id
 readable	трасса	trace
 readable	номер_шага	step
@@ -172,6 +168,7 @@ readable	остановка	stop_reason
 readable	к_отправке	to_send
 readable	открытые_запросы	open_requests
 readable	слова_человека	human_words
+readable	причина	reason
 enum_value	механика	mechanics
 enum_value	строки	rows
 enum_value	строки и механика	rows_and_mechanics
@@ -188,7 +185,6 @@ enum_value	стоп	stop
 enum_value	продолжить	continue
 enum_value	остановить	halt
 enum_value	отмена	cancel
-enum_value	нет	none
 enum_value	pure	pure
 enum_value	reading	reading
 enum_value	writing	writing

@@ -391,22 +391,22 @@ export fn standard_types() -> TypeDefs {
     records.push(RecordDef { name: "LensResult", fields: [fd("findings", finding_list), fd("probes", count_spec())] })
     records.push(RecordDef { name: "JournalEvent", fields: [fd("code", TextType), fd("params", ListType(TupleType([TextType, TextType])))] })
     mut variants = []VariantDef.new()
-    variants.push(VariantDef { name: "Severity", cases: [plain_case("Critical"), plain_case("Significant"), plain_case("Desirable")] , words: []EnumWord.new() })
-    variants.push(VariantDef { name: "Check", cases: [plain_case("Confirmed"), plain_case("ChannelDistortion"), plain_case("NotConfirmed")] , words: []EnumWord.new() })
-    variants.push(VariantDef { name: "ReplyCheck", cases: [plain_case("Valid"), plain_case("Violated"), plain_case("Empty")] , words: []EnumWord.new() })
-    variants.push(VariantDef { name: "WitnessAnswer", cases: [cd("Answered", [fd("claim", RecordType("Claim"))]), cd("NotMeasured", [fd("claim", TextType)])] , words: []EnumWord.new() })
-    variants.push(VariantDef { name: "EditResult", cases: [cd("Done", [fd("proposal", TextType)]), cd("Question", [fd("proposal", TextType), fd("question", TextType)])] , words: []EnumWord.new() })
+    variants.push(VariantDef { name: "Severity", cases: [plain_case("Critical"), plain_case("Significant"), plain_case("Desirable")] , values: []EnumValue.new() })
+    variants.push(VariantDef { name: "Check", cases: [plain_case("Confirmed"), plain_case("ChannelDistortion"), plain_case("NotConfirmed")] , values: []EnumValue.new() })
+    variants.push(VariantDef { name: "ReplyCheck", cases: [plain_case("Valid"), plain_case("Violated"), plain_case("Empty")] , values: []EnumValue.new() })
+    variants.push(VariantDef { name: "WitnessAnswer", cases: [cd("Answered", [fd("claim", RecordType("Claim"))]), cd("NotMeasured", [fd("claim", TextType)])] , values: []EnumValue.new() })
+    variants.push(VariantDef { name: "EditResult", cases: [cd("Done", [fd("proposal", TextType)]), cd("Question", [fd("proposal", TextType), fd("question", TextType)])] , values: []EnumValue.new() })
     variants.push(VariantDef { name: "RoleResult", cases: [
         cd("WitnessOutcome", [fd("answers", ListType(VariantType("WitnessAnswer")))]),
         cd("LensOutcome", [fd("result", RecordType("LensResult"))]),
         cd("EditOutcome", [fd("result", VariantType("EditResult"))])
-    ], words: []EnumWord.new() })
+    ], values: []EnumValue.new() })
     variants.push(VariantDef { name: "RoleContext", cases: [
         cd("WitnessContext", [fd("author_question", optional_text), fd("findings", OptionalType(finding_list)), fd("proposal", TextType)]),
         cd("LensContext", [fd("proposal", TextType), fd("witness_answers", OptionalType(ListType(VariantType("WitnessAnswer"))))]),
         cd("FixContext", [fd("proposal", TextType), fd("gate3_findings", finding_list), fd("author_guidance", optional_text)]),
         cd("QuestionContext", [fd("author_question", TextType), fd("proposal", TextType), fd("gate3_findings", finding_list), fd("human_answer", TextType)])
-    ], words: []EnumWord.new() })
+    ], values: []EnumValue.new() })
     TypeDefs { records, variants }
 }
 
@@ -426,10 +426,10 @@ export fn session_types() -> TypeDefs {
     for v in base.variants {
         if v.name != "Severity" { variants.push(v) }
     }
-    variants.push(VariantDef { name: "Severity", cases: [plain_case("Essential"), plain_case("Superficial")], words: []EnumWord.new() })
-    variants.push(VariantDef { name: "Level", cases: [plain_case("Implementation"), plain_case("Plan"), plain_case("Requirements"), plain_case("OutOfScope"), plain_case("Delivery")], words: []EnumWord.new() })
-    variants.push(VariantDef { name: "SessionResult", cases: [plain_case("Done"), plain_case("Revision"), plain_case("Plan"), plain_case("Requirements"), plain_case("Question")], words: []EnumWord.new() })
-    variants.push(VariantDef { name: "LaunchScope", cases: [plain_case("Fits"), plain_case("DoesNotFit")], words: []EnumWord.new() })
+    variants.push(VariantDef { name: "Severity", cases: [plain_case("Essential"), plain_case("Superficial")], values: []EnumValue.new() })
+    variants.push(VariantDef { name: "Level", cases: [plain_case("Implementation"), plain_case("Plan"), plain_case("Requirements"), plain_case("OutOfScope"), plain_case("Delivery")], values: []EnumValue.new() })
+    variants.push(VariantDef { name: "SessionResult", cases: [plain_case("Done"), plain_case("Revision"), plain_case("Plan"), plain_case("Requirements"), plain_case("Question")], values: []EnumValue.new() })
+    variants.push(VariantDef { name: "LaunchScope", cases: [plain_case("Fits"), plain_case("DoesNotFit")], values: []EnumValue.new() })
     TypeDefs { records, variants }
 }
 
@@ -451,12 +451,12 @@ export fn runner_types() -> TypeDefs {
     records.push(RecordDef { name: "PreparationResult", fields: [fd("outcome", VariantType("PreparationStatus")), fd("cycle", FullDictType { key: VariantType("Stage"), value: RecordType("Cycle") })] })
     mut variants = []VariantDef.new()
     for v in base.variants { variants.push(v) }
-    variants.push(VariantDef { name: "Stage", cases: [plain_case("Analysis"), plain_case("Plan"), plain_case("Implementation"), plain_case("Delivery"), plain_case("Meeting")], words: []EnumWord.new() })
-    variants.push(VariantDef { name: "TaskDocument", cases: [plain_case("Specification"), plain_case("Plan"), plain_case("ImplementationReport")], words: []EnumWord.new() })
-    variants.push(VariantDef { name: "DocumentStatus", cases: [plain_case("Draft"), plain_case("Approved"), plain_case("InProgress"), plain_case("Done"), plain_case("Unparsed")], words: []EnumWord.new() })
-    variants.push(VariantDef { name: "StopWord", cases: [plain_case("NoWord"), plain_case("Revision"), plain_case("Plan"), plain_case("Requirements"), plain_case("Question")], words: []EnumWord.new() })
-    variants.push(VariantDef { name: "Risk", cases: [plain_case("Low"), plain_case("Medium"), plain_case("High"), plain_case("Unrated")], words: []EnumWord.new() })
-    variants.push(VariantDef { name: "Rating", cases: [plain_case("Confirmed"), plain_case("No"), plain_case("Unrated")], words: []EnumWord.new() })
-    variants.push(VariantDef { name: "PreparationStatus", cases: [plain_case("Ready"), plain_case("BusyByLiveProcess"), plain_case("TreeBusyByOtherTask"), plain_case("GroupNotStopped")], words: []EnumWord.new() })
+    variants.push(VariantDef { name: "Stage", cases: [plain_case("Analysis"), plain_case("Plan"), plain_case("Implementation"), plain_case("Delivery"), plain_case("Meeting")], values: []EnumValue.new() })
+    variants.push(VariantDef { name: "TaskDocument", cases: [plain_case("Specification"), plain_case("Plan"), plain_case("ImplementationReport")], values: []EnumValue.new() })
+    variants.push(VariantDef { name: "DocumentStatus", cases: [plain_case("Draft"), plain_case("Approved"), plain_case("InProgress"), plain_case("Done"), plain_case("Unparsed")], values: []EnumValue.new() })
+    variants.push(VariantDef { name: "StopWord", cases: [plain_case("NoWord"), plain_case("Revision"), plain_case("Plan"), plain_case("Requirements"), plain_case("Question")], values: []EnumValue.new() })
+    variants.push(VariantDef { name: "Risk", cases: [plain_case("Low"), plain_case("Medium"), plain_case("High"), plain_case("Unrated")], values: []EnumValue.new() })
+    variants.push(VariantDef { name: "Rating", cases: [plain_case("Confirmed"), plain_case("No"), plain_case("Unrated")], values: []EnumValue.new() })
+    variants.push(VariantDef { name: "PreparationStatus", cases: [plain_case("Ready"), plain_case("BusyByLiveProcess"), plain_case("TreeBusyByOtherTask"), plain_case("GroupNotStopped")], values: []EnumValue.new() })
     TypeDefs { records, variants }
 }

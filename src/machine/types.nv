@@ -36,11 +36,11 @@ export type RecordDef { name str, fields []FieldDef }
 /// CaseDef: a case of a variant type; an enum value is a case without fields.
 export type CaseDef { name str, fields []FieldDef }
 
-/// EnumWord: the word of a value of an enum (format 2.7, section 6): the name of the case and its word (`Read` - `read`).
-export type EnumWord { name str, word str }
+/// EnumValue: the word of a value of an enum (format 2.7, section 6): the name of the case and its word (`Read` - `read`).
+export type EnumValue { name str, value str }
 
 /// VariantDef: the declaration of a variant or enum type. `words` are the words of the values of an enum that has them (format 2.7, P-7), in the order of the declaration; empty when it has none.
-export type VariantDef { name str, cases []CaseDef, words []EnumWord }
+export type VariantDef { name str, cases []CaseDef, values []EnumValue }
 
 /// TypeDefs: the named types a check may meet.
 export type TypeDefs { records []RecordDef, variants []VariantDef }
@@ -49,8 +49,8 @@ export type TypeDefs { records []RecordDef, variants []VariantDef }
 export fn enum_word(defs TypeDefs, type_name str, case_name str) -> Option[str] {
     for v in defs.variants {
         if v.name == type_name {
-            for w in v.words {
-                if w.name == case_name { return Some(w.word) }
+            for w in v.values {
+                if w.name == case_name { return Some(w.value) }
             }
         }
     }

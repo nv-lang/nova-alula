@@ -57,7 +57,6 @@ export type EventPat enum
     | FailureEv { reasons []str, bind str }
     | TimeoutEv
     | ProgressEv { name str, binds []Bind }
-    | WordEv { word str, binds []Bind }
     | SignalEv { name str, binds []Bind }
     | NowEv
 
@@ -102,7 +101,7 @@ export type AcceptRow { event EventPat, actions []Action }
 /// InputField: a field of the table "Input" of an appeal; `to_party` is the column `reads` = party (else executor).
 export type InputField { field str, value Expr, to_party bool }
 
-/// WordDef: a word, a signal or a part of an answer with its fields.
+/// WordDef: a signal of a party or of the machine, or a part of an answer, with its fields.
 export type WordDef { name str, fields []FieldDef }
 
 /// ParseDef: the `разбор` of a party of the kind `machine` (format section 1): the reading primitive that turns the answer into the value of the answer, the literal of the role
@@ -112,7 +111,7 @@ export type ParseDef { primitive str, role str, result TypeSpec }
 /// PartyDef: a party (format section 1); `profile` is zero or one expression. A party of the kind `machine` names the nested machine (`nested`, a name of the registry of the caller),
 /// the record type of the input of the call (`input_spec`, zero or one) and may have `parse` (zero or one).
 export type PartyDef {
-    name str, id str, kind PartyKind, profile []Expr, words []WordDef, progress []WordDef,
+    name str, id str, kind PartyKind, profile []Expr, signals []WordDef, progress []WordDef,
     setting str, nested str, input_spec []TypeSpec, result_spec []TypeSpec, parse []ParseDef, counter str
 }
 

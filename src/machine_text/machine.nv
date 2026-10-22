@@ -347,16 +347,12 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
     }
     mut states = []TxJ.new()
     mut error_end = ""
-    ro error_name = match names_file_word(cx.names, "state", "Errored") {
-        Some(x) => x
-        None => "Errored"
-    }
     match section_of(sections, "States") {
         Some(sec) => {
             initial = initial_state(entries, sec, cx)
             for blk in blocks {
                 states.push(state_translate(entries, blk, states.len(), cx))
-                if (blk.ru == error_name || blk.latin == "Errored") && blk.kind == "end" { error_end = blk.latin }
+                if blk.latin == "Errored" && blk.kind == "end" { error_end = blk.latin }
             }
         }
         None => ()
@@ -374,13 +370,9 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
         Some(sec) => { ends = decl_ends(entries, sec, cx) }
         None => note(cx, struct_error(1, 1, "нет раздела `## ${kw(cx.words, "section", "Ends")}`"))
     }
-    // the reference section of a fragment names a fragment that the machine includes (format 2.9, AL-17)
+    // the section of the expansion of a fragment is removed in 2.13 (AL-44)
     mut notes = []TranslateError.new()
-    for x in classified.expansions {
-        if !connected.contains(x.name) {
-            notes.push(tx_err(x.line, 4, "warning", "имя «${x.name}» в заголовке раздела не совпадает с именем подключённого фрагмента${connected_hint(connected)}"))
-        }
-    }
+    for x in classified.expansions { cx.errors.push(expansion_error(x.line, x.name)) }
 
     // the JSON
     mut root = [kv("format", js("machine/2")), kv("alula_version", js(if format_versions().contains(header.format) { header.format } else { "2.14" })), kv("machine", js(header.machine)), kv("version", js(header.version))]

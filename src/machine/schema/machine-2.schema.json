@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/unitcraft/crew-harness/src/machine/schema/machine-2.schema.json",
+  "$id": "https://github.com/nv-lang/nova-alula/src/machine/schema/machine-2.schema.json",
   "title": "machine/2 - a state machine as data (the language Alula of the methodology, version 2.14 only, in English keys)",
   "description": "The tree that the interpreter of the product (src/machine_run) runs. The source of the language is state-machines/state-machine-alula-spec.md of unitcraft/ai-dev-methodology (read only); the keys are English. The decoder in src/machine_table/json.nv is the reference: a key that is not listed here is refused. The checks of the table (reads against the Input, writes against the data, reachability, the classes of the primitives, the exhaustiveness of the Ends) are check.nv and cannot be written in a schema.",
   "type": "object",
@@ -32,7 +32,7 @@
     "data": { "type": "array", "items": { "$ref": "#/$defs/datum" } },
     "parties": { "type": "array", "items": { "$ref": "#/$defs/party" } },
     "request_limit": { "$ref": "#/$defs/expr" },
-    "signals": { "type": "array", "items": { "$ref": "#/$defs/word" }, "description": "signals outside the contract: words from outside that belong to no party (stop, cancel)" },
+    "signals": { "type": "array", "items": { "$ref": "#/$defs/signal_def" }, "description": "signals outside the contract: signals from outside that belong to no party (stop, cancel)" },
     "definitions": { "type": "array", "items": { "$ref": "#/$defs/definition" } },
     "includes": { "type": "array", "items": { "$ref": "#/$defs/include" } },
     "fragments": { "type": "array", "items": { "$ref": "#/$defs/fragment_use" }, "description": "the connections of the fragments (the key of the product, format 1b (m)): the fragment is in the tree substituted, the connection lets the generator write the line of connection with every argument" },
@@ -72,10 +72,10 @@
       "type": "object", "additionalProperties": false, "required": ["name", "cases"],
       "properties": {
         "name": { "type": "string" },
-        "words": {
+        "values": {
           "type": "array",
           "items": { "type": "array", "minItems": 2, "maxItems": 2, "items": [ { "type": "string" }, { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" } ] },
-          "description": "the words of the values of an enum (format 2.7, P-7): the pairs [name of the case, word] in the order of the declaration; a case without fields only, a case and a word once; absent when the enum has no words"
+          "description": "the values of an enum (format 2.7, P-7; named words before 2.13, AL-41): the pairs [name of the case, value] in the order of the declaration; a case without fields only, a case and a value once; absent when the enum has no values"
         },
         "cases": {
           "type": "array", "minItems": 1,
@@ -117,7 +117,7 @@
         "writes": { "enum": ["rows", "mechanics", "rows_and_mechanics", "fragment", "rows_and_fragment"], "default": "rows" }
       }
     },
-    "word": {
+    "signal_def": {
       "type": "object", "additionalProperties": false, "required": ["name"],
       "properties": { "name": { "type": "string" }, "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } } }
     },
@@ -128,8 +128,8 @@
         "id": { "type": "string", "description": "the Latin id of the party (in the id of a request); empty for a party used with a set" },
         "kind": { "enum": ["agent", "human", "enhanced", "gatekeeper", "machine"] },
         "profile": { "$ref": "#/$defs/expr" },
-        "words": { "type": "array", "items": { "$ref": "#/$defs/word" }, "description": "the words of a gate (human, enhanced, gatekeeper)" },
-        "progress": { "type": "array", "items": { "$ref": "#/$defs/word" }, "description": "the parts of an answer of an agent or of a machine (the request stays open)" },
+        "signals": { "type": "array", "items": { "$ref": "#/$defs/signal_def" }, "description": "the signals of a party (human, enhanced, gatekeeper), declared in the column signals of the table of the parties (format 2.13, AL-38)" },
+        "progress": { "type": "array", "items": { "$ref": "#/$defs/signal_def" }, "description": "the parts of an answer of an agent or of a machine (the request stays open)" },
         "setting": { "type": "string", "description": "the setting of the project that makes a gatekeeper a human or an agent" },
         "nested": { "type": "string", "description": "the name of the nested machine in the registry of the caller (kind machine)" },
         "input_type": { "$ref": "#/$defs/type", "description": "the record type of the input of the call of a nested machine (kind machine): the fields of its request" },
@@ -160,9 +160,9 @@
       "properties": {
         "name": { "enum": ["Pause"] },
         "args": {
-          "type": "object", "additionalProperties": false, "required": ["halt_word", "halt_code", "nested", "cancel_requests", "reenter", "write_right"],
+          "type": "object", "additionalProperties": false, "required": ["halt_signal", "halt_code", "nested", "cancel_requests", "reenter", "write_right"],
           "properties": {
-            "halt_word": { "$ref": "#/$defs/expr", "description": "the gate word of the enhanced party that halts (a literal: the name of the word in the tree)" },
+            "halt_signal": { "$ref": "#/$defs/expr", "description": "the signal of the enhanced party that halts (a literal: the name of the signal in the tree)" },
             "halt_code": { "$ref": "#/$defs/expr", "description": "the value of the datum of the stop that the halt writes (a text literal)" },
             "nested": { "$ref": "#/$defs/expr", "description": "the nested machines that the signals go to: a list of text literals with the names of the registry" },
             "cancel_requests": { "$ref": "#/$defs/expr", "description": "a literal: mechanics, without_return_to_send, stop_transport_turn" },
@@ -185,7 +185,6 @@
         { "properties": { "kind": { "const": "failure" }, "reasons": { "type": "array", "items": { "type": "string" } }, "bind": { "type": "string" } }, "additionalProperties": false },
         { "properties": { "kind": { "const": "timeout" } }, "additionalProperties": false },
         { "properties": { "kind": { "const": "progress" }, "name": { "type": "string" }, "bind": { "$ref": "#/$defs/binds" } }, "required": ["name"], "additionalProperties": false },
-        { "properties": { "kind": { "const": "word" }, "word": { "type": "string" }, "bind": { "$ref": "#/$defs/binds" } }, "required": ["word"], "additionalProperties": false },
         { "properties": { "kind": { "const": "signal" }, "name": { "type": "string" }, "bind": { "$ref": "#/$defs/binds" } }, "required": ["name"], "additionalProperties": false },
         { "properties": { "kind": { "const": "now" } }, "additionalProperties": false }
       ]

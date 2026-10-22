@@ -5,11 +5,11 @@ module alula.machine_text
 import std.text
 import alula.machine.{standard_registry, class_word}
 
-fn rn_binds(cx RnCx, bind RJ, kinds_signal bool) -> str {
+fn rn_binds(cx RnCx, bind RJ) -> str {
     mut parts = []str.new()
     for q in rj_pairs(bind) {
         ro local = rj_str(q.value)
-        ro field = if kinds_signal { rn_name(cx, ["signal_field", "field", "data", "variable"], q.key) } else { rn_field_name(cx, q.key) }
+        ro field = rn_field_name(cx, q.key)
         parts.push(if local == field { field } else { "${field}: ${local}" })
     }
     parts.join(", ")
@@ -39,7 +39,7 @@ fn rn_event(cx RnCx, ev RJ, locals []str) -> RnEvent {
     }
     if kind == "answer_variant" {
         ro head = "${rn_kw(cx, "event", "response")}: ${rn_case_name(cx, rj_gstr(ev, "variant"))}"
-        ro inner = rn_binds(cx, bind, false)
+        ro inner = rn_binds(cx, bind)
         if inner == "" { return RnEvent { text: head, locals } }
         mut all = rn_copy(locals)
         for l in rn_bind_locals(bind) { all.push(l) }
@@ -52,15 +52,12 @@ fn rn_event(cx RnCx, ev RJ, locals []str) -> RnEvent {
         if reasons.len() == 0 { return RnEvent { text: "${rn_kw(cx, "event", "failure")}(${name})", locals: rn_with(locals, name) } }
         mut codes = []str.new()
         for r in reasons { codes.push("${rn_type_name(cx, "FailCode")}.${rn_case_name(cx, rj_str(r))}") }
-        ro sign = if cx.lang == "ru" { "∈" } else { "in" }
-        return RnEvent { text: "${rn_kw(cx, "event", "failure")}(${name} ${sign} {${codes.join(", ")}})", locals: rn_with(locals, name) }
+        return RnEvent { text: "${rn_kw(cx, "event", "failure")}(${name} in {${codes.join(", ")}})", locals: rn_with(locals, name) }
     }
-    if kind == "word" || kind == "signal" || kind == "progress" {
-        ro is_signal = kind == "signal"
-        ro head_key = if kind == "word" { "word" } else if kind == "signal" { "signal" } else { "part" }
-        ro name_en = if kind == "word" { rj_gstr(ev, "word") } else { rj_gstr(ev, "name") }
-        ro phrase = if kind == "word" { rn_phrase_of(cx, cx.gate_words, "word", name_en) } else if is_signal { rn_phrase_of(cx, cx.signal_words, "signal", name_en) } else { rn_phrase_of(cx, cx.part_words, "part", name_en) }
-        ro inner = rn_binds(cx, bind, is_signal)
+    if kind == "signal" || kind == "progress" {
+        ro head_key = if kind == "signal" { "signal" } else { "part" }
+        ro phrase = rj_gstr(ev, "name")
+        ro inner = rn_binds(cx, bind)
         mut all = rn_copy(locals)
         for l in rn_bind_locals(bind) { all.push(l) }
         ro shown = if inner == "" { phrase } else { "${phrase}(${inner})" }
@@ -159,22 +156,17 @@ fn rn_state(mut cx RnCx, st RJ, index int) -> []str {
     mut out = []str.new()
     out.push("### ${rj_gstr(st, "name")} — ${rn_kw(cx, "kind_state", kind)}")
     if kind == "appeal" {
-        ro party = rj_gstr(st, "party")
-        ro party_word = match rn_pair_ru(cx.parties, party) {
-            Some(w) => w
-            None => party
-        }
+        ro party_word = rj_gstr(st, "party")
         mut party_line = "- ${rn_kw(cx, "key", "Party")}: ${party_word}"
         match rj_get(st, "set") {
             Some(e) => { party_line = "${party_line}; ${rn_kw(cx, "key", "set")}: ${rn_expr(cx, e, []str.new())}" }
             None => ()
         }
         out.push(party_line)
-        ro silence = match rj_get(st, "silence") {
-            Some(e) => rn_expr(cx, e, []str.new())
-            None => "—"
+        match rj_get(st, "silence") {
+            Some(e) => { out.push("- ${rn_kw(cx, "key", "Idle term")}: ${rn_expr(cx, e, []str.new())}") }
+            None => ()
         }
-        out.push("- ${rn_kw(cx, "key", "Idle term")}: ${silence}")
         if rj_gstr(st, "edits") != "" {
             out.push("- ${rn_kw(cx, "key", "Edits")}: ${rn_global(cx, rj_gstr(st, "edits"))}; ${rn_kw(cx, "key", "check")}: ${rj_gstr(st, "edit_check")}")
         }
@@ -183,9 +175,9 @@ fn rn_state(mut cx RnCx, st RJ, index int) -> []str {
             None => ()
         }
         ro inputs = rj_garr(st, "inputs")
-        // an appeal without the fields of the request writes `Вход: нет`, without a table (format 4.1, 2.12, AL-23)
-        out.push(if inputs.len() == 0 { "- ${rn_kw(cx, "key", "Input")}: ${rn_kw(cx, "enum_value", "none")}" } else { "- ${rn_kw(cx, "key", "Input")}:" })
+        // an appeal without the fields of the request writes no line `Запрос:` (format 4.1, 2.13, AL-39, AL-40)
         if inputs.len() > 0 {
+            out.push("- ${rn_kw(cx, "key", "Request")}:")
             out.push("")
             mut rows = []RnRow.new()
             for i in inputs {
@@ -217,24 +209,21 @@ fn rn_state(mut cx RnCx, st RJ, index int) -> []str {
         rn_add(out, rn_rows(cx, rj_garr(st, "rows"), false, []str.new()))
         return out
     }
-    // an operation, a fork, an end: the names read, the entry, the exception, the rows
-    mut reads = "—"
+    // an operation, a fork, an end: the names read (no line when it reads nothing, AL-40), the entry, the exception, the rows
     match rj_get(st, "reads_all") {
-        Some(r) => { reads = rn_kw(cx, "readable", "all_data") }
+        Some(r) => { out.push("- ${rn_kw(cx, "key", "Reads")}: ${rn_kw(cx, "readable", "all_data")}") }
         None => {
             mut names = []str.new()
             for n in rj_garr(st, "reads") { names.push(rn_global(cx, rj_str(n))) }
-            reads = if names.len() == 0 { rn_kw(cx, "enum_value", "none") } else { names.join(", ") }
+            if names.len() > 0 { out.push("- ${rn_kw(cx, "key", "Reads")}: ${names.join(", ")}") }
         }
     }
-    out.push("- ${rn_kw(cx, "key", "Input")}: ${reads}")
     rn_add(out, rn_entry_lines(cx, st, []str.new()))
     match rj_get(st, "except") {
         Some(e) => {
             mut values = []str.new()
             for v in rj_garr(e, "values") { values.push(rn_quote(rj_str(v))) }
-            ro sign = if cx.lang == "ru" { "∈" } else { "in" }
-            out.push("- ${rn_kw(cx, "key", "Except")}: ${rn_global(cx, rj_gstr(e, "field"))} ${sign} {${values.join(", ")}}")
+            out.push("- ${rn_kw(cx, "key", "Except")}: ${rn_global(cx, rj_gstr(e, "field"))} in {${values.join(", ")}}")
         }
         None => ()
     }
@@ -364,13 +353,6 @@ fn rn_dropped(mut cx RnCx, root RJ, copy_includes bool) -> RnDropped {
     RnDropped { types, constants, definitions }
 }
 
-fn rn_has_pair(pairs_in []TxPair, en str) -> bool {
-    match rn_pair_ru(pairs_in, en) {
-        Some(w) => true
-        None => false
-    }
-}
-
 // The lines without the empty ones at the end.
 fn rn_trimmed(lines []str) -> []str {
     mut end = lines.len()
@@ -393,41 +375,22 @@ fn rn_section(mut out []str, heading str, lines []str) -> () {
     out.push("")
 }
 
-fn rn_register(mut cx RnCx, root RJ, dropped RnDropped) -> () {
-    for c in rj_garr(root, "constants") {
-        ro en = rj_gstr(c, "name")
-        if !dropped.constants.contains(en) { rn_pair(cx.globals, rn_name(cx, kinds_constant(), en), en) }
+/// The first former key or kind of a tree of 2.12 (`words` of a party or of an enum, the event kind `word`, the argument `halt_word`): the place and the message, "" when the tree holds none. No transition period (AL-38, AL-41).
+fn rn_former_note(v RJ, path str) -> str {
+    for pair in rj_pairs(v) {
+        if pair.key == "words" { return "${path}.words: the key words is the former name of signals (the signals of a party, AL-38) or of values (the values of an enum, AL-41); there is no transition period" }
+        if pair.key == "halt_word" { return "${path}.halt_word: the argument halt_word is the former name of halt_signal (AL-38); there is no transition period" }
+        if pair.key == "kind" && rj_str(pair.value) == "word" && rj_has(v, "word") { return "${path}.kind: the event kind word is the former name of signal (AL-38); there is no transition period" }
+        ro inner = rn_former_note(pair.value, "${path}.${pair.key}")
+        if inner != "" { return inner }
     }
-    for p in rj_garr(root, "params") {
-        ro en = rj_gstr(p, "name")
-        rn_pair(cx.globals, rn_name(cx, kinds_constant(), en), en)
+    mut i = 0
+    for item in rj_items(v) {
+        ro inner = rn_former_note(item, "${path}[${i}]")
+        if inner != "" { return inner }
+        i += 1
     }
-    for d in rj_garr(root, "data") {
-        ro en = rj_gstr(d, "name")
-        if !en.contains("[*]") { rn_pair(cx.globals, rn_name(cx, kinds_data(), en), en) }
-    }
-    for d in rj_garr(root, "definitions") {
-        ro en = rj_gstr(d, "name")
-        if !dropped.definitions.contains(en) { rn_pair(cx.defs, rn_name(cx, ["function", "method", "variable"], en), en) }
-    }
-    for p in rj_garr(root, "parties") {
-        ro en = rj_gstr(p, "name")
-        rn_pair(cx.parties, rn_name(cx, ["party", "type", "variable"], en), en)
-        for w in rj_garr(p, "words") {
-            ro wen = rj_gstr(w, "name")
-            if !rn_has_pair(cx.gate_words, wen) { rn_pair(cx.gate_words, rn_phrase(cx, "word", wen), wen) }
-        }
-    }
-    for s in rj_garr(root, "signals") {
-        ro en = rj_gstr(s, "name")
-        rn_pair(cx.signal_words, rn_phrase(cx, "signal", en), en)
-    }
-    for p in rj_garr(root, "parties") {
-        for item in rj_garr(p, "progress") {
-            ro en = rj_gstr(item, "name")
-            rn_pair(cx.part_words, rn_phrase(cx, "part", en), en)
-        }
-    }
+    ""
 }
 
 /// The file of Alula for a tree `machine/2` in the language (`ru` or `en`); `copy_includes` writes the types, the constants and the definitions of the included files of definitions as the
@@ -450,9 +413,10 @@ export fn render_machine_with(machine_json str, language str, copy_includes bool
             if rj_gstr(root, "alula_version") != "" && !format_versions().contains(rj_gstr(root, "alula_version")) {
                 return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 2.14 only is read and written (there is no transition period)"] }
             }
+            ro former = rn_former_note(root, "$")
+            if former != "" { return RenderReport { text: "", notes: [former] } }
             mut cx = rn_cx(language)
             ro dropped = rn_dropped(cx, root, copy_includes)
-            rn_register(cx, root, dropped)
             // what the fragments bring is written by the line of connection, not as the machine's own (1b (m), 2.12, AL-32)
             ro shown = if rj_garr(root, "fragments").len() == 0 { root } else { rn_without_fragments(root) }
             ro version = if rj_gstr(shown, "alula_version") == "" { "2.14" } else { rj_gstr(shown, "alula_version") }

@@ -124,15 +124,14 @@ fn section_words(w TxWords) -> str => kw_all(w, "section", section_keys()).join(
 /// The sections of the file after the first heading, in order. A heading of another name, or a repeated one, is an error. A word of the other language is the error of the language.
 fn sections_of(entries []TxEntry, mut cx TxCx) -> []TxSection {
     mut out = []TxSection.new()
-    ro expansion_word = kw(cx.words, "section", "Fragment expansion")
     mut i = 0
     while i < entries.len() {
         if entries[i].kind == EN_HEAD && entries[i].level == 2 {
             ro title = entries[i].text
             mut last = i + 1
             while last < entries.len() && !(entries[last].kind == EN_HEAD && entries[last].level <= 2) { last += 1 }
-            if title.starts_with(expansion_word) {
-                // a reference for the reader (format 2.7, P-2): the reader skips it whole
+            if is_expansion_heading(title) {
+                // removed in 2.13 (AL-44): the error is made by the classification, the reader skips the section whole
                 i = last
                 continue
             }
@@ -213,7 +212,15 @@ fn tab_read(entries []TxEntry, at int, last int, expected []str, mut cx TxCx) ->
             }
             k += 1
         }
-        if foreign_at >= 0 {
+        mut former_at = -1
+        mut k2 = 0
+        while k2 < head.cells.len() && former_at < 0 {
+            if head.cells[k2].text == "слова ворот" || head.cells[k2].text == "gate_words" { former_at = k2 }
+            k2 += 1
+        }
+        if former_at >= 0 {
+            note(cx, struct_error(head.line, head.cells[former_at].col, "столбец «${head.cells[former_at].text}» в формате 2.14 называется «${kw(cx.words, "column", "signals")}» (Я-38): в нём объявлены сигналы стороны; переходного периода нет"))
+        } else if foreign_at >= 0 {
             note(cx, foreign_error(cx.words, head.line, head.cells[foreign_at].col, head.cells[foreign_at].text, "column", foreign_key))
         } else {
             note(cx, struct_error(head.line, 1, "столбцы таблицы: ${want.join(" | ")}"))

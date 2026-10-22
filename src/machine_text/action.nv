@@ -170,7 +170,7 @@ fn ac_journal(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateErr
 }
 
 fn is_executor_word(cx TxCx, w str) -> bool {
-    match names_get(cx.names, "executor", w) {
+    match readable_json(cx.words, w) {
         Some(en) => true
         None => false
     }

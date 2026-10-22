@@ -13,7 +13,6 @@ import alula.machine_table.{TableRow, find_state}
 fn rows_take(ctx Ctx, rows []TableRow, wanted str) -> bool {
     for r in rows {
         ro named = match r.event {
-            WordEv { word, binds } => word == wanted
             SignalEv { name, binds } => name == wanted
             _ => false
         }

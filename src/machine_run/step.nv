@@ -195,8 +195,8 @@ fn find_word(words []WordDef, name str) -> int {
 // The declaration of a word or a signal by name: Some(fields).
 fn input_decl(def MachineDef, name str) -> Option[[]FieldDef] {
     for p in def.parties {
-        ro at = find_word(p.words, name)
-        if at >= 0 { return Some(p.words[at].fields) }
+        ro at = find_word(p.signals, name)
+        if at >= 0 { return Some(p.signals[at].fields) }
     }
     ro at = find_word(def.signals, name)
     if at >= 0 { return Some(def.signals[at].fields) }
@@ -399,10 +399,6 @@ fn hit_of(pat EventPat, ev EventVal) -> Hit {
         TimeoutEv => Hit { yes: ev.kind == EvTimeout, binds: []Binding.new() }
         ProgressEv { name, binds } => {
             if ev.kind != EvProgress || ev.name != name { return no_hit() }
-            Hit { yes: true, binds: binds_of(binds, ev.fields) }
-        }
-        WordEv { word, binds } => {
-            if ev.kind != EvInput || ev.name != word { return no_hit() }
             Hit { yes: true, binds: binds_of(binds, ev.fields) }
         }
         SignalEv { name, binds } => {

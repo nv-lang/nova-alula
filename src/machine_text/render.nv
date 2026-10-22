@@ -45,34 +45,6 @@ fn rn_add(mut out []str, lines []str) -> () {
 
 // ---- names that the file declares ----------------------------------------------------------------------------------------------
 
-fn rn_pair(mut pairs_in []TxPair, ru str, en str) -> () {
-    pairs_in.push(TxPair { ru, en })
-}
-
-/// The word of a name of the kind `word`, `signal`, `part` (a phrase of the table of names): the word of the table that the reader takes back to the same name, else the Latin name.
-fn rn_phrase(cx RnCx, kind str, en str) -> str {
-    if cx.lang == "en" { return en }
-    match names_file_word(cx.names, kind, en) {
-        Some(w) => {
-            match names_get(cx.names, kind, w) {
-                Some(back) => {
-                    if back == en { return w }
-                }
-                None => ()
-            }
-        }
-        None => ()
-    }
-    en
-}
-
-fn rn_phrase_of(cx RnCx, pairs_in []TxPair, kind str, en str) -> str {
-    match rn_pair_ru(pairs_in, en) {
-        Some(w) => w
-        None => rn_phrase(cx, kind, en)
-    }
-}
-
 // A name of a datum with a path `root[*].field`: the root as a datum, the fields as fields.
 fn rn_datum_name(cx RnCx, en str) -> str {
     match en.find("[*]") {
@@ -112,7 +84,7 @@ fn rn_has_fields(v RJ) -> bool {
 }
 
 fn rn_word_of(v RJ, case_en str) -> str {
-    for pair in rj_garr(v, "words") {
+    for pair in rj_garr(v, "values") {
         ro items = rj_items(pair)
         if items.len() == 2 && rj_str(items[0]) == case_en { return rj_str(items[1]) }
     }
@@ -266,8 +238,7 @@ fn rn_monotonic_cell(mut cx RnCx, d RJ) -> str {
     }
     match rj_get(m, "bound") {
         Some(b) => {
-            ro sign = if cx.lang == "ru" { "≤" } else { "<=" }
-            return "${rn_kw(cx, "enum_value", "yes")}, ${sign} ${rn_expr(cx, b, []str.new())}"
+            return "${rn_kw(cx, "enum_value", "yes")}, <= ${rn_expr(cx, b, []str.new())}"
         }
         None => ()
     }
@@ -291,11 +262,11 @@ fn rn_party_kind(mut cx RnCx, p RJ, path str) -> str {
     ro gate = "(${rn_kw(cx, "kind_party", "result")} ${rn_kw(cx, "type", "GateOutcome")})"
     if kind == "human" || kind == "enhanced" { return "${rn_kw(cx, "kind_party", kind)}${gate}" }
     if kind == "gatekeeper" {
-        ro setting = rn_name(cx, ["variable", "data", "function"], rj_gstr(p, "setting"))
+        ro setting = rj_gstr(p, "setting")
         return "${rn_kw(cx, "kind_party", "human or agent by setting")} ${setting}${gate}"
     }
     if kind == "machine" {
-        ro nested = rn_name(cx, ["machine"], rj_gstr(p, "nested"))
+        ro nested = rj_gstr(p, "nested")
         ro input = rn_type(cx, rj_gstr(p, "input_type"))
         ro result = rn_type(cx, rj_gstr(p, "result"))
         mut text = "${rn_kw(cx, "kind_party", "machine")} ${nested}(${rn_kw(cx, "kind_party", "input")} ${input}, ${rn_kw(cx, "kind_party", "result")} ${result})"
@@ -314,9 +285,9 @@ fn rn_party_kind(mut cx RnCx, p RJ, path str) -> str {
 
 fn rn_words_cell(mut cx RnCx, p RJ) -> str {
     mut parts = []str.new()
-    for w in rj_garr(p, "words") {
+    for w in rj_garr(p, "signals") {
         ro name = rj_gstr(w, "name")
-        ro word = rn_phrase_of(cx, cx.gate_words, "word", name)
+        ro word = name
         ro fields = rj_garr(w, "fields")
         parts.push(if fields.len() == 0 { word } else { "${word}(${rn_fields_text(cx, fields)})" })
     }
@@ -331,10 +302,7 @@ fn rn_sec_parties(mut cx RnCx, root RJ) -> []str {
         ro kind = rn_party_kind(cx, p, "$.parties[${at}]")
         at += 1
         if kind == "" { continue }
-        ro party_word = match rn_pair_ru(cx.parties, rj_gstr(p, "name")) {
-            Some(w) => w
-            None => rj_gstr(p, "name")
-        }
+        ro party_word = rj_gstr(p, "name")
         ro profile = match rj_get(p, "profile") {
             Some(e) => rn_expr(cx, e, []str.new())
             None => "—"
@@ -342,7 +310,7 @@ fn rn_sec_parties(mut cx RnCx, root RJ) -> []str {
         rows.push(RnRow { cells: [party_word, rj_gstr(p, "id"), kind, profile, rn_words_cell(cx, p), rn_datum_name(cx, rj_gstr(p, "counter"))] })
     }
     mut out = []str.new()
-    if rows.len() > 0 { out = rn_table(rn_cols(cx, ["name", "id", "kind", "profile", "gate_words", "counter"]), rows) }
+    if rows.len() > 0 { out = rn_table(rn_cols(cx, ["name", "id", "kind", "profile", "signals", "counter"]), rows) }
     match rj_get(root, "request_limit") {
         Some(e) => {
             if out.len() > 0 { out.push("") }
@@ -361,7 +329,7 @@ fn rn_extra_sections(mut cx RnCx, root RJ) -> []str {
         mut rows = []RnRow.new()
         for s in signals {
             ro fields = rj_garr(s, "fields")
-            rows.push(RnRow { cells: [rn_phrase_of(cx, cx.signal_words, "signal", rj_gstr(s, "name")), if fields.len() == 0 { "—" } else { rn_fields_text(cx, fields) }] })
+            rows.push(RnRow { cells: [rj_gstr(s, "name"), if fields.len() == 0 { "—" } else { rn_fields_text(cx, fields) }] })
         }
         out.push("## ${rn_kw(cx, "section", "Signals")}")
         out.push("")
@@ -370,13 +338,10 @@ fn rn_extra_sections(mut cx RnCx, root RJ) -> []str {
     }
     mut parts = []RnRow.new()
     for p in rj_garr(root, "parties") {
-        ro party_word = match rn_pair_ru(cx.parties, rj_gstr(p, "name")) {
-            Some(w) => w
-            None => rj_gstr(p, "name")
-        }
+        ro party_word = rj_gstr(p, "name")
         for item in rj_garr(p, "progress") {
             ro fields = rj_garr(item, "fields")
-            parts.push(RnRow { cells: [party_word, rn_phrase_of(cx, cx.part_words, "part", rj_gstr(item, "name")), if fields.len() == 0 { "—" } else { rn_fields_text(cx, fields) }] })
+            parts.push(RnRow { cells: [party_word, rj_gstr(item, "name"), if fields.len() == 0 { "—" } else { rn_fields_text(cx, fields) }] })
         }
     }
     if parts.len() > 0 {
@@ -403,10 +368,7 @@ fn rn_sec_definitions(mut cx RnCx, root RJ, dropped []str) -> []str {
             None => "none"
         }
         if body.len() > 0 { body.push("") }
-        ro name = match rn_pair_ru(cx.defs, rj_gstr(d, "name")) {
-            Some(w) => w
-            None => rj_gstr(d, "name")
-        }
+        ro name = rj_gstr(d, "name")
         body.push("${rn_kw(cx, "decl", "define")} ${name}(${params.join(", ")}) -> ${rn_type(cx, rj_gstr(d, "result"))} =")
         body.push("  ${body_text}")
     }

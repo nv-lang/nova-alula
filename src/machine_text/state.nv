@@ -88,14 +88,13 @@ fn states_register(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxBlock {
             i += 1
         }
     }
-    // a state whose heading is its Latin JSON name (the canonical form, 1b) is also called by its word of the dictionary: the text of a fragment (`ОСТАНОВЛЕНО`, `ПАУЗА`) says so
+    // a state is also called by its JSON name: the text of a fragment says `Halted` and `Pause`, whatever the heading of the machine writes
+    mut aliases = []TxPair.new()
     for b in out {
-        match names_file_word(cx.names, "state", b.latin) {
-            Some(w) => {
-                if w != b.ru && !pair_has(cx.env.states, w) { pair_add(cx.env.states, w, b.latin) }
-            }
-            None => ()
-        }
+        if b.latin != b.ru && !pair_has(cx.env.states, b.latin) { aliases.push(TxPair { ru: b.latin, en: b.latin }) }
+    }
+    for al in aliases {
+        if !pair_has(cx.env.states, al.ru) { pair_add(cx.env.states, al.ru, al.en) }
     }
     out
 }
@@ -261,14 +260,23 @@ fn line_party(kvl TxKv, mut cx TxCx, sc TxScope) -> Result[[]TxKV, TranslateErro
     Ok(pairs)
 }
 
-// `Срок тишины: выр` or `—`.
+// The error about a key with an empty value (AL-40): the empty value is not written, no line means the default.
+fn empty_value_error(kvl TxKv, key str, what str) -> TranslateError {
+    tx_err(kvl.line, 1, "structure", "пустое значение ключа `${key}:` не пишется (Я-40): ${what}; строка опускается, пропуск значит умолчание")
+}
+
+// Is the value of a key the empty one: nothing, `—`, or the word `нет` of the table of 2.12?
+fn value_is_empty(p TxP) -> bool {
+    if p_done(p) { return true }
+    ro t = p_tok(p)
+    if p_ahead(p, 1).kind != TK_EOF { return false }
+    t_is(t, "—") || (t.kind == TK_NAME && (t.text == "нет" || t.text == "none"))
+}
+
+// `Срок тишины: выр`; the empty value is not written (AL-40).
 fn line_silence(kvl TxKv, mut cx TxCx, sc TxScope) -> Result[Option[TxJ], TranslateError] {
     mut p = lex_segs(kvl.segs)?
-    if p_is(p, "—") {
-        p_adv(p)
-        p_end(p)?
-        return Ok(None)
-    }
+    if value_is_empty(p) { return Err(empty_value_error(kvl, kw(cx.words, "key", "Idle term"), "срока тишины нет")) }
     ro e = ex_expr(p, cx, sc)?
     p_end(p)?
     Ok(Some(e))
@@ -304,25 +312,25 @@ fn line_form_returns(kvl TxKv, mut cx TxCx) -> Result[int, TranslateError] {
     Ok(n.text.to_int() ?? 0)
 }
 
-// `Вход:` of an appeal (format 4.1, 4.2, 2.12, AL-23): `нет` (or `—`) when the appeal has no field of the request, else nothing after the colon and a table below. Returns "none" or "table"; anything else is an error.
-fn line_appeal_input(kvl TxKv, mut cx TxCx) -> Result[str, TranslateError] {
+// `Запрос:` of an appeal (format 4.1, 4.2, 2.13, AL-39): nothing after the colon and the table of the fields of the request below. An appeal with no field of the request has no such line (AL-40).
+// Returns "table".
+fn line_appeal_request(kvl TxKv, mut cx TxCx) -> Result[str, TranslateError] {
     mut p = lex_segs(kvl.segs)?
     if p_done(p) { return Ok("table") }
-    if p_is_kw(p, cx.words, "enum_value", "none") || p_is(p, "—") {
-        p_adv(p)
-        p_end(p)?
-        return Ok("none")
-    }
-    Err(p_fail(p, "у обращения после `${kw(cx.words, "key", "Input")}:` пишется `${kw(cx.words, "enum_value", "none")}` или ничего, а ниже — таблица полей запроса"))
+    if value_is_empty(p) { return Err(empty_value_error(kvl, kw(cx.words, "key", "Request"), "полей запроса нет")) }
+    Err(p_fail(p, "после `${kw(cx.words, "key", "Request")}:` ничего не пишется, ниже — таблица полей запроса"))
 }
 
-// `Вход: имя, имя | нет | все_данные` of a state that is not an appeal: the names and the mark "all".
+// `Читает: имя, имя | все_данные` of a state that is not an appeal: the names and the mark "all". `own` is false for the key of 2.12 (its error is already made).
 type TxReads { names []str, all bool }
 
-fn line_reads(kvl TxKv, mut cx TxCx) -> Result[TxReads, TranslateError] {
+fn line_reads(kvl TxKv, mut cx TxCx, own bool) -> Result[TxReads, TranslateError] {
     mut p = lex_segs(kvl.segs)?
     mut names = []str.new()
-    if p_done(p) || p_is_kw(p, cx.words, "enum_value", "none") || p_is(p, "—") { return Ok(TxReads { names, all: false }) }
+    if value_is_empty(p) {
+        if own { return Err(empty_value_error(kvl, kw(cx.words, "key", "Reads"), "состояние ничего не читает")) }
+        return Ok(TxReads { names, all: false })
+    }
     if p_is_kw(p, cx.words, "readable", "all_data") && p_ahead(p, 1).kind == TK_EOF { return Ok(TxReads { names, all: true }) }
     while true {
         ro n = p_tok(p)
@@ -336,14 +344,14 @@ fn line_reads(kvl TxKv, mut cx TxCx) -> Result[TxReads, TranslateError] {
     Ok(TxReads { names, all: false })
 }
 
-// `Кроме: поле ∈ {"…", …}` -> {"field", "values"}.
+// `Кроме: поле in {"…", …}` -> {"field", "values"}.
 fn line_except(kvl TxKv, mut cx TxCx) -> Result[TxJ, TranslateError] {
     mut p = lex_segs(kvl.segs)?
     ro f = p_tok(p)
     if f.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "key", "Except")}:` ожидается имя данного")) }
     p_adv(p)
     ro en = tr_global(cx, f)
-    if !is_member_sign(p, cx.words) { return Err(p_fail(p, "ожидается `∈`")) }
+    if !is_member_sign(p, cx.words) { return Err(p_fail(p, "ожидается `in`")) }
     p_adv(p)
     p_expect(p, "{")?
     mut values = []str.new()
@@ -363,6 +371,7 @@ fn line_except(kvl TxKv, mut cx TxCx) -> Result[TxJ, TranslateError] {
 // `При входе: действия`.
 fn line_entry(kvl TxKv, mut cx TxCx, sc TxScope) -> Result[TxActList, TranslateError] {
     mut p = lex_segs(kvl.segs)?
+    if value_is_empty(p) { return Err(empty_value_error(kvl, kw(cx.words, "key", "On entry"), "работы при входе нет")) }
     ro all = ac_list_scoped(p, cx, sc)?
     p_end(p)?
     Ok(all)
@@ -433,15 +442,23 @@ fn state_translate(entries []TxEntry, blk TxBlock, index int, mut cx TxCx) -> Tx
                     Ok(count) => { form_returns = count }
                     Err(err) => note(cx, err)
                 }
-            } else if key == "Input" {
+            } else if key == "Request" || (key == "Former input" && blk.kind == "appeal") {
                 if blk.kind == "appeal" {
                     has_reads_line = true
-                    match line_appeal_input(line, cx) {
-                        Ok(how) => { appeal_input = how }
-                        Err(err) => note(cx, err)
+                    if key == "Request" {
+                        match line_appeal_request(line, cx) {
+                            Ok(how) => { appeal_input = how }
+                            Err(err) => note(cx, err)
+                        }
                     }
                 } else {
-                    match line_reads(line, cx) {
+                    note(cx, struct_error(e.line, 1, "строка `${kw(cx.words, "key", "Request")}:` бывает только у обращения; чтения операции, развилки и конца пишутся строкой `${kw(cx.words, "key", "Reads")}:` (Я-39)"))
+                }
+            } else if key == "Reads" || (key == "Former input" && blk.kind != "appeal") {
+                if blk.kind == "appeal" {
+                    note(cx, struct_error(e.line, 1, "у обращения `${kw(cx.words, "key", "Reads")}:` не бывает: его чтения — таблица полей запроса под строкой `${kw(cx.words, "key", "Request")}:` (Я-39)"))
+                } else {
+                    match line_reads(line, cx, key == "Reads") {
                         Ok(r) => {
                             reads_names = r.names
                             reads_all = r.all
@@ -493,13 +510,14 @@ fn state_translate(entries []TxEntry, blk TxBlock, index int, mut cx TxCx) -> Tx
     }
     // the tables
     if input_at >= 0 {
-        if blk.kind != "appeal" { note(cx, struct_error(entries[input_at].line, 1, "таблица `Вход` есть только у обращения")) }
-        if blk.kind == "appeal" && appeal_input == "none" {
-            note(cx, struct_error(entries[input_at].line, 1, "у обращения `${blk.ru}` `${kw(cx.words, "key", "Input")}: ${kw(cx.words, "enum_value", "none")}` и таблица полей запроса вместе: нужно одно из двух"))
+        if blk.kind != "appeal" {
+            note(cx, struct_error(entries[input_at].line, 1, "таблица полей запроса есть только у обращения"))
+        } else if !has_reads_line {
+            note(cx, struct_error(entries[input_at].line, 1, "перед таблицей полей запроса у обращения `${blk.ru}` пишется строка `${kw(cx.words, "key", "Request")}:` (Я-39)"))
         }
         inputs = input_read(entries, input_at, blk.last, cx, sc)
     } else if blk.kind == "appeal" && has_reads_line && appeal_input == "table" {
-        note(cx, struct_error(blk.line, 1, "у обращения `${blk.ru}` после `${kw(cx.words, "key", "Input")}:` нет таблицы полей запроса; если полей нет, пишется `${kw(cx.words, "key", "Input")}: ${kw(cx.words, "enum_value", "none")}`"))
+        note(cx, struct_error(blk.line, 1, "у обращения `${blk.ru}` после `${kw(cx.words, "key", "Request")}:` нет таблицы полей запроса; если полей нет, строка `${kw(cx.words, "key", "Request")}:` не пишется (Я-40)"))
     }
     if accept_at >= 0 {
         accept = accept_read(entries, accept_at, blk.last, "${path}.accept", cx, sc)
@@ -513,7 +531,6 @@ fn state_translate(entries []TxEntry, blk TxBlock, index int, mut cx TxCx) -> Tx
         note(cx, struct_error(blk.line, 1, "у состояния `${blk.ru}` нет таблицы строк `№ | …`"))
     }
     if blk.kind == "appeal" {
-        if !has_reads_line { note(cx, struct_error(blk.line, 1, "у обращения `${blk.ru}` нет строки `${kw(cx.words, "key", "Input")}:` (правило 11): таблица полей запроса или `${kw(cx.words, "enum_value", "none")}`")) }
         for q in party_pairs { pairs.push(q) }
         if party_pairs.len() == 0 { note(cx, struct_error(blk.line, 1, "у обращения `${blk.ru}` нет строки `Сторона:`")) }
         if has_silence { pairs.push(kv("silence", silence)) }
@@ -526,7 +543,6 @@ fn state_translate(entries []TxEntry, blk TxBlock, index int, mut cx TxCx) -> Tx
         if accept.len() > 0 { pairs.push(kv("accept", TxArr(accept))) }
         pairs.push(kv("rows", TxArr(rows)))
     } else {
-        if !has_reads_line { note(cx, struct_error(blk.line, 1, "у состояния `${blk.ru}` нет строки `Вход:` (правило 11)")) }
         if reads_all {
             pairs.push(kv("reads_all", TxBool(true)))
         } else {

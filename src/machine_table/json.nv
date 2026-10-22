@@ -7,7 +7,7 @@
 module alula.machine_table
 
 import std.encoding.json.{Json, JsonValue, JsonObject}
-import alula.machine.{Expr, Lit, Text, TypeSpec, TypeDefs, FieldDef, RecordDef, VariantDef, EnumWord, CaseDef, Bind, DefFn, expr_from_json, field_def, TextType, ListType, TupleType}
+import alula.machine.{Expr, Lit, Text, TypeSpec, TypeDefs, FieldDef, RecordDef, VariantDef, EnumValue, CaseDef, Bind, DefFn, expr_from_json, field_def, TextType, ListType, TupleType}
 
 /// The format tag of the tree.
 export const MACHINE_FORMAT = "machine/2"
@@ -228,7 +228,7 @@ export fn top_keys() -> []str => [
 /// The fragments that a machine may connect (the keys of the table of words, kind `fragment`) and the keys of the arguments of the connection of each (format section 9, 1b (m), the key `fragments` of the product).
 export fn fragment_names() -> []str => ["Pause"]
 
-export fn pause_arg_names() -> []str => ["halt_word", "halt_code", "nested", "cancel_requests", "reenter", "write_right"]
+export fn pause_arg_names() -> []str => ["halt_signal", "halt_code", "nested", "cancel_requests", "reenter", "write_right"]
 
 /// The words of the arguments `cancel_requests` and `reenter` of the fragment Pause (the behavior parameters of section 9).
 export fn pause_behavior_words(arg str) -> []str {
@@ -243,7 +243,7 @@ export fn state_keys() -> []str => [
 ]
 
 /// The keys of a party.
-export fn party_keys() -> []str => ["name", "id", "kind", "profile", "words", "progress", "setting", "nested", "input_type", "result", "parse", "counter"]
+export fn party_keys() -> []str => ["name", "id", "kind", "profile", "signals", "progress", "setting", "nested", "input_type", "result", "parse", "counter"]
 
 /// The signals that `передать` passes to a nested machine (the built-in enum `Signal`, format 2).
 export fn signal_words() -> []str => ["stop", "continue", "halt", "cancel"]
@@ -252,7 +252,7 @@ export fn signal_words() -> []str => ["stop", "continue", "halt", "cancel"]
 export fn row_keys() -> []str => ["n", "event", "cond", "else", "actions", "to", "restart"]
 
 /// The kinds of an event of a row.
-export fn event_kind_names() -> []str => ["answer", "answer_variant", "failure", "timeout", "progress", "word", "signal", "now"]
+export fn event_kind_names() -> []str => ["answer", "answer_variant", "failure", "timeout", "progress", "signal", "now"]
 
 /// The kinds of an action (`do`).
 export fn action_names() -> []str => [
@@ -270,13 +270,13 @@ export fn fail_code_names() -> []str => [
 fn fail_code_def() -> VariantDef {
     mut cases = []CaseDef.new()
     for n in fail_code_names() { cases.push(CaseDef { name: n, fields: []FieldDef.new() }) }
-    VariantDef { name: "FailCode", cases, words: []EnumWord.new() }
+    VariantDef { name: "FailCode", cases, values: []EnumValue.new() }
 }
 
 /// The built-in enum `Signal` of format section 2 (`Сигнал`): the signals that a parent passes to a nested machine.
 fn signal_def() -> VariantDef {
     ro cases = [CaseDef { name: "Stop", fields: []FieldDef.new() }, CaseDef { name: "Continue", fields: []FieldDef.new() }, CaseDef { name: "Halt", fields: []FieldDef.new() }, CaseDef { name: "Cancel", fields: []FieldDef.new() }]
-    VariantDef { name: "Signal", cases, words: [EnumWord { name: "Stop", word: "stop" }, EnumWord { name: "Continue", word: "continue" }, EnumWord { name: "Halt", word: "halt" }, EnumWord { name: "Cancel", word: "cancel" }] }
+    VariantDef { name: "Signal", cases, values: [EnumValue { name: "Stop", value: "stop" }, EnumValue { name: "Continue", value: "continue" }, EnumValue { name: "Halt", value: "halt" }, EnumValue { name: "Cancel", value: "cancel" }] }
 }
 
 // The built-in `State` (`Состояние`, format section 2): the names of the states of the machine. At run time a value is a text; the reader of the type text
@@ -302,7 +302,7 @@ fn state_def(root JsonObject) -> VariantDef {
         }
         None => ()
     }
-    VariantDef { name: "State", cases, words: []EnumWord.new() }
+    VariantDef { name: "State", cases, values: []EnumValue.new() }
 }
 
 fn sval_of(o JsonObject, key str) -> str {
@@ -327,31 +327,32 @@ fn j_word_ok(w str) -> bool {
     true
 }
 
-// The key `words` of a variant that is an enum (format 2.7, section 6, P-7): a list of the pairs ["Name", "word"] in the order of the declaration; the name of a case
-// without fields, the word a Latin word of a code; a case and a word stand once. A variant without the key has no words.
-fn j_enum_words(o JsonObject, type_name str, cases []CaseDef, p str) -> Result[[]EnumWord, LoadError] {
-    mut out = []EnumWord.new()
-    if !j_has(o, "words") { return Ok(out) }
-    ro wp = "${p}.words"
-    ro items = match (o.get("words") ?? JsonValue.null()).array() {
+// The key `values` of a variant that is an enum (format 2.7, section 6, P-7; `words` before 2.13, AL-41): a list of the pairs ["Name", "value"] in the order of the declaration; the name of a case
+// without fields, the value a Latin word of a code; a case and a value stand once. A variant without the key has no values; the key `words` of 2.12 is refused by name.
+fn j_enum_values(o JsonObject, type_name str, cases []CaseDef, p str) -> Result[[]EnumValue, LoadError] {
+    mut out = []EnumValue.new()
+    if j_has(o, "words") { return Err(le("${p}.words", "the key words of an enum is the former name of values (the values of an enum, format 2.13, AL-41; there is no transition period)")) }
+    if !j_has(o, "values") { return Ok(out) }
+    ro wp = "${p}.values"
+    ro items = match (o.get("values") ?? JsonValue.null()).array() {
         Some(a) => a
-        None => return Err(le(wp, "a list of pairs [name, word] is expected"))
+        None => return Err(le(wp, "a list of pairs [name, value] is expected"))
     }
     mut k = 0
     for item in items {
         ro ip = "${wp}[${k}]"
         ro pair = match item.array() {
             Some(a) => a
-            None => return Err(le(ip, "a pair [name, word] of two texts is expected"))
+            None => return Err(le(ip, "a pair [name, value] of two texts is expected"))
         }
-        if pair.len() != 2 { return Err(le(ip, "a pair [name, word] of two texts is expected")) }
+        if pair.len() != 2 { return Err(le(ip, "a pair [name, value] of two texts is expected")) }
         ro case_name = match pair[0].str() {
             Some(t) => t
-            None => return Err(le(ip, "a pair [name, word] of two texts is expected"))
+            None => return Err(le(ip, "a pair [name, value] of two texts is expected"))
         }
         ro word = match pair[1].str() {
             Some(t) => t
-            None => return Err(le(ip, "a pair [name, word] of two texts is expected"))
+            None => return Err(le(ip, "a pair [name, value] of two texts is expected"))
         }
         mut found = false
         mut with_fields = false
@@ -362,13 +363,13 @@ fn j_enum_words(o JsonObject, type_name str, cases []CaseDef, p str) -> Result[[
             }
         }
         if !found { return Err(le(ip, "the case ${case_name} is not in the variant ${type_name}")) }
-        if with_fields { return Err(le(ip, "the case ${case_name} has fields: only a value without fields has a word")) }
+        if with_fields { return Err(le(ip, "the case ${case_name} has fields: only a value without fields has a value")) }
         for seen in out {
-            if seen.name == case_name { return Err(le(ip, "the word of the case ${case_name} is repeated")) }
-            if seen.word == word { return Err(le(ip, "the word ${word} is repeated")) }
+            if seen.name == case_name { return Err(le(ip, "the value of the case ${case_name} is repeated")) }
+            if seen.value == word { return Err(le(ip, "the value ${word} is repeated")) }
         }
-        if !j_word_ok(word) { return Err(le(ip, "a word is lower case Latin letters, digits and _, the first one a letter, got ${word}")) }
-        out.push(EnumWord { name: case_name, word })
+        if !j_word_ok(word) { return Err(le(ip, "a value is lower case Latin letters, digits and _, the first one a letter, got ${word}")) }
+        out.push(EnumValue { name: case_name, value: word })
         k += 1
     }
     Ok(out)
@@ -417,7 +418,7 @@ fn dec_types(root JsonObject) -> Result[TypeDefs, LoadError] {
         ro name = j_need_str(o, "name", p)?
         if names.contains(name) || base_type_names().contains(name) { return Err(le(p, "the type name ${name} is repeated or reserved")) }
         names.push(name)
-        skeleton_variants.push(VariantDef { name, cases: []CaseDef.new(), words: []EnumWord.new() })
+        skeleton_variants.push(VariantDef { name, cases: []CaseDef.new(), values: []EnumValue.new() })
         i += 1
     }
     ro skeleton = TypeDefs { records: skeleton_records, variants: skeleton_variants }
@@ -438,7 +439,7 @@ fn dec_types(root JsonObject) -> Result[TypeDefs, LoadError] {
     for item in var_items {
         ro p = "$.types.variants[${i}]"
         ro o = j_obj(item, p)?
-        j_only(o, ["name", "cases", "words"], p)?
+        j_only(o, ["name", "cases", "values", "words"], p)?
         ro name = j_need_str(o, "name", p)?
         ro case_items = j_need_arr(o, "cases", p)?
         if case_items.len() == 0 { return Err(le(p, "a variant needs a case")) }
@@ -456,8 +457,8 @@ fn dec_types(root JsonObject) -> Result[TypeDefs, LoadError] {
             cases.push(CaseDef { name: case_name, fields })
             k += 1
         }
-        ro words = j_enum_words(o, name, cases, p)?
-        variants.push(VariantDef { name, cases, words })
+        ro values = j_enum_values(o, name, cases, p)?
+        variants.push(VariantDef { name, cases, values })
         i += 1
     }
     Ok(TypeDefs { records, variants })
@@ -575,6 +576,7 @@ fn dec_fragments(root JsonObject) -> Result[[]FragmentUse, LoadError] {
         seen.push(name)
         ro ao = j_need_obj(o, "args", p)?
         ro ap = "${p}.args"
+        if j_has(ao, "halt_word") { return Err(le("${ap}.halt_word", "the argument halt_word is the former name of halt_signal (the signal of the party that halts, format 2.13, AL-38; there is no transition period)")) }
         j_only(ao, pause_arg_names(), ap)?
         mut args = []FragmentArg.new()
         for arg in pause_arg_names() {
@@ -692,7 +694,7 @@ fn dec_words(v JsonValue, defs TypeDefs, path str) -> Result[[]WordDef, LoadErro
         j_only(o, ["name", "fields"], p)?
         ro name = j_need_str(o, "name", p)?
         for w in out {
-            if w.name == name { return Err(le(p, "the word ${name} is repeated")) }
+            if w.name == name { return Err(le(p, "the signal ${name} is repeated")) }
         }
         ro fields = j_fields_or_empty(o, "fields", defs, p)?
         out.push(WordDef { name, fields })
@@ -723,12 +725,13 @@ fn dec_parties(root JsonObject, defs TypeDefs) -> Result[[]PartyDef, LoadError] 
     for item in items {
         ro p = "$.parties[${i}]"
         ro o = j_obj(item, p)?
+        if j_has(o, "words") { return Err(le("${p}.words", "the key words of a party is the former name of signals (the signals of a party, format 2.13, AL-38; there is no transition period)")) }
         j_only(o, party_keys(), p)?
         ro name = j_need_str(o, "name", p)?
         ro id = j_str_or(o, "id", "", p)?
         ro kind = party_kind_of(j_need_str(o, "kind", p)?, "${p}.kind")?
         ro profile = j_expr_opt(o, "profile", p)?
-        ro words = dec_words_or_empty(o, "words", defs, p)?
+        ro signals = dec_words_or_empty(o, "signals", defs, p)?
         ro progress = dec_words_or_empty(o, "progress", defs, p)?
         ro setting = j_str_or(o, "setting", "", p)?
         ro nested = j_str_or(o, "nested", "", p)?
@@ -739,7 +742,7 @@ fn dec_parties(root JsonObject, defs TypeDefs) -> Result[[]PartyDef, LoadError] 
         mut parse = []ParseDef.new()
         if j_has(o, "parse") { parse.push(dec_parse(j_need_obj(o, "parse", p)?, defs, "${p}.parse")?) }
         ro counter = j_str_or(o, "counter", "", p)?
-        out.push(PartyDef { name, id, kind, profile, words, progress, setting, nested, input_spec, result_spec, parse, counter })
+        out.push(PartyDef { name, id, kind, profile, signals, progress, setting, nested, input_spec, result_spec, parse, counter })
         i += 1
     }
     Ok(out)
@@ -785,10 +788,7 @@ fn dec_event(v JsonValue, path str) -> Result[EventPat, LoadError] {
             j_only(o, ["kind", "name", "bind"], path)?
             Ok(ProgressEv { name: j_need_str(o, "name", path)?, binds: dec_binds(o, "bind", path)? })
         }
-        "word" => {
-            j_only(o, ["kind", "word", "bind"], path)?
-            Ok(WordEv { word: j_need_str(o, "word", path)?, binds: dec_binds(o, "bind", path)? })
-        }
+        "word" => Err(le("${path}.kind", "the event kind word is the former name of signal: a signal of a party is the event signal (format 2.13, AL-38; there is no transition period)"))
         "signal" => {
             j_only(o, ["kind", "name", "bind"], path)?
             Ok(SignalEv { name: j_need_str(o, "name", path)?, binds: dec_binds(o, "bind", path)? })
@@ -797,7 +797,7 @@ fn dec_event(v JsonValue, path str) -> Result[EventPat, LoadError] {
             j_only(o, ["kind"], path)?
             Ok(NowEv)
         }
-        _ => Err(le("${path}.kind", "the kind of an event must be answer, answer_variant, failure, timeout, progress, word, signal or now, got ${kind}"))
+        _ => Err(le("${path}.kind", "the kind of an event must be answer, answer_variant, failure, timeout, progress, signal or now, got ${kind}"))
     }
 }
 

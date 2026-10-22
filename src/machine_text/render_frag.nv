@@ -84,8 +84,8 @@ fn rn_fragment_lines(mut cx RnCx, root RJ) -> []str {
         mut parts = []str.new()
         for pk in pause_param_keys() {
             ro name = rn_kw(cx, "fragment_param", pk)
-            if pk == "halt_word" {
-                parts.push("${name}: ${rn_phrase_of(cx, cx.gate_words, "word", rn_arg_lit(args, pk))}")
+            if pk == "halt_signal" {
+                parts.push("${name}: ${rn_arg_lit(args, pk)}")
             } else if pk == "nested" {
                 parts.push("${name}: ${rn_nested_list(cx, rn_arg(args, pk), []str.new())}")
             } else if pk == "cancel_requests" || pk == "reenter" {

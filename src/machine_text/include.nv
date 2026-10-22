@@ -29,7 +29,7 @@ fn fragment_source(key str, lang str) -> str {
 fn fragment_keys() -> []str => ["Pause"]
 
 /// The keys of the six parameters of the connection of the fragment `Pause`.
-fn pause_param_keys() -> []str => ["halt_word", "halt_code", "nested", "cancel_requests", "reenter", "write_right"]
+fn pause_param_keys() -> []str => ["halt_signal", "halt_code", "nested", "cancel_requests", "reenter", "write_right"]
 
 fn pause_params(w TxWords) -> []str => kw_all(w, "fragment_param", pause_param_keys())
 
@@ -150,18 +150,28 @@ fn fragment_text(call TxCall, mut cx TxCx) -> Option[str] {
         return None
     }
     mut ok = true
+    mut renamed = false
+    for q in call.params {
+        if q.name == "слово_остановки" || q.name == "halt_word" { renamed = true }
+    }
     for name in pause_params(words) {
         match call_param(call, name) {
             Some(q) => ()
             None => {
-                note(cx, tx_err(call.tok.line, call.tok.col, "structure", "в подключении `${call.name}` не назван параметр `${name}`"))
+                if !(renamed && name == kw(words, "fragment_param", "halt_signal")) {
+                    note(cx, tx_err(call.tok.line, call.tok.col, "structure", "в подключении `${call.name}` не назван параметр `${name}`"))
+                }
                 ok = false
             }
         }
     }
     for q in call.params {
         if !pause_params(words).contains(q.name) {
-            note(cx, tx_err(q.tok.line, q.tok.col, "structure", "у фрагмента `${call.name}` нет параметра `${q.name}`"))
+            if q.name == "слово_остановки" || q.name == "halt_word" {
+                note(cx, tx_err(q.tok.line, q.tok.col, "structure", "параметр `${q.name}` фрагмента в формате 2.14 называется `${kw(words, "fragment_param", "halt_signal")}` (Я-38): это сигнал стороны, а не слово ворот; переходного периода нет"))
+            } else {
+                note(cx, tx_err(q.tok.line, q.tok.col, "structure", "у фрагмента `${call.name}` нет параметра `${q.name}`"))
+            }
             ok = false
         }
     }
@@ -172,8 +182,8 @@ fn fragment_text(call TxCall, mut cx TxCx) -> Option[str] {
             Some(k) => k
             None => ""
         }
-        if key == "halt_word" {
-            if q.kind != "word" { note(cx, tx_err(q.tok.line, q.tok.col, "structure", "`${q.name}` — слово ворот, без кавычек")) }
+        if key == "halt_signal" {
+            if q.kind != "word" { note(cx, tx_err(q.tok.line, q.tok.col, "structure", "`${q.name}` — сигнал стороны, без кавычек")) }
             text = text.replace("<${q.name}>", q.text)
         } else if key == "halt_code" {
             if q.kind != "string" { note(cx, tx_err(q.tok.line, q.tok.col, "structure", "`${q.name}` — текст в кавычках")) }
@@ -223,12 +233,8 @@ fn fragment_shape(key str) -> TxFragShape {
 // The value of an argument of the connection as an expression of the tree: a gate word is the Latin name of the word of the machine; the strings are literals; the list of the nested machines
 // is a list of literals with the names of the registry; the behavior words are the Latin keys of the table of words.
 fn fragment_arg_json(key str, q TxParam, cx TxCx) -> TxJ {
-    if key == "halt_word" {
-        match pair_get(cx.env.words, q.text) {
-            Some(en) => return x_lit(js(en))
-            None => ()
-        }
-        match names_get(cx.names, "word", q.text) {
+    if key == "halt_signal" {
+        match pair_get(cx.env.psignals, q.text) {
             Some(en) => return x_lit(js(en))
             None => return x_lit(js(q.text))
         }
@@ -284,9 +290,17 @@ fn protocol_signals() -> []TxProto => [
     TxProto { en: "parent_halt", fields: ["id"] }
 ]
 
-// The word of the language of the file for a Latin name of the names layer (the kind `signal`): the Russian phrase of the fragment, the Latin name itself in an English file.
+// The word of the language of the file for a Latin name of the host registry (the kind `signal`): the Russian phrase of the fragment, the Latin name itself in an English file.
 fn proto_word(cx TxCx, en str) -> str {
     match names_file_word(cx.names, "signal", en) {
+        Some(x) => x
+        None => en
+    }
+}
+
+// The word of a field of a signal of the protocol in the language of the file (the kind `signal_field`).
+fn proto_field_word(cx TxCx, en str) -> str {
+    match names_file_word(cx.names, "signal_field", en) {
         Some(x) => x
         None => en
     }
@@ -295,10 +309,16 @@ fn proto_word(cx TxCx, en str) -> str {
 /// The signals of the protocol put into the environment; returns their JSON (the fields are texts).
 fn protocol_signals_json(mut cx TxCx) -> []TxJ {
     mut out = []TxJ.new()
+    // `continue` is declared by the party that the fragment names (the machine writes its fields), the fragment reads it by the word of the registry
+    pair_add(cx.env.signals, proto_word(cx, "continue"), "continue")
     for s in protocol_signals() {
         pair_add(cx.env.signals, proto_word(cx, s.en), s.en)
         mut fields = []TxJ.new()
-        for f in s.fields { fields.push(jobj([kv("name", js(f)), kv("type", js("text"))])) }
+        for f in s.fields {
+            fields.push(jobj([kv("name", js(f)), kv("type", js("text"))]))
+            ro f_word = proto_field_word(cx, f)
+            if !pair_has(cx.env.fields, f_word) { pair_add(cx.env.fields, f_word, f) }
+        }
         out.push(jobj([kv("name", js(s.en)), kv("fields", TxArr(fields))]))
     }
     out

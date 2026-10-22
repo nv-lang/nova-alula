@@ -13,20 +13,20 @@ import std.text
 type TxPair { ru str, en str }
 
 /// TxEnv: the names that the file itself introduces, collected before the sections are translated: states (the Latin name is in the heading), the data,
-/// the constants and the parameters (`globals`), the definitions, the declared types and their cases, the primitives, the parties, the words of the gates,
-/// the parts of an answer and the signals, the nested machines that a fragment is given empty (`empty_lists`) or not empty (`nested_lists`: the name of the parameter and the Latin names of the
-/// machines, joined by a comma).
+/// the constants and the parameters (`globals`), the definitions, the declared types and their cases, the fields of the records, of the variants and of the signals (`fields`), the primitives,
+/// the parties, the signals of the parties (`psignals`), the parts of an answer and the signals of the machine, the nested machines that a fragment is given empty (`empty_lists`) or not empty (`nested_lists`: the name of the parameter and the Latin names of the
+/// machines, joined by a comma). Since 2.13 (AL-46) a name gets its JSON name from the brackets of its declaration, never from a dictionary.
 type TxEnv {
     states []TxPair, globals []TxPair, defs []TxPair, types []TxPair, cases []TxPair, prims []TxPair,
-    parties []TxPair, words []TxPair, parts []TxPair, signals []TxPair, input_fields []TxPair, empty_lists []str,
-    nested_lists []TxPair
+    parties []TxPair, psignals []TxPair, parts []TxPair, signals []TxPair, input_fields []TxPair, fields []TxPair, empty_lists []str,
+    nested_lists []TxPair, owner str
 }
 
 fn env_new() -> TxEnv {
     TxEnv {
         states: []TxPair.new(), globals: []TxPair.new(), defs: []TxPair.new(), types: []TxPair.new(), cases: []TxPair.new(), prims: []TxPair.new(),
-        parties: []TxPair.new(), words: []TxPair.new(), parts: []TxPair.new(), signals: []TxPair.new(), input_fields: []TxPair.new(), empty_lists: []str.new(),
-        nested_lists: []TxPair.new()
+        parties: []TxPair.new(), psignals: []TxPair.new(), parts: []TxPair.new(), signals: []TxPair.new(), input_fields: []TxPair.new(), fields: []TxPair.new(), empty_lists: []str.new(),
+        nested_lists: []TxPair.new(), owner: ""
     }
 }
 
@@ -263,73 +263,217 @@ fn cx_error(mut cx TxCx, t TxTok, kind str, message str) -> () {
 
 // ---- the names ---------------------------------------------------------------------------------------------------------------
 
-fn kinds_field() -> []str => ["field", "signal_field", "data", "variable", "method"]
+/// TxDeclared: a declared name as the file writes it (the token) and its JSON name.
+type TxDeclared { tok TxTok, json str }
 
-fn kinds_data() -> []str => ["data", "constant", "variable", "field", "method"]
+/// The JSON name of a name that is being declared (format 1a, 2.13, AL-46): the Latin name in the brackets right after it, `число_ходов (turn_count)`; the name of a bracket is Latin. `exported` says whether the name
+/// leaves the machine (a datum, a field of the input, a type, a field, a variant, an element of an enum, a signal of a party and its field, a primitive, a setting): then a name that is not Latin
+/// needs the brackets, else it is an error; a Latin name without brackets is its own JSON name, an internal name (a constant, a parameter, a definition, a party, a binding) is written to the tree as it is.
+fn decl_json(mut p TxP, mut cx TxCx, t TxTok, what str, exported bool) -> Result[str, TranslateError] => decl_json_text(p, cx, t, t.text, what, exported)
 
-fn kinds_type() -> []str => ["type"]
+/// The same for a name of several words (`остановить совещание`, a phrase of a signal): `text` is the whole name, `t` its first word.
+fn decl_json_text(mut p TxP, mut cx TxCx, t TxTok, text str, what str, exported bool) -> Result[str, TranslateError] {
+    if p_is(p, "(") && p_ahead(p, 1).kind == TK_NAME && t_is(p_ahead(p, 2), ")") {
+        ro l = p_ahead(p, 1)
+        if !is_identifier_latin(l.text) {
+            return Err(tx_err(l.line, l.col, "name", "JSON-имя `${l.text}` у ${what} `${text}` не латинское: в скобках пишется латинское имя `[A-Za-z_][A-Za-z0-9_]*` (Я-46)"))
+        }
+        p.pos += 3
+        return Ok(l.text)
+    }
+    if exported && !is_identifier_latin(text) {
+        cx_error(cx, t, "name", "у ${what} `${text}` нет JSON-имени в скобках: нелатинское имя, которое выходит из машины, пишется `${text} (json_name)` (Я-46)")
+    }
+    Ok(text)
+}
 
-fn kinds_case() -> []str => ["case", "type", "event"]
+/// The JSON name of a name that a table cell declares (the first cell of `## Данные`, `## Вход`, `## Примитивы`): the cell is `имя (json_name)`. The cell is read to its end.
+fn cell_decl_json(cell TxCell, line int, mut cx TxCx, what str, exported bool) -> Result[TxDeclared, TranslateError] {
+    mut p = cell_p(cell, line)?
+    ro t = p_tok(p)
+    if t.kind != TK_NAME { return Err(p_fail(p, "ожидается имя")) }
+    p_adv(p)
+    ro json = decl_json(p, cx, t, what, exported)?
+    p_end(p)?
+    Ok(TxDeclared { tok: t, json })
+}
 
-fn kinds_function() -> []str => ["catalog", "function", "method"]
+fn kinds_foreign_expr() -> []str => ["enum_value", "readable"]
 
-fn kinds_variable() -> []str => ["variable"]
+/// The JSON name of a readable word of the file's language (`причина` -> `reason`, `остановка` -> `stop_reason`, 1a, AL-49): the English word of the table, kind `readable`; the words with a dot (`событие.сторона`) are no names.
+fn readable_json(w TxWords, text str) -> Option[str] {
+    match kw_key(w, "readable", text) {
+        Some(k) => {
+            if k.contains(".") { return None }
+            Some(k)
+        }
+        None => None
+    }
+}
 
-/// The English word under the kinds, or a soft error (the word stays Russian) with the nearest word.
-fn tr_word(mut cx TxCx, t TxTok, kinds []str, what str) -> str => tr_word_f(cx, t, kinds, what, [])
+fn name_not_declared(cx TxCx, t TxTok, what str) -> str {
+    "${what} `${t.text}` не объявлено в этой машине${env_hint(cx, t.text)}"
+}
 
-/// The same; `foreign` are the kinds of the table of words under which a word of the other language is an error of the language (the word of the table of the other language is no name).
-fn tr_word_f(mut cx TxCx, t TxTok, kinds []str, what str, foreign []str) -> str {
-    match names_first(cx.names, kinds, t.text) {
-        Some(en) => en
-        None => {
-            if foreign.len() > 0 && cx_foreign(cx, t, foreign) { return t.text }
-            // a name that the author invents may be in Latin letters in a file of either language (section 1a): it is the name of the JSON as it is
-            if is_identifier_latin(t.text) { return t.text }
-            cx_error(cx, t, "name", "${what} `${t.text}` нет в таблице имён (словарь методики, версия 10)${names_hint(cx.names, kinds, t.text)}")
-            t.text
+fn env_scan(pairs_in []TxPair, word []char, mut best_name str, mut best_distance int) -> () {
+    for pair in pairs_in {
+        ro d = tx_distance_chars(word, pair.ru.chars().collect())
+        if d < best_distance {
+            best_distance = d
+            best_name = pair.ru
         }
     }
 }
 
-/// A name that a table introduces (a parameter, a binding, a variable of a lambda): the dictionary under `variable`, else Latin letters.
+/// The hint for an unknown name: the nearest declared name when it is near enough.
+fn env_hint(cx TxCx, ru str) -> str {
+    ro word []char = ru.chars().collect()
+    mut best_name = ""
+    mut best_distance = 1000
+    env_scan(cx.env.globals, word, best_name, best_distance)
+    env_scan(cx.env.defs, word, best_name, best_distance)
+    env_scan(cx.env.types, word, best_name, best_distance)
+    env_scan(cx.env.cases, word, best_name, best_distance)
+    env_scan(cx.env.fields, word, best_name, best_distance)
+    env_scan(cx.env.states, word, best_name, best_distance)
+    ro limit = if word.len() / 3 > 2 { word.len() / 3 } else { 2 }
+    if best_name != "" && best_distance <= limit { return "; возможно, `${best_name}`" }
+    ""
+}
+
+/// A name that a table introduces (a parameter, a binding, a variable of a lambda): the readable word of the file's language is its JSON name (`причина`, AL-49), any other name is written as it is (AL-46).
 fn tr_binder(mut cx TxCx, t TxTok) -> str {
     if is_keyword(cx.words, t.text) {
         cx_error(cx, t, "name", "`${t.text}` — служебное слово, именем быть не может")
         return t.text
     }
     if t.text == "_" { return "_" }
-    match names_get(cx.names, "variable", t.text) {
+    match readable_json(cx.words, t.text) {
+        Some(en) => return en
+        None => ()
+    }
+    // a field of a signal of the call protocol that the fragment Pause binds (`автор`, `источник`): the name of the registry, so that the fragment of either language gives one tree
+    match names_get(cx.names, "signal_field", t.text) {
         Some(en) => en
-        None => if is_identifier_latin(t.text) { t.text } else { tx_translit(t.text) }
+        None => t.text
     }
 }
 
-/// A name of a datum, a constant or a parameter that the file declares, or of the dictionary.
+/// The name of the local that a field of a pattern binds when the pattern gives it none (`Вариант(поле)`): the readable word or the field of a signal of the protocol have their JSON names, any other name is as written.
+fn binder_of_field(cx TxCx, t TxTok) -> str {
+    match readable_json(cx.words, t.text) {
+        Some(en) => return en
+        None => ()
+    }
+    match names_get(cx.names, "signal_field", t.text) {
+        Some(en) => en
+        None => t.text
+    }
+}
+
+/// A name of a datum, a constant or a parameter that the file declares, a readable name of the executor or of the contract, or a Latin name as it is.
 fn tr_global(mut cx TxCx, t TxTok) -> str {
     match pair_get(cx.env.globals, t.text) {
-        Some(en) => en
-        None => tr_word_f(cx, t, kinds_data(), "имя", ["enum_value", "readable"])
+        Some(en) => return en
+        None => ()
     }
+    match readable_json(cx.words, t.text) {
+        Some(en) => return en
+        None => ()
+    }
+    if is_identifier_latin(t.text) { return t.text }
+    if cx_foreign(cx, t, kinds_foreign_expr()) { return t.text }
+    cx_error(cx, t, "name", name_not_declared(cx, t, "имя"))
+    t.text
 }
 
-/// The type name: declared in the file, else the dictionary.
+/// The type name: declared in the file, else a Latin name as it is.
 fn tr_type_name(mut cx TxCx, t TxTok) -> str {
     match pair_get(cx.env.types, t.text) {
-        Some(en) => en
-        None => tr_word_f(cx, t, kinds_type(), "тип", ["type"])
+        Some(en) => return en
+        None => ()
     }
+    if t.text == "HashMap" {
+        cx_error(cx, t, "type", "тип `HashMap[K, V]` не принимается: словарь пишется `${kw(cx.words, "type", "map")}[K, V]`, у типов нет синонимов (Я-43)")
+        return t.text
+    }
+    if is_identifier_latin(t.text) { return t.text }
+    if cx_foreign(cx, t, ["type"]) { return t.text }
+    cx_error(cx, t, "name", name_not_declared(cx, t, "тип"))
+    t.text
 }
 
-/// The case of a variant or of an enum: declared in the file, else the dictionary.
+/// The case of a variant or of an enum: declared in the file, else a Latin name as it is.
 fn tr_case_name(mut cx TxCx, t TxTok) -> str {
     match pair_get(cx.env.cases, t.text) {
-        Some(en) => en
-        None => tr_word(cx, t, kinds_case(), "вариант")
+        Some(en) => return en
+        None => ()
     }
+    if is_identifier_latin(t.text) { return t.text }
+    cx_error(cx, t, "name", name_not_declared(cx, t, "вариант"))
+    t.text
 }
 
-fn tr_field_name(mut cx TxCx, t TxTok) -> str => tr_word(cx, t, kinds_field(), "поле")
+/// The name of a field: declared in a type, a variant or a signal; a request field may be named as a field of the input or as a datum; the fields of the event `событие.идентификатор`; a Latin name as it is.
+fn tr_field_name(mut cx TxCx, t TxTok) -> str {
+    match pair_get(cx.env.fields, t.text) {
+        Some(en) => {
+            if pair_has(cx.env.fields, "?${t.text}") {
+                cx_error(cx, t, "name", "поле `${t.text}` объявлено в машине с разными JSON-именами: ссылка без типа владельца неоднозначна; у поля с таким именем одно JSON-имя (Я-46)")
+            }
+            return en
+        }
+        None => ()
+    }
+    match pair_get(cx.env.input_fields, t.text) {
+        Some(en) => return en
+        None => ()
+    }
+    match pair_get(cx.env.globals, t.text) {
+        Some(en) => return en
+        None => ()
+    }
+    ro prefix = "${kw(cx.words, "readable", "event")}."
+    match kw_key(cx.words, "readable", "${prefix}${t.text}") {
+        Some(k) => {
+            ro dot = k.find(".") ?? -1
+            if dot >= 0 { return k[dot + 1..] }
+        }
+        None => ()
+    }
+    match names_get(cx.names, "field", t.text) {
+        Some(en) => return en
+        None => ()
+    }
+    if is_identifier_latin(t.text) { return t.text }
+    cx_error(cx, t, "name", name_not_declared(cx, t, "поле"))
+    t.text
+}
+
+/// A field that a declaration introduces: its JSON name is put into the table of the fields. The same word with another JSON name in another declaration (a record, a case) is allowed
+/// (the sample of the methodology has `утверждение (statement)` and `утверждение (claim)`): the word is then marked ambiguous (the pair `?word`), and a reference to it that does not
+/// name the owner is an error, because the translator does not know the types of the expressions.
+fn declare_field(mut cx TxCx, t TxTok, json str) -> () {
+    match pair_get(cx.env.fields, t.text) {
+        Some(known) => {
+            if known != json && !pair_has(cx.env.fields, "?${t.text}") { pair_add(cx.env.fields, "?${t.text}", known) }
+        }
+        None => pair_add(cx.env.fields, t.text, json)
+    }
+    // the same field under its owner (a record, a case of a variant, a signal, a part): a literal or a pattern of that owner finds the JSON name without the ambiguity
+    if cx.env.owner != "" { pair_add(cx.env.fields, "${cx.env.owner}.${t.text}", json) }
+}
+
+/// The JSON name of a field of a known owner (`Тип { поле: … }`, `Случай(поле)`, `сигнал(поле)`): the field declared under the owner, else the field of the machine.
+fn tr_field_in(mut cx TxCx, owner str, t TxTok) -> str {
+    if owner != "" {
+        match pair_get(cx.env.fields, "${owner}.${t.text}") {
+            Some(en) => return en
+            None => ()
+        }
+    }
+    tr_field_name(cx, t)
+}
 
 // Does the word look like a type (`Использование`, `КодСбоя`): the first letter is upper case and a lower case letter follows somewhere.
 fn looks_like_type(w str) -> bool {
@@ -382,9 +526,9 @@ fn ty_parse(mut p TxP, mut cx TxCx) -> Result[str, TranslateError] {
     if t.kind != TK_NAME { return Err(p_fail(p, "ожидается тип")) }
     ro words = cx.words
     if p_eat_kw(p, words, "type", "int") {
-        if p_eat(p, "≥") || p_eat(p, ">=") {
+        if p_eat(p, ">=") {
             ro n = p_tok(p)
-            if n.kind != TK_INT { return Err(p_fail(p, "после `≥` ожидается целое число")) }
+            if n.kind != TK_INT { return Err(p_fail(p, "после `>=` ожидается целое число")) }
             p_adv(p)
             return Ok("int>=${n.text}")
         }
@@ -439,7 +583,7 @@ fn ty_set(mut p TxP) -> Result[str, TranslateError] {
 
 // ---- the expressions (format section 3) --------------------------------------------------------------------------------------
 
-fn tx_arrow(t TxTok) -> bool => t.kind == TK_SYM && (t.text == "→" || t.text == "->")
+fn tx_arrow(t TxTok) -> bool => t.kind == TK_SYM && t.text == "->"
 
 fn is_lambda_start(p TxP, w TxWords) -> bool {
     ro t0 = p_tok(p)
@@ -460,7 +604,7 @@ fn ex_lambda(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] 
         names.push(p_tok(p))
         p_adv(p)
     }
-    if !tx_arrow(p_tok(p)) { return Err(p_fail(p, "ожидается стрелка `→`")) }
+    if !tx_arrow(p_tok(p)) { return Err(p_fail(p, "ожидается стрелка `->`")) }
     p_adv(p)
     mut inner = sc_clone(sc)
     mut params = []str.new()
@@ -513,7 +657,7 @@ fn ex_let(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
 // The binds of a pattern `Вариант(поле, поле: имя)`: the object {field: local} and the scope with the locals.
 type TxBinds { pairs []TxKV, scope TxScope }
 
-fn ex_pattern_binds(mut p TxP, mut cx TxCx, sc TxScope, kinds []str) -> Result[TxBinds, TranslateError] {
+fn ex_pattern_binds(mut p TxP, mut cx TxCx, sc TxScope, owner str) -> Result[TxBinds, TranslateError] {
     mut pairs = []TxKV.new()
     mut inner = sc_clone(sc)
     if !p_eat(p, "(") { return Ok(TxBinds { pairs, scope: inner }) }
@@ -522,15 +666,21 @@ fn ex_pattern_binds(mut p TxP, mut cx TxCx, sc TxScope, kinds []str) -> Result[T
         ro f = p_tok(p)
         if f.kind != TK_NAME { return Err(p_fail(p, "в образце ожидается поле")) }
         p_adv(p)
-        ro field_en = tr_word(cx, f, kinds, "поле")
+        ro field_en = tr_field_in(cx, owner, f)
         mut local_ru = f.text
-        mut local_en = field_en
+        mut local_en = binder_of_field(cx, f)
         if p_eat(p, ":") {
             ro l = p_tok(p)
             if l.kind != TK_NAME { return Err(p_fail(p, "после `:` в образце ожидается имя")) }
             p_adv(p)
             local_ru = l.text
             local_en = tr_binder(cx, l)
+            // no shadowing: a name that binds a field is not the name of a datum, a constant or a parameter of the machine
+            if pair_has(cx.env.globals, local_ru) {
+                cx_error(cx, l, "name", "имя `${local_ru}` уже занято данным, константой или параметром машины: затенения нет (no shadowing)")
+            }
+        } else if pair_has(cx.env.globals, local_ru) {
+            cx_error(cx, f, "name", "имя `${local_ru}` уже занято данным, константой или параметром машины: затенения нет (no shadowing)")
         }
         pairs.push(kv(field_en, js(local_en)))
         inner = sc_with(inner, local_ru, local_en)
@@ -570,7 +720,7 @@ fn ex_pattern(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxBinds, TranslateEr
         return Ok(TxBinds { pairs: [kv("pattern", pat_case(type_en, case_en, []))], scope: sc })
     }
     ro case_en = tr_case_name(cx, t)
-    ro binds = ex_pattern_binds(p, cx, sc, kinds_field())?
+    ro binds = ex_pattern_binds(p, cx, sc, t.text)?
     Ok(TxBinds { pairs: [kv("pattern", pat_case("", case_en, binds.pairs))], scope: binds.scope })
 }
 
@@ -598,7 +748,7 @@ fn ex_match(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
         }
         mut guards = []TxJ.new()
         if p_eat_kw(p, cx.words, "expr", "if") { guards.push(ex_expr(p, cx, arm_scope)?) }
-        if !tx_arrow(p_tok(p)) { return Err(p_fail(p, "в ветке `${kw(cx.words, "expr", "match")}` ожидается стрелка `→`")) }
+        if !tx_arrow(p_tok(p)) { return Err(p_fail(p, "в ветке `${kw(cx.words, "expr", "match")}` ожидается стрелка `->`")) }
         p_adv(p)
         ro body = ex_expr(p, cx, arm_scope)?
         arms.push(x_arm(patterns, guards, body))
@@ -653,9 +803,6 @@ fn ex_not(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
 fn cmp_op(t TxTok) -> str {
     if t.kind != TK_SYM { return "" }
     if t.text == "==" || t.text == "!=" || t.text == "<" || t.text == "<=" || t.text == ">" || t.text == ">=" { return t.text }
-    if t.text == "≥" { return ">=" }
-    if t.text == "≤" { return "<=" }
-    if t.text == "≠" { return "!=" }
     ""
 }
 
@@ -677,11 +824,10 @@ fn ex_cmp(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
     Ok(left)
 }
 
-// The sign of a membership: `∈`, or the word `in` before a brace (both writings are read in a file of either language, section 1a). In an English file the word `in` also ends the value
+// The sign of a membership: the word `in` before a brace (the same in both languages, AL-42). In an English file the word `in` also ends the value
 // of a `let`: there, outside any bracket, it is no membership.
 fn is_member_sign(p TxP, w TxWords) -> bool {
     ro t = p_tok(p)
-    if t_is(t, "∈") { return true }
     if t.kind == TK_NAME && t.text == "in" && t_is(p_ahead(p, 1), "{") {
         if p.in_let > 0 && kw(w, "expr", "in") == "in" { return false }
         return true
@@ -689,7 +835,7 @@ fn is_member_sign(p TxP, w TxWords) -> bool {
     false
 }
 
-// `x ∈ {a, b}` is `x == a или x == b`.
+// `x in {a, b}` is `x == a или x == b`.
 fn ex_member(mut p TxP, mut cx TxCx, sc TxScope, left TxJ) -> Result[TxJ, TranslateError] {
     p_expect(p, "{")?
     mut result = x_lit(TxBool(false))
@@ -814,13 +960,9 @@ fn ex_primary(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError]
     Ok(ex_name(cx, sc, t))
 }
 
-/// A bare name: a binding, a name of the executor, a datum, a constant, a parameter, a state.
+/// A bare name: a binding, a datum, a constant, a parameter, a readable name of the executor, a state.
 fn ex_name(mut cx TxCx, sc TxScope, t TxTok) -> TxJ {
     match sc_get(sc, t.text) {
-        Some(en) => return x_name(en)
-        None => ()
-    }
-    match names_get(cx.names, "executor", t.text) {
         Some(en) => return x_name(en)
         None => ()
     }
@@ -828,19 +970,17 @@ fn ex_name(mut cx TxCx, sc TxScope, t TxTok) -> TxJ {
         Some(en) => return x_name(en)
         None => ()
     }
+    match readable_json(cx.words, t.text) {
+        Some(en) => return x_name(en)
+        None => ()
+    }
     match pair_get(cx.env.states, t.text) {
         Some(latin) => return x_lit(js(latin))
         None => ()
     }
-    match names_first(cx.names, kinds_data(), t.text) {
-        Some(en) => {
-            cx_error(cx, t, "name", "`${t.text}` не объявлено в этой машине (таблицы данных, констант и параметров)")
-            return x_name(en)
-        }
-        None => ()
-    }
+    if is_identifier_latin(t.text) { return x_name(t.text) }
     if cx_foreign(cx, t, kinds_foreign_names()) { return x_name(t.text) }
-    cx_error(cx, t, "name", "имя `${t.text}` не объявлено и его нет в таблице имён${names_hint(cx.names, kinds_data(), t.text)}")
+    cx_error(cx, t, "name", name_not_declared(cx, t, "имя"))
     x_name(t.text)
 }
 
@@ -883,7 +1023,7 @@ fn ex_args(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxArgs, TranslateError]
 fn ex_call(mut p TxP, mut cx TxCx, sc TxScope, name TxTok) -> Result[TxJ, TranslateError] {
     ro args = ex_args(p, cx, sc)?
     mut fn_en = ""
-    match names_get(cx.names, "catalog", name.text) {
+    match kw_key(cx.words, "catalog", name.text) {
         Some(en) => { fn_en = en }
         None => {
             match pair_get(cx.env.defs, name.text) {
@@ -897,7 +1037,14 @@ fn ex_call(mut p TxP, mut cx TxCx, sc TxScope, name TxTok) -> Result[TxJ, Transl
                         }
                         None => ()
                     }
-                    fn_en = tr_word_f(cx, name, kinds_function(), "функция", ["catalog"])
+                    if cx_foreign(cx, name, ["catalog"]) {
+                        fn_en = name.text
+                    } else if is_identifier_latin(name.text) {
+                        fn_en = name.text
+                    } else {
+                        cx_error(cx, name, "name", name_not_declared(cx, name, "функция"))
+                        fn_en = name.text
+                    }
                 }
             }
         }
@@ -936,8 +1083,10 @@ fn tr_primitive(mut cx TxCx, t TxTok) -> str {
         Some(en) => return en
         None => ()
     }
-    match names_first(cx.names, ["primitive", "effect", "function"], t.text) {
-        Some(en) => return en
+    match kw_key(cx.words, "catalog", t.text) {
+        Some(en) => {
+            if en == "new_id" { return en }
+        }
         None => ()
     }
     cx_error(cx, t, "name", "примитива `${t.text}` нет в таблице `## Примитивы` машины, и он не встроенный")
@@ -989,10 +1138,10 @@ fn ex_brace(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
 }
 
 fn ex_brace_inner(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
-    if p_is(p, "...") || p_is(p, "…") {
+    if p_is(p, "...") {
         p_adv(p)
         ro base = ex_expr(p, cx, sc)?
-        ro fields = ex_field_pairs(p, cx, sc, true)?
+        ro fields = ex_field_pairs(p, cx, sc, true, "")?
         p_expect(p, "}")?
         return Ok(x_with(base, fields))
     }
@@ -1013,7 +1162,7 @@ fn ex_brace_inner(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateEr
 }
 
 // The fields `поле: выр, …` of a record literal; after `...выр` the list starts with a comma.
-fn ex_field_pairs(mut p TxP, mut cx TxCx, sc TxScope, after_base bool) -> Result[[]TxKV, TranslateError] {
+fn ex_field_pairs(mut p TxP, mut cx TxCx, sc TxScope, after_base bool, owner str) -> Result[[]TxKV, TranslateError] {
     mut fields = []TxKV.new()
     if after_base {
         if !p_eat(p, ",") { return Ok(fields) }
@@ -1025,7 +1174,7 @@ fn ex_field_pairs(mut p TxP, mut cx TxCx, sc TxScope, after_base bool) -> Result
         p_adv(p)
         p_expect(p, ":")?
         ro value = ex_expr(p, cx, sc)?
-        ro en = tr_field_name(cx, f)
+        ro en = tr_field_in(cx, owner, f)
         for seen in fields {
             if seen.key == en { cx_error(cx, f, "syntax", "поле `${f.text}` повторено") }
         }
@@ -1049,7 +1198,7 @@ fn ex_typed(mut p TxP, mut cx TxCx, sc TxScope, t TxTok) -> Result[TxJ, Translat
         ro case_en = tr_case_name(cx, c)
         if p_is(p, "{") {
             p_adv(p)
-            ro fields = ex_field_pairs(p, cx, sc, false)?
+            ro fields = ex_field_pairs(p, cx, sc, false, c.text)?
             p_expect(p, "}")?
             return Ok(x_variant(type_en, case_en, fields))
         }
@@ -1057,7 +1206,7 @@ fn ex_typed(mut p TxP, mut cx TxCx, sc TxScope, t TxTok) -> Result[TxJ, Translat
     }
     if p_is(p, "{") {
         p_adv(p)
-        ro fields = ex_field_pairs(p, cx, sc, false)?
+        ro fields = ex_field_pairs(p, cx, sc, false, t.text)?
         p_expect(p, "}")?
         return Ok(x_record(type_en, fields))
     }
