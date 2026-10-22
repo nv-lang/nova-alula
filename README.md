@@ -61,7 +61,7 @@ cd C:/work/alula
 nova test src --jobs 4 --timeout 600                 # all units (the heavy ones: machine_runner about 7 minutes, alula_scenarios about 3)
 nova test src --jobs 4 --timeout 600 --strict-effects
 powershell -File scripts/build-alula.ps1 -Test    # builds target/alula.exe and runs it on src/machine
-sh scripts/guards/run-all.sh                         # the guards: the marks of the Oracle workarounds, the border of the package
+sh scripts/guards/run-all.sh                         # the guards: the marks of the Oracle workarounds, the border of the package, the former name
 ```
 
 Tests are `*_test.nv` beside the sources. The output of a unit must stay under 4 KB (item 20 of the notes), hence the short names of the tests.
