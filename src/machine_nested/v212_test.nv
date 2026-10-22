@@ -42,7 +42,7 @@ test "v212 fragments key" {
 
 test "v212 fragments halt word" {
     ro json = tree_of(meeting212())
-    ro word = after_marker(json, "\"halt_word\":{\"op\":\"lit\",\"value\":\"")
+    ro word = after_marker(json, "\"halt_signal\":{\"op\":\"lit\",\"value\":\"")
     assert(word != "")
     // the word is a gate word of the party `enhanced`
     assert(json.contains("{\"name\":\"${word}\"") )
@@ -59,7 +59,7 @@ test "v212 fragments args" {
 
 test "v212 fragments order of the args" {
     ro json = tree_of(meeting212())
-    ro a = json.find("\"halt_word\"") ?? -1
+    ro a = json.find("\"halt_signal\"") ?? -1
     ro b = json.find("\"halt_code\"") ?? -1
     ro c = json.find("\"nested\":{\"op\":\"list\"") ?? -1
     ro d = json.find("\"cancel_requests\"") ?? -1
@@ -108,9 +108,9 @@ test "v212 render one line" {
     ro text = render(tree_of(meeting212()), "ru")
     ro line = line_of_pause(text)
     assert(line != "")
-    assert(line.contains("слово_остановки: остановить совещание"))
+    assert(line.contains("сигнал_остановки: halt_meeting"))
     assert(line.contains("код_остановки: \"Witness_halt_meeting\""))
-    assert(line.contains("вложенные: [шаг_агента]"))
+    assert(line.contains("вложенные: [agent_step]"))
     assert(line.contains("отмена_запросов: без_возврата_в_к_отправке"))
     assert(line.contains("вход_заново: запросы_из_к_отправке"))
     assert(line.contains("право_записи: \"право записи на предложение: закрытое в окне проверки линз остаётся закрытым\")"))
@@ -118,7 +118,7 @@ test "v212 render one line" {
 
 test "v212 render order of the params" {
     ro line = line_of_pause(render(tree_of(meeting212()), "ru"))
-    ro a = line.find("слово_остановки") ?? -1
+    ro a = line.find("сигнал_остановки") ?? -1
     ro b = line.find("код_остановки") ?? -1
     ro c = line.find("вложенные") ?? -1
     ro d = line.find("отмена_запросов") ?? -1
@@ -130,7 +130,7 @@ test "v212 render order of the params" {
 test "v212 render en line" {
     ro line = line_of_pause(render(tree_of(meeting212()), "en"))
     assert(line.starts_with("Pause("))
-    assert(line.contains("halt_word: "))
+    assert(line.contains("halt_signal: "))
     assert(line.contains("cancel_requests: without_return_to_send"))
     assert(line.contains("reenter: requests_from_to_send"))
 }
@@ -161,7 +161,7 @@ test "v212 render skips the signals of the fragment" {
 
 test "v212 render keeps the own data" {
     ro text = render(tree_of(meeting212()), "ru")
-    assert(text.contains("| попытка_вратаря |"))
+    assert(text.contains("| gatekeeper_attempt |"))
 }
 
 test "v212 circle ru" {
@@ -228,7 +228,7 @@ test "v212 render keeps no fragment states for an old tree" {
 // ---- the fragment is one call -----------------------------------------------------------------------------------------------------------
 
 test "v212 pause call twice" {
-    ro line = "Пауза(слово_остановки: остановить совещание, код_остановки: \"Witness_halt_meeting\", вложенные: [шаг_агента],\n      отмена_запросов: без_возврата_в_к_отправке, вход_заново: запросы_из_к_отправке,\n      право_записи: \"право записи на предложение: закрытое в окне проверки линз остаётся закрытым\")"
+    ro line = "Пауза(сигнал_остановки: остановить совещание, код_остановки: \"Witness_halt_meeting\", вложенные: [шаг_агента],\n      отмена_запросов: без_возврата_в_к_отправке, вход_заново: запросы_из_к_отправке,\n      право_записи: \"право записи на предложение: закрытое в окне проверки линз остаётся закрытым\")"
     ro text = meeting212().replace(line, "${line}\n${line}")
     assert(!is_clean_text(text))
 }
@@ -239,9 +239,9 @@ test "v212 pause call missing parameter" {
     assert(note_says(meeting212().replace("вход_заново: запросы_из_к_отправке,\n", ""), "не назван параметр `вход_заново`"))
 }
 
-// ---- Вход: нет of an appeal (AL-23) ---------------------------------------------------------------------------------------------------------
+// ---- an appeal without a request (AL-23, AL-40) ---------------------------------------------------------------------------------------------------------
 
-fn no_request() -> str => agent212().replace("- Вход:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| подсказка | text_reply | сторона |\n", "- Вход: нет\n")
+fn no_request() -> str => agent212().replace("- Запрос:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| prompt | text_reply | сторона |\n", "")
 
 test "v212 appeal without a request" {
     ro report = checked(no_request())
@@ -250,22 +250,25 @@ test "v212 appeal without a request" {
 }
 
 test "v212 appeal without a request, a table too" {
-    assert(!is_clean_text(no_request().replace("- Вход: нет\n", "- Вход: нет\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| подсказка | text_reply | сторона |\n")))
+    // `Запрос: нет` is no key of 2.14 (AL-40): a key line with an empty value is an error
+    assert(!is_clean_text(agent212().replace("- Запрос:\n\n| поле запроса", "- Запрос: нет\n\n| поле запроса")))
 }
 
 test "v212 appeal with an empty input" {
-    assert(!is_clean_text(no_request().replace("- Вход: нет\n", "- Вход:\n")))
+    assert(!is_clean_text(agent212().replace("- Запрос:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| prompt | text_reply | сторона |\n", "- Запрос:\n")))
 }
 
 test "v212 appeal without a request reads no datum" {
     assert(note_says(no_request().replace("| 1 | ответ(ответ) | — | text_reply = ответ | DONE |", "| 1 | ответ(ответ) | — | text_reply = текст(text_reply) | DONE |"), "text_reply"))
 }
 
-test "v212 render writes the none" {
+test "v212 render writes no key for an appeal without a request" {
     ro text = render(tree_of(no_request()), "ru")
-    assert(text.contains("- Вход: нет\n"))
+    assert(!text.contains("Вход:"))
+    assert(!text.contains("Запрос: нет"))
     ro en = render(tree_of(no_request()), "en")
-    assert(en.contains("- Input: none\n"))
+    assert(!en.contains("Input:"))
+    assert(!en.contains("Request: none"))
 }
 
 test "v212 render circle without a request" {
@@ -274,8 +277,8 @@ test "v212 render circle without a request" {
 }
 
 test "v212 call without the fields it needs" {
-    // a party of the kind machine with the fields of the input type needs them: `Вход: нет` leaves two fields unsaid
-    ro text = boss212().replace("- Вход:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| label | \"m\" | сторона |\n| count | 1 | сторона |\n", "- Вход: нет\n")
+    // a party of the kind machine with the fields of the input type needs them: no request leaves two fields unsaid
+    ro text = boss212().replace("- Запрос:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| label | \"m\" | сторона |\n| count | 1 | сторона |\n", "")
     assert(note_says(text, "label"))
     assert(note_says(text, "count"))
 }
@@ -290,7 +293,7 @@ fn pure_registry() -> Registry {
 }
 
 fn fork_text(condition str) -> str {
-    ro with_fork = boss212().replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | reply = итог | CHECK |").replace("### DONE — конец", "### CHECK — развилка\n- Вход: reply\n\n| № | Условие | Действия | Куда |\n|---|---|---|---|\n| 1 | ${condition} | — | DONE |\n| 2 | иначе | — | DONE |\n\n### DONE — конец")
+    ro with_fork = boss212().replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | reply = итог | CHECK |").replace("### DONE — конец", "### CHECK — развилка\n- Читает: reply\n\n| № | Условие | Действия | Куда |\n|---|---|---|---|\n| 1 | ${condition} | — | DONE |\n| 2 | иначе | — | DONE |\n\n### DONE — конец")
     with_prims(with_fork, ["big", "time_now"])
 }
 
@@ -335,7 +338,7 @@ test "v212 unknown function still refused" {
 }
 
 test "v212 undeclared primitive refused" {
-    ro report = checked_pure(boss212().replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | reply = итог | CHECK |").replace("### DONE — конец", "### CHECK — развилка\n- Вход: reply\n\n| № | Условие | Действия | Куда |\n|---|---|---|---|\n| 1 | big(2) | — | DONE |\n| 2 | иначе | — | DONE |\n\n### DONE — конец"))
+    ro report = checked_pure(boss212().replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | reply = итог | CHECK |").replace("### DONE — конец", "### CHECK — развилка\n- Читает: reply\n\n| № | Условие | Действия | Куда |\n|---|---|---|---|\n| 1 | big(2) | — | DONE |\n| 2 | иначе | — | DONE |\n\n### DONE — конец"))
     assert(report.errors.len() > 0)
 }
 
@@ -440,21 +443,21 @@ test "v212 role circle" {
 
 // ---- the bindings of the rows of the fragment against the data of the machine (AL-26) ---------------------------------------------------------------------
 
-fn meeting_with_datum(name str) -> str => meeting212().replace("| попытка_вратаря | число≥0 | 0 | да | механика |", "| попытка_вратаря | число≥0 | 0 | да | механика |\n| ${name} | текст | \"\" | — | строки |")
+fn meeting_with_datum(name str) -> str => meeting212().replace("| попытка_вратаря (gatekeeper_attempt) | число>=0 | 0 | да | механика |", "| попытка_вратаря (gatekeeper_attempt) | число>=0 | 0 | да | механика |\n| ${name} | текст | \"\" | — | строки |")
 
 test "v212 a datum named as a binding of the fragment" {
-    // the rows of the fragment Pause bind `слово_человека`, `автор`, `источник`, `идентификатор_запроса`: after the fragment is put in they are bindings of the machine, a datum may not have such a name
+    // the rows of the fragment Pause bind `human_word`, `author`, `source`, `id` (the JSON names of the registry): after the fragment is put in they are bindings of the machine, a datum may not have such a JSON name
     assert(is_clean_text(meeting_with_datum("extra_note")))
-    assert(note_says(meeting_with_datum("источник"), "no shadowing"))
-    assert(note_says(meeting_with_datum("автор"), "no shadowing"))
+    assert(note_says(meeting_with_datum("источник (source)"), "no shadowing"))
+    assert(note_says(meeting_with_datum("автор (author)"), "no shadowing"))
 }
 
 test "v212 a datum named as the other binding of the fragment" {
-    assert(note_says(meeting_with_datum("идентификатор_запроса"), "no shadowing"))
-    assert(note_says(meeting_with_datum("слово_человека"), "no shadowing"))
+    assert(note_says(meeting_with_datum("идентификатор_запроса (id)"), "no shadowing"))
+    assert(note_says(meeting_with_datum("слово_человека (human_word)"), "no shadowing"))
 }
 
 test "v212 the launch source is no binding" {
-    // `источник_запуска` is `launch_source` (the dictionary, version 10): it does not shadow the binding `source`
-    assert(is_clean_text(meeting_with_datum("источник_запуска")))
+    // `источник_запуска` is `launch_source`: it does not shadow the binding `source`
+    assert(is_clean_text(meeting_with_datum("источник_запуска (launch_source)")))
 }

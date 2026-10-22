@@ -35,8 +35,8 @@ test "chat parties" {
     assert(def.parties.len() == 2)
     assert(party_kind_word(def.parties[0].kind) == "human")
     assert(party_kind_word(def.parties[1].kind) == "agent")
-    assert(def.parties[0].words.len() == 2)
-    assert(def.parties[0].words[0].fields.len() == 1)
+    assert(def.parties[0].signals.len() == 2)
+    assert(def.parties[0].signals[0].fields.len() == 1)
     assert(def.parties[1].progress.len() == 1)
     assert(def.parties[1].id == "agent")
     assert(def.parties[1].counter == "agent_attempt")
@@ -111,7 +111,7 @@ test "missing keys" {
 test "bad kinds" {
     assert(says(chat_with("\"kind\": \"human\"", "\"kind\": \"robot\""), "kind of a party"))
     assert(says(chat_with("\"kind\": \"appeal\", \"party\": \"user\"", "\"kind\": \"loop\", \"party\": \"user\""), "kind of a state"))
-    assert(says(chat_with("\"kind\": \"word\", \"word\": \"user_message\"", "\"kind\": \"wish\", \"word\": \"user_message\""), "kind of an event"))
+    assert(says(chat_with("\"kind\": \"signal\", \"name\": \"user_message\"", "\"kind\": \"wish\", \"word\": \"user_message\""), "kind of an event"))
     assert(says(chat_with("\"do\": \"journal\", \"code\": \"agent_done\"", "\"do\": \"teleport\", \"code\": \"agent_done\""), "unknown action"))
     assert(says(chat_with("\"writes\": \"rows\"", "\"writes\": \"sometimes\""), "writes must be"))
     assert(says(chat_with("\"reads\": \"executor\"", "\"reads\": \"nobody\""), "party or executor"))
@@ -131,7 +131,7 @@ test "bad expr" {
 
 test "paths of errors" {
     assert(first_issue(chat_with("\"kind\": \"human\"", "\"kind\": \"robot\"")).starts_with("$.parties[0].kind"))
-    assert(first_issue(chat_with("\"kind\": \"word\", \"word\": \"user_message\"", "\"kind\": \"wish\", \"word\": \"user_message\"")).starts_with("$.states[0].rows[0].event.kind"))
+    assert(first_issue(chat_with("\"kind\": \"signal\", \"name\": \"user_message\"", "\"kind\": \"wish\", \"word\": \"user_message\"")).starts_with("$.states[0].rows[0].event.kind"))
     assert(first_issue(chat_with("\"do\": \"journal\", \"code\": \"agent_done\"", "\"do\": \"teleport\", \"code\": \"agent_done\"")).starts_with("$.states[1].rows[1].actions[0].do"))
 }
 
@@ -206,7 +206,7 @@ test "all actions decode" {
     ro a9 = `{"do":"machine_error","code":"boom"}`
     ro a10 = `{"do":"cancel_open","party":"user","except":[]}`
     ro a11 = `{"do":"pass","nested":${empty},"signal":"stop"}`
-    ro rows = `{"n":1,"event":{"kind":"word","word":"go"},"actions":[${a1},${a2},${a3},${a4},${a5},${a6},${a7},${a8},${a9},${a10},${a11}],"to":"Decide"}`
+    ro rows = `{"n":1,"event":{"kind":"signal","name":"go"},"actions":[${a1},${a2},${a3},${a4},${a5},${a6},${a7},${a8},${a9},${a10},${a11}],"to":"Decide"}`
     ro def = decoded(tiny_with("", "", rows, tiny_ends_rows()))
     assert(def.states[0].rows[0].actions.len() == 11)
     match def.states[0].rows[0].actions[0] {
@@ -230,7 +230,7 @@ test "all events decode" {
     ro evs = [
         "{\"kind\":\"answer\",\"bind\":\"v\"}", "{\"kind\":\"answer_variant\",\"variant\":\"A\",\"bind\":{\"f\":\"g\"}}",
         "{\"kind\":\"failure\",\"reasons\":[\"Timeout\"],\"bind\":\"r\"}", "{\"kind\":\"timeout\"}",
-        "{\"kind\":\"progress\",\"name\":\"p\"}", "{\"kind\":\"word\",\"word\":\"w\"}", "{\"kind\":\"signal\",\"name\":\"s\"}", "{\"kind\":\"now\"}"
+        "{\"kind\":\"progress\",\"name\":\"p\"}", "{\"kind\":\"signal\",\"name\":\"s\"}", "{\"kind\":\"now\"}"
     ]
     mut labels = []str.new()
     for e in evs {
@@ -238,15 +238,15 @@ test "all events decode" {
         ro def = decoded(tiny_with("", "", rows, tiny_ends_rows()))
         labels.push(event_label(def.states[0].rows[0].event))
     }
-    assert(labels.join(",") == "answer,answer_variant,failure,timeout,progress,word,signal,now")
+    assert(labels.join(",") == "answer,answer_variant,failure,timeout,progress,signal,now")
     assert(says(tiny_with("", "", "{\"n\":1,\"event\":{\"kind\":\"timeout\",\"x\":1},\"to\":\"Decide\"}", tiny_ends_rows()), "the key x"))
 }
 
 test "row forms" {
-    ro both = "{\"n\":1,\"event\":{\"kind\":\"word\",\"word\":\"go\"},\"cond\":${jl("true")},\"else\":true,\"to\":\"Decide\"}"
+    ro both = "{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"cond\":${jl("true")},\"else\":true,\"to\":\"Decide\"}"
     assert(says(tiny_with("", "", both, tiny_ends_rows()), "condition or else"))
-    ro unnumbered = "{\"event\":{\"kind\":\"word\",\"word\":\"go\"},\"to\":\"Decide\"}"
+    ro unnumbered = "{\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"to\":\"Decide\"}"
     assert(says(tiny_with("", "", unnumbered, tiny_ends_rows()), "n is missing") || says(tiny_with("", "", unnumbered, tiny_ends_rows()), "the key n"))
-    ro null_to = "{\"n\":1,\"event\":{\"kind\":\"word\",\"word\":\"go\"},\"to\":null}"
+    ro null_to = "{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"to\":null}"
     assert(says(tiny_with("", "", null_to, tiny_ends_rows()), "ends in machine_error"))
 }

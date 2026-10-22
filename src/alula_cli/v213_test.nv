@@ -1,5 +1,5 @@
 // v213_test.nv - task 149: the program `alula` and the syntax of 2.12 that the format 2.14 does not read any more: a file that says `format: 2.14` and still writes `Вход:`, `слово(…)`, the column
-// `слова ворот` or a sign `≥` is refused with a message that names the new writing (there is no transition period); the machines of the folder are read.
+// `слова ворот` or a sign `>=` is refused with a message that names the new writing (there is no transition period); the machines of the folder are read.
 module alula.alula_cli
 
 import std.text
@@ -16,8 +16,8 @@ fn old_syntax() -> str => `# Машина: Малая
 
 | имя | тип | начальное | не убывает | пишет |
 |---|---|---|---|---|
-| n | число≥0 | 0 | да | строки |
-| u_attempt | число≥0 | 0 | да | механика |
+| n | число>=0 | 0 | да | строки |
+| u_attempt | число>=0 | 0 | да | механика |
 
 ## Стороны
 
@@ -46,7 +46,7 @@ fn old_syntax() -> str => `# Машина: Малая
 
 | конец | № | когда | ответ |
 |---|---|---|---|
-| Done | 1 | истина | Ответ(n) |
+| Done | 1 | n ≥ 0 | Ответ(n) |
 `
 
 fn old_file() -> []NamedText => one("/work/old.alula.md", old_syntax())
@@ -77,7 +77,7 @@ test "v213 old column is refused" {
 }
 
 test "v213 old signs are refused" {
-    assert(error_of("check", old_syntax()).contains("знак `≥`"))
+    assert(error_of("check", old_syntax()).contains("пишется `>=`"))
     assert(error_of("check", old_syntax()).contains("ASCII"))
 }
 
@@ -107,7 +107,7 @@ test "v213 a tree with words is refused by check" {
 }
 
 test "v213 a tree with a word event is refused by render" {
-    ro word = tiny_json().replace("\"kind\":\"signal\",\"name\":\"go\"", "\"kind\":\"word\",\"word\":\"go\"")
+    ro word = tiny_json().replace("\"kind\":\"signal\",\"name\":\"allow\"", "\"kind\":\"word\",\"word\":\"allow\"")
     assert(word != tiny_json())
     ro ran = run_with(["render", "/work/tiny.alula.json"], one("/work/tiny.alula.json", word))
     assert(ran.code == 1)
@@ -130,7 +130,7 @@ test "v213 the machines of the folder are read" {
     }
 }
 
-test "v213 help names the signals" {
-    ro ran = run0(["help"])
-    assert(ran.out.contains("2.14"))
+test "v213 version names the format" {
+    ro ran = run0(["version"])
+    assert(ran.out.contains("Alula 2.14"))
 }

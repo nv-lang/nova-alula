@@ -11,10 +11,10 @@ fn ids_text(second_id str) -> str {
     ro bind_b = `{"do":"bind","name":"second","value":${second_id}}`
     ro keep = `{"do":"assign","target":"sid","value":{"op":"name","name":"first"}},{"do":"assign","target":"sid2","value":{"op":"name","name":"second"}}`
     ro open = `{"name":"Open","kind":"operation","reads":[],"entry":[${bind_a},${bind_b}],"rows":[{"n":1,"event":{"kind":"now"},"actions":[${keep}],"to":"Wait"}]}`
-    ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"word","word":"go"},"to":"Done"}]}`
+    ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"signal","name":"go"},"to":"Done"}]}`
     ro done = `{"name":"Done","kind":"end","reads":["sid"]}`
     ro data = `{"name":"sid","type":"?id","initial":{"expr":{"op":"lit","value":null}}},{"name":"sid2","type":"?id","initial":{"expr":{"op":"lit","value":null}}},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}`
-    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","words":[{"name":"go"}]}`
+    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","signals":[{"name":"go"}]}`
     ro ends = `{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"call","fn":"text","args":[{"op":"name","name":"sid"}]}}}]}`
     `{"format":"machine/2","machine":"Ids","version":"1","input":{"fields":[]},"primitives":["new_id"],"data":[${data}],"parties":[${party}],"initial":"Open","states":[${open},${wait},${done}],"ends":${ends}}`
 }
@@ -90,8 +90,8 @@ test "v25 bad scripted id" {
 
 fn input_ids() -> AlulaMachine {
     ro data = `{"name":"session","type":"id","initial":{"from_input":"session"}},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}`
-    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","words":[{"name":"go"}]}`
-    ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"word","word":"go"},"to":"Done"}]}`
+    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","signals":[{"name":"go"}]}`
+    ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"signal","name":"go"},"to":"Done"}]}`
     ro done = `{"name":"Done","kind":"end","reads":["session"]}`
     ro ends = `{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"name","name":"session"}}}]}`
     build_from(`{"format":"machine/2","machine":"Sess","version":"1","input":{"fields":[{"name":"session","type":"id"}]},"data":[${data}],"parties":[${party}],"initial":"Wait","states":[${wait},${done}],"ends":${ends}}`)
@@ -121,8 +121,8 @@ test "v25 input id bad" {
 
 fn input_optional() -> AlulaMachine {
     ro data = `{"name":"session","type":"text","initial":{"from_input":"session"}},{"name":"note","type":"?text","initial":{"from_input":"note"}},{"name":"level","type":"?int>=0","initial":{"from_input":"level"}},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}`
-    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","words":[{"name":"go"}]}`
-    ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"word","word":"go"},"to":"Done"}]}`
+    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","signals":[{"name":"go"}]}`
+    ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"signal","name":"go"},"to":"Done"}]}`
     ro done = `{"name":"Done","kind":"end","reads":["session"]}`
     ro ends = `{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"name","name":"session"}}}]}`
     build_from(`{"format":"machine/2","machine":"Opt","version":"1","input":{"fields":[{"name":"session","type":"text"},{"name":"note","type":"?text"},{"name":"level","type":"?int>=0"}]},"data":[${data}],"parties":[${party}],"initial":"Wait","states":[${wait},${done}],"ends":${ends}}`)
@@ -159,8 +159,8 @@ test "v25 input optional given" {
 
 fn set_machine() -> AlulaMachine {
     ro data = `{"name":"mode","type":"\"fast\" | \"slow\"","initial":{"expr":{"op":"lit","value":"fast"}}},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}`
-    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","words":[{"name":"pick","fields":[{"name":"kind","type":"\"fast\" | \"slow\""}]}]}`
-    ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"word","word":"pick","bind":{"kind":"k"}},"actions":[{"do":"assign","target":"mode","value":{"op":"name","name":"k"}}],"to":"Done"}]}`
+    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","signals":[{"name":"pick","fields":[{"name":"kind","type":"\"fast\" | \"slow\""}]}]}`
+    ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"signal","name":"pick","bind":{"kind":"k"}},"actions":[{"do":"assign","target":"mode","value":{"op":"name","name":"k"}}],"to":"Done"}]}`
     ro done = `{"name":"Done","kind":"end","reads":["mode"]}`
     ro ends = `{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"name","name":"mode"}}}]}`
     build_from(`{"format":"machine/2","machine":"Sets","version":"1","data":[${data}],"parties":[${party}],"initial":"Wait","states":[${wait},${done}],"ends":${ends}}`)
@@ -179,8 +179,8 @@ test "v25 word set" {
 // A value that is not in the set cannot be written, whatever its way: the write is checked against the type of the datum (a machine error `bound_violation`).
 fn set_write_machine() -> AlulaMachine {
     ro data = `{"name":"mode","type":"\"fast\" | \"slow\"","initial":{"expr":{"op":"lit","value":"fast"}}},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}`
-    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","words":[{"name":"pick","fields":[{"name":"kind","type":"text"}]}]}`
-    ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"word","word":"pick","bind":{"kind":"k"}},"actions":[{"do":"assign","target":"mode","value":{"op":"name","name":"k"}}],"to":"Done"}]}`
+    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","signals":[{"name":"pick","fields":[{"name":"kind","type":"text"}]}]}`
+    ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"signal","name":"pick","bind":{"kind":"k"}},"actions":[{"do":"assign","target":"mode","value":{"op":"name","name":"k"}}],"to":"Done"}]}`
     ro done = `{"name":"Done","kind":"end","reads":["mode"]}`
     ro failed = `{"name":"Errored","kind":"end","reads_all":true}`
     ro ends = `{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"name","name":"mode"}}},{"state":"Errored","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"refusal","code":{"op":"variant","type":"FailCode","name":"NoResult"},"text":{"op":"lit","value":"error"}}}]}`

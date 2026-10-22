@@ -1,11 +1,11 @@
 // spec_test.nv - the types as the format writes them: read, written back, refused.
 module alula.machine_table
 
-import alula.machine.{TypeDefs, RecordDef, VariantDef, EnumWord, CaseDef, FieldDef, TextType, spec_text, empty_type_defs}
+import alula.machine.{TypeDefs, RecordDef, VariantDef, EnumValue, CaseDef, FieldDef, TextType, spec_text, empty_type_defs}
 
 fn sdefs() -> TypeDefs {
     ro finding = RecordDef { name: "Finding", fields: [FieldDef { name: "evidence", spec: TextType }] }
-    ro severity = VariantDef { name: "Severity", cases: [CaseDef { name: "Critical", fields: []FieldDef.new() }], words: []EnumWord.new() }
+    ro severity = VariantDef { name: "Severity", cases: [CaseDef { name: "Critical", fields: []FieldDef.new() }], values: []EnumValue.new() }
     TypeDefs { records: [finding], variants: [severity] }
 }
 

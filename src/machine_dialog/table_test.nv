@@ -70,7 +70,7 @@ test "dl loads" {
     assert(def.states[1].rows.len() == 5)
     assert(def.parties.len() == 2)
     assert(def.params.len() == 1)
-    assert(def.params[0].name == "IDLE_TERM")
+    assert(def.params[0].name == "СРОК_БЕЗДЕЙСТВИЯ")
     assert(def.params[0].project_key == "срок_бездействия")
     assert(def.constants.len() == 0)
     assert(def.end_rows.len() == 1)
@@ -147,12 +147,12 @@ test "dl idle term refused" {
     ro bad_type = [ProjectValue { key: "проект.срок_бездействия", value: Text("soon") }]
     match load_alula_machine_with(dialog_machine_text(), standard_registry(), bad_type) {
         Ok(m) => assert(false)
-        Err(e) => assert(e.contains("IDLE_TERM"))
+        Err(e) => assert(e.contains("СРОК_БЕЗДЕЙСТВИЯ"))
     }
     ro negative = term_value(-1)
     match load_alula_machine_with(dialog_machine_text(), standard_registry(), negative) {
         Ok(m) => assert(false)
-        Err(e) => assert(e.contains("IDLE_TERM"))
+        Err(e) => assert(e.contains("СРОК_БЕЗДЕЙСТВИЯ"))
     }
     ro twice = [ProjectValue { key: "проект.срок_бездействия", value: Int(5) }, ProjectValue { key: "проект.срок_бездействия", value: Int(6) }]
     match load_alula_machine_with(dialog_machine_text(), standard_registry(), twice) {

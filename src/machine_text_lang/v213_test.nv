@@ -202,7 +202,7 @@ test "v213 signal with fields" {
     ro text = ru13("разрешить (allow), отказать (deny)", "разрешить (allow)(автор (author) текст), отказать (deny)").replace("| 1 | сигнал(разрешить) | — | число_ходов += 1", "| 1 | сигнал(разрешить(автор)) | — | число_ходов += 1")
     assert(is_clean(text))
     assert(json_of(text).contains("{\"name\":\"allow\",\"fields\":[{\"name\":\"author\",\"type\":\"text\"}]}"))
-    assert(json_of(text).contains("\"event\":{\"kind\":\"signal\",\"name\":\"allow\",\"bind\":{\"author\":\"автор\"}}"))
+    assert(json_of(text).contains("\"event\":{\"kind\":\"signal\",\"name\":\"allow\",\"bind\":{\"author\":\"author\"}}"))
 }
 
 test "v213 signal of several words" {
@@ -508,7 +508,7 @@ test "v213 party name is written as it is" {
 test "v213 lambda and let names are written as they are" {
     ro text = ru13("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | любой([1, 2], х -> х == число_ходов) | — | КОНЕЦ |")
     assert(is_clean(text))
-    assert(json_of(text).contains("\"lambda\":[\"х\"]"))
+    assert(json_of(text).contains("\"op\":\"lambda\",\"params\":[\"х\"]"))
 }
 
 test "v213 definition name is written as it is" {

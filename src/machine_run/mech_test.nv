@@ -106,7 +106,7 @@ test "mx host and params keys" {
     assert(sc.steps[0].host.len() == 2)
     assert(sc.steps[0].host[0].name == "reply_validation")
     assert(sc.steps[0].event.request == "call-1")
-    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"word\",\"name\":\"a\"},\"host\":[]}")).contains("object"))
+    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"a\"},\"host\":[]}")).contains("object"))
     assert(parse_err("{\"format\":\"scenario/0\",\"machine\":\"M\",\"params\":3,\"steps\":[]}").contains("object"))
 }
 

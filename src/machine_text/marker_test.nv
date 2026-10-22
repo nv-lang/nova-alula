@@ -31,8 +31,8 @@ test "mk each key" {
     assert(json_of(marked(tiny_text(), "machine: ")) == plain)
     assert(json_of(marked(tiny_text(), "Начальное состояние: ")) == plain)
     assert(json_of(marked(tiny_text(), "Сторона: ")) == plain)
-    assert(json_of(marked(tiny_text(), "Срок тишины: ")) == plain)
-    assert(json_of(marked(tiny_text(), "Вход:")) == plain)
+    assert(json_of(marked(tiny_text(), "Запрос:")) == plain)
+    assert(json_of(marked(tiny_text(), "Читает: ")) == plain)
     assert(json_of(marked(tiny_text(), "Кроме: ")) == plain)
     assert(json_of(marked(tiny_text(), "Результат: ")) == plain)
 }
@@ -40,12 +40,12 @@ test "mk each key" {
 test "mk all and mixed" {
     ro plain = json_of(tiny_text())
     mut all = tiny_text()
-    for key in ["machine: ", "machine_version: ", "format: ", "Начальное состояние: ", "Сторона: ", "Срок тишины: ", "Вход:", "Кроме: ", "Результат: "] {
+    for key in ["machine: ", "machine_version: ", "format: ", "Начальное состояние: ", "Сторона: ", "Запрос:", "Читает: ", "Кроме: ", "Результат: "] {
         all = marked(all, key)
     }
     assert(all != tiny_text())
     assert(json_of(all) == plain)
-    ro mixed = marked(marked(marked(tiny_text(), "Сторона: "), "Вход:"), "Результат: ")
+    ro mixed = marked(marked(marked(tiny_text(), "Сторона: "), "Запрос:"), "Результат: ")
     assert(json_of(mixed) == plain)
     assert(checked(all).errors.len() == 0)
 }
@@ -57,18 +57,30 @@ test "mk wide marker" {
 
 test "mk table after list" {
     ro plain = json_of(tiny_text())
-    ro text = tiny_text().replace("\nВход:\n\n|", "\n- Вход:\n\n|")
+    ro text = tiny_text().replace("\nЗапрос:\n\n|", "\n- Запрос:\n\n|")
     assert(text != tiny_text())
     assert(json_of(text) == plain)
-    ro tight = tiny_text().replace("\nВход:\n\n|", "\n- Вход:\n|")
+    ro tight = tiny_text().replace("\nЗапрос:\n\n|", "\n- Запрос:\n|")
     assert(json_of(tight) == plain)
 }
 
 test "mk columns" {
-    ro bad = tiny_text().replace("Срок тишины: —", "Срок тишины: нет_такого_имени")
-    ro bad_marked = bad.replace("\nСрок тишины: ", "\n- Срок тишины: ")
-    assert(name_note(bad) == "27:14")
-    assert(name_note(bad_marked) == "27:16")
+    // the key line `Сторона:` names a party that the table does not have: the note stands at the name, with and without the marker (two letters further)
+    ro bad = tiny_text().replace("Сторона: вратарь", "Сторона: нет_такого_имени")
+    ro bad_marked = bad.replace("\nСторона: ", "\n- Сторона: ")
+    ro at = line_in(bad, "Сторона: нет_такого_имени")
+    assert(name_note(bad) == "${at}:10")
+    assert(name_note(bad_marked) == "${at}:12")
+}
+
+// The number of the line (1-based) that starts with the text.
+fn line_in(text str, start str) -> int {
+    mut no = 0
+    for line in text.split("\n") {
+        no += 1
+        if line.starts_with(start) { return no }
+    }
+    -1
 }
 
 // The place of the first note of the kind `name`.
@@ -89,7 +101,7 @@ test "mk chat table" {
     ro text = chat_table_text()
     ro plain = json_of(text)
     mut all = text
-    for key in ["machine: ", "machine_version: ", "format: ", "Начальное состояние: ", "Сторона: ", "Срок тишины: ", "Вход:", "При входе:", "При приёме:", "Кроме: ", "Результат: ", "Правит: "] {
+    for key in ["machine: ", "machine_version: ", "format: ", "Начальное состояние: ", "Сторона: ", "Срок тишины: ", "Запрос:", "Читает: ", "При входе:", "При приёме:", "Кроме: ", "Результат: ", "Правит: "] {
         all = marked(all, key)
     }
     assert(all != text)
@@ -97,17 +109,17 @@ test "mk chat table" {
 }
 
 test "mk nested list" {
-    ro flat = tiny_text().replace("\n### РЕШИТЬ — развилка (Decide)\nВход: число_ходов\n", "\n### РЕШИТЬ — развилка (Decide)\nВход: число_ходов\nПри входе: пусть к = число_ходов + 1;\n           пусть м = к + 1\n")
-    ro nested = tiny_text().replace("\n### РЕШИТЬ — развилка (Decide)\nВход: число_ходов\n", "\n### РЕШИТЬ — развилка (Decide)\n- Вход: число_ходов\n- При входе:\n  - пусть к = число_ходов + 1;\n  - пусть м = к + 1\n")
+    ro flat = tiny_text().replace("\n### РЕШИТЬ — развилка (Decide)\nЧитает: число_ходов\n", "\n### РЕШИТЬ — развилка (Decide)\nЧитает: число_ходов\nПри входе: пусть к = число_ходов + 1;\n           пусть м = к + 1\n")
+    ro nested = tiny_text().replace("\n### РЕШИТЬ — развилка (Decide)\nЧитает: число_ходов\n", "\n### РЕШИТЬ — развилка (Decide)\n- Читает: число_ходов\n- При входе:\n  - пусть к = число_ходов + 1;\n  - пусть м = к + 1\n")
     assert(flat != tiny_text() && nested != tiny_text())
     assert(checked(flat).errors.len() == 0)
     assert(json_of(nested) == json_of(flat))
-    ro one = tiny_text().replace("\n### РЕШИТЬ — развилка (Decide)\nВход: число_ходов\n", "\n### РЕШИТЬ — развилка (Decide)\n- Вход: число_ходов\n- При входе: пусть к = число_ходов + 1\n")
+    ro one = tiny_text().replace("\n### РЕШИТЬ — развилка (Decide)\nЧитает: число_ходов\n", "\n### РЕШИТЬ — развилка (Decide)\n- Читает: число_ходов\n- При входе: пусть к = число_ходов + 1\n")
     assert(checked(one).errors.len() == 0)
 }
 
 test "mk nested columns" {
-    ro text = tiny_text().replace("\n### РЕШИТЬ — развилка (Decide)\nВход: число_ходов\n", "\n### РЕШИТЬ — развилка (Decide)\n- Вход: число_ходов\n- При входе:\n  - пусть к = нет_такого + 1\n")
+    ro text = tiny_text().replace("\n### РЕШИТЬ — развилка (Decide)\nЧитает: число_ходов\n", "\n### РЕШИТЬ — развилка (Decide)\n- Читает: число_ходов\n- При входе:\n  - пусть к = нет_такого + 1\n")
     assert(name_note(text).ends_with(":15"))
 }
 

@@ -126,11 +126,23 @@ test "ck sides" {
     for name in ["### В14 — обращение", "### В14_ОТКАЗ — обращение", "### В5 — обращение", "### В8 — обращение", "### В12 — обращение", "### В10а — обращение", "### В10г — обращение"] {
         ro at = text.find(name) ?? -1
         assert(at > 0)
-        assert(text[at..(at + 200)].contains("- Сторона: усиленный"))
+        assert(first_lines(text[at..], 3).contains("- Сторона: усиленный"))
     }
     for name in ["### В4 — обращение", "### В6 — обращение", "### В7_СДАЧА — обращение", "### В11 — обращение", "### В13_СТАТУС — обращение"] {
         ro at = text.find(name) ?? -1
         assert(at > 0)
-        assert(text[at..(at + 200)].contains("- Сторона: вратарь"))
+        assert(first_lines(text[at..], 3).contains("- Сторона: вратарь"))
     }
+}
+
+// The first lines of a text joined (a heading may carry the JSON name of the state in brackets, so a cut by bytes is not told).
+fn first_lines(text str, count int) -> str {
+    mut out = []str.new()
+    mut k = 0
+    for line in text.split("\n") {
+        if k >= count { break }
+        out.push(line)
+        k += 1
+    }
+    out.join("\n")
 }

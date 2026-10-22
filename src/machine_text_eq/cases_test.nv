@@ -152,7 +152,7 @@ test "cs examples shape" {
 
 test "cs examples new id" {
     ro report = translate_checked(case_text("format-examples.alula.md"), examples_registry())
-    assert(report.json.contains("\"entry\":[{\"do\":\"bind\",\"name\":\"novaya\",\"value\":{\"op\":\"primitive_call\",\"name\":\"new_id\",\"args\":[]}}]"))
+    assert(report.json.contains("\"entry\":[{\"do\":\"bind\",\"name\":\"новая\",\"value\":{\"op\":\"primitive_call\",\"name\":\"new_id\",\"args\":[]}}]"))
     ro broken = case_text("format-examples.alula.md").replace("| 1 | сразу | — | ид_сессии = новая | ХОД_АГЕНТА |", "| 1 | сразу | — | журнал(opened) | ХОД_АГЕНТА |")
     ro bad = translate_checked(broken, examples_registry())
     assert(has_message(bad, "of new_id is not written to the data by a row of the state"))
@@ -161,7 +161,7 @@ test "cs examples new id" {
 // ---- the definitions of the meeting and the hash of the format ----------------------------------------------------------------------
 
 test "cs cycle hash" {
-    ro cycle = "# Определения: арифметика_цикла\n\ndefinitions_version: 1\nformat: 2.14\n\n## Типы\n—\n\n## Константы\n—\n\n## Определения\n\nопределение потолок_исчерпан(номер число≥1, отсчёт число≥1, предел число≥0) -> да/нет =\n  (номер - 1) - отсчёт + 1 >= предел\n"
+    ro cycle = "# Определения: арифметика_цикла\n\ndefinitions_version: 1\nformat: 2.14\n\n## Типы\n—\n\n## Константы\n—\n\n## Определения\n\nопределение потолок_исчерпан(номер число>=1, отсчёт число>=1, предел число>=0) -> да/нет =\n  (номер - 1) - отсчёт + 1 >= предел\n"
     ro hash = definitions_hash(cycle)
     assert(hash.byte_len() == 12)
     assert(definitions_hash(cycle.replace("\n", "\r\n")) == hash)
@@ -180,11 +180,11 @@ test "cs normalize" {
 }
 
 test "cs cycle file" {
-    ro report = translate_definitions("# Определения: арифметика_цикла\n\ndefinitions_version: 1\nformat: 2.14\n\n## Типы\n—\n\n## Константы\n—\n\n## Определения\n\nопределение потолок_исчерпан(номер число≥1, отсчёт число≥1, предел число≥0) -> да/нет =\n  (номер - 1) - отсчёт + 1 >= предел\n")
+    ro report = translate_definitions("# Определения: арифметика_цикла\n\ndefinitions_version: 1\nformat: 2.14\n\n## Типы\n—\n\n## Константы\n—\n\n## Определения\n\nопределение потолок_исчерпан(номер число>=1, отсчёт число>=1, предел число>=0) -> да/нет =\n  (номер - 1) - отсчёт + 1 >= предел\n")
     assert(report.errors.len() == 0)
     assert(report.version == "1")
     assert(report.hash.byte_len() == 12)
-    assert(report.json.contains("\"name\":\"ceiling_reached\""))
+    assert(report.json.contains("\"name\":\"потолок_исчерпан\""))
     assert(report.rows_total == 1)
 }
 
@@ -196,7 +196,7 @@ fn defs_has(d DefsReport, needle str) -> bool {
 }
 
 test "cs defs file errors" {
-    ro text = "# Определения: арифметика_цикла\n\ndefinitions_version: 1\nformat: 2.4\n\n## Типы\n—\n\n## Определения\n\nопределение потолок_исчерпан(номер число≥1) -> да/нет =\n  вызвать(время) > 1\n"
+    ro text = "# Определения: арифметика_цикла\n\ndefinitions_version: 1\nformat: 2.4\n\n## Типы\n—\n\n## Определения\n\nопределение потолок_исчерпан(номер число>=1) -> да/нет =\n  вызвать(время) > 1\n"
     ro report = translate_definitions(text)
     assert(defs_has(report, "формат файла определений должен быть 2.14"))
     assert(defs_has(report, "три раздела по порядку"))
@@ -217,7 +217,7 @@ test "cs cycle hash 26" {
 
 ## Определения
 
-определение потолок_исчерпан(номер число≥1, отсчёт число≥1, предел число≥0) -> да/нет =
+определение потолок_исчерпан(номер число>=1, отсчёт число>=1, предел число>=0) -> да/нет =
   (номер - 1) - отсчёт + 1 >= предел
 `
     ro hash = definitions_hash(cycle)

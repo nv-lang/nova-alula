@@ -17,8 +17,8 @@ fn jlog(code str, names []str) -> str {
 // The tiny machine whose first word writes the journal event.
 fn tiny_logging(code str, names []str) -> str {
     ro inc = jassign("n", jb("+", jn("n"), jl("1")))
-    ro go = `{"n":1,"event":{"kind":"word","word":"go"},"actions":[${inc},${jlog(code, names)}],"to":"Decide"}`
-    ro halt = `{"n":2,"event":{"kind":"word","word":"halt"},"actions":[${jassign("stop", jl(jstr("a")))}],"to":"Stopped"}`
+    ro go = `{"n":1,"event":{"kind":"signal","name":"go"},"actions":[${inc},${jlog(code, names)}],"to":"Decide"}`
+    ro halt = `{"n":2,"event":{"kind":"signal","name":"halt"},"actions":[${jassign("stop", jl(jstr("a")))}],"to":"Stopped"}`
     tiny_with("", "", "${go},${halt}", tiny_ends_rows())
 }
 
@@ -68,7 +68,7 @@ test "v212 machines are 2.14" {
 
 // ---- the key `fragments` (1b (м), AL-32) -----------------------------------------------------------------------------------------------------
 
-fn pause_args() -> str => `"halt_word":{"op":"lit","value":"halt"},"halt_code":{"op":"lit","value":"pause_halt"},"nested":{"op":"list","items":[]},"cancel_requests":{"op":"lit","value":"mechanics"},"reenter":{"op":"lit","value":"nothing"},"write_right":{"op":"lit","value":"x"}`
+fn pause_args() -> str => `"halt_signal":{"op":"lit","value":"halt"},"halt_code":{"op":"lit","value":"pause_halt"},"nested":{"op":"list","items":[]},"cancel_requests":{"op":"lit","value":"mechanics"},"reenter":{"op":"lit","value":"nothing"},"write_right":{"op":"lit","value":"x"}`
 
 test "v212 fragments key in the schema" {
     ro schema = text_of_file(schema_files(), "machine-2.schema.json")

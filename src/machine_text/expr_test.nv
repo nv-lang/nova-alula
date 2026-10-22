@@ -3,7 +3,7 @@ module alula.machine_text
 
 import std.text
 
-fn scope_data() -> []str => ["число_повторов", "ход", "остановка", "расход", "запрос_агента", "ЧИСЛО_ПОВТОРОВ", "ПАУЗА_ПОВТОРА", "линзы", "номер_захода", "сессия", "начато"]
+fn scope_data() -> []str => piece_entries()
 
 // The JSON of an expression, or `ERR kind: message`.
 fn ex(text str) -> str {
@@ -16,7 +16,7 @@ fn ex(text str) -> str {
 fn exj(text str) -> str => ex(text)
 
 fn ty(text str) -> str {
-    match translate_type(text) {
+    match translate_type_with(text, piece_entries(), "ru") {
         Ok(j) => j
         Err(problems) => "ERR ${problems[0].kind}: ${problems[0].message}"
     }
@@ -40,8 +40,8 @@ fn li(n int) -> TxJ => x_lit(jint(n))
 
 test "ty base" {
     assert(ty("число") == "int")
-    assert(ty("число≥0") == "int>=0")
-    assert(ty("число≥1") == "int>=1")
+    assert(ty("число>=0") == "int>=0")
+    assert(ty("число>=1") == "int>=1")
     assert(ty("число >= 5") == "int>=5")
     assert(ty("дробное") == "float")
     assert(ty("текст") == "text")
@@ -55,13 +55,13 @@ test "ty base" {
 test "ty compound" {
     assert(ty("?текст") == "?text")
     assert(ty("[]текст") == "[]text")
-    assert(ty("[]?число≥0") == "[]?int>=0")
+    assert(ty("[]?число>=0") == "[]?int>=0")
     assert(ty("словарь[текст, число]") == "{text: int}")
     assert(ty("полный словарь[КодСбоя, текст]") == "full {FailCode: text}")
-    assert(ty("(текст, число≥0)") == "(text, int>=0)")
+    assert(ty("(текст, число>=0)") == "(text, int>=0)")
     assert(ty("(текст, число, да/нет)") == "(text, int, bool)")
     assert(ty("?ид") == "?id")
-    assert(ty("словарь[число≥0, []Токены]") == "{int>=0: []TokenUsage}")
+    assert(ty("словарь[число>=0, []Токены]") == "{int>=0: []TokenUsage}")
 }
 
 test "ty sets" {
@@ -83,7 +83,7 @@ test "ty names" {
 }
 
 test "ty errors" {
-    for t in ["", "?", "[]", "\"a\"", "?\"a\" | \"b\"", "[]\"a\" | \"b\"", "(текст)", "словарь[текст]", "число≥", "число≥x", "текст текст", "да/", "полный текст", "(\"a\" | \"b\"", "\"a\" | число"] {
+    for t in ["", "?", "[]", "\"a\"", "?\"a\" | \"b\"", "[]\"a\" | \"b\"", "(текст)", "словарь[текст]", "число>=", "число>=x", "текст текст", "да/", "полный текст", "(\"a\" | \"b\"", "\"a\" | число"] {
         assert(ty(t).starts_with("ERR"))
     }
     assert(ty("Нетакоготипа").starts_with("ERR name:"))
@@ -149,8 +149,8 @@ test "ex compare" {
     assert(ex("1 <= 2") == tx_text(x_bin("<=", li(1), li(2))))
     assert(ex("1 > 2") == tx_text(x_bin(">", li(1), li(2))))
     assert(ex("1 >= 2") == tx_text(x_bin(">=", li(1), li(2))))
-    assert(ex("1 ≥ 2") == tx_text(x_bin(">=", li(1), li(2))))
-    assert(ex("1 ≤ 2") == tx_text(x_bin("<=", li(1), li(2))))
+    assert(ex("1 >= 2") == tx_text(x_bin(">=", li(1), li(2))))
+    assert(ex("1 <= 2") == tx_text(x_bin("<=", li(1), li(2))))
     assert(ex("1 + 1 == 2") == tx_text(x_bin("==", x_bin("+", li(1), li(1)), li(2))))
 }
 
@@ -174,9 +174,9 @@ test "ex coalesce" {
 test "ex member" {
     ro one = x_bin("==", nm("stop_reason"), x_lit(js("a")))
     ro two = x_bin("==", nm("stop_reason"), x_lit(js("b")))
-    assert(ex("остановка ∈ {\"a\"}") == tx_text(one))
-    assert(ex("остановка ∈ {\"a\", \"b\"}") == tx_text(x_bin("or", one, two)))
-    assert(ex("остановка ∈ {}") == tx_text(x_lit(TxBool(false))))
+    assert(ex("остановка in {\"a\"}") == tx_text(one))
+    assert(ex("остановка in {\"a\", \"b\"}") == tx_text(x_bin("or", one, two)))
+    assert(ex("остановка in {}") == tx_text(x_lit(TxBool(false))))
 }
 
 // ---- constructions -----------------------------------------------------------------------------------------------------------
@@ -184,8 +184,8 @@ test "ex member" {
 test "ex if let" {
     assert(ex("если ход == \"a\" то 1 иначе 2") == tx_text(x_if(x_bin("==", nm("turn"), x_lit(js("a"))), li(1), li(2))))
     assert(ex("если истина то 1 иначе если ложь то 2 иначе 3") == tx_text(x_if(x_lit(TxBool(true)), li(1), x_if(x_lit(TxBool(false)), li(2), li(3)))))
-    assert(ex("пусть п = 5 в п + 1") == tx_text(x_let("p", li(5), x_bin("+", nm("p"), li(1)))))
-    assert(ex("пусть п = 5 в пусть а = 2 в п * а") == tx_text(x_let("p", li(5), x_let("a", li(2), x_bin("*", nm("p"), nm("a"))))))
+    assert(ex("пусть p = 5 в p + 1") == tx_text(x_let("p", li(5), x_bin("+", nm("p"), li(1)))))
+    assert(ex("пусть p = 5 в пусть a = 2 в p * a") == tx_text(x_let("p", li(5), x_let("a", li(2), x_bin("*", nm("p"), nm("a"))))))
     assert(ex("(если истина то 1 иначе 2) + 3") == tx_text(x_bin("+", x_if(x_lit(TxBool(true)), li(1), li(2)), li(3))))
     assert(ex("1 + если истина то 1 иначе 2") == tx_text(x_bin("+", li(1), x_if(x_lit(TxBool(true)), li(1), li(2)))))
 }
@@ -206,14 +206,14 @@ test "ex call" {
 }
 
 test "ex macros" {
-    assert(ex("фильтр([1, 2], х → х > 1)") == tx_text(x_call("filter", [x_list([li(1), li(2)]), x_lambda(["kh"], x_bin(">", nm("kh"), li(1)))])))
-    assert(ex("отобразить([1], н → н * 2)") == tx_text(x_call("map", [x_list([li(1)]), x_lambda(["n"], x_bin("*", nm("n"), li(2)))])))
-    assert(ex("любой([1], н → н == 1)") == tx_text(x_call("any", [x_list([li(1)]), x_lambda(["n"], x_bin("==", nm("n"), li(1)))])))
-    assert(ex("свёртка(диапазон(1, 3), ПАУЗА_ПОВТОРА, (н, _) → н * 2)") == tx_text(x_call("fold", [x_call("range", [li(1), li(3)]), nm("RETRY_PAUSE"), x_lambda(["n", "_"], x_bin("*", nm("n"), li(2)))])))
-    assert(ex("словарь([1], н → н, н → н + 1)") == tx_text(x_call("dict", [x_list([li(1)]), x_lambda(["n"], nm("n")), x_lambda(["n"], x_bin("+", nm("n"), li(1)))])))
-    assert(ex("количество([1], н → истина)") == tx_text(x_call("count", [x_list([li(1)]), x_lambda(["n"], x_lit(TxBool(true)))])))
-    assert(ex("первый_где([1], н → истина)") == tx_text(x_call("first_where", [x_list([li(1)]), x_lambda(["n"], x_lit(TxBool(true)))])))
-    assert(ex("все([1], н → истина)") == tx_text(x_call("all", [x_list([li(1)]), x_lambda(["n"], x_lit(TxBool(true)))])))
+    assert(ex("фильтр([1, 2], kh -> kh > 1)") == tx_text(x_call("filter", [x_list([li(1), li(2)]), x_lambda(["kh"], x_bin(">", nm("kh"), li(1)))])))
+    assert(ex("отобразить([1], n -> n * 2)") == tx_text(x_call("map", [x_list([li(1)]), x_lambda(["n"], x_bin("*", nm("n"), li(2)))])))
+    assert(ex("любой([1], n -> n == 1)") == tx_text(x_call("any", [x_list([li(1)]), x_lambda(["n"], x_bin("==", nm("n"), li(1)))])))
+    assert(ex("свёртка(диапазон(1, 3), ПАУЗА_ПОВТОРА, (n, _) -> n * 2)") == tx_text(x_call("fold", [x_call("range", [li(1), li(3)]), nm("RETRY_PAUSE"), x_lambda(["n", "_"], x_bin("*", nm("n"), li(2)))])))
+    assert(ex("словарь([1], n -> n, n -> n + 1)") == tx_text(x_call("dict", [x_list([li(1)]), x_lambda(["n"], nm("n")), x_lambda(["n"], x_bin("+", nm("n"), li(1)))])))
+    assert(ex("количество([1], n -> истина)") == tx_text(x_call("count", [x_list([li(1)]), x_lambda(["n"], x_lit(TxBool(true)))])))
+    assert(ex("первый_где([1], n -> истина)") == tx_text(x_call("first_where", [x_list([li(1)]), x_lambda(["n"], x_lit(TxBool(true)))])))
+    assert(ex("все([1], n -> истина)") == tx_text(x_call("all", [x_list([li(1)]), x_lambda(["n"], x_lit(TxBool(true)))])))
 }
 
 test "ex literals of collections" {
@@ -244,15 +244,15 @@ test "ex state names" {
 test "ex match" {
     ro a = x_arm([pat_case("ActionKind", "Delete", []), pat_case("ActionKind", "Move", [])], [], x_lit(TxBool(true)))
     ro b = x_arm([pat_any()], [], x_lit(TxBool(false)))
-    assert(ex("выбор ход { ВидДействия.Удаление | ВидДействия.Перенос → истина; иначе → ложь }") == tx_text(x_match(nm("turn"), [a, b])))
-    ro c = x_arm([pat_case("", "Finished", [kv("text", js("text")), kv("usage", js("received"))])], [], nm("received"))
-    assert(ex("выбор ход { Закончен(текст, расход: полученный) → полученный }") == tx_text(x_match(nm("turn"), [c])))
+    assert(ex("выбор ход { ВидДействия.Удаление | ВидДействия.Перенос -> истина; иначе -> ложь }") == tx_text(x_match(nm("turn"), [a, b])))
+    ro c = x_arm([pat_case("", "Finished", [kv("text", js("текст")), kv("usage", js("полученный"))])], [], nm("полученный"))
+    assert(ex("выбор ход { Закончен(текст, расход: полученный) -> полученный }") == tx_text(x_match(nm("turn"), [c])))
     ro d = x_arm([pat_lit(js("a"))], [x_bin(">", li(1), li(0))], li(1))
-    assert(ex("выбор ход { \"a\" если 1 > 0 → 1 }") == tx_text(x_match(nm("turn"), [d])))
+    assert(ex("выбор ход { \"a\" если 1 > 0 -> 1 }") == tx_text(x_match(nm("turn"), [d])))
     ro e = x_arm([pat_case("", "Finished", [])], [], li(1))
-    assert(ex("выбор ход { Закончен → 1 }") == tx_text(x_match(nm("turn"), [e])))
+    assert(ex("выбор ход { Закончен -> 1 }") == tx_text(x_match(nm("turn"), [e])))
     ro f = x_arm([pat_lit(TxRaw("1")), pat_lit(TxRaw("2"))], [], li(5))
-    assert(ex("выбор ход { 1 | 2 → 5 }") == tx_text(x_match(nm("turn"), [f])))
+    assert(ex("выбор ход { 1 | 2 -> 5 }") == tx_text(x_match(nm("turn"), [f])))
 }
 
 test "ex call primitive" {
@@ -272,7 +272,7 @@ test "ex errors names" {
     assert(ex("запрос_агнта").contains("возможно, `запрос_агента`"))
     assert(ex("расход.нет_поля").starts_with("ERR name:"))
     assert(ex("нет_функции(1)").starts_with("ERR name:"))
-    assert(ex("Нетакоготипа { а: 1 }").starts_with("ERR name:"))
+    assert(ex("Нетакоготипа { a: 1 }").starts_with("ERR name:"))
     assert(ex("КодСбоя.НетТакого").starts_with("ERR name:"))
     assert(ex("Токены").starts_with("ERR syntax:"))
 }

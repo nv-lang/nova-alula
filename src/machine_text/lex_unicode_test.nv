@@ -34,7 +34,7 @@ test "unicode lex german" {
 test "unicode lex chinese" {
     assert(toks("数据 状态") == "1:数据 1:状态")
     assert(toks("数据_1 名前2") == "1:数据_1 1:名前2")
-    assert(toks("数据≥0") == "1:数据 5:≥ 2:0")
+    assert(toks("数据>=0") == "1:数据 5:>= 2:0")
 }
 
 test "unicode lex other alphabets" {
@@ -46,13 +46,13 @@ test "unicode lex other alphabets" {
 
 test "unicode lex four byte letters" {
     assert(toks("𝒜b 𝔞") == "1:𝒜b 1:𝔞")
-    assert(toks("a𝒜→b") == "1:a𝒜 5:→ 1:b")
+    assert(toks("a𝒜->b") == "1:a𝒜 5:-> 1:b")
 }
 
 test "unicode lex stops at a symbol" {
-    assert(toks("δ→δ") == "1:δ 5:→ 1:δ")
+    assert(toks("δ->δ") == "1:δ 5:-> 1:δ")
     assert(toks("größe+1") == "1:größe 5:+ 2:1")
-    assert(toks("x ∈ {数据}") == "1:x 5:∈ 5:{ 1:数据 5:}")
+    assert(toks("x in {数据}") == "1:x 1:in 5:{ 1:数据 5:}")
 }
 
 test "unicode lex refuses a mark that is no letter" {
@@ -157,15 +157,6 @@ test "unicode lower case of a letter" {
     assert(tx_lower("数") == "数")
     assert(tx_lower("_") == "_")
     assert(tx_lower("7") == "7")
-}
-
-test "unicode translit keeps other alphabets" {
-    assert(tx_translit("δ") == "δ")
-    assert(tx_translit("Δείγμα") == "δείγμα")
-    assert(tx_translit("Größe") == "größe")
-    assert(tx_translit("数据") == "数据")
-    assert(tx_translit("щука_Δ") == "shchuka_δ")
-    assert(tx_translit("Ёж_2") == "yozh_2")
 }
 
 // ---- the entries -----------------------------------------------------------------------------------------------------------------

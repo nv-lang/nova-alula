@@ -66,21 +66,21 @@ test "tb bar not escaped" {
 }
 
 test "tb bar in a string" {
-    ro escaped = checked(with_data_row("| свод | текст | \"x\\|y\" | — | строки |"))
+    ro escaped = checked(with_data_row("| свод (set) | текст | \"x\\|y\" | — | строки |"))
     if escaped.errors.len() > 0 { panic(first_error_of(escaped)) }
     assert(escaped.json.contains("\"value\":\"x|y\""))
-    assert(same_json(with_data_row("| свод | текст | \"x|y\" | — | строки |"), escaped.json))
+    assert(same_json(with_data_row("| свод (set) | текст | \"x|y\" | — | строки |"), escaped.json))
 }
 
 test "tb bar in a match" {
-    ro cond = checked(replaced(base_text(), "| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | выбор число_ходов { 2 \\| 3 → истина; иначе → ложь } | — | КОНЕЦ |"))
+    ro cond = checked(replaced(base_text(), "| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | выбор число_ходов { 2 \\| 3 -> истина; иначе -> ложь } | — | КОНЕЦ |"))
     if cond.errors.len() > 0 { panic(first_error_of(cond)) }
     assert(cond.json.contains("\"patterns\":[{\"kind\":\"lit\",\"value\":2},{\"kind\":\"lit\",\"value\":3}]"))
 }
 
 test "tb cells counted" {
-    ro short = replaced(base_text(), "| ЧИСЛО_ПОВТОРОВ | число≥0 | 3 |", "| ЧИСЛО_ПОВТОРОВ | число≥0 |")
+    ro short = replaced(base_text(), "| ЧИСЛО_ПОВТОРОВ | число>=0 | 3 |", "| ЧИСЛО_ПОВТОРОВ | число>=0 |")
     assert(errors_say(short, "в строке 2 ячеек, а в таблице их 3"))
-    ro long = replaced(base_text(), "| ЧИСЛО_ПОВТОРОВ | число≥0 | 3 |", "| ЧИСЛО_ПОВТОРОВ | число≥0 | 3 | лишняя |")
+    ro long = replaced(base_text(), "| ЧИСЛО_ПОВТОРОВ | число>=0 | 3 |", "| ЧИСЛО_ПОВТОРОВ | число>=0 | 3 | лишняя |")
     assert(errors_say(long, "в строке 4 ячеек, а в таблице их 3"))
 }

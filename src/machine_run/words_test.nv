@@ -4,15 +4,15 @@ module alula.machine_run
 
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
-import alula.machine.{Value, Int, Text, TypeDefs, RecordDef, VariantDef, CaseDef, FieldDef, EnumWord, TextType, IntType, DefTable, DefFn, Binding, Lit, call, enum_value, eval_defs, NoHost, Scope, standard_registry, value_text, value_json}
+import alula.machine.{Value, Int, Text, TypeDefs, RecordDef, VariantDef, CaseDef, FieldDef, EnumValue, TextType, IntType, DefTable, DefFn, Binding, Lit, call, enum_value, eval_defs, NoHost, Scope, standard_registry, value_text, value_json}
 
 fn plain_case(name str) -> CaseDef => { name, fields: []FieldDef.new() }
 
-fn wdef(name str, w str) -> EnumWord => { name, word: w }
+fn wdef(name str, w str) -> EnumValue => { name, value: w }
 
 fn kinds_types() -> TypeDefs {
-    ro kind = VariantDef { name: "Kind", cases: [plain_case("Read"), plain_case("Write"), plain_case("Other")], words: [wdef("Read", "read"), wdef("Write", "save")] }
-    ro plain = VariantDef { name: "Plain", cases: [plain_case("First"), plain_case("Second")], words: []EnumWord.new() }
+    ro kind = VariantDef { name: "Kind", cases: [plain_case("Read"), plain_case("Write"), plain_case("Other")], values: [wdef("Read", "read"), wdef("Write", "save")] }
+    ro plain = VariantDef { name: "Plain", cases: [plain_case("First"), plain_case("Second")], values: []EnumValue.new() }
     TypeDefs { records: []RecordDef.new(), variants: [kind, plain] }
 }
 
@@ -58,7 +58,7 @@ fn dat(name str, type_text str, init str) -> str => `,{"name":"${name}","type":"
 fn more_types() -> str => `"types":{
   "records":[{"name":"Pair","fields":[{"name":"id","type":"text"},{"name":"kind","type":"Kind"}]}],
   "variants":[
-    {"name":"Kind","cases":[{"name":"Read"},{"name":"Write"},{"name":"Other"}],"words":[["Read","read"],["Write","save"]]},
+    {"name":"Kind","cases":[{"name":"Read"},{"name":"Write"},{"name":"Other"}],"values":[["Read","read"],["Write","save"]]},
     {"name":"Plain","cases":[{"name":"First"},{"name":"Second"}]},
     {"name":"Shape","cases":[{"name":"Dot"},{"name":"Box","fields":[{"name":"w","type":"int"},{"name":"h","type":"int"}]}]}
   ]},

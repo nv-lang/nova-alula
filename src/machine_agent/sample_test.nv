@@ -86,25 +86,19 @@ test "sm header 27" {
     assert(sample().contains("- format: 2.14"))
 }
 
-test "sm expansion skipped" {
-    ro at = sample().find("## Раскрытие фрагмента «Пауза»") ?? -1
-    assert(at > 0)
-    ro shorter = sample()[..at]
-    assert(!shorter.contains("## Раскрытие"))
-    ro report = report_of(shorter)
-    assert(report.errors.len() == 0)
-    assert(report.json == sample_json())
-    ro junk = report_of("${shorter}## Раскрытие фрагмента «Пауза»\n\n@@@ {{{ \"\n| a |\n")
-    assert(junk.errors.len() == 0)
-    assert(junk.json == sample_json())
+test "sm no expansion section" {
+    // the section of the expansion of a fragment is gone from the sample (AL-44, 2.13): the sample holds none, and a section added at the end is named as removed with nothing else said
+    assert(!sample().contains("## Раскрытие"))
+    ro junk = report_of("${sample()}\n## Раскрытие фрагмента «Пауза»\n\n@@@ {{{ \"\n| a |\n")
+    assert(junk.errors.len() == 1)
+    assert(junk.errors[0].message.contains("убран"))
 }
 
 test "sm no prose needed" {
-    ro at = sample().find("## Раскрытие фрагмента «Пауза»") ?? -1
     mut kept = []str.new()
     mut after_blank = true
     mut in_code = false
-    for line in sample()[..at].split("\n") {
+    for line in sample().split("\n") {
         if line.starts_with("```") {
             in_code = !in_code
             kept.push(line)
@@ -117,7 +111,7 @@ test "sm no prose needed" {
         after_blank = line == ""
     }
     ro stripped = kept.join("\n")
-    assert(stripped.byte_len() < sample().byte_len() - 3000)
+    assert(stripped.byte_len() < sample().byte_len() - 1000)
     ro report = report_of(stripped)
     if report.errors.len() > 0 { panic(error_text(report.errors[0], "stripped")) }
     assert(report.errors.len() == 0)
@@ -125,7 +119,7 @@ test "sm no prose needed" {
 }
 
 test "sm second state pause" {
-    ro heading = "### ПАУЗА — обращение (Pause)\n- Сторона: усиленный\n- Срок тишины: —\n- Вход: нет\n\n"
+    ro heading = "### ПАУЗА — обращение (Pause)\n- Сторона: усиленный\n\n"
     ro text = sample().replace("### КОНЕЦ — конец (End)", "${heading}### КОНЕЦ — конец (End)")
     assert(text != sample())
     ro report = report_of(text)
@@ -148,7 +142,7 @@ test "sm connection only" {
 
 test "sm words" {
     ro json = sample_json()
-    assert(json.contains("\"words\":[[\"Read\",\"read\"],[\"Write\",\"write\"],[\"Delete\",\"delete\"],[\"Move\",\"move\"],[\"Search\",\"search\"],[\"Execute\",\"execute\"],[\"Network\",\"network\"],[\"Think\",\"think\"],[\"SwitchMode\",\"switch_mode\"],[\"Other\",\"other\"]]"))
+    assert(json.contains("\"values\":[[\"Read\",\"read\"],[\"Write\",\"write\"],[\"Delete\",\"delete\"],[\"Move\",\"move\"],[\"Search\",\"search\"],[\"Execute\",\"execute\"],[\"Network\",\"network\"],[\"Think\",\"think\"],[\"SwitchMode\",\"switch_mode\"],[\"Other\",\"other\"]]"))
     assert(!json.contains("FailCode\",\"cases"))
     assert(json.contains("{\"name\":\"CallerKind\",\"cases\":[{\"name\":\"Lens\"},{\"name\":\"CycleSession\"},{\"name\":\"ChatTurn\"},{\"name\":\"Gatekeeper\"}]}"))
 }
@@ -189,7 +183,8 @@ fn with_keys(text str) -> str {
 }
 
 test "sm product is sample" {
-    ro keyed = with_keys(sample())
+    // the product table is the sample but for the keys of the project and the JSON name `usage` of the field `расход` (the sample says `transport_usage`; the scenarios of the product say `usage`)
+    ro keyed = with_keys(sample()).replace("расход (transport_usage) РасходТранспорта", "расход (usage) РасходТранспорта")
     assert(keyed != sample())
     assert(lf(agent_step_table_text()) == keyed)
 }
@@ -198,7 +193,7 @@ test "sm json differs by keys" {
     ro product = agent_step_machine_text()
     ro plain = product.replace(",\"project_key\":\"пауза_повтора\"", "").replace(",\"project_key\":\"политика_разрешений\"", "")
     assert(plain != product)
-    assert(plain == sample_json())
+    assert(plain == report_of(sample().replace("расход (transport_usage) РасходТранспорта", "расход (usage) РасходТранспорта")).json)
     assert(translate_checked(agent_step_table_text(), standard_registry()).json == product)
 }
 

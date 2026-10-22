@@ -106,36 +106,35 @@ fn tiny_ru() -> str => `# Машина: Малая
 
 | имя | тип | начальное | не убывает | пишет |
 |---|---|---|---|---|
-| число_ходов | число≥0 | 0 | да | строки |
+| число_ходов (turn_count) | число>=0 | 0 | да | строки |
 | остановка | "" \| "a" \| "b" | "" | — | строки |
-| попытка_вратаря | число≥0 | 0 | да | механика |
+| попытка_вратаря (gatekeeper_attempt) | число>=0 | 0 | да | механика |
 
 ## Стороны
 
-| имя | идентификатор | вид | профиль | слова ворот | счётчик |
+| имя | идентификатор | вид | профиль | сигналы | счётчик |
 |---|---|---|---|---|---|
-| вратарь | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — | разрешить, отказать | попытка_вратаря |
+| gatekeeper | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания (attention_executor)(итог ИсходВорот) | — | разрешить (allow), отказать (deny) | попытка_вратаря |
 
 ## Состояния
 
 Начальное состояние: ЖДАТЬ
 
 ### ЖДАТЬ — обращение (Wait)
-Сторона: вратарь
-Срок тишины: —
-Вход:
+Сторона: gatekeeper
+Запрос:
 
 | поле запроса | выражение | читает |
 |---|---|---|
-| ход | число_ходов | исполнитель |
+| turn | число_ходов | исполнитель |
 
 | № | Событие | Условие | Действия | Куда |
 |---|---|---|---|---|
-| 1 | слово(разрешить) | — | число_ходов += 1 | РЕШИТЬ |
-| 2 | слово(отказать) | — | остановка = "a" | СТОП |
+| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |
+| 2 | сигнал(отказать) | — | остановка = "a" | СТОП |
 
 ### РЕШИТЬ — развилка (Decide)
-Вход: число_ходов
+Читает: число_ходов
 
 | № | Условие | Действия | Куда |
 |---|---|---|---|
@@ -143,11 +142,11 @@ fn tiny_ru() -> str => `# Машина: Малая
 | 2 | иначе | — | ЖДАТЬ |
 
 ### КОНЕЦ — конец (Finished)
-Вход: число_ходов
+Читает: число_ходов
 
 ### СТОП — конец (Stopped)
-Вход: остановка
-Кроме: остановка ∈ {""}
+Читает: остановка
+Кроме: остановка in {""}
 
 ## Концы
 
@@ -156,8 +155,8 @@ fn tiny_ru() -> str => `# Машина: Малая
 | конец | № | когда | ответ |
 |---|---|---|---|
 | КОНЕЦ | 1 | истина | Ответ(число_ходов) |
-| СТОП | 1 | остановка == "a" | Отказ(КодСбоя.ОстановленоЧеловеком, "stopped") |
-| СТОП | 2 | остановка == "b" | Отказ(КодСбоя.НетРезультата, "b") |
+| СТОП | 1 | остановка == "a" | Отказ(FailCode.StoppedByHuman, "stopped") |
+| СТОП | 2 | остановка == "b" | Отказ(FailCode.NoResult, "b") |
 `
 
 // The same machine written in English (format 2.5, the line `language: en`).
@@ -178,7 +177,7 @@ fn tiny_en() -> str => `# Machine: Малая
 
 ## Parties
 
-| name | id | kind | profile | gate_words | counter |
+| name | id | kind | profile | signals | counter |
 |---|---|---|---|---|---|
 | gatekeeper | gatekeeper | human or agent by setting attention_executor(result GateOutcome) | — | allow, deny | gatekeeper_attempt |
 
@@ -188,8 +187,7 @@ Initial state: Wait
 
 ### Wait — appeal
 Party: gatekeeper
-Idle term: —
-Input:
+Request:
 
 | request_field | expression | reads |
 |---|---|---|
@@ -197,11 +195,11 @@ Input:
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|
-| 1 | word(allow) | — | turn_count += 1 | Decide |
-| 2 | word(deny) | — | stop_reason = "a" | Stopped |
+| 1 | signal(allow) | — | turn_count += 1 | Decide |
+| 2 | signal(deny) | — | stop_reason = "a" | Stopped |
 
 ### Decide — fork
-Input: turn_count
+Reads: turn_count
 
 | № | Condition | Actions | To |
 |---|---|---|---|
@@ -209,10 +207,10 @@ Input: turn_count
 | 2 | else | — | Wait |
 
 ### Finished — end
-Input: turn_count
+Reads: turn_count
 
 ### Stopped — end
-Input: stop_reason
+Reads: stop_reason
 Except: stop_reason in {""}
 
 ## Ends

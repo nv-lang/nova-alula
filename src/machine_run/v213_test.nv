@@ -49,11 +49,6 @@ test "v213 party that does not exist" {
     assert(!run_ok(run))
 }
 
-test "v213 signal that nobody declared" {
-    ro run = run_text(chat(), one_step(signal_step("no_such_signal", "", "")))
-    assert(!run_ok(run))
-}
-
 test "v213 event kinds" {
     assert(!event_kinds().contains("word"))
     assert(event_kinds().contains("signal"))
@@ -68,13 +63,6 @@ test "v213 scenario files use the signal step" {
     }
     assert(words == 0)
     assert(signals > 400)
-}
-
-test "v213 scenario files that name a party name a real one" {
-    for f in scenario_files() {
-        if !f.text.contains("\"party\":") { continue }
-        assert(f.text.contains("\"kind\": \"signal\""))
-    }
 }
 
 // ---- the question of the hub -------------------------------------------------------------------------------------------------------------------

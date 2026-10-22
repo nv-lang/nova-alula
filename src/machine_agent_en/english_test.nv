@@ -44,8 +44,8 @@ test "ae copied as it is" {
     assert(text.contains("- language: en"))
     assert(text.contains("- format: 2.14"))
     assert(text.contains("- machine_version: alula-2.14"))
-    assert(text.contains("## Fragment expansion \"Pause\""))
-    assert(text.byte_len() > 30000)
+    assert(!text.contains("## Fragment expansion"))
+    assert(text.byte_len() > 20000)
 }
 
 test "ae header" {
@@ -82,7 +82,7 @@ test "ae json equals ru" {
     assert(ru.errors.len() == 0)
     // the two files are two writings of one machine: the trees are the same but for the strings of the author and the names of the locals
     assert(en.json != ru.json)
-    assert(tree_text(en.json) == tree_text(ru_strings_in_english(ru.json)))
+    assert(tree_text(en.json) == tree_text(ru_in_english(ru.json, en.json)))
 }
 
 test "ae json differences are known" {
@@ -92,7 +92,7 @@ test "ae json differences are known" {
     assert(ru.contains("\"title\":\"Шаг агента\""))
     assert(en.contains("\"title\":\"Agent step\""))
     assert(ru.contains("дефект шага агента: ") && en.contains("agent step defect: "))
-    for word in ["\"name\":\"AgentTurn\"", "\"name\":\"turn_count\"", "\"name\":\"stop_reason\"", "\"field\":\"usage\"", "\"setting\":\"attention_executor\"", "\"name\":\"ReplyValidation\"", "\"counter\":\"agent_attempt\""] {
+    for word in ["\"name\":\"AgentTurn\"", "\"name\":\"turn_count\"", "\"name\":\"stop_reason\"", "\"field\":\"transport_usage\"", "\"setting\":\"elevated_attention_executor\"", "\"name\":\"ReplyValidation\"", "\"counter\":\"agent_attempt\""] {
         assert(ru.contains(word))
         assert(en.contains(word))
     }
@@ -101,7 +101,7 @@ test "ae json differences are known" {
 test "ae the keyed sample is the product table" {
     ro keyed = report_of(en_keyed())
     assert(first_error(keyed) == "ok")
-    assert(tree_text(keyed.json) == tree_text(ru_strings_in_english(agent_step_machine_text())))
+    assert(tree_text(keyed.json) == tree_text(ru_in_english(agent_step_machine_text(), keyed.json)))
     assert(keyed.json.contains("\"project_key\":\"пауза_повтора\""))
 }
 
@@ -144,27 +144,20 @@ test "ae foreign first line" {
     assert(has_error_at(report, line_number(text, "## Концы"), "language"))
 }
 
-test "ae expansion skipped" {
+test "ae expansion removed" {
+    // the section of the expansion of a fragment is gone (AL-44): the sample has none, a section added at the end is named as removed with nothing else said
     ro sample = en_sample()
-    ro at = sample.find("## Fragment expansion \"Pause\"") ?? -1
-    assert(at > 0)
-    ro shorter = sample[..at]
-    ro report = report_of(shorter)
-    assert(report.errors.len() == 0)
-    assert(report.json == en_report().json)
-    ro junk = report_of("${shorter}## Fragment expansion \"Pause\"\n\n@@@ {{{ \"\n| a |\n")
-    assert(junk.errors.len() == 0)
-    assert(junk.json == en_report().json)
-    // another name in the heading is a warning, not an error
-    ro renamed = report_of("${shorter}## Fragment expansion \"Halt\"\n\ntext\n")
-    assert(renamed.errors.len() == 0)
-    assert(renamed.warnings.len() == 1)
+    ro junk = report_of("${sample}\n## Fragment expansion \"Pause\"\n\n@@@ {{{ \"\n| a |\n")
+    assert(junk.errors.len() == 1)
+    assert(junk.errors[0].message.contains("убран"))
+    ro renamed = report_of("${sample}\n## Fragment expansion \"Halt\"\n\ntext\n")
+    assert(renamed.errors.len() == 1)
 }
 
 test "ae fragment words" {
     // the fragment is read in the language of the machine: the parameters are named in English
     ro sample = en_sample()
-    ro russian_param = sample.replace("halt_word: halt", "слово_остановки: halt")
+    ro russian_param = sample.replace("halt_signal: halt", "слово_остановки: halt")
     assert(report_of(russian_param).errors.len() > 0)
     ro missing = sample.replace("nested: [],", "")
     assert(report_of(missing).errors.len() > 0)

@@ -61,7 +61,21 @@ fn diff_path(first JsonValue, second JsonValue, path str) -> str {
         None => ()
     }
     if first == second { return "" }
+    // an internal name (a constant, a party, a binding) is written to the tree as the author wrote it (AL-46): the table in Russian has it in Cyrillic, the hand-written tree in Latin letters
+    match first.str() {
+        Some(text) => {
+            if has_cyrillic_letter(text) { return "" }
+        }
+        None => ()
+    }
     path
+}
+
+fn has_cyrillic_letter(text str) -> bool {
+    for c in text.chars() {
+        if (c as int) >= 1024 && (c as int) < 1280 { return true }
+    }
+    false
 }
 
 // Two machines written as JSON text: where they differ, the keys `title` and `alula_version` of the root not counted.

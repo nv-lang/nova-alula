@@ -17,69 +17,69 @@ fn kind_def(text str) -> VariantDef {
 }
 
 test "wd decodes" {
-    ro text = with_kind(",\"words\":[[\"Read\",\"read\"],[\"Write\",\"save\"]]")
+    ro text = with_kind(",\"values\":[[\"Read\",\"read\"],[\"Write\",\"save\"]]")
     if !ok_text(text) { panic(first_issue(text)) }
     assert(ok_text(text))
     ro kind = kind_def(text)
-    assert(kind.words.len() == 2)
-    assert(kind.words[0].name == "Read")
-    assert(kind.words[0].word == "read")
-    assert(kind.words[1].name == "Write")
-    assert(kind.words[1].word == "save")
+    assert(kind.values.len() == 2)
+    assert(kind.values[0].name == "Read")
+    assert(kind.values[0].value == "read")
+    assert(kind.values[1].name == "Write")
+    assert(kind.values[1].value == "save")
     assert(kind.cases.len() == 3)
 }
 
 test "wd absent" {
     assert(ok_text(with_kind("")))
-    assert(kind_def(with_kind("")).words.len() == 0)
+    assert(kind_def(with_kind("")).values.len() == 0)
     ro def = decoded(with_kind(""))
     assert(def.types.variants[0].name == "FailCode")
-    assert(def.types.variants[0].words.len() == 0)
-    assert(kind_def(with_kind(",\"words\":[]")).words.len() == 0)
+    assert(def.types.variants[0].values.len() == 0)
+    assert(kind_def(with_kind(",\"values\":[]")).values.len() == 0)
 }
 
 test "wd order kept" {
-    ro kind = kind_def(with_kind(",\"words\":[[\"Other\",\"o\"],[\"Read\",\"r\"]]"))
-    assert(kind.words.len() == 2)
-    assert(kind.words[0].name == "Other")
-    assert(kind.words[1].name == "Read")
+    ro kind = kind_def(with_kind(",\"values\":[[\"Other\",\"o\"],[\"Read\",\"r\"]]"))
+    assert(kind.values.len() == 2)
+    assert(kind.values[0].name == "Other")
+    assert(kind.values[1].name == "Read")
 }
 
 test "wd bad shape" {
-    assert(says(with_kind(",\"words\":\"x\""), "$.types.variants[0].words"))
-    assert(says(with_kind(",\"words\":\"x\""), "a list of pairs"))
-    assert(says(with_kind(",\"words\":[[\"Read\"]]"), "a pair [name, word]"))
-    assert(says(with_kind(",\"words\":[[\"Read\",\"a\",\"b\"]]"), "a pair [name, word]"))
-    assert(says(with_kind(",\"words\":[[\"Read\",1]]"), "a pair [name, word]"))
-    assert(says(with_kind(",\"words\":[{\"Read\":\"a\"}]"), "a pair [name, word]"))
-    assert(says(with_kind(",\"words\":[\"Read\"]"), "a pair [name, word]"))
+    assert(says(with_kind(",\"values\":\"x\""), "$.types.variants[0].values"))
+    assert(says(with_kind(",\"values\":\"x\""), "a list of pairs"))
+    assert(says(with_kind(",\"values\":[[\"Read\"]]"), "a pair [name, value]"))
+    assert(says(with_kind(",\"values\":[[\"Read\",\"a\",\"b\"]]"), "a pair [name, value]"))
+    assert(says(with_kind(",\"values\":[[\"Read\",1]]"), "a pair [name, value]"))
+    assert(says(with_kind(",\"values\":[{\"Read\":\"a\"}]"), "a pair [name, value]"))
+    assert(says(with_kind(",\"values\":[\"Read\"]"), "a pair [name, value]"))
 }
 
 test "wd bad names" {
-    assert(says(with_kind(",\"words\":[[\"Nope\",\"x\"]]"), "the case Nope is not in the variant Kind"))
-    assert(says(with_kind(",\"words\":[[\"Read\",\"a\"],[\"Read\",\"b\"]]"), "the word of the case Read is repeated"))
-    assert(says(with_kind(",\"words\":[[\"Read\",\"a\"],[\"Write\",\"a\"]]"), "the word a is repeated"))
+    assert(says(with_kind(",\"values\":[[\"Nope\",\"x\"]]"), "the case Nope is not in the variant Kind"))
+    assert(says(with_kind(",\"values\":[[\"Read\",\"a\"],[\"Read\",\"b\"]]"), "the value of the case Read is repeated"))
+    assert(says(with_kind(",\"values\":[[\"Read\",\"a\"],[\"Write\",\"a\"]]"), "the value a is repeated"))
 }
 
 test "wd bad word" {
-    assert(says(with_kind(",\"words\":[[\"Read\",\"\"]]"), "lower case Latin"))
-    assert(says(with_kind(",\"words\":[[\"Read\",\"Чтение\"]]"), "lower case Latin"))
-    assert(says(with_kind(",\"words\":[[\"Read\",\"Read\"]]"), "lower case Latin"))
-    assert(says(with_kind(",\"words\":[[\"Read\",\"a b\"]]"), "lower case Latin"))
-    assert(says(with_kind(",\"words\":[[\"Read\",\"2x\"]]"), "lower case Latin"))
-    assert(ok_text(with_kind(",\"words\":[[\"Read\",\"read_2\"]]")))
+    assert(says(with_kind(",\"values\":[[\"Read\",\"\"]]"), "lower case Latin"))
+    assert(says(with_kind(",\"values\":[[\"Read\",\"Чтение\"]]"), "lower case Latin"))
+    assert(says(with_kind(",\"values\":[[\"Read\",\"Read\"]]"), "lower case Latin"))
+    assert(says(with_kind(",\"values\":[[\"Read\",\"a b\"]]"), "lower case Latin"))
+    assert(says(with_kind(",\"values\":[[\"Read\",\"2x\"]]"), "lower case Latin"))
+    assert(ok_text(with_kind(",\"values\":[[\"Read\",\"read_2\"]]")))
 }
 
 test "wd not for fields" {
-    ro text = tiny().replace("\"data\":[", "\"types\":{\"variants\":[{\"name\":\"Shape\",\"cases\":[{\"name\":\"Dot\"},{\"name\":\"Box\",\"fields\":[{\"name\":\"w\",\"type\":\"int\"}]}],\"words\":[[\"Box\",\"box\"]]}]},\"data\":[")
+    ro text = tiny().replace("\"data\":[", "\"types\":{\"variants\":[{\"name\":\"Shape\",\"cases\":[{\"name\":\"Dot\"},{\"name\":\"Box\",\"fields\":[{\"name\":\"w\",\"type\":\"int\"}]}],\"values\":[[\"Box\",\"box\"]]}]},\"data\":[")
     assert(says(text, "the case Box has fields"))
-    ro dot = tiny().replace("\"data\":[", "\"types\":{\"variants\":[{\"name\":\"Shape\",\"cases\":[{\"name\":\"Dot\"},{\"name\":\"Box\",\"fields\":[{\"name\":\"w\",\"type\":\"int\"}]}],\"words\":[[\"Dot\",\"dot\"]]}]},\"data\":[")
+    ro dot = tiny().replace("\"data\":[", "\"types\":{\"variants\":[{\"name\":\"Shape\",\"cases\":[{\"name\":\"Dot\"},{\"name\":\"Box\",\"fields\":[{\"name\":\"w\",\"type\":\"int\"}]}],\"values\":[[\"Dot\",\"dot\"]]}]},\"data\":[")
     assert(ok_text(dot))
 }
 
 test "wd not on records" {
-    ro text = tiny().replace("\"data\":[", "\"types\":{\"records\":[{\"name\":\"Rec\",\"fields\":[],\"words\":[]}]},\"data\":[")
-    assert(says(text, "words"))
+    ro text = tiny().replace("\"data\":[", "\"types\":{\"records\":[{\"name\":\"Rec\",\"fields\":[],\"values\":[]}]},\"data\":[")
+    assert(says(text, "values"))
     assert(says(text, "not in the schema"))
 }
 
@@ -94,6 +94,6 @@ test "wd schema" {
     ro schema = text_of_file(schema_files(), "machine-2.schema.json")
     assert(schema.contains("\"2.14\""))
     ro variant = def_of("variant_def")
-    assert(same_names(property_names(variant), ["name", "cases", "words"]))
-    assert(schema.contains("the words of the values of an enum"))
+    assert(same_names(property_names(variant), ["name", "cases", "values"]))
+    assert(schema.contains("the values of an enum"))
 }

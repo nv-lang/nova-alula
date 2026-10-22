@@ -3,18 +3,18 @@ module alula.machine_text
 
 import std.text
 
-fn act_data() -> []str => ["число_повторов", "ход", "остановка", "расход", "использование", "предыдущее", "к_отправке", "линзы", "номер_захода", "ответившие", "ответы_свидетеля", "находки_линзы", "сессия", "сбойное_обращение", "порядок_линз"]
+fn act_data() -> []str => piece_entries()
 
 // The JSON array of the actions of a text, or `ERR kind: message`.
 fn ac(text str) -> str {
-    match translate_actions(text, act_data(), ["пользователь"], ["вложенные"]) {
+    match translate_actions(text, act_data(), ["пользователь (user)"], ["вложенные"]) {
         Ok(j) => j
         Err(problems) => "ERR ${problems[0].kind}: ${problems[0].message}"
     }
 }
 
 fn ac_errors(text str) -> []TranslateError {
-    match translate_actions(text, act_data(), ["пользователь"], ["вложенные"]) {
+    match translate_actions(text, act_data(), ["пользователь (user)"], ["вложенные"]) {
         Ok(j) => []TranslateError.new()
         Err(problems) => problems
     }
@@ -67,11 +67,11 @@ test "ac call" {
 }
 
 test "ac let" {
-    ro bind = a_bind("moment", x_call("require", [x_null()]))
+    ro bind = a_bind("момент", x_call("require", [x_null()]))
     assert(ac("пусть момент = недостижимо") == arr([bind]))
-    ro seen = arr([a_bind("moment", x_lit(jint(5))), a_assign(tgt("retry_count"), x_name("moment"))])
+    ro seen = arr([a_bind("момент", x_lit(jint(5))), a_assign(tgt("retry_count"), x_name("момент"))])
     assert(ac("пусть момент = 5; число_повторов = момент") == seen)
-    ro local = arr([a_let("moment", x_lit(jint(5)), [a_assign(tgt("retry_count"), x_name("moment"))])])
+    ro local = arr([a_let("момент", x_lit(jint(5)), [a_assign(tgt("retry_count"), x_name("момент"))])])
     assert(ac("пусть момент = 5 в (число_повторов = момент)") == local)
     assert(ac("пусть момент = 5 в число_повторов = момент") == local)
     assert(ac("пусть момент = 5 в (число_повторов = 1); число_повторов = момент").starts_with("ERR name:"))
@@ -85,10 +85,10 @@ test "ac if for" {
     assert(ac("если число_повторов > 1 то (ход = \"a\") иначе (ход = \"b\")") == arr([a_if(cond, then_part, else_part)]))
     assert(ac("если число_повторов > 1 то ход = \"a\" иначе ход = \"b\"") == arr([a_if(cond, then_part, else_part)]))
     ro body = [a_journal("x_y", [kv("v", x_name("n"))])]
-    assert(ac("для каждого н в линзы: журнал(x_y, v: н)") == arr([a_for_each("n", x_name("lenses"), body)]))
+    assert(ac("для каждого n в линзы: журнал(x_y, v: n)") == arr([a_for_each("n", x_name("lenses"), body)]))
     ro two = [a_journal("x_y", []), a_assign(tgt("turn"), x_lit(js("a")))]
-    assert(ac("для каждого н в линзы: (журнал(x_y); ход = \"a\")") == arr([a_for_each("n", x_name("lenses"), two)]))
-    assert(ac("для каждого н в линзы: ход = н") == arr([a_for_each("n", x_name("lenses"), [a_assign(tgt("turn"), x_name("n"))])]))
+    assert(ac("для каждого n в линзы: (журнал(x_y); ход = \"a\")") == arr([a_for_each("n", x_name("lenses"), two)]))
+    assert(ac("для каждого n в линзы: ход = n") == arr([a_for_each("n", x_name("lenses"), [a_assign(tgt("turn"), x_name("n"))])]))
 }
 
 test "ac cancel" {
@@ -149,10 +149,10 @@ test "ac format examples" {
     ro lens_key = a_target("lenses", [a_step_key(x_name("party"))])
     ro copy = x_with(x_name("l"), [kv("lost", x_lit(jint(0)))])
     ro local = a_let("l", x_call("require", [x_index(x_name("lenses"), x_name("party"))]), [a_assign(lens_key, copy)])
-    assert(ac("пусть л = обязательно(линзы[сторона]) в (линзы[сторона] = { ...л, потери_подряд: 0 })") == arr([local]))
+    assert(ac("пусть l = обязательно(линзы[сторона]) в (линзы[сторона] = { ...l, потери_подряд: 0 })") == arr([local]))
     ro each_key = a_target("lenses", [a_step_key(x_name("l"))])
     ro each_copy = x_with(x_call("require", [x_index(x_name("lenses"), x_name("l"))]), [kv("probes", x_lit(jint(0)))])
-    assert(ac("для каждого л в порядок_линз: линзы[л] = { ...обязательно(линзы[л]), пробы: 0 }") == arr([a_for_each("l", x_name("lens_order"), [a_assign(each_key, each_copy)])]))
+    assert(ac("для каждого l в порядок_линз: линзы[l] = { ...обязательно(линзы[l]), пробы: 0 }") == arr([a_for_each("l", x_name("lens_order"), [a_assign(each_key, each_copy)])]))
 }
 
 test "ac conditional" {

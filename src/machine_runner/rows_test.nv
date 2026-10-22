@@ -48,7 +48,7 @@ fn words_of(def MachineDef, id str) -> []str {
     mut out = []str.new()
     for p in def.parties {
         if p.id != id { continue }
-        for w in p.words { out.push(w.name) }
+        for w in p.signals { out.push(w.name) }
     }
     out
 }
@@ -190,7 +190,7 @@ test "rw words of the gates" {
 test "rw words carry the data of the methodology" {
     ro def = runner_def()
     for p in def.parties {
-        for w in p.words {
+        for w in p.signals {
             if p.id == "enhanced" && w.name == "fast" { assert(w.fields.len() == 3) }
             if p.id == "enhanced" && w.name == "full_path" { assert(w.fields.len() == 1) }
             if p.id == "enhanced" && w.name == "continue" { assert(w.fields.len() == 3) }

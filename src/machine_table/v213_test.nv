@@ -30,7 +30,7 @@ test "v213 event kinds have no word" {
 }
 
 test "v213 party words key refused" {
-    ro text = tiny().replace("\"words\":[{\"name\":\"go\"},{\"name\":\"halt\"}]", "\"words\":[{\"name\":\"go\"},{\"name\":\"halt\"}]").replace("{\"kind\":\"word\",\"word\":\"go\"}", "{\"kind\":\"signal\",\"name\":\"go\"}").replace("{\"kind\":\"word\",\"word\":\"halt\"}", "{\"kind\":\"signal\",\"name\":\"halt\"}")
+    ro text = tiny13().replace("\"signals\":[{\"name\":\"go\"},{\"name\":\"halt\"}]", "\"words\":[{\"name\":\"go\"},{\"name\":\"halt\"}]")
     assert(!ok_text(text))
     assert(says(text, "words"))
     assert(says(text, "signals"))
@@ -97,7 +97,7 @@ test "v213 enum words refused" {
 
 test "v213 enum values are codes" {
     assert(says(tiny_enum("values").replace("\"one\"", "\"One Two\""), "lower case"))
-    assert(says(tiny_enum("values").replace("\"two\"", "\"one\""), "once"))
+    assert(says(tiny_enum("values").replace("\"two\"", "\"one\""), "repeated"))
 }
 
 test "v213 enum value of an unknown case" {

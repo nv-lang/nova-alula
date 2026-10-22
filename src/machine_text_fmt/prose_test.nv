@@ -65,22 +65,22 @@ test "pr list prose" {
 }
 
 test "pr needs blank" {
-    ro glued = replaced(base_text(), "| ЧИСЛО_ПОВТОРОВ | число≥0 | 3 |\n", "| ЧИСЛО_ПОВТОРОВ | число≥0 | 3 |\nПроза без пустой строки\n")
+    ro glued = replaced(base_text(), "| ЧИСЛО_ПОВТОРОВ | число>=0 | 3 |\n", "| ЧИСЛО_ПОВТОРОВ | число>=0 | 3 |\nПроза без пустой строки\n")
     assert(errors_say(glued, "structure лишняя строка в разделе `Константы`"))
     ro under_head = replaced(base_text(), "## Константы\n", "## Константы\nПроза сразу под заголовком\n")
     assert(errors_say(under_head, "лишняя строка"))
 }
 
 test "pr code is code" {
-    ro inside = replaced(base_text(), "Запись \"write\"\n", "Запись \"write\"\n\nТекст внутри блока кода\n")
+    ro inside = replaced(base_text(), "Запись (Write) \"write\"\n", "Запись (Write) \"write\"\n\nТекст внутри блока кода\n")
     assert(errors_say(inside, "ожидается `перечисление`, `тип` или `вариант`"))
-    ro blank_ok = checked(replaced(base_text(), "Запись \"write\"\n", "Запись \"write\"\n\nтип Токены { вход ?число, выход ?число }\n"))
+    ro blank_ok = checked(replaced(base_text(), "Запись (Write) \"write\"\n", "Запись (Write) \"write\"\n\nтип Токены (TokenUsage) { вход (input) ?число, выход (output) ?число }\n"))
     assert(blank_ok.errors.len() == 0)
     assert(blank_ok.json.contains("\"records\":[{\"name\":\"TokenUsage\""))
 }
 
 test "pr connection lines" {
-    ro include = "определения: арифметика_цикла версия 1 хеш 2aa456d75044"
+    ro include = "определения: арифметика_цикла версия 1 хеш e7df8843f017"
     ro good = replaced(base_text(), "## Состояния\n", "## Подключения\n\n${ticks()}\n${include}\n${ticks()}\n\n## Состояния\n")
     ro good_report = checked(good)
     if good_report.errors.len() > 0 { panic(first_error_of(good_report)) }
@@ -96,7 +96,7 @@ test "pr connection lines" {
 }
 
 fn keys() -> []str => [
-    "Сторона", "Срок тишины", "Вход", "Правит", "Возвратов формы", "При входе", "При приёме", "Результат", "Кроме", "Предел запросов"
+    "Сторона", "Срок тишины", "Запрос", "Читает", "Правит", "Возвратов формы", "При входе", "При приёме", "Результат", "Кроме", "Предел запросов"
 ]
 
 test "pr warn each key" {
@@ -113,7 +113,7 @@ test "pr warn each key" {
 }
 
 test "pr warn typos" {
-    ro marks = ["-Сторона: агент", "– Вход: нет", "— Правит: предложение", "•Кроме: х", "* Результат: число", "–Срок тишины 0"]
+    ro marks = ["-Сторона: агент", "– Запрос: нет", "— Правит: предложение", "•Кроме: х", "* Результат: число", "–Срок тишины 0"]
     for m in marks {
         ro text = before_head(base_text(), "## Данные", m)
         ro report = checked(text)
@@ -137,12 +137,12 @@ test "pr warn none" {
 }
 
 test "pr warn lines" {
-    ro text = before_head(base_text(), "## Данные", "Обычная строка\nа вот Срок тишины не задан\nСрок тишины не задан\nВход нет")
+    ro text = before_head(base_text(), "## Данные", "Обычная строка\nа вот Срок тишины не задан\nСрок тишины не задан\nЗапрос нет")
     ro report = checked(text)
     assert(report.errors.len() == 0)
     assert(report.warnings.len() == 2)
     assert(report.warnings[0].line == line_of(text, "Срок тишины не задан"))
-    assert(report.warnings[1].line == line_of(text, "Вход нет"))
+    assert(report.warnings[1].line == line_of(text, "Запрос нет"))
     ro two = before_head(before_head(base_text(), "## Стороны", "Результат один"), "## Данные", "Кроме двух")
     ro w = checked(two).warnings
     assert(w.len() == 2)
@@ -152,13 +152,13 @@ test "pr warn lines" {
 }
 
 test "pr warn apart" {
-    ro report = checked(before_head(base_text(), "## Данные", "Вход нет"))
+    ro report = checked(before_head(base_text(), "## Данные", "Запрос нет"))
     assert(report.json == base_json())
     assert(report.errors.len() == 0)
     assert(report.warnings.len() == 1)
-    assert(report.warnings[0].quote == "Вход нет")
-    assert(report.warnings[0].message.contains("- Вход:"))
-    ro broken = checked(before_head(replaced(base_text(), "число_ходов >= 2", "число_ходов >= "), "## Данные", "Вход нет"))
+    assert(report.warnings[0].quote == "Запрос нет")
+    assert(report.warnings[0].message.contains("- Запрос:"))
+    ro broken = checked(before_head(replaced(base_text(), "число_ходов >= 2", "число_ходов >= "), "## Данные", "Запрос нет"))
     assert(broken.errors.len() > 0)
     assert(broken.warnings.len() == 1)
 }

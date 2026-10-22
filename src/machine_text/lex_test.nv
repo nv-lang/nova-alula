@@ -18,7 +18,7 @@ fn toks(text str) -> str {
 
 test "lex names" {
     assert(toks("a b_1 Имя") == "1:a 1:b_1 1:Имя")
-    assert(toks("число≥0") == "1:число 5:≥ 2:0")
+    assert(toks("число>=0") == "1:число 5:>= 2:0")
     assert(toks("ёж_Ё") == "1:ёж_Ё")
     assert(toks("") == "")
 }
@@ -37,11 +37,11 @@ test "lex strings" {
 }
 
 test "lex symbols" {
-    assert(toks("a == b != c <= d >= e += f ?? g -> h → i") == "1:a 5:== 1:b 5:!= 1:c 5:<= 1:d 5:>= 1:e 5:+= 1:f 5:?? 1:g 5:-> 1:h 5:→ 1:i")
+    assert(toks("a == b != c <= d >= e += f ?? g -> h") == "1:a 5:== 1:b 5:!= 1:c 5:<= 1:d 5:>= 1:e 5:+= 1:f 5:?? 1:g 5:-> 1:h")
     assert(toks("{ ...x, y: 1 }") == "5:{ 5:... 1:x 5:, 1:y 5:: 2:1 5:}")
     assert(toks("a \\| b | c") == "1:a 5:| 1:b 5:| 1:c")
-    assert(toks("x ∈ {1}") == "1:x 5:∈ 5:{ 2:1 5:}")
-    assert(toks("— ≤ …") == "5:— 5:≤ 5:…")
+    assert(toks("x in {1}") == "1:x 1:in 5:{ 2:1 5:}")
+    assert(toks("— <= ...") == "5:— 5:<= 5:...")
     assert(toks("a # b").starts_with("ERR"))
 }
 
@@ -136,35 +136,3 @@ test "tj nodes" {
 
 // ---- the names -------------------------------------------------------------------------------------------------------------
 
-test "names get" {
-    ro n = names_load()
-    assert(n.rows.len() > 1000)
-    assert(names_get(n, "data", "запрос_агента") == Some("agent_request"))
-    assert(names_get(n, "data", "расход") == Some("transport_usage"))
-    assert(names_get(n, "field", "расход") == Some("usage"))
-    assert(names_get(n, "type", "КодСбоя") == Some("FailCode"))
-    assert(names_get(n, "constant", "СРОК_БЕЗДЕЙСТВИЯ") == Some("IDLE_TERM"))
-    assert(names_get(n, "catalog", "обязательно") == Some("require"))
-    assert(names_get(n, "executor", "сторона") == Some("party"))
-    assert(names_get(n, "data", "нет_такого") == None)
-    assert(names_first(n, ["variable", "data"], "расход") == Some("transport_usage"))
-    assert(names_first(n, ["catalog", "function"], "есть") == Some("has"))
-}
-
-test "names hint" {
-    ro n = names_load()
-    assert(names_hint(n, ["data"], "запрос_агнта") == "; возможно, `запрос_агента`")
-    assert(names_hint(n, ["data"], "совсем_другое_слово_вообще") == "")
-    assert(tx_distance("abc", "abd") == 1)
-    assert(tx_distance("", "ab") == 2)
-    assert(tx_distance("ход", "ход") == 0)
-}
-
-test "names translit" {
-    assert(tx_translit("л") == "l")
-    assert(tx_translit("н") == "n")
-    assert(tx_translit("щука") == "shchuka")
-    assert(tx_translit("Ёж_2") == "yozh_2")
-    assert(tx_translit("abc") == "abc")
-    assert(tx_translit("ост") == "ost")
-}

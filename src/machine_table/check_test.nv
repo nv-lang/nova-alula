@@ -8,8 +8,8 @@ import std.text
 fn wait_rows_with(go_value str) -> str {
     ro inc = jassign("n", go_value)
     ro a = jassign("stop", jl(jstr("a")))
-    ro go = `{"n":1,"event":{"kind":"word","word":"go"},"actions":[${inc}],"to":"Decide"}`
-    ro halt = `{"n":2,"event":{"kind":"word","word":"halt"},"actions":[${a}],"to":"Stopped"}`
+    ro go = `{"n":1,"event":{"kind":"signal","name":"go"},"actions":[${inc}],"to":"Decide"}`
+    ro halt = `{"n":2,"event":{"kind":"signal","name":"halt"},"actions":[${a}],"to":"Stopped"}`
     "${go},${halt}"
 }
 
@@ -31,9 +31,9 @@ test "red read outside" {
 }
 
 test "red write outside" {
-    ro ghost = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"word\",\"word\":\"go\"},\"actions\":[${jassign("ghost", jl("1"))}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"word\",\"word\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
+    ro ghost = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"actions\":[${jassign("ghost", jl("1"))}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"signal\",\"name\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
     assert(says(ghost, "ghost is not a datum of the machine"))
-    ro mech = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"word\",\"word\":\"go\"},\"actions\":[${jassign("u_attempt", jl("1"))}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"word\",\"word\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
+    ro mech = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"actions\":[${jassign("u_attempt", jl("1"))}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"signal\",\"name\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
     assert(says(mech, "written by mechanics, not by rows"))
     assert(says(chat_with("\"target\": \"user\"", "\"target\": \"nobody\""), "nobody is not a datum"))
     assert(says(chat_with("\"target\": \"user\"", "\"target\": \"agent_attempt\""), "written by mechanics"))
@@ -58,11 +58,11 @@ test "red primitive class" {
     ro unlisted = tiny().replace("\"parties\":", "\"primitives\":[\"time_now\"],\"parties\":")
     assert(ok_text(unlisted))
     ro call = "{\"do\":\"call\",\"primitive\":\"close_agent_turn\"}"
-    ro in_row = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"word\",\"word\":\"go\"},\"actions\":[${call}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"word\",\"word\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
+    ro in_row = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"actions\":[${call}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"signal\",\"name\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
     assert(says(in_row, "called but not listed in primitives"))
     assert(ok_text(in_row.replace("\"parties\":", "\"primitives\":[\"close_agent_turn\"],\"parties\":")))
     ro reading_call = call.replace("close_agent_turn", "time_now")
-    ro bad_call = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"word\",\"word\":\"go\"},\"actions\":[${reading_call}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"word\",\"word\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
+    ro bad_call = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"actions\":[${reading_call}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"signal\",\"name\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
     assert(says(bad_call.replace("\"parties\":", "\"primitives\":[\"time_now\"],\"parties\":"), "the reading primitive time_now may not stand in action"))
 }
 
@@ -92,12 +92,12 @@ test "names" {
 }
 
 test "events vs words" {
-    assert(says(tiny().replace("\"word\":\"go\"}", "\"word\":\"fly\"}"), "not a word of the party user"))
+    assert(says(tiny().replace("{\"kind\":\"signal\",\"name\":\"go\"}", "{\"kind\":\"signal\",\"name\":\"fly\"}"), "not a signal of the party user"))
     ro extra = tiny().replace("{\"name\":\"halt\"}", "{\"name\":\"halt\"},{\"name\":\"zap\"}")
-    assert(says(extra, "the word zap of the party user is used by no row"))
-    ro sig = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"stopit\"},\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"word\",\"word\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
-    assert(says(sig, "the signal stopit is not declared"))
-    ro fail = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"failure\"},\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"word\",\"word\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
+    assert(says(extra, "the signal zap of the party user is used by no row"))
+    ro sig = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"stopit\"},\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"signal\",\"name\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
+    assert(says(sig, "the signal stopit is not"))
+    ro fail = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"failure\"},\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"signal\",\"name\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
     assert(says(fail, "come from a party that gets requests"))
     assert(says(chat_with("\"kind\": \"failure\", \"bind\": \"code\"", "\"kind\": \"failure\", \"reasons\": [\"Lost\"], \"bind\": \"code\""), "Lost is not a failure code"))
     assert(says(chat_with("\"bind\": { \"content\": \"piece\" }", "\"bind\": { \"nope\": \"piece\" }"), "has no field nope"))
@@ -121,7 +121,7 @@ test "structure" {
     assert(says(tiny().replace("\"else\":true,\"to\":\"Wait\"", "\"else\":true,\"to\":\"Wait\"},{\"n\":3,\"event\":{\"kind\":\"now\"},\"to\":\"Wait\""), "the row else is the last one"))
     assert(says(tiny().replace("\"party\":\"user\",\"inputs\"", "\"party\":\"ghost\",\"inputs\""), "the party ghost is not declared"))
     assert(says(tiny().replace("{\"n\":2,\"event\":{\"kind\":\"now\"}", "{\"n\":1,\"event\":{\"kind\":\"now\"}"), "used twice"))
-    assert(says(tiny().replace("{\"n\":1,\"event\":{\"kind\":\"word\",\"word\":\"go\"}", "{\"n\":1,\"event\":{\"kind\":\"now\"}"), "does not have the event now"))
+    assert(says(tiny().replace("{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"go\"}", "{\"n\":1,\"event\":{\"kind\":\"now\"}"), "does not have the event now"))
     assert(says(tiny().replace("\"kind\":\"end\",\"reads\":[\"n\"]", "\"kind\":\"end\",\"reads\":[\"n\"],\"rows\":[{\"n\":1,\"event\":{\"kind\":\"now\"},\"to\":\"Wait\"}]"), "an end has no rows"))
     assert(says(tiny().replace("\"result\":\"int\",", ""), "ends"))
 }
@@ -170,7 +170,7 @@ fn jprimless_if(inner str) -> str {
 
 test "journal codes" {
     ro up = `{"do":"journal","code":"Bad_Code"}`
-    ro rows = "{\"n\":1,\"event\":{\"kind\":\"word\",\"word\":\"go\"},\"actions\":[${up}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"word\",\"word\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}"
+    ro rows = "{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"actions\":[${up}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"signal\",\"name\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}"
     assert(says(tiny_rows(rows), "the code Bad_Code must be lower case latin"))
     ro param = `{"do":"journal","code":"fine","params":[{"name":"Bad","value":${jl(jstr("x"))}}]}`
     assert(says(tiny_rows(rows.replace(up, param)), "the parameter Bad of the code fine"))
@@ -181,7 +181,7 @@ test "journal codes" {
 test "accept block" {
     ro accept = `"accept":[{"event":{"kind":"answer"},"actions":[{"do":"journal","code":"x"}]}]`
     assert(says(chat_with("\"silence\":", "${accept}, \"silence\":").replace("\"IDLE_TERM\" }", "\"IDLE_TERM\" }"), "On accept has no journal"))
-    ro word_accept = `"accept":[{"event":{"kind":"word","word":"cancel"},"actions":[]}]`
+    ro word_accept = `"accept":[{"event":{"kind":"signal","name":"cancel"},"actions":[]}]`
     assert(says(chat_with("\"silence\":", "${word_accept}, \"silence\":"), "On accept takes an answer"))
     ro good = `"accept":[{"event":{"kind":"answer"},"actions":[{"do":"assign","target":"reply","value":{"op":"lit","value":"x"}}]}]`
     assert(ok_text(chat_with("\"silence\":", "${good}, \"silence\":")))
@@ -214,7 +214,7 @@ test "parties" {
     assert(says(chat_with("\"result\": \"text\", ", ""), "declares the type of its result"))
     assert(says(chat_with("\"kind\": \"human\"", "\"kind\": \"gatekeeper\""), "names the setting"))
     assert(says(chat_with("\"kind\": \"human\"", "\"kind\": \"machine\""), "names the machine"))
-    assert(says(tiny().replace("\"kind\":\"human\"", "\"kind\":\"agent\""), "words are for the gates"))
+    assert(says(tiny().replace("\"kind\":\"human\"", "\"kind\":\"agent\""), "signals of a party are for the gates"))
 }
 
 test "includes" {
@@ -267,5 +267,5 @@ test "variants rule" {
     assert(says(v.replace("\"variant\": \"Done\"", "\"variant\": \"Nope\""), "has no case Nope"))
     assert(says(v.replace("\"result\": \"Outcome\"", "\"result\": \"text\""), "must be a variant"))
     assert(says(v.replace(", \"counter\": \"agent_attempt\"", ""), "attempt counter"))
-    assert(says(v.replace("\"event\": { \"kind\": \"timeout\" }", "\"event\": { \"kind\": \"word\", \"word\": \"x\" }"), "not a word of the party agent"))
+    assert(says(v.replace("\"event\": { \"kind\": \"timeout\" }", "\"event\": { \"kind\": \"signal\", \"name\": \"x\" }"), "not a signal of the party agent"))
 }

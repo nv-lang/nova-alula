@@ -47,7 +47,7 @@ test "ln language value" {
 }
 
 test "ln language kinds" {
-    ro text = ru_with("Сторона: вратарь", "Party: вратарь")
+    ro text = ru_with("Сторона: gatekeeper", "Party: gatekeeper")
     for e in checked(text).errors { assert(e.kind == "language" || e.kind == "structure" || e.kind == "name" || e.kind == "check") }
     assert(has_note_at(text, line_of(text, "Party"), 1, "language"))
 }
@@ -55,18 +55,18 @@ test "ln language kinds" {
 // ---- a word of the other language is an error at its line ------------------------------------------------------------
 
 test "ln foreign key line" {
-    ro text = ru_with("Срок тишины: —", "Idle term: —")
-    assert(first_note(text).starts_with("${line_of(text, "Idle term")}:1 language "))
-    assert(first_note(text).contains("`Idle term`"))
-    assert(first_note(text).contains("`Срок тишины`"))
-    assert(has_note_at(text, line_of(text, "Idle term"), 1, "language"))
-    ro en = en_with("Idle term: —", "Срок тишины: —")
-    assert(first_note(en).starts_with("${line_of(en, "Срок тишины")}:1 language "))
-    assert(first_note(en).contains("`Idle term`"))
+    ro text = ru_with("Читает: число_ходов\n\n| № | Условие", "Reads: число_ходов\n\n| № | Условие")
+    assert(first_note(text).starts_with("${line_of(text, "Reads")}:1 language "))
+    assert(first_note(text).contains("`Reads`"))
+    assert(first_note(text).contains("`Читает`"))
+    assert(has_note_at(text, line_of(text, "Reads"), 1, "language"))
+    ro en = en_with("Reads: turn_count\n\n| № | Condition", "Читает: turn_count\n\n| № | Condition")
+    assert(first_note(en).starts_with("${line_of(en, "Читает")}:1 language "))
+    assert(first_note(en).contains("`Reads`"))
 }
 
 test "ln foreign marked key" {
-    ro text = ru_with("Сторона: вратарь", "- Party: вратарь")
+    ro text = ru_with("Сторона: gatekeeper", "- Party: gatekeeper")
     assert(has_note_at(text, line_of(text, "- Party"), 3, "language"))
 }
 
@@ -89,11 +89,11 @@ test "ln foreign column" {
 }
 
 test "ln foreign event" {
-    ro text = ru_with("| 1 | слово(разрешить) |", "| 1 | word(разрешить) |")
-    assert(note_says(text, "language ключевое слово `word`"))
-    assert(has_note_at(text, line_of(text, "| 1 | word"), 7, "language"))
-    ro en = en_with("| 1 | word(allow) |", "| 1 | слово(allow) |")
-    assert(note_says(en, "language ключевое слово `слово`"))
+    ro text = ru_with("| 1 | сигнал(разрешить) |", "| 1 | signal(разрешить) |")
+    assert(note_says(text, "language ключевое слово `signal`"))
+    assert(has_note_at(text, line_of(text, "| 1 | signal"), 7, "language"))
+    ro en = en_with("| 1 | signal(allow) |", "| 1 | сигнал(allow) |")
+    assert(note_says(en, "language ключевое слово `сигнал`"))
 }
 
 test "ln foreign action" {
@@ -125,9 +125,10 @@ test "ln foreign state kind" {
 }
 
 test "ln foreign type" {
-    ro text = ru_with("| число_ходов | число≥0 |", "| число_ходов | int>=0 |")
-    assert(note_says(text, "language ключевое слово `int`"))
-    assert(first_note(text).starts_with("${line_of(text, "| число_ходов | int")}:"))
+    // a Latin word where a type stands is a name of a type of the author (AL-46), not a word of the other language: the line of the cell holds the error of the text that follows
+    ro text = ru_with("| число_ходов (turn_count) | число>=0 |", "| число_ходов (turn_count) | int>=0 |")
+    assert(!is_clean(text))
+    assert(first_note(text).starts_with("${line_of(text, "| число_ходов (turn_count) | int")}:"))
 }
 
 test "ln mixed first line" {
@@ -149,7 +150,7 @@ test "ln shared words" {
 // ---- operators in both writings (1a) ---------------------------------------------------------------------------------
 
 fn expr_ru(text str) -> str {
-    match translate_expression_in(text, ["число_ходов", "остановка"], "ru") {
+    match translate_expression_in(text, ["число_ходов (turn_count)", "остановка (stop_reason)"], "ru") {
         Ok(j) => j
         Err(es) => "ERR ${es[0].message}"
     }
@@ -163,28 +164,30 @@ fn expr_en(text str) -> str {
 }
 
 test "ln operators ge le ne" {
-    assert(expr_ru("число_ходов ≥ 1") == expr_ru("число_ходов >= 1"))
-    assert(expr_ru("число_ходов ≤ 1") == expr_ru("число_ходов <= 1"))
-    assert(expr_ru("число_ходов ≠ 1") == expr_ru("число_ходов != 1"))
-    assert(expr_en("turn_count ≥ 1") == expr_en("turn_count >= 1"))
-    assert(expr_en("turn_count ≤ 1") == expr_en("turn_count <= 1"))
-    assert(expr_en("turn_count ≠ 1") == expr_en("turn_count != 1"))
-    assert(expr_ru("число_ходов ≠ 1").contains("\"op\":\"!=\""))
-    assert(!expr_ru("число_ходов ≥ 1").starts_with("ERR"))
+    // the signs of the operators are ASCII (AL-42); a Unicode sign of 2.12 is refused with the sign that stands in its place
+    assert(expr_ru("число_ходов >= 1").contains("\"op\":\">=\""))
+    assert(expr_ru("число_ходов <= 1").contains("\"op\":\"<=\""))
+    assert(expr_ru("число_ходов != 1").contains("\"op\":\"!=\""))
+    assert(expr_ru("число_ходов != 1") == expr_en("turn_count != 1"))
+    assert(expr_ru("число_ходов ≥ 1").starts_with("ERR"))
+    assert(expr_ru("число_ходов ≥ 1").contains("`>=`"))
+    assert(expr_en("turn_count ≤ 1").contains("`<=`"))
+    assert(expr_en("turn_count ≠ 1").contains("`!=`"))
 }
 
 test "ln operators arrow spread" {
-    assert(expr_ru("фильтр([1], х → х ≥ 1)") == expr_ru("фильтр([1], х -> х >= 1)"))
-    assert(expr_en("filter([1], x → x ≥ 1)") == expr_en("filter([1], x -> x >= 1)"))
-    assert(expr_ru("выбор остановка { \"a\" → 1; иначе → 2 }") == expr_ru("выбор остановка { \"a\" -> 1; иначе -> 2 }"))
-    assert(expr_en("match stop_reason { \"a\" → 1; else → 2 }") == expr_en("match stop_reason { \"a\" -> 1; else -> 2 }"))
+    assert(expr_ru("фильтр([1], x -> x >= 1)") == expr_en("filter([1], x -> x >= 1)"))
+    assert(expr_ru("выбор остановка { \"a\" -> 1; иначе -> 2 }") == expr_en("match stop_reason { \"a\" -> 1; else -> 2 }"))
+    assert(expr_ru("фильтр([1], x → x >= 1)").starts_with("ERR"))
+    assert(expr_ru("фильтр([1], x → x >= 1)").contains("`->`"))
+    assert(expr_en("match stop_reason { \"a\" → 1; else -> 2 }").contains("`->`"))
 }
 
 test "ln membership both" {
-    assert(expr_ru("остановка ∈ {\"a\", \"b\"}") == expr_ru("остановка in {\"a\", \"b\"}"))
-    assert(expr_en("stop_reason ∈ {\"a\", \"b\"}") == expr_en("stop_reason in {\"a\", \"b\"}"))
-    assert(expr_ru("остановка ∈ {\"a\", \"b\"}") == expr_en("stop_reason in {\"a\", \"b\"}"))
+    assert(expr_ru("остановка in {\"a\", \"b\"}") == expr_en("stop_reason in {\"a\", \"b\"}"))
     assert(!expr_en("stop_reason in {\"a\"}").starts_with("ERR"))
+    assert(expr_ru("остановка ∈ {\"a\", \"b\"}").starts_with("ERR"))
+    assert(expr_ru("остановка ∈ {\"a\", \"b\"}").contains("`in`"))
 }
 
 test "ln let and in" {
@@ -211,13 +214,13 @@ test "ln expression words" {
 
 test "ln expression match en" {
     ro en = expr_en("match stop_reason { \"a\" | \"b\" if true -> 1; else -> 2 }")
-    ro ru = expr_ru("выбор остановка { \"a\" | \"b\" если истина → 1; иначе → 2 }")
+    ro ru = expr_ru("выбор остановка { \"a\" | \"b\" если истина -> 1; иначе -> 2 }")
     assert(en == ru)
     assert(en.contains("\"guard\""))
 }
 
 fn acts_ru(text str) -> str {
-    match translate_actions_in(text, ["число_ходов", "остановка"], [], [], "ru") {
+    match translate_actions_in(text, ["число_ходов (turn_count)", "остановка (stop_reason)"], [], [], "ru") {
         Ok(j) => j
         Err(es) => "ERR ${es[0].message}"
     }
@@ -241,7 +244,7 @@ test "ln action words" {
 
 test "ln action for each" {
     ro en = acts_en("for each n in [1, 2]: turn_count += n")
-    ro ru = acts_ru("для каждого н в [1, 2]: число_ходов += н")
+    ro ru = acts_ru("для каждого n в [1, 2]: число_ходов += n")
     assert(!en.starts_with("ERR"))
     assert(en.contains("\"do\":\"for_each\""))
     assert(en == ru)
@@ -271,7 +274,7 @@ fn type_en(text str) -> str {
 
 test "ln type words" {
     assert(type_en("int") == type_ru("число") && type_en("int") == "int")
-    assert(type_en("int>=0") == type_ru("число≥0") && type_en("int>=0") == "int>=0")
+    assert(type_en("int>=0") == type_ru("число>=0") && type_en("int>=0") == "int>=0")
     assert(type_en("float") == type_ru("дробное"))
     assert(type_en("text") == type_ru("текст"))
     assert(type_en("bool") == type_ru("да/нет") && type_en("bool") == "bool")
@@ -288,7 +291,6 @@ test "ln type words" {
 }
 
 test "ln type foreign" {
-    assert(type_ru("int").starts_with("ERR"))
     assert(type_en("число").starts_with("ERR"))
 }
 
@@ -303,21 +305,21 @@ test "ln declarations words" {
     }
     assert(!en.starts_with("ERR"))
     assert(en == ru)
-    assert(en.contains("\"words\":[[\"Fast\",\"fast\"]]"))
+    assert(en.contains("\"values\":[[\"Fast\",\"fast\"]]"))
 }
 
 test "ln partial words" {
-    // the words of the values of an enum may be given for some of the values (AL-15)
+    // the values of an enum may be given for some of the cases (AL-15, `values` since AL-41)
     ro ru = match translate_types_in("перечисление Mode = Fast \"fast\" | Slow | Mid \"mid_x\"", "ru") {
         Ok(j) => j
         Err(es) => "ERR ${es[0].message}"
     }
-    assert(ru.contains("\"words\":[[\"Fast\",\"fast\"],[\"Mid\",\"mid_x\"]]"))
+    assert(ru.contains("\"values\":[[\"Fast\",\"fast\"],[\"Mid\",\"mid_x\"]]"))
     ro bad = match translate_types_in("enum Mode = Fast \"Fast\"", "en") {
         Ok(j) => "ok"
         Err(es) => es[0].message
     }
-    assert(bad.contains("латинское слово кода"))
+    assert(bad.contains("латинский код"))
 }
 
 // ---- the names of an English file -----------------------------------------------------------------------------------------
@@ -336,15 +338,18 @@ test "ln english unknown name" {
 }
 
 test "ln english cyrillic name" {
-    // the names of the author may be of any language: a Russian word of the dictionary is read as its Latin word
-    ro text = en_with("| turn | turn_count | executor |", "| turn | turn_count | executor |").replace("gatekeeper_attempt", "попытка_вратаря")
+    // the names of the author may be of any language: a Cyrillic name in an English file gets its JSON name in brackets at the declaration (AL-46)
+    ro text = en_with("| gatekeeper_attempt | int>=0", "| попытка_вратаря (gatekeeper_attempt) | int>=0").replace("| allow, deny | gatekeeper_attempt |", "| allow, deny | попытка_вратаря |")
     assert(is_clean(text))
     assert(json_of(text).contains("\"counter\":\"gatekeeper_attempt\""))
+    // without the brackets the name has no JSON name
+    ro bare = en_with("| gatekeeper_attempt | int>=0", "| попытка_вратаря | int>=0")
+    assert(note_says(bare, "нет JSON-имени в скобках"))
 }
 
 test "ln english alias" {
-    // the English sample of the methodology writes `transport_usage` for the field that the dictionary calls `usage`
-    ro text = translate_types_in("variant R {\n  Done { transport_usage int }\n}", "en")
+    // a field of a record gets its JSON name in brackets in a file of either language; the name that the author writes is not changed by a table
+    ro text = translate_types_in("variant R {\n  Done { расход (usage) int }\n}", "en")
     match text {
         Ok(j) => assert(j.contains("\"name\":\"usage\""))
         Err(es) => assert(false)

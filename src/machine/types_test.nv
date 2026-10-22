@@ -6,11 +6,11 @@ fn tv(name str, value Value) -> RecordField => { name, value }
 
 fn tdefs() -> TypeDefs {
     ro finding = RecordDef { name: "Finding", fields: [tf("evidence", TextType), tf("repeat", BoolType), tf("note", OptionalType(TextType))] }
-    ro severity = VariantDef { name: "Severity", cases: [CaseDef { name: "Critical", fields: []FieldDef.new() }, CaseDef { name: "Desirable", fields: []FieldDef.new() }], words: []EnumWord.new() }
+    ro severity = VariantDef { name: "Severity", cases: [CaseDef { name: "Critical", fields: []FieldDef.new() }, CaseDef { name: "Desirable", fields: []FieldDef.new() }], values: []EnumValue.new() }
     ro outcome = VariantDef { name: "Outcome", cases: [
         CaseDef { name: "Done", fields: [tf("text", OptionalType(TextType)), tf("count", IntMin(0))] },
         CaseDef { name: "Refused", fields: []FieldDef.new() }
-    ], words: []EnumWord.new() }
+    ], values: []EnumValue.new() }
     TypeDefs { records: [finding], variants: [severity, outcome] }
 }
 

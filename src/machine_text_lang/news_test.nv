@@ -42,14 +42,15 @@ test "nw russian name needs json name" {
     assert(has_note_at(text, line_of(text, "### РЕШИТЬ"), 5, "syntax"))
 }
 
-test "nw input none" {
-    ro ru = translate_report(ru_with("Вход: число_ходов\n\n### СТОП", "Вход: нет\n\n### СТОП")).json
-    ro ru_dash = translate_report(ru_with("Вход: число_ходов\n\n### СТОП", "Вход: —\n\n### СТОП")).json
-    ro en = translate_report(en_with("Input: turn_count\n\n### Stopped", "Input: none\n\n### Stopped")).json
+test "nw reads both languages" {
+    // `Читает:` / `Reads:` name the data of a fork or of an end; the key `Вход:` of 2.12 is gone (AL-39)
+    ro ru = json_of(tiny_ru())
+    ro en = json_of(tiny_en())
     assert(no_title(ru) == no_title(en))
-    assert(ru == ru_dash)
-    assert(ru.contains("\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[]"))
-    assert(note_says(en_with("Input: turn_count\n\n### Stopped", "Input: нет\n\n### Stopped"), "language"))
+    assert(ru.contains("\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[\"turn_count\"]"))
+    assert(note_says(en_with("Reads: turn_count\n\n### Stopped", "Читает: turn_count\n\n### Stopped"), "language"))
+    assert(note_says(ru_with("Читает: число_ходов\n\n### СТОП", "Вход: число_ходов\n\n### СТОП"), "формате 2.14 не бывает"))
+    assert(note_says(en_with("Reads: turn_count\n\n### Stopped", "Input: turn_count\n\n### Stopped"), "формате 2.14 не бывает"))
 }
 
 test "nw paragraph pressed" {
@@ -98,32 +99,32 @@ test "nw declaration en" {
 }
 
 test "nw expansion name" {
+    // the section of the expansion of a fragment is gone (AL-44): one error at the heading, in either language
     ro ru = translate_report("${v211_ru()}\n## Раскрытие фрагмента «Пауза»\n\nтекст\n")
-    assert(ru.warnings.len() == 1)
-    assert(ru.warnings[0].message.contains("не совпадает с именем подключённого фрагмента"))
-    assert(ru.warnings[0].message.contains("фрагменты не подключены"))
+    assert(ru.errors.len() == 1)
+    assert(ru.errors[0].message.contains("убран"))
     ro en = translate_report("${v211_en()}\n## Fragment expansion \"Pause\"\n\ntext\n")
-    assert(en.warnings.len() == 1)
-    assert(en.errors.len() == 0)
-    assert(json_of("${v211_en()}\n## Fragment expansion \"Pause\"\n\ntext\n") == json_of(v211_en()))
+    assert(en.errors.len() == 1)
+    assert(en.errors[0].message.contains("убран"))
 }
 
 test "nw to is no key" {
     // `Куда` is a column, not a key line (AL-14): a paragraph that starts with it gives no warning
     ro text = v211_ru().replace("## Данные\n", "## Данные\n\nКуда ведёт строка\n")
     assert(translate_report(text).warnings.len() == 0)
-    ro key = v211_ru().replace("## Данные\n", "## Данные\n\nВход без пояснений\n")
+    ro key = v211_ru().replace("## Данные\n", "## Данные\n\nЗапрос без пояснений\n")
     assert(translate_report(key).warnings.len() == 1)
-    ro en = v211_en().replace("## Data\n", "## Data\n\nInput without a colon\n")
+    ro en = v211_en().replace("## Data\n", "## Data\n\nRequest without a colon\n")
     assert(translate_report(en).warnings.len() == 1)
 }
 
 // ---- the files of definitions in both languages ----------------------------------------------------------------------------
 
 test "nw defs en equals ru" {
+    // the names of the definitions are internal names: each file keeps its own (AL-46); the shapes are the same
     ro ru = translate_definitions(defs_file_text("арифметика_цикла")).json
     ro en = translate_definitions(defs_file_text("cycle_arithmetic")).json
-    assert(ru.contains("\"name\":\"ceiling_reached\""))
+    assert(ru.contains("\"name\":\"потолок_исчерпан\""))
     assert(en.contains("\"name\":\"ceiling_reached\""))
     assert(en.contains("\"result\":\"bool\"") && ru.contains("\"result\":\"bool\""))
     assert(en.contains("\"params\":[{\"name\":\"pass_number\",\"type\":\"int>=1\"}"))
@@ -153,20 +154,20 @@ test "nw include en" {
     assert(good.json.contains("\"includes\":[{\"name\":\"cycle_arithmetic\",\"version\":\"1\",\"hash\":\"8f309d17b896\"}]"))
     assert(good.json.contains("\"definitions\":[{\"name\":\"ceiling_reached\""))
     assert(note_says(en_with_include("afe05e9a1e4c"), "хеш файла cycle_arithmetic — 8f309d17b896, а в подключении afe05e9a1e4c"))
-    assert(note_says(en_with_include("2aa456d75044"), "хеш файла cycle_arithmetic"))
+    assert(note_says(en_with_include("e7df8843f017"), "хеш файла cycle_arithmetic"))
 }
 
 test "nw include ru" {
-    ro good = checked(ru_with_include("2aa456d75044"))
+    ro good = checked(ru_with_include("e7df8843f017"))
     if good.errors.len() > 0 { panic("${good.errors[0].line}: ${good.errors[0].message}") }
     assert(good.errors.len() == 0)
-    assert(good.json.contains("\"includes\":[{\"name\":\"арифметика_цикла\",\"version\":\"1\",\"hash\":\"2aa456d75044\"}]"))
-    assert(note_says(ru_with_include("4de98da759eb"), "хеш файла арифметика_цикла — 2aa456d75044, а в подключении 4de98da759eb"))
+    assert(good.json.contains("\"includes\":[{\"name\":\"арифметика_цикла\",\"version\":\"1\",\"hash\":\"e7df8843f017\"}]"))
+    assert(note_says(ru_with_include("4de98da759eb"), "хеш файла арифметика_цикла — e7df8843f017, а в подключении 4de98da759eb"))
 }
 
 test "nw include words" {
     // the words of the include line are of the language of the file
-    ro foreign = ru_with_include("2aa456d75044").replace("версия 1 хеш", "version 1 hash")
+    ro foreign = ru_with_include("e7df8843f017").replace("версия 1 хеш", "version 1 hash")
     assert(!is_clean(foreign))
     ro bad_en = en_with_include("8f309d17b896").replace("version 1", "версия 1")
     assert(!is_clean(bad_en))
@@ -182,6 +183,6 @@ test "nw empty input section" {
     ro en = v211_en().replace("## Data", "## Input\n—\n\n## Data")
     assert(is_clean(en))
     assert(json_of(en) == json_of(v211_en()))
-    ro declared = v211_ru().replace("## Данные", "## Вход\n\n| имя | тип | примечание |\n|---|---|---|\n| start | число≥0 | — |\n\n## Данные")
+    ro declared = v211_ru().replace("## Данные", "## Вход\n\n| имя | тип | примечание |\n|---|---|---|\n| start | число>=0 | — |\n\n## Данные")
     assert(json_of(declared).contains("\"input\":{\"fields\":[{\"name\":\"start\""))
 }

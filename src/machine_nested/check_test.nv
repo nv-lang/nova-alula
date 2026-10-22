@@ -231,7 +231,8 @@ test "ck pair result" {
 }
 
 test "ck pair result type" {
-    ro parent = parent_tree(label_count(), `{"name":"answer","type":"text"},{"name":"score","type":"int"}`)
+    // `int` and `int>=0` fit each other (AL-47); a type of another kind does not
+    ro parent = parent_tree(label_count(), `{"name":"answer","type":"text"},{"name":"score","type":"text"}`)
     assert(pair_says(parent, "result"))
 }
 

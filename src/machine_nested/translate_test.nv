@@ -101,7 +101,7 @@ ${ticks()}
 
 ## Parties
 
-| name | id | kind | profile | gate_words | counter |
+| name | id | kind | profile | signals | counter |
 |---|---|---|---|---|---|
 | child | child | machine callee(input CallInput, result CallOutput) | — | — | child_attempt |
 
@@ -111,8 +111,7 @@ Initial state: CALL
 
 ### CALL — appeal
 - Party: child
-- Idle term: —
-- Input:
+- Request:
 
 | request_field | expression | reads |
 |---|---|---|
@@ -125,7 +124,7 @@ Initial state: CALL
 | 2 | failure | — | — | DONE |
 
 ### DONE — end
-- Input: reply
+- Reads: reply
 
 ## Ends
 
@@ -167,7 +166,7 @@ test "nm profile agent" {
 
 test "nm profile input" {
     // the field `профиль` of the request is the column of the table of the parties (T3): a row of the table "Input" with that field is an error
-    ro text = boss_with("| count | 1 | сторона |", "| count | 1 | сторона |\n| профиль | \"x\" | сторона |")
+    ro text = boss_with("| count | 1 | сторона |", "| count | 1 | сторона |\n| profile | \"x\" | сторона |")
     assert(note_says(text, "profile"))
 }
 
@@ -189,11 +188,11 @@ fn tiny_agent() -> str => `# Машина: Малая
 | имя | тип | начальное | не убывает | пишет |
 |---|---|---|---|---|
 | text_reply | текст | "" | — | строки |
-| agent_attempt | число≥0 | 0 | да | механика |
+| agent_attempt | число>=0 | 0 | да | механика |
 
 ## Стороны
 
-| имя | идентификатор | вид | профиль | слова ворот | счётчик |
+| имя | идентификатор | вид | профиль | сигналы | счётчик |
 |---|---|---|---|---|---|
 | agent | agent | agent(итог текст) | — | — | agent_attempt |
 
@@ -203,12 +202,11 @@ fn tiny_agent() -> str => `# Машина: Малая
 
 ### ASK — обращение
 - Сторона: agent
-- Срок тишины: —
-- Вход:
+- Запрос:
 
 | поле запроса | выражение | читает |
 |---|---|---|
-| подсказка | text_reply | сторона |
+| prompt | text_reply | сторона |
 
 | № | Событие | Условие | Действия | Куда |
 |---|---|---|---|---|
@@ -216,7 +214,7 @@ fn tiny_agent() -> str => `# Машина: Малая
 | 2 | сбой | — | — | DONE |
 
 ### DONE — конец
-- Вход: text_reply
+- Читает: text_reply
 
 ## Концы
 
@@ -231,7 +229,7 @@ fn tiny_agent() -> str => `# Машина: Малая
 
 
 test "nm edits" {
-    ro text = tiny_agent().replace("- Срок тишины: —", "- Срок тишины: —\n- Правит: text_reply; проверка: proposal_changed_since_attempt").replace("- Вход:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| подсказка | text_reply | сторона |\n", "- Вход:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| подсказка | text_reply | сторона |\n\n- При приёме:\n\n| событие | действия |\n|---|---|\n| ответ(ответ) | text_reply = ответ |\n")
+    ro text = tiny_agent().replace("- Сторона: agent", "- Сторона: agent\n- Правит: text_reply; проверка: proposal_changed_since_attempt").replace("- Вход:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| подсказка | text_reply | сторона |\n", "- Вход:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| подсказка | text_reply | сторона |\n\n- При приёме:\n\n| событие | действия |\n|---|---|\n| ответ(ответ) | text_reply = ответ |\n")
     ro report = checked(text)
     assert(count_kind(text, "unsupported") == 0)
     assert(report.json.contains("\"edits\":\"text_reply\""))
@@ -239,25 +237,25 @@ test "nm edits" {
 }
 
 test "nm form returns" {
-    ro text = tiny_agent().replace("- Срок тишины: —", "- Срок тишины: —\n- Возвратов формы: 2")
+    ro text = tiny_agent().replace("- Сторона: agent", "- Сторона: agent\n- Возвратов формы: 2")
     ro report = checked(text)
     assert(count_kind(text, "unsupported") == 0)
     assert(report.json.contains("\"form_returns\":2"))
 }
 
 test "nm form zero" {
-    ro text = tiny_agent().replace("- Срок тишины: —", "- Срок тишины: —\n- Возвратов формы: 0")
+    ro text = tiny_agent().replace("- Сторона: agent", "- Сторона: agent\n- Возвратов формы: 0")
     assert(!checked(text).json.contains("form_returns"))
     assert(count_kind(text, "unsupported") == 0)
 }
 
 test "nm form bad" {
-    ro text = tiny_agent().replace("- Срок тишины: —", "- Срок тишины: —\n- Возвратов формы: два")
+    ro text = tiny_agent().replace("- Сторона: agent", "- Сторона: agent\n- Возвратов формы: два")
     assert(count_kind(text, "syntax") >= 1)
 }
 
 test "nm edits bad" {
-    ro text = tiny_agent().replace("- Срок тишины: —", "- Срок тишины: —\n- Правит: text_reply")
+    ro text = tiny_agent().replace("- Сторона: agent", "- Сторона: agent\n- Правит: text_reply")
     assert(count_kind(text, "syntax") >= 1)
 }
 
@@ -315,7 +313,7 @@ fn fan_text() -> str => `# Машина: Веер
 ## Типы
 
 ${ticks()}
-тип Линза { идентификатор текст, попытка число≥0 }
+тип Линза (Lens) { идентификатор (id) текст, попытка (attempt) число>=0 }
 тип LensInput { label текст }
 ${ticks()}
 
@@ -323,7 +321,7 @@ ${ticks()}
 
 | имя | тип | значение |
 |---|---|---|
-| LIMIT | число≥1 | 2 |
+| LIMIT | число>=1 | 2 |
 
 ## Вход
 
@@ -337,13 +335,13 @@ ${ticks()}
 |---|---|---|---|---|
 | order | []текст | вход.order | — | строки |
 | to_send | []текст | [] | — | строки и механика |
-| lenses | словарь[текст, Линза] | словарь(вход.order, л → л, л → Линза { идентификатор: л, попытка: 0 }) | — | строки |
-| lenses[*].attempt | число≥0 | — | да | механика |
-| answered | число≥0 | 0 | да | строки |
+| lenses | словарь[текст, Линза] | словарь(вход.order, л -> л, л -> Линза { идентификатор: л, попытка: 0 }) | — | строки |
+| lenses[*].attempt | число>=0 | — | да | механика |
+| answered | число>=0 | 0 | да | строки |
 
 ## Стороны
 
-| имя | идентификатор | вид | профиль | слова ворот | счётчик |
+| имя | идентификатор | вид | профиль | сигналы | счётчик |
 |---|---|---|---|---|---|
 | lens | — | machine callee(вход LensInput, итог текст) | — | — | lenses[*].attempt |
 
@@ -354,7 +352,7 @@ ${ticks()}
 Начальное состояние: PREPARE
 
 ### PREPARE — операция
-- Вход: order
+- Читает: order
 
 | № | Событие | Условие | Действия | Куда |
 |---|---|---|---|---|
@@ -362,8 +360,7 @@ ${ticks()}
 
 ### ASK — обращение
 - Сторона: lens; набор: order
-- Срок тишины: —
-- Вход:
+- Запрос:
 
 | поле запроса | выражение | читает |
 |---|---|---|
@@ -375,7 +372,7 @@ ${ticks()}
 | 2 | сбой | — | answered += 1 | JOIN |
 
 ### JOIN — развилка
-- Вход: answered, order
+- Читает: answered, order
 
 | № | Условие | Действия | Куда |
 |---|---|---|---|
@@ -383,7 +380,7 @@ ${ticks()}
 | 2 | иначе | — | ASK |
 
 ### DONE — конец
-- Вход: answered
+- Читает: answered
 
 ## Концы
 
@@ -414,14 +411,14 @@ test "nm set counter" {
 // ---- State and Signal ------------------------------------------------------------------------------------------------------------------------
 
 test "nm state type" {
-    ro text = tiny_agent().replace("| agent_attempt | число≥0 | 0 | да | механика |", "| agent_attempt | число≥0 | 0 | да | механика |\n| last | ?Состояние | пусто | — | строки |")
+    ro text = tiny_agent().replace("| agent_attempt | число>=0 | 0 | да | механика |", "| agent_attempt | число>=0 | 0 | да | механика |\n| last | ?Состояние | пусто | — | строки |")
     ro report = checked(text)
     if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
     assert(report.json.contains("\"type\":\"?State\""))
 }
 
 test "nm signal type" {
-    ro text = tiny_agent().replace("| agent_attempt | число≥0 | 0 | да | механика |", "| agent_attempt | число≥0 | 0 | да | механика |\n| last_signal | ?Сигнал | пусто | — | строки |")
+    ro text = tiny_agent().replace("| agent_attempt | число>=0 | 0 | да | механика |", "| agent_attempt | число>=0 | 0 | да | механика |\n| last_signal | ?Сигнал | пусто | — | строки |")
     ro report = checked(text)
     if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
     assert(report.json.contains("\"type\":\"?Signal\""))
@@ -429,13 +426,13 @@ test "nm signal type" {
 
 test "nm state value" {
     // a literal of the type State is the name of a state
-    ro text = tiny_agent().replace("| agent_attempt | число≥0 | 0 | да | механика |", "| agent_attempt | число≥0 | 0 | да | механика |\n| last | ?Состояние | пусто | — | строки |").replace("| 1 | ответ(ответ) | — | text_reply = ответ | DONE |", "| 1 | ответ(ответ) | — | text_reply = ответ; last = состояние | DONE |")
+    ro text = tiny_agent().replace("| agent_attempt | число>=0 | 0 | да | механика |", "| agent_attempt | число>=0 | 0 | да | механика |\n| last | ?Состояние | пусто | — | строки |").replace("| 1 | ответ(ответ) | — | text_reply = ответ | DONE |", "| 1 | ответ(ответ) | — | text_reply = ответ; last = состояние | DONE |")
     ro def = def_of(text)
     assert(find_state(def, "ASK") >= 0)
 }
 
 test "nm state bad" {
-    ro text = tiny_agent().replace("| agent_attempt | число≥0 | 0 | да | механика |", "| agent_attempt | число≥0 | 0 | да | механика |\n| last | ?Состояние | \"NOPE\" | — | строки |")
+    ro text = tiny_agent().replace("| agent_attempt | число>=0 | 0 | да | механика |", "| agent_attempt | число>=0 | 0 | да | механика |\n| last | ?Состояние | \"NOPE\" | — | строки |")
     assert(notes(text).len() >= 1)
 }
 
@@ -451,9 +448,9 @@ test "nm meeting clean" {
 
 test "nm meeting parties" {
     ro def = def_of(meeting_examples())
-    ro w = find_party(def, "witness")
-    ro a = find_party(def, "author")
-    ro l = find_party(def, "lens")
+    ro w = find_party(def, "свидетель")
+    ro a = find_party(def, "автор")
+    ro l = find_party(def, "линза")
     assert(w >= 0 && a >= 0 && l >= 0)
     for i in [w, a, l] {
         assert(def.parties[i].kind == MachineParty)

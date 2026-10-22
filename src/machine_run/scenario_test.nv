@@ -66,7 +66,7 @@ test "scenario fields" {
     assert(sc.start_at == 1000)
     assert(sc.steps.len() == 1)
     assert(sc.steps[0].op == "feed")
-    assert(sc.steps[0].event.kind == "word")
+    assert(sc.steps[0].event.kind == "signal")
     assert(sc.steps[0].event.name == "user_message")
     assert(sc.steps[0].event.input == "hello")
     assert(sc.steps[0].expect.has_state)
@@ -99,10 +99,10 @@ test "scenario refused" {
     assert(parse_err(one_step("{\"do\":\"advance\",\"expect\":{\"mood\":\"x\"}}")).contains("mood"))
     assert(parse_err(one_step("{\"do\":\"feed\"}")).contains("event"))
     assert(parse_err(one_step("{\"do\":\"advance\",\"ms\":-5}")).contains("ms"))
-    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"word\"}}")).contains("name"))
+    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\"}}")).contains("name"))
     assert(parse_err("{\"format\":\"scenario/0\",\"machine\":\"M\",\"name\":\"t\",\"steps\":{}}").contains("list"))
-    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"word\",\"name\":\"a\"},\"expect\":{\"journal\":[{\"params\":{}}]}}")).contains("code"))
-    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"word\",\"name\":\"a\"},\"expect\":{\"journal\":[{\"code\":\"x\",\"params\":{\"p\":1}}]}}")).contains("text"))
+    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"a\"},\"expect\":{\"journal\":[{\"params\":{}}]}}")).contains("code"))
+    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"a\"},\"expect\":{\"journal\":[{\"code\":\"x\",\"params\":{\"p\":1}}]}}")).contains("text"))
     assert(parse_err(one_step("{\"do\":\"advance\",\"ms\":5}")) == "ok")
 }
 
@@ -177,7 +177,7 @@ test "trace journal" {
 }
 
 test "no expectation" {
-    ro run = run_text(chat(), one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"word\",\"name\":\"user_message\",\"input\":\"x\"}}"))
+    ro run = run_text(chat(), one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"user_message\",\"input\":\"x\"}}"))
     assert(run_ok(run))
     assert(run.traces.len() == 1)
     assert(report_text(run) == "")
@@ -218,7 +218,7 @@ test "scenario twice" {
 }
 
 test "unstarted machine" {
-    ro run = run_text(calc(), one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"word\",\"name\":\"go\"},\"expect\":{\"state\":\"Start\",\"journal\":[{\"code\":\"event_ignored\",\"params\":{\"event\":\"go\",\"state\":\"Start\"}}]}}"))
+    ro run = run_text(calc(), one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"expect\":{\"state\":\"Start\",\"journal\":[{\"code\":\"event_ignored\",\"params\":{\"event\":\"go\",\"state\":\"Start\"}}]}}"))
     assert(run_ok(run))
 }
 

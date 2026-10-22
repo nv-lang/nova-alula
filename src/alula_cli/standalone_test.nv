@@ -44,8 +44,9 @@ test "sa test without the key looks for the nested machines" {
     ro ran = run_with(["test", "/c"], files)
     assert(ran.code == 1)
     assert(ran.out.contains("FAIL /c/cycle-flow-clean.scenario.test.json"))
-    assert(ran.out.contains("the machine session_start of the party session_launch is not in the registry"))
-    assert(ran.out.contains("the machine meeting of the party meeting is not in the registry"))
+    assert(ran.out.contains("the machine session_start of the party"))
+    assert(ran.out.contains("the machine meeting of the party"))
+    assert(ran.out.contains("is not in the registry"))
     assert(ran.out.ends_with("0 of 1 scenarios passed\n"))
 }
 

@@ -27,7 +27,7 @@ fn tiny_with(extra_data str, extra_states str, wait_rows str, ends_rows str) -> 
     ro n_name = jn("n")
     ro up = `{"name":"u_attempt","type":"int>=0","initial":{"expr":${zero}},"monotonic":true,"writes":"mechanics"}`
     ro data = `{"name":"n","type":"int>=0","initial":{"expr":${zero}}},{"name":"stop","type":${stop_type},"initial":{"expr":${empty}}},${up}${extra_data}`
-    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","words":[{"name":"go"},{"name":"halt"}]}`
+    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","signals":[{"name":"go"},{"name":"halt"}]}`
     ro wait = `{"name":"Wait","kind":"appeal","party":"user","inputs":[{"field":"n","value":${n_name},"reads":"executor"}],"rows":[${wait_rows}]}`
     ro decide = `{"name":"Decide","kind":"fork","reads":["n"],"rows":[{"n":1,"event":{"kind":"now"},"cond":${ge2},"to":"Finished"},{"n":2,"event":{"kind":"now"},"else":true,"to":"Wait"}]}`
     ro ends = `{"name":"Finished","kind":"end","reads":["n"]},{"name":"Stopped","kind":"end","reads":["stop"],"except":{"field":"stop","values":[""]}}`
@@ -37,8 +37,8 @@ fn tiny_with(extra_data str, extra_states str, wait_rows str, ends_rows str) -> 
 fn tiny_wait_rows() -> str {
     ro inc = jassign("n", jb("+", jn("n"), jl("1")))
     ro a = jassign("stop", jl(jstr("a")))
-    ro go = `{"n":1,"event":{"kind":"word","word":"go"},"actions":[${inc}],"to":"Decide"}`
-    ro halt = `{"n":2,"event":{"kind":"word","word":"halt"},"actions":[${a}],"to":"Stopped"}`
+    ro go = `{"n":1,"event":{"kind":"signal","name":"go"},"actions":[${inc}],"to":"Decide"}`
+    ro halt = `{"n":2,"event":{"kind":"signal","name":"halt"},"actions":[${a}],"to":"Stopped"}`
     "${go},${halt}"
 }
 

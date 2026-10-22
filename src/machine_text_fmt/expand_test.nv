@@ -1,10 +1,10 @@
-// expand_test.nv - P-2 of format 2.7: the section `## Раскрытие фрагмента «Имя»` is a reference for the reader; the translator skips it whole (headings, tables, prose, lines that
-// would be errors anywhere else). The section `## Подключения` holds the lines of connection only.
+// expand_test.nv - AL-44 (format 2.13): the section `## Раскрытие фрагмента «Имя»` is gone: what a fragment brings is described by its own file. The translator names the section as
+// removed (one error at the heading) and skips its content, so the lines of the section do not add errors of their own. The section `## Подключения` holds the lines of connection only.
 module alula.machine_text_fmt
 
 import std.text
 
-// What the sample of the methodology puts at the end of the file: headings, a table, prose with the signs of a code, a state of the fragment with its key lines.
+// What the sample of the former format put at the end of the file: headings, a table, prose with the signs of a code, a state of the fragment with its key lines.
 fn expansion() -> str => `## Раскрытие фрагмента «Пауза»
 
 Справка читателю; разбор раздел пропускает. Знаки «${bt()}» и «« »» допустимы.
@@ -38,60 +38,78 @@ fn bt() -> str => "`"
 
 fn with_expansion(text str) -> str => "${text}\n${expansion()}"
 
-test "ex tail skipped" {
-    ro report = checked(with_expansion(base_text()))
-    if report.errors.len() > 0 { panic(first_error_of(report)) }
-    assert(report.errors.len() == 0)
-    assert(report.json == base_json())
-    // format 2.9 (AL-17): the name in the heading is the name of an included fragment, and this machine includes none
-    assert(report.warnings.len() == 1)
-    assert(report.warnings[0].message.contains("не совпадает с именем подключённого фрагмента"))
+// The lines of the errors that speak about the removed section.
+fn removed_lines(text str) -> []str {
+    mut out = []str.new()
+    for line in error_lines(text) {
+        if line.contains("убран") { out.push(line) }
+    }
+    out
+}
+
+test "ex section removed" {
+    ro text = with_expansion(base_text())
+    ro lines = error_lines(text)
+    // one error at the heading, nothing from the content
+    assert(lines.len() == 1)
+    assert(lines[0].contains("раздел «Раскрытие фрагмента «Пауза»» в формате 2.14 убран (Я-44)"))
+    assert(lines[0].starts_with("${line_with(text, "## Раскрытие фрагмента")}:"))
+}
+
+test "ex english heading" {
+    ro text = "${base_text()}\n## Fragment expansion \"Pause\"\n\nAnything.\n"
+    assert(removed_lines(text).len() == 1)
 }
 
 test "ex in the middle" {
-    ro plain = base_json()
     ro text = replaced(base_text(), "## Состояния\n", "${expansion()}\n## Состояния\n")
-    assert(same_json(text, plain))
+    assert(error_lines(text).len() == 1)
     ro twice = replaced(text, "## Состояния\n", "## Раскрытие фрагмента «Другой»\n\nЕщё справка.\n\n## Состояния\n")
-    assert(same_json(twice, plain))
+    assert(removed_lines(twice).len() == 2)
+    assert(error_lines(twice).len() == 2)
 }
 
 test "ex whatever inside" {
     ro junk = "## Раскрытие фрагмента «Пауза»\n\n@@@ {{{ ???\n| a | b |\n| 1 |\n### ЧТО-ТО — не состояние\nИмя(\n\"не закрыта\n"
-    assert(same_json("${base_text()}\n${junk}", base_json()))
+    ro lines = error_lines("${base_text()}\n${junk}")
+    assert(lines.len() == 1)
+    assert(lines[0].contains("убран"))
 }
 
 test "ex code in it" {
     ro with_code = "## Раскрытие фрагмента «Пауза»\n\n${ticks()}\n## Не заголовок\n### Состояние ПАУЗА — обращение (Pause)\n${ticks()}\n\nКонец справки.\n"
-    assert(same_json("${base_text()}\n${with_code}", base_json()))
+    assert(error_lines("${base_text()}\n${with_code}").len() == 1)
 }
 
 test "ex heading words" {
-    assert(is_clean("${base_text()}\n## Раскрытие фрагмента\n\nБез имени.\n"))
+    assert(removed_lines("${base_text()}\n## Раскрытие фрагмента\n\nБез имени.\n").len() == 1)
     ro other = "${base_text()}\n## Раскрытие\n\nЭто не справка о фрагменте.\n"
     assert(errors_say(other, "неизвестный раздел `Раскрытие`"))
+    assert(removed_lines(other).len() == 0)
     ro low = "${base_text()}\n## раскрытие фрагмента «Пауза»\n\nМалая буква.\n"
     assert(errors_say(low, "неизвестный раздел"))
 }
 
 test "ex ends at next" {
     ro text = replaced(base_text(), "## Концы\n", "## Раскрытие фрагмента «Пауза»\n\n@@@ ошибка не видна\n\n## Концы\n")
-    assert(same_json(text, base_json()))
+    // the section ends at the next heading: the ends after it are read, the base machine has no other error
+    assert(error_lines(text).len() == 1)
     ro cut_short = replaced(base_text(), "Ответ(число_ходов)", "Ответ(")
     assert(!is_clean(cut_short))
     ro bad_after = replaced(cut_short, "## Концы\n", "## Раскрытие фрагмента «Пауза»\n\nСправка.\n\n## Концы\n")
-    assert(!is_clean(bad_after))
+    assert(error_lines(bad_after).len() == error_lines(cut_short).len() + 1)
 }
 
 test "ex before sections" {
     ro head = replaced(base_text(), "## Типы\n", "## Раскрытие фрагмента «Пауза»\n\nСправка в начале.\n\n## Типы\n")
-    assert(same_json(head, base_json()))
+    assert(removed_lines(head).len() == 1)
+    assert(error_lines(head).len() == 1)
 }
 
 test "ex lines of errors" {
     ro text = with_expansion(replaced(base_text(), "число_ходов >= 2", "число_ходов >= "))
     ro lines = error_lines(text)
-    assert(lines.len() > 0)
+    assert(lines.len() > 1)
     ro at = lines[0].find(":") ?? 0
     assert((lines[0][..at]).to_int() ?? 0 == line_with(text, "| 1 | число_ходов >= "))
     assert(line_with(text, "## Раскрытие фрагмента") > line_with(text, "| 1 | число_ходов >= "))

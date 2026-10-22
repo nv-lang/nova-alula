@@ -17,7 +17,7 @@ fn is_error(json str) -> bool => json.starts_with("ERR")
 // ---- an expression: a lambda with a parameter of any alphabet ------------------------------------------------------------------------
 
 test "uc lambda greek ru" {
-    ro c = ex_circle("фильтр([1, 2], δ → δ > 1)", [], "ru")
+    ro c = ex_circle("фильтр([1, 2], δ -> δ > 1)", [], "ru")
     assert(!is_error(c[0]))
     assert(c[0].contains("\"δ\""))
     assert(c[2] == c[0])
@@ -32,47 +32,47 @@ test "uc lambda greek en" {
 }
 
 test "uc lambda german" {
-    ro c = ex_circle("фильтр([1, 2], größe → größe > 1)", [], "ru")
+    ro c = ex_circle("фильтр([1, 2], größe -> größe > 1)", [], "ru")
     assert(!is_error(c[0]))
     assert(c[0].contains("\"größe\""))
     assert(c[2] == c[0])
 }
 
-test "uc lambda german upper case parameter is lowered" {
-    ro c = ex_circle("фильтр([1, 2], Größe → Größe > 1)", [], "ru")
+test "uc lambda german upper case parameter as written" {
+    ro c = ex_circle("фильтр([1, 2], Größe -> Größe > 1)", [], "ru")
     assert(!is_error(c[0]))
-    assert(c[0].contains("\"größe\""))
-    assert(!c[0].contains("Größe"))
+    assert(c[0].contains("\"Größe\""))
+    assert(!c[0].contains("\"größe\""))
     assert(c[2] == c[0])
 }
 
 test "uc lambda chinese" {
-    ro c = ex_circle("фильтр([1, 2], 数据 → 数据 > 1)", [], "ru")
+    ro c = ex_circle("фильтр([1, 2], 数据 -> 数据 > 1)", [], "ru")
     assert(!is_error(c[0]))
     assert(c[0].contains("\"数据\""))
     assert(c[2] == c[0])
 }
 
 test "uc lambda four byte letter" {
-    ro c = ex_circle("фильтр([1, 2], 𝒜 → 𝒜 > 1)", [], "ru")
+    ro c = ex_circle("фильтр([1, 2], 𝒜 -> 𝒜 > 1)", [], "ru")
     assert(!is_error(c[0]))
     assert(c[0].contains("\"𝒜\""))
     assert(c[2] == c[0])
 }
 
 test "uc lambda mixed with digits" {
-    ro c = ex_circle("фильтр([1, 2], δ_1 → δ_1 > 1)", [], "ru")
+    ro c = ex_circle("фильтр([1, 2], δ_1 -> δ_1 > 1)", [], "ru")
     assert(!is_error(c[0]))
     assert(c[0].contains("\"δ_1\""))
     assert(c[2] == c[0])
-    ro d = ex_circle("фильтр([1, 2], größe2 → größe2 > 1)", [], "ru")
+    ro d = ex_circle("фильтр([1, 2], größe2 -> größe2 > 1)", [], "ru")
     assert(d[0].contains("\"größe2\""))
     assert(d[2] == d[0])
 }
 
-test "uc lambda cyrillic still transliterated" {
-    ro c = ex_circle("фильтр([1, 2], х → х > 1)", [], "ru")
-    assert(c[0].contains("\"kh\""))
+test "uc lambda cyrillic name as written" {
+    ro c = ex_circle("фильтр([1, 2], х -> х > 1)", [], "ru")
+    assert(c[0].contains("\"х\""))
     assert(c[2] == c[0])
 }
 
@@ -102,18 +102,18 @@ test "uc datum chinese" {
 }
 
 test "uc datum upper case greek is a constant not a type" {
-    // ΔΕΙΓΜΑ has no lower case letter: it is a name, not a type; the datum is found. Its name in the JSON is lower case (the rule of `tx_translit`), so the text written back is not the text read
+    // ΔΕΙΓΜΑ has no lower case letter: it is a name, not a type; the datum is found. The name in the JSON is the name as written (AL-46), so the text written back is the text read
     ro c = ex_circle("ΔΕΙΓΜΑ + 1", ["ΔΕΙΓΜΑ"], "ru")
     assert(!is_error(c[0]))
-    assert(c[0].contains("\"δειγμα\""))
-    assert(c[1] == "δειγμα + 1")
+    assert(c[0].contains("\"ΔΕΙΓΜΑ\""))
+    assert(c[1] == "ΔΕΙΓΜΑ + 1")
 }
 
 test "uc datum german upper case" {
     ro c = ex_circle("ÄRGER + 1", ["ÄRGER"], "ru")
     assert(!is_error(c[0]))
-    assert(c[0].contains("\"ärger\""))
-    assert(c[1] == "ärger + 1")
+    assert(c[0].contains("\"ÄRGER\""))
+    assert(c[1] == "ÄRGER + 1")
 }
 
 // ---- actions ------------------------------------------------------------------------------------------------------------------------
@@ -216,8 +216,8 @@ test "uc error column of an unknown state after a four byte letter" {
 }
 
 test "uc error column in an expression" {
-    assert(ex_json("фильтр([1, \"😀я\"], 𝒜 → #)", [], "ru") == "ERR 1:23: недопустимый знак «#»")
-    assert(ex_json("фильтр([1, 2], δ → ☃)", [], "ru") == "ERR 1:20: недопустимый знак «☃»")
+    assert(ex_json("фильтр([1, \"😀я\"], 𝒜 -> #)", [], "ru") == "ERR 1:24: недопустимый знак «#»")
+    assert(ex_json("фильтр([1, 2], δ -> ☃)", [], "ru") == "ERR 1:21: недопустимый знак «☃»")
     assert(ex_json("привет мир ¤", [], "ru") == "ERR 1:12: недопустимый знак «¤»")
 }
 

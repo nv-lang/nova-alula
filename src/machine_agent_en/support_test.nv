@@ -22,8 +22,9 @@ fn en_report() -> TranslateReport => report_of(en_sample())
 fn ru_report() -> TranslateReport => report_of(ru_sample())
 
 // The English sample with the keys of the project in the column `project_override` of the two parameters (the sample has `—`: its source names no key); the product's table has the same keys.
+// The product writes the field of the transport usage as `usage` (its scenarios and the engine say so), the sample as `transport_usage`: the field is renamed in the five declarations.
 fn en_keyed() -> str {
-    ro first = en_sample().replace("| RETRY_PAUSE | int>=0 | 2000 | — |", "| RETRY_PAUSE | int>=0 | 2000 | project.пауза_повтора |")
+    ro first = en_sample().replace("| RETRY_PAUSE | int>=0 | 2000 | — |", "| RETRY_PAUSE | int>=0 | 2000 | project.пауза_повтора |").replace("transport_usage TransportUsage", "usage TransportUsage").replace("transport_usage: received", "usage: received").replace("| transport_usage | transport_usage | executor |", "| usage | transport_usage | executor |")
     ro at = first.find("| PERMISSION_POLICY | full map[ActionKind, ") ?? -1
     if at < 0 { panic("the parameter PERMISSION_POLICY is not in the sample") }
     ro line_end = first[at..].find("\n") ?? -1
@@ -255,3 +256,54 @@ fn tree_text(json str) -> str {
 
 // The strings of the author in the Russian sample that the English one writes in English (the text of the refusal of the end Errored, the note `write_right` of the connection of the fragment).
 fn ru_strings_in_english(json str) -> str => json.replace("дефект шага агента: ", "agent step defect: ").replace("файлы, которые правит агент; пауза их права не трогает", "files the agent edits; the pause does not touch their rights")
+
+// The names under a key of a tree, in order (`constants`, `params`, `definitions`, `parties`).
+fn names_under(json str, key str) -> []str {
+    mut out = []str.new()
+    match Json.parse(json) {
+        Ok(root) => {
+            match root.object() {
+                Some(o) => {
+                    match o.get(key) {
+                        Some(list) => {
+                            match list.array() {
+                                Some(items) => {
+                                    for item in items {
+                                        match item.object() {
+                                            Some(io) => out.push(sval(io, "name"))
+                                            None => ()
+                                        }
+                                    }
+                                }
+                                None => ()
+                            }
+                        }
+                        None => ()
+                    }
+                }
+                None => ()
+            }
+        }
+        Err(e) => ()
+    }
+    out
+}
+
+// The Russian tree as the English one writes it: the strings of the author, and the internal names (a constant, a parameter, a definition, a party: they are written to the tree as they are, AL-46)
+// by the place in the two lists; the JSON names are the same in both trees. Every quoted name is replaced, so its uses (a call, a reference, the party of a state) follow.
+fn ru_in_english(ru_json str, en_json str) -> str {
+    mut text = ru_strings_in_english(ru_json)
+    for key in ["constants", "params", "definitions", "parties"] {
+        ro from = names_under(ru_json, key)
+        ro to = names_under(en_json, key)
+        if from.len() != to.len() { panic("the lists ${key} differ in length: ${from.len()} / ${to.len()}") }
+        mut i = 0
+        while i < from.len() {
+            if from[i] != to[i] { text = text.replace("\"${from[i]}\"", "\"${to[i]}\"") }
+            // the key of the project is the key of the project in both trees (a parameter is named after it)
+            if from[i] != to[i] { text = text.replace("\"project_key\":\"${to[i]}\"", "\"project_key\":\"${from[i]}\"") }
+            i += 1
+        }
+    }
+    text
+}
