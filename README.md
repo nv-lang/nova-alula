@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/alula-wordmark-mono-dark-en.svg">
+    <img alt="alula" src="assets/logo/alula-wordmark-mono-light-en.svg" height="80">
+  </picture>
+</p>
+
 # alula
 
 The core of the language of state machines written as data, on [Nova](https://github.com/nv-lang/nova): a machine is a table of states and
