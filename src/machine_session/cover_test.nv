@@ -8,9 +8,9 @@ import std.encoding.json.{Json}
 import alula.machine.{NamedText}
 import alula.machine_run.{StepTrace, run_ok, report_text}
 
-// The rows that no event can take: the row `else` of the fork Scope (the conditions before it name both values of the type), the row 6 of the common events (the three conditions before it
-// cover every request id) and the end Errored (it is entered only through `machine_error`, whose two ways in the table are those two rows).
-fn dead_rows() -> []str => ["Scope#3", "common#6", "end:Errored#1"]
+// The rows that no event can take: the row 6 of the common events (the three conditions before it cover every request id) and the end Errored (it is entered only through `machine_error`,
+// whose only way in the table is that row; the fork Scope has no row `else`, its two rows name both values of the type).
+fn dead_rows() -> []str => ["common#6", "end:Errored#1"]
 
 // The rows taken after a step, from the encoded state of the parent.
 fn taken_of(encoded str) -> []str {
@@ -88,13 +88,13 @@ fn file_of_row(row str) -> str {
 
 test "cv rows counted" {
     ro rows = all_rows(session_def())
-    assert(rows.len() == 26)
+    assert(rows.len() == 25)
     for dead in dead_rows() { assert(rows.contains(dead)) }
 }
 
 test "cv dead rows are the defensive ones" {
     ro def = session_def()
-    assert(row_of(def, "Scope", 3).is_else)
+    assert(state_named(def, "Scope").rows.len() == 2)
     assert(def.common[5].n == 6)
     assert(def.common[5].actions.len() == 1)
     assert(def.end_rows[1].state == "Errored")

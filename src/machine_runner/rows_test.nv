@@ -8,6 +8,11 @@ module alula.machine_runner
 import std.text
 import alula.machine_table.{MachineDef, StateDef, TableRow, ForkKind, AppealKind, EndKind, OperationKind, MachineErrorAct, find_party}
 
+/// The rows of the table of the methodology that the machine does not write: the row "иначе" of a fork whose rows name every value of the type (AL-57: the type proves the exhaustion, the row would be a warning).
+fn dropped_rows() -> []str => ["PhaseSwitch#7"]
+
+fn is_dropped(state str, n int) -> bool => dropped_rows().contains("${state}#${n}")
+
 /// MRow: a row of the table of the methodology: the Latin name of the state, the number of the row, the state it leads to or "!".
 type MRow { state str, n int, to str }
 
@@ -64,7 +69,7 @@ test "rw state row counts" {
         assert(has_state(def, name))
         ro got = state_of(def, name).rows.len()
         // the fork of the verdicts has the row "иначе" more; the appeals of the four reviews have the row of the answer and the row of the failure
-        ro want = if name == "ReviewVerdict" { 19 } else { rows_of(name) }
+        ro want = if name == "ReviewVerdict" { 19 } else if name == "PhaseSwitch" { rows_of(name) - 1 } else { rows_of(name) }
         if got != want { panic("${name} has ${got} rows, the methodology has ${want}") }
     }
     assert(state_of(def, "Pause").rows.len() == 4)
@@ -77,11 +82,12 @@ test "rw every row leads where the methodology leads" {
     ro def = runner_def()
     mut seen = 0
     for m in methodology_rows() {
+        if is_dropped(m.state, m.n) { continue }
         ro got = row_target(state_of(def, m.state), m.n)
         if got != m.to { panic("${m.state} #${m.n} leads to ${got}, the methodology leads it to ${m.to}") }
         seen += 1
     }
-    assert(seen == 228)
+    assert(seen == 227)
 }
 
 test "rw the answer rows of the reviews lead to the fork of the verdicts" {
@@ -109,6 +115,7 @@ test "rw errors end in a machine error" {
     mut errors = 0
     for m in methodology_rows() {
         if m.to != "!" { continue }
+        if is_dropped(m.state, m.n) { continue }
         errors += 1
         ro st = state_of(def, m.state)
         mut found = false
@@ -123,8 +130,8 @@ test "rw errors end in a machine error" {
         }
         assert(found)
     }
-    // the rows "иначе" of the 27 forks that have one, the failure codes that are not named (SessionFailure 3, ReviewFailure 3), the restart of the implementation review (ReviewVerdict 13)
-    assert(errors == 28)
+    // the rows "иначе" of the 26 forks that have one (PhaseSwitch has none, see `dropped_rows`), the failure codes that are not named (SessionFailure 3, ReviewFailure 3), the restart of the implementation review (ReviewVerdict 13)
+    assert(errors == 27)
 }
 
 test "rw else rows" {
@@ -135,11 +142,13 @@ test "rw else rows" {
         for r in st.rows {
             if r.is_else { elses += 1 }
         }
-        if st.kind == ForkKind {
+        if st.kind == ForkKind && name != "PhaseSwitch" {
             assert(st.rows[st.rows.len() - 1].is_else)
         }
     }
-    assert(elses == 28)
+    // PhaseSwitch names every value of the enum and has no row "иначе"
+    assert(!state_of(def, "PhaseSwitch").rows[state_of(def, "PhaseSwitch").rows.len() - 1].is_else)
+    assert(elses == 27)
 }
 
 test "rw kinds of the states" {

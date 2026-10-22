@@ -18,7 +18,7 @@ test "v217 fixture ru and en give one tree" {
     assert(no_title(json_of(v217_ru())) == no_title(json_of(v217_en())))
 }
 
-test "v217 format 2.14 is refused" {
+test "v217 format 2.17 is refused" {
     ro text = ru17("- format: 2.17", "- format: 2.14")
     assert(!is_clean(text))
     assert(note_says(text, "версия не известна"))
@@ -55,14 +55,14 @@ test "v217 the soft and the hard sign are dropped" {
 }
 
 test "v217 the dictionary is searched for the whole name" {
-    ro text = ru17_data("| ход_агента | число>=0 | 0 | да | строки |").replace("| число_ходов | число>=0 | 0 | да, <= 5 | строки |\n", "| число_ходов | число>=0 | 0 | да, <= 5 | строки |\n| ход | число>=0 | 0 | да | строки |\n")
+    ro text = ru17_data("| ход_змеи | число>=0 | 0 | да | строки |").replace("| число_ходов | число>=0 | 0 | да, <= 5 | строки |\n", "| число_ходов | число>=0 | 0 | да, <= 5 | строки |\n| ход | число>=0 | 0 | да | строки |\n")
     assert(has17(text, "\"name\":\"turn\""))
-    assert(has17(text, "\"name\":\"khod_agenta\""))
+    assert(has17(text, "\"name\":\"khod_zmei\""))
 }
 
 test "v217 the empty words of a name are dropped" {
-    ro text = ru17_data("| ход__агента | число>=0 | 0 | да | строки |")
-    assert(has17(text, "\"name\":\"khod_agenta\""))
+    ro text = ru17_data("| ход__змеи | число>=0 | 0 | да | строки |")
+    assert(has17(text, "\"name\":\"khod_zmei\""))
 }
 
 test "v217 a state name is written in Pascal case" {
@@ -71,14 +71,14 @@ test "v217 a state name is written in Pascal case" {
 }
 
 test "v217 a word in capitals keeps only the first capital" {
-    ro text = ru17("### СТОП — конец\n", "### В3 — конец\n- Читает: остановка\n\n### СТОП — конец\n")
-    assert(has17(text, "\"name\":\"V3\""))
+    ro text = ru17("### СТОП — конец\n", "### Д3 — конец\n- Читает: остановка\n\n### СТОП — конец\n")
+    assert(has17(text, "\"name\":\"D3\""))
 }
 
 test "v217 a type name is written in Pascal case" {
-    ro text = ru17_types("тип ВидВызывающего { сессия текст }")
+    ro text = ru17_types("тип ВидХвоста { сессия текст }")
     assert(is_clean(text))
-    assert(has17(text, "\"name\":\"VidVyzyvayushchego\""))
+    assert(has17(text, "\"name\":\"VidKhvosta\""))
 }
 
 test "v217 a capital letter gives a capital Latin letter" {

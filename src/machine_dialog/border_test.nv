@@ -8,8 +8,8 @@ import alula.machine_text.{translate_checked, error_text}
 
 test "bd dialog: the message and the chunk have the field содержание" {
     ro t = dialog_table_text()
-    assert(t.contains("сообщение_пользователя (user_message)(содержание (content) текст)"))
-    assert(t.contains("| агент | кусок_ответа (agent_chunk) | содержание (content) текст |"))
+    assert(t.contains("сообщение_пользователя(содержание текст)"))
+    assert(t.contains("| агент | кусок_ответа | содержание текст |"))
 }
 
 test "bd dialog: the rows name the field" {
@@ -27,7 +27,7 @@ test "bd dialog: the field текст текст is gone" {
 
 test "bd dialog: the cancel is not a word of the user" {
     ro t = dialog_table_text()
-    assert(!t.contains("сообщение_пользователя (user_message)(содержание (content) текст), отмена"))
+    assert(!t.contains("сообщение_пользователя(содержание текст), отмена"))
     assert(!t.contains("сигнал(отмена)") || t.contains("## Сигналы"))
     assert(!t.contains("слово(отмена)"))
 }
@@ -35,7 +35,7 @@ test "bd dialog: the cancel is not a word of the user" {
 test "bd dialog: the cancel is a signal and a row of the open turn takes it" {
     ro t = dialog_table_text()
     assert(t.contains("## Сигналы"))
-    assert(t.contains("| отмена (cancel) | — |"))
+    assert(t.contains("| отмена | — |"))
     assert(t.contains("сигнал(отмена)"))
 }
 
@@ -64,8 +64,8 @@ test "bd dialog: the tree declares the cancel once, as a signal" {
 
 test "bd chat: the message and the chunk have the field содержание" {
     ro t = chat_table_text()
-    assert(t.contains("сообщение_пользователя (user_message)(содержание (content) текст)"))
-    assert(t.contains("| агент | кусок_ответа (agent_chunk) | содержание (content) текст |"))
+    assert(t.contains("сообщение_пользователя(содержание текст)"))
+    assert(t.contains("| агент | кусок_ответа | содержание текст |"))
     assert(t.contains("сигнал(сообщение_пользователя(содержание: сообщение))"))
     assert(t.contains("часть(кусок_ответа(содержание: кусок))"))
     assert(!t.contains("(текст текст)"))
@@ -75,5 +75,5 @@ test "bd chat: the cancel before a request stays a signal of the user" {
     ro t = chat_table_text()
     // the cancel before a request is a signal of the user: it stands among the signals of the party
     assert(t.contains("сигнал(отмена)"))
-    assert(t.contains("отмена (cancel) |"))
+    assert(t.contains("отмена |"))
 }

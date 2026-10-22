@@ -109,29 +109,29 @@ test "mk chat table" {
 }
 
 test "mk nested list" {
-    ro flat = tiny_text().replace("\n### РЕШИТЬ — развилка (Decide)\nЧитает: число_ходов\n", "\n### РЕШИТЬ — развилка (Decide)\nЧитает: число_ходов\nПри входе: пусть к = число_ходов + 1;\n           пусть м = к + 1\n")
-    ro nested = tiny_text().replace("\n### РЕШИТЬ — развилка (Decide)\nЧитает: число_ходов\n", "\n### РЕШИТЬ — развилка (Decide)\n- Читает: число_ходов\n- При входе:\n  - пусть к = число_ходов + 1;\n  - пусть м = к + 1\n")
+    ro flat = tiny_text().replace("\n### РЕШИТЬ — развилка\nЧитает: число_ходов\n", "\n### РЕШИТЬ — развилка\nЧитает: число_ходов\nПри входе: пусть к = число_ходов + 1;\n           пусть м = к + 1\n")
+    ro nested = tiny_text().replace("\n### РЕШИТЬ — развилка\nЧитает: число_ходов\n", "\n### РЕШИТЬ — развилка\n- Читает: число_ходов\n- При входе:\n  - пусть к = число_ходов + 1;\n  - пусть м = к + 1\n")
     assert(flat != tiny_text() && nested != tiny_text())
     assert(checked(flat).errors.len() == 0)
     assert(json_of(nested) == json_of(flat))
-    ro one = tiny_text().replace("\n### РЕШИТЬ — развилка (Decide)\nЧитает: число_ходов\n", "\n### РЕШИТЬ — развилка (Decide)\n- Читает: число_ходов\n- При входе: пусть к = число_ходов + 1\n")
+    ro one = tiny_text().replace("\n### РЕШИТЬ — развилка\nЧитает: число_ходов\n", "\n### РЕШИТЬ — развилка\n- Читает: число_ходов\n- При входе: пусть к = число_ходов + 1\n")
     assert(checked(one).errors.len() == 0)
 }
 
 test "mk nested columns" {
-    ro text = tiny_text().replace("\n### РЕШИТЬ — развилка (Decide)\nЧитает: число_ходов\n", "\n### РЕШИТЬ — развилка (Decide)\n- Читает: число_ходов\n- При входе:\n  - пусть к = нет_такого + 1\n")
+    ro text = tiny_text().replace("\n### РЕШИТЬ — развилка\nЧитает: число_ходов\n", "\n### РЕШИТЬ — развилка\n- Читает: число_ходов\n- При входе:\n  - пусть к = нет_такого + 1\n")
     assert(name_note(text).ends_with(":15"))
 }
 
-test "mk format 2.14" {
+test "mk format 2.17" {
     ro report = checked(tiny_text())
     assert(report.errors.len() == 0)
-    assert(report.json.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.14\",\"machine\":\"Tiny\""))
-    assert(note_says(tiny_text().replace("format: 2.14", "format: 2.11"), "читает формат 2.14"))
+    assert(report.json.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.17\",\"machine\":\"Tiny\""))
+    assert(note_says(tiny_text().replace("format: 2.17", "format: 2.11"), "читает формат 2.17"))
 }
 
 test "mk format 2.12 and 2.13 are refused" {
-    assert(note_says(tiny_text().replace("format: 2.14", "format: 2.12"), "формат 2.12: версия не известна переводчику, он читает формат 2.14"))
-    assert(note_says(tiny_text().replace("format: 2.14", "format: 2.13"), "формат 2.13: версия не известна переводчику, он читает формат 2.14"))
-    assert(note_says(tiny_text().replace("format: 2.14", "format: 2.12"), "переходного периода нет"))
+    assert(note_says(tiny_text().replace("format: 2.17", "format: 2.12"), "формат 2.12: версия не известна переводчику, он читает формат 2.17"))
+    assert(note_says(tiny_text().replace("format: 2.17", "format: 2.13"), "формат 2.13: версия не известна переводчику, он читает формат 2.17"))
+    assert(note_says(tiny_text().replace("format: 2.17", "format: 2.12"), "переходного периода нет"))
 }

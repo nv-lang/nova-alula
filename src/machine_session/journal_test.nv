@@ -117,7 +117,8 @@ test "jn static codes" {
     for c in pause_codes() {
         if !is_written(written, c.code) { panic("the pause has the code ${c.code}, the machine does not write it") }
     }
-    assert(is_written(written, "fork_no_match"))
+    // the fork Scope proves its exhaustion by the type and has no row `else`: no table writes the common code of the forks, the interpreter does
+    assert(!is_written(written, "fork_no_match"))
 }
 
 test "jn the session codes keep their parameters" {

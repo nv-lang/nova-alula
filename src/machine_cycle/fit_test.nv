@@ -18,11 +18,11 @@ fn input_lines(def MachineDef) -> []str {
     out
 }
 
-// The block `## Типы` of the table of the cycle check: the types of the call that a caller declares the same.
+// The block `## Типы` of the table of the cycle check (up to the section `## Имена`, whose rows name the data of the machine and not the types): the types of the call that a caller declares the same.
 fn types_block() -> str {
     ro text = cycle_check_table_text()
     ro from = text.find("## Типы") ?? -1
-    ro to = text.find("## Константы") ?? -1
+    ro to = text.find("## Имена") ?? -1
     if from < 0 || to < from { panic("the table has no block of types") }
     text[from..to]
 }
@@ -30,16 +30,16 @@ fn types_block() -> str {
 // The record of the input of the call: the 14 fields of the contract of the machine (a caller declares it; the machine takes the fields from its `## Вход`).
 fn review_input() -> str {
     ro ticks = "```"
-    ro record = `тип ВходПроверки (ReviewInput) { стадия (stage) Стадия, цикл (cycle) Цикл, вне_задачи (out_of_scope) []Находка, папка_задачи (task_dir) текст, рабочее_дерево (repo_dir) текст, режим_сдачи (delivery_mode) текст, маршрут (route) текст, чистых_подряд (clean_needed) число>=0, потолок_заходов (ceiling) число>=0, проб_в_чистом (probes_min) число>=0, сдача_сжата (delivery_short) да/нет, предложение (proposal) ?текст, порядок_линз (lens_order) []текст, вопрос_автора (author_question) ?текст }`
+    ro record = `тип ВходПроверки { стадия Стадия, цикл Цикл, вне_задачи []Находка, папка_задачи текст, рабочее_дерево текст, режим_сдачи текст, маршрут текст, чистых_подряд число>=0, потолок_заходов число>=0, проб_в_чистом число>=0, сдача_сжата да/нет, предложение ?текст, порядок_линз []текст, вопрос_автора ?текст }`
     "${ticks}\n${record}\n${ticks}\n"
 }
 
 // A caller of the cycle check as the runner will be: one party of the kind machine with the input and the result of the methodology.
 fn probe_parent() -> str {
-    ro head = "# Машина: Раннер пробный\n\n- machine: runner_probe\n- machine_version: 1\n- format: 2.14\n\n"
-    ro data = "\n## Данные\n\n| имя | тип | начальное | не убывает | пишет |\n|---|---|---|---|---|\n| итог (result) | ?ИтогПроверки | пусто | — | строки |\n| попытка_проверки (check_attempt) | число>=0 | 0 | да | механика |\n\n"
+    ro head = "# Машина: Раннер пробный\n\n- machine: runner_probe\n- machine_version: 1\n- format: 2.17\n\n"
+    ro data = "\n## Данные\n\n| имя | тип | начальное | не убывает | пишет |\n|---|---|---|---|---|\n| итог | ?ИтогПроверки | пусто | — | строки |\n| попытка_проверки | число>=0 | 0 | да | механика |\n\n"
     ro parties = "## Стороны\n\n| имя | идентификатор | вид | профиль | сигналы | счётчик |\n|---|---|---|---|---|---|\n| проверка | review | machine cycle_check(вход ВходПроверки, итог ИтогПроверки) | — | — | попытка_проверки |\n\n"
-    ro states = "## Состояния\n\nНачальное состояние: ВЫЗОВ\n\n### ВЫЗОВ — обращение (Call)\n- Сторона: проверка\n- Запрос:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| стадия | Стадия.Разбор | сторона |\n| цикл | Цикл { номер_захода: 1, заход_отсчёта: 1, серия_чистых: 0, без_проб_подряд: 0 } | сторона |\n| вне_задачи | [] | сторона |\n| папка_задачи | \"t\" | сторона |\n| рабочее_дерево | \"w\" | сторона |\n| режим_сдачи | \"files\" | сторона |\n| маршрут | \"full\" | сторона |\n| чистых_подряд | 2 | сторона |\n| потолок_заходов | 4 | сторона |\n| проб_в_чистом | 3 | сторона |\n| сдача_сжата | ложь | сторона |\n| предложение | пусто | сторона |\n| порядок_линз | [] | сторона |\n| вопрос_автора | пусто | сторона |\n\n| № | Событие | Условие | Действия | Куда |\n|---|---|---|---|---|\n| 1 | ответ(результат) | — | итог = результат | КОНЕЦ |\n| 2 | сбой | — | — | КОНЕЦ |\n\n### КОНЕЦ — конец (Done)\n- Читает: итог\n\n"
+    ro states = "## Состояния\n\nНачальное состояние: ВЫЗОВ\n\n### ВЫЗОВ — обращение\n- Сторона: проверка\n- Запрос:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| стадия | Стадия.Разбор | сторона |\n| цикл | Цикл { номер_захода: 1, заход_отсчёта: 1, серия_чистых: 0, без_проб_подряд: 0 } | сторона |\n| вне_задачи | [] | сторона |\n| папка_задачи | \"t\" | сторона |\n| рабочее_дерево | \"w\" | сторона |\n| режим_сдачи | \"files\" | сторона |\n| маршрут | \"full\" | сторона |\n| чистых_подряд | 2 | сторона |\n| потолок_заходов | 4 | сторона |\n| проб_в_чистом | 3 | сторона |\n| сдача_сжата | ложь | сторона |\n| предложение | пусто | сторона |\n| порядок_линз | [] | сторона |\n| вопрос_автора | пусто | сторона |\n\n| № | Событие | Условие | Действия | Куда |\n|---|---|---|---|---|\n| 1 | ответ(результат) | — | итог = результат | КОНЕЦ |\n| 2 | сбой | — | — | КОНЕЦ |\n\n### КОНЕЦ — конец\n- Читает: итог\n\n"
     ro ends = "## Концы\n\n- Результат: ?ИтогПроверки\n\n| конец | № | когда | ответ |\n|---|---|---|---|\n| КОНЕЦ | 1 | истина | Ответ(итог) |\n"
     "${head}${types_block()}${review_input()}${data}${parties}${states}${ends}"
 }
@@ -101,7 +101,7 @@ test "ft parent fits" {
 }
 
 test "ft parent with a wrong field" {
-    ro wrong = probe_parent().replace("сдача_сжата (delivery_short) да/нет", "сдача_сжата (delivery_short) текст").replace("| сдача_сжата | ложь | сторона |", "| сдача_сжата | \"no\" | сторона |")
+    ro wrong = probe_parent().replace("сдача_сжата да/нет", "сдача_сжата текст").replace("| сдача_сжата | ложь | сторона |", "| сдача_сжата | \"no\" | сторона |")
     assert(wrong != probe_parent())
     ro parent = parent_def(wrong)
     ro problems = check_nested(parent, "cycle_check", cycle_def())
@@ -110,7 +110,7 @@ test "ft parent with a wrong field" {
 }
 
 test "ft parent with a missing field" {
-    ro less = probe_parent().replace("порядок_линз (lens_order) []текст, ", "").replace("| порядок_линз | [] | сторона |\n", "")
+    ro less = probe_parent().replace("порядок_линз []текст, ", "").replace("| порядок_линз | [] | сторона |\n", "")
     assert(less != probe_parent())
     ro parent = parent_def(less)
     ro problems = check_nested(parent, "cycle_check", cycle_def())
@@ -119,7 +119,7 @@ test "ft parent with a missing field" {
 }
 
 test "ft parent with a wrong result" {
-    ro wrong = probe_parent().replace("тип ИтогПроверки (ReviewResult) { вердикт (verdict) Вердикт, источник (source) текст,", "тип ИтогПроверки (ReviewResult) { вердикт (verdict) Вердикт, источник (source) ?текст,")
+    ro wrong = probe_parent().replace("тип ИтогПроверки { вердикт Вердикт, источник текст,", "тип ИтогПроверки { вердикт Вердикт, источник ?текст,")
     assert(wrong != probe_parent())
     ro parent = parent_def(wrong.replace("Ответ(итог)", "Ответ(итог)"))
     ro problems = check_nested(parent, "cycle_check", cycle_def())

@@ -161,13 +161,13 @@ test "cs examples new id" {
 // ---- the definitions of the meeting and the hash of the format ----------------------------------------------------------------------
 
 test "cs cycle hash" {
-    ro cycle = "# Определения: арифметика_цикла\n\ndefinitions_version: 1\nformat: 2.14\n\n## Типы\n—\n\n## Константы\n—\n\n## Определения\n\nопределение потолок_исчерпан(номер число>=1, отсчёт число>=1, предел число>=0) -> да/нет =\n  (номер - 1) - отсчёт + 1 >= предел\n"
+    ro cycle = "# Определения: арифметика_цикла\n\ndefinitions_version: 1\nformat: 2.17\n\n## Типы\n—\n\n## Константы\n—\n\n## Определения\n\nопределение потолок_исчерпан(номер число>=1, отсчёт число>=1, предел число>=0) -> да/нет =\n  (номер - 1) - отсчёт + 1 >= предел\n"
     ro hash = definitions_hash(cycle)
     assert(hash.byte_len() == 12)
     assert(definitions_hash(cycle.replace("\n", "\r\n")) == hash)
     assert(definitions_hash(cycle.replace("\n", "\r")) == hash)
-    assert(definitions_hash(cycle.replace("format: 2.14", "format: 2.14   ")) == hash)
-    assert(definitions_hash(cycle.replace("format: 2.14", "format: 2.4")) != hash)
+    assert(definitions_hash(cycle.replace("format: 2.17", "format: 2.17   ")) == hash)
+    assert(definitions_hash(cycle.replace("format: 2.17", "format: 2.4")) != hash)
 }
 
 test "cs normalize" {
@@ -180,7 +180,7 @@ test "cs normalize" {
 }
 
 test "cs cycle file" {
-    ro report = translate_definitions("# Определения: арифметика_цикла\n\ndefinitions_version: 1\nformat: 2.14\n\n## Типы\n—\n\n## Константы\n—\n\n## Определения\n\nопределение потолок_исчерпан(номер число>=1, отсчёт число>=1, предел число>=0) -> да/нет =\n  (номер - 1) - отсчёт + 1 >= предел\n")
+    ro report = translate_definitions("# Определения: арифметика_цикла\n\ndefinitions_version: 1\nformat: 2.17\n\n## Типы\n—\n\n## Константы\n—\n\n## Определения\n\nопределение потолок_исчерпан(номер число>=1, отсчёт число>=1, предел число>=0) -> да/нет =\n  (номер - 1) - отсчёт + 1 >= предел\n")
     assert(report.errors.len() == 0)
     assert(report.version == "1")
     assert(report.hash.byte_len() == 12)
@@ -198,7 +198,7 @@ fn defs_has(d DefsReport, needle str) -> bool {
 test "cs defs file errors" {
     ro text = "# Определения: арифметика_цикла\n\ndefinitions_version: 1\nformat: 2.4\n\n## Типы\n—\n\n## Определения\n\nопределение потолок_исчерпан(номер число>=1) -> да/нет =\n  вызвать(время) > 1\n"
     ro report = translate_definitions(text)
-    assert(defs_has(report, "формат файла определений должен быть 2.14"))
+    assert(defs_has(report, "формат файла определений должен быть 2.17"))
     assert(defs_has(report, "три раздела по порядку"))
     assert(defs_has(report, "в файле определений нет `вызвать`"))
 }
@@ -207,7 +207,7 @@ test "cs cycle hash 26" {
     ro cycle = `# Определения: арифметика_цикла
 
 - definitions_version: 1
-- format: 2.14
+- format: 2.17
 
 ## Типы
 —
@@ -223,5 +223,5 @@ test "cs cycle hash 26" {
     ro hash = definitions_hash(cycle)
     assert(hash.byte_len() == 12)
     assert(definitions_hash(cycle.replace("\n", "\r\n")) == hash)
-    assert(definitions_hash(cycle.replace("- format: 2.14", "format: 2.14").replace("- definitions_version", "definitions_version")) != hash)
+    assert(definitions_hash(cycle.replace("- format: 2.17", "format: 2.17").replace("- definitions_version", "definitions_version")) != hash)
 }

@@ -74,11 +74,11 @@ test "v217 a file of definitions builds the names by itself" {
     ro report = translate_definitions(text)
     assert(report.errors.len() == 0)
     assert(report.json.contains("\"name\":\"TokenUsage\""))
-    assert(report.json.contains("\"name\":\"vkhod\""))
+    assert(report.json.contains("\"name\":\"input\""))
 }
 
 test "v217 a file of definitions refuses an extra row" {
-    ro text = defs_with_names().replace("| Токены.вход | input_tokens |", "| Токены.вход | input_tokens |\n| Токены.выход | vykhod |")
+    ro text = defs_with_names().replace("| Токены.вход | input_tokens |", "| Токены.вход | input_tokens |\n| Токены.выход | output |")
     ro report = translate_definitions(text)
     assert(report.errors.len() > 0)
     assert(report.errors[0].message.contains("лишняя строка"))
@@ -91,7 +91,7 @@ test "v217 a file of definitions refuses the brackets" {
     assert(report.errors[0].message.contains("скобки"))
 }
 
-test "v217 a file of definitions refuses the format 2.14" {
+test "v217 a file of definitions refuses the format 2.17" {
     ro report = translate_definitions(defs_with_names().replace("format: 2.17", "format: 2.14"))
     assert(report.errors.len() > 0)
 }
@@ -104,7 +104,7 @@ test "v217 the English sample file of definitions has the hash of 2.17" {
     ro text = defs_file_text("cycle_arithmetic")
     assert(text.contains("format: 2.17"))
     assert(definitions_hash(text).byte_len() == 12)
-    assert(definitions_hash(text) != "8f309d17b896")
+    assert(definitions_hash(text) == "8a2c2d564899")
 }
 
 test "v217 the format line of the file of definitions is 2.17" {

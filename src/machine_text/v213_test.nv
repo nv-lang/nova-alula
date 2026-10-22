@@ -1,4 +1,4 @@
-// v213_test.nv - task 149: the table of words of Alula 2.14 (the table of the methodology as it is, without the words of 2.12 that 2.13 removed), the product layer, the signs of the lexer
+// v213_test.nv - task 149: the table of words of Alula 2.17 (the table of the methodology as it is, without the words of 2.12 that 2.13 removed), the product layer, the signs of the lexer
 // (ASCII only, AL-42), the hashes of the sample of definitions (AL-42 changed the writing of `число>=1`), the text of the fragment Pause (`сигнал_остановки`, AL-38).
 module alula.machine_text
 
@@ -15,8 +15,8 @@ fn v213_lines(text str) -> int {
 // ---- the table of words ----------------------------------------------------------------------------------------------------------------------
 
 test "v213 table has the rows of the methodology" {
-    // the header and 216 rows (the table of the methodology at the commit of 2.14)
-    assert(v213_lines(keywords_text()) == 217)
+    // the header and 219 rows (the table of the methodology at the state of 2.17)
+    assert(v213_lines(keywords_text()) == 220)
 }
 
 test "v213 table signals column" {
@@ -48,8 +48,9 @@ test "v213 table no word event" {
     assert(kw_key(words_load("en"), "event", "word") == None)
     assert(kw_key(words_load("ru"), "event", "сигнал") == Some("signal"))
     assert(kw_key(words_load("ru"), "type", "слово") == None)
-    assert(kw(words_load("ru"), "type", "signal") == "сигнал")
-    assert(kw(words_load("en"), "type", "signal") == "signal")
+    // the kind of the parameter of a fragment `сигнал` is the word of the group `kind_param` since 2.17 (AL-63), not a type
+    assert(kw(words_load("ru"), "kind_param", "signal") == "сигнал")
+    assert(kw(words_load("en"), "kind_param", "signal") == "signal")
 }
 
 test "v213 table no expansion section" {
@@ -111,7 +112,7 @@ test "v213 table words are unique in a kind" {
         seen.push(a)
         seen_en.push(b)
     }
-    assert(seen.len() == 216)
+    assert(seen.len() == 219)
 }
 
 fn words_read_rows(text str) -> []TxWord {
@@ -221,10 +222,10 @@ test "v213 arrow check" {
 test "v213 definitions hashes" {
     ro ru = defs_file_text("арифметика_цикла")
     ro en = defs_file_text("cycle_arithmetic")
-    assert(definitions_hash(ru) == "e7df8843f017")
-    assert(definitions_hash(en) == "8f309d17b896")
-    assert(translate_definitions(ru).hash == "e7df8843f017")
-    assert(translate_definitions(en).hash == "8f309d17b896")
+    assert(definitions_hash(ru) == "1e30254f66f9")
+    assert(definitions_hash(en) == "8a2c2d564899")
+    assert(translate_definitions(ru).hash == "1e30254f66f9")
+    assert(translate_definitions(en).hash == "8a2c2d564899")
 }
 
 test "v213 definitions files are ascii" {

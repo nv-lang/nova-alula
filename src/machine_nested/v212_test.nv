@@ -7,7 +7,7 @@ import alula.machine.{standard_registry, Registry, Primitive, ParamSpec, TextTyp
 import alula.machine_text.{translate_checked, render, render_machine, TranslateReport}
 
 // A file at 2.12 (the fixtures of the older tasks are migrated by the same replace).
-fn at212(text str) -> str => text.replace("- format: 2.11\n", "- format: 2.14\n")
+fn at212(text str) -> str => text.replace("- format: 2.11\n", "- format: 2.17\n")
 
 fn meeting212() -> str => at212(meeting_examples())
 
@@ -33,7 +33,7 @@ test "v212 meeting reads" {
     ro report = checked(meeting212())
     if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
     assert(report.errors.len() == 0)
-    assert(report.json.contains("\"alula_version\":\"2.14\""))
+    assert(report.json.contains("\"alula_version\":\"2.17\""))
 }
 
 test "v212 fragments key" {
@@ -443,21 +443,21 @@ test "v212 role circle" {
 
 // ---- the bindings of the rows of the fragment against the data of the machine (AL-26) ---------------------------------------------------------------------
 
-fn meeting_with_datum(name str) -> str => meeting212().replace("| попытка_вратаря (gatekeeper_attempt) | число>=0 | 0 | да | механика |", "| попытка_вратаря (gatekeeper_attempt) | число>=0 | 0 | да | механика |\n| ${name} | текст | \"\" | — | строки |")
+fn meeting_with_datum(name str) -> str => meeting212().replace("| попытка_вратаря | число>=0 | 0 | да | механика |", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| ${name} | текст | \"\" | — | строки |")
 
 test "v212 a datum named as a binding of the fragment" {
     // the rows of the fragment Pause bind `human_word`, `author`, `source`, `id` (the JSON names of the registry): after the fragment is put in they are bindings of the machine, a datum may not have such a JSON name
     assert(is_clean_text(meeting_with_datum("extra_note")))
-    assert(note_says(meeting_with_datum("источник (source)"), "no shadowing"))
-    assert(note_says(meeting_with_datum("автор (author)"), "no shadowing"))
+    assert(note_says(meeting_with_datum("источник"), "no shadowing"))
+    assert(note_says(meeting_with_datum("автор"), "no shadowing"))
 }
 
 test "v212 a datum named as the other binding of the fragment" {
-    assert(note_says(meeting_with_datum("идентификатор_запроса (id)"), "no shadowing"))
-    assert(note_says(meeting_with_datum("слово_человека (human_word)"), "no shadowing"))
+    assert(note_says(meeting_with_datum("идентификатор_запроса"), "no shadowing"))
+    assert(note_says(meeting_with_datum("слово_человека"), "no shadowing"))
 }
 
 test "v212 the launch source is no binding" {
     // `источник_запуска` is `launch_source`: it does not shadow the binding `source`
-    assert(is_clean_text(meeting_with_datum("источник_запуска (launch_source)")))
+    assert(is_clean_text(meeting_with_datum("источник_запуска")))
 }

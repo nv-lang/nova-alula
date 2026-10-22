@@ -58,7 +58,7 @@ test "sm loads" {
     match load_machine(sample_json(), standard_registry()) {
         Ok(def) => {
             assert(def.name == "agent_step")
-            assert(def.version == "alula-2.14")
+            assert(def.version == "alula-2.17")
             assert(def.states.len() == 14)
             assert(def.common.len() == 6)
             assert(def.parties.len() == 3)
@@ -75,15 +75,15 @@ test "sm loads" {
 
 test "sm summary" {
     ro text = render_summary(sample_json())
-    assert(text.starts_with("machine agent_step (version alula-2.14): 14 states, 47 rows, "))
+    assert(text.starts_with("machine agent_step (version alula-2.17): 14 states, 47 rows, "))
     assert(text.contains("  AgentTurn (appeal): 9 rows, 18 actions"))
     assert(text.contains("common events: 6 rows"))
     assert(text.contains("ends: 13 rows"))
 }
 
 test "sm header 27" {
-    assert(sample_json().starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.14\",\"machine\":\"agent_step\",\"version\":\"alula-2.14\""))
-    assert(sample().contains("- format: 2.14"))
+    assert(sample_json().starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.17\",\"machine\":\"agent_step\",\"version\":\"alula-2.17\""))
+    assert(sample().contains("- format: 2.17"))
 }
 
 test "sm no expansion section" {
@@ -119,13 +119,13 @@ test "sm no prose needed" {
 }
 
 test "sm second state pause" {
-    ro heading = "### ПАУЗА — обращение (Pause)\n- Сторона: усиленный\n\n"
-    ro text = sample().replace("### КОНЕЦ — конец (End)", "${heading}### КОНЕЦ — конец (End)")
+    ro heading = "### ПАУЗА — обращение\n- Сторона: усиленный\n\n"
+    ro text = sample().replace("### КОНЕЦ — конец", "${heading}### КОНЕЦ — конец")
     assert(text != sample())
     ro report = report_of(text)
     assert(report.errors.len() >= 1)
     assert(says_error(report, "состояние `ПАУЗА` объявлено дважды"))
-    ro at = line_number(text, "### ПАУЗА — обращение (Pause)")
+    ro at = line_number(text, "### ПАУЗА — обращение")
     assert(lines_of_errors(report)[0].starts_with("${at}:5 name "))
 }
 
@@ -182,9 +182,14 @@ fn with_keys(text str) -> str {
     out.join("\n")
 }
 
+// The rows of `## Имена` of the product: the sample's `transport_usage` of the datum and the JSON name `usage` of the field `расход` of the five answers (the scenarios of the product say `usage`).
+fn product_rows() -> str => "| расход | transport_usage |\n| ИтогХода.Закончен.расход | usage |\n| ИтогХода.Обрезан.расход | usage |\n| ИтогХода.ПределЗапросов.расход | usage |\n| ИтогХода.МодельОтказалась.расход | usage |\n| ИтогХода.Отменён.расход | usage |\n"
+
+fn with_usage(text str) -> str => text.replace("| расход | transport_usage |\n", product_rows())
+
 test "sm product is sample" {
     // the product table is the sample but for the keys of the project and the JSON name `usage` of the field `расход` (the sample says `transport_usage`; the scenarios of the product say `usage`)
-    ro keyed = with_keys(sample()).replace("расход (transport_usage) РасходТранспорта", "расход (usage) РасходТранспорта")
+    ro keyed = with_usage(with_keys(sample()))
     assert(keyed != sample())
     assert(lf(agent_step_table_text()) == keyed)
 }
@@ -193,7 +198,7 @@ test "sm json differs by keys" {
     ro product = agent_step_machine_text()
     ro plain = product.replace(",\"project_key\":\"пауза_повтора\"", "").replace(",\"project_key\":\"политика_разрешений\"", "")
     assert(plain != product)
-    assert(plain == report_of(sample().replace("расход (transport_usage) РасходТранспорта", "расход (usage) РасходТранспорта")).json)
+    assert(plain == report_of(with_usage(sample())).json)
     assert(translate_checked(agent_step_table_text(), standard_registry()).json == product)
 }
 

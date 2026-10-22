@@ -11,7 +11,7 @@ fn before_head(text str, head str, para str) -> str => replaced(text, "\n${head}
 
 fn heads() -> []str => [
     "## Типы", "## Константы", "## Параметры", "## Вход", "## Данные", "## Стороны", "## Определения", "## Состояния",
-    "### РЕШИТЬ — развилка (Decide)", "### КОНЕЦ — конец (Finished)", "### СТОП — конец (Stopped)", "## Концы"
+    "### РЕШИТЬ — развилка", "### КОНЕЦ — конец", "### СТОП — конец", "## Концы"
 ]
 
 fn line_of(text str, start str) -> int {
@@ -28,7 +28,7 @@ test "pr base clean" {
     if report.errors.len() > 0 { panic(first_error_of(report)) }
     assert(report.errors.len() == 0)
     assert(report.warnings.len() == 0)
-    assert(report.json.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.14\",\"machine\":\"Tiny\""))
+    assert(report.json.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.17\",\"machine\":\"Tiny\""))
     assert(report.rows_total > 8)
 }
 
@@ -42,7 +42,7 @@ test "pr every part" {
 
 test "pr header and end" {
     ro plain = base_json()
-    ro with_head = checked(after(base_text(), "- format: 2.14", prose()))
+    ro with_head = checked(after(base_text(), "- format: 2.17", prose()))
     assert(with_head.errors.len() == 0)
     assert(with_head.json == plain)
     ro with_tail = checked("${base_text()}\n${prose()}\n")
@@ -72,15 +72,15 @@ test "pr needs blank" {
 }
 
 test "pr code is code" {
-    ro inside = replaced(base_text(), "Запись (Write) \"write\"\n", "Запись (Write) \"write\"\n\nТекст внутри блока кода\n")
+    ro inside = replaced(base_text(), "Запись \"write\"\n", "Запись \"write\"\n\nТекст внутри блока кода\n")
     assert(errors_say(inside, "ожидается `перечисление`, `тип` или `вариант`"))
-    ro blank_ok = checked(replaced(base_text(), "Запись (Write) \"write\"\n", "Запись (Write) \"write\"\n\nтип Токены (TokenUsage) { вход (input) ?число, выход (output) ?число }\n"))
+    ro blank_ok = checked(replaced(base_text(), "Запись \"write\"\n", "Запись \"write\"\n\nтип Токены { вход ?число, выход ?число }\n"))
     assert(blank_ok.errors.len() == 0)
     assert(blank_ok.json.contains("\"records\":[{\"name\":\"TokenUsage\""))
 }
 
 test "pr connection lines" {
-    ro include = "определения: арифметика_цикла версия 1 хеш e7df8843f017"
+    ro include = "определения: арифметика_цикла версия 1 хеш 1e30254f66f9"
     ro good = replaced(base_text(), "## Состояния\n", "## Подключения\n\n${ticks()}\n${include}\n${ticks()}\n\n## Состояния\n")
     ro good_report = checked(good)
     if good_report.errors.len() > 0 { panic(first_error_of(good_report)) }

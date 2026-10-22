@@ -29,13 +29,13 @@ test "v217 an else after the proved exhaustion is a warning" {
     ro text = color_fork("${all_colors()}\n| 4 | иначе | — | КОНЕЦ |")
     assert(is_clean(text))
     assert(warning_texts(text).len() == 2)
-    assert(warning_texts(text)[1].contains("иначе"))
+    assert(warning_texts(text)[1].contains("else"))
 }
 
 test "v217 a fork with a missing value and no else is an error" {
     ro text = color_fork("| 1 | цвет == Цвет.Красный | — | КОНЕЦ |\n| 2 | цвет == Цвет.Зелёный | — | ЖДАТЬ |")
     assert(!is_clean(text))
-    assert(note_says(text, "иначе"))
+    assert(note_says(text, "else"))
 }
 
 test "v217 a fork with a missing value and an else is clean" {
@@ -47,7 +47,7 @@ test "v217 a fork with a missing value and an else is clean" {
 test "v217 a fork over the numbers needs else" {
     ro text = color_fork("| 1 | число_ходов >= 2 | — | КОНЕЦ |\n| 2 | число_ходов < 2 | — | ЖДАТЬ |")
     assert(!is_clean(text))
-    assert(note_says(text, "иначе"))
+    assert(note_says(text, "else"))
 }
 
 test "v217 a fork over the cases of a variant without fields needs no else" {
@@ -57,7 +57,7 @@ test "v217 a fork over the cases of a variant without fields needs no else" {
 
 test "v217 a fork over a variant with fields needs else" {
     ro text = color_fork("| 1 | узел == Узел.Лист | — | КОНЕЦ |")
-    assert(note_says(text, "иначе"))
+    assert(note_says(text, "else"))
 }
 
 test "v217 a fork over a set of literals with all values needs no else" {
@@ -67,37 +67,37 @@ test "v217 a fork over a set of literals with all values needs no else" {
 
 test "v217 a fork over a set of literals with a missing value needs else" {
     ro text = color_fork("| 1 | метка == \"a\" | — | КОНЕЦ |\n| 2 | метка == \"b\" | — | ЖДАТЬ |")
-    assert(note_says(text, "иначе"))
+    assert(note_says(text, "else"))
 }
 
 test "v217 a fork with not equal needs else" {
     ro text = color_fork("| 1 | цвет != Цвет.Красный | — | КОНЕЦ |\n| 2 | цвет == Цвет.Красный | — | ЖДАТЬ |")
-    assert(note_says(text, "иначе"))
+    assert(note_says(text, "else"))
 }
 
 test "v217 a fork over two names needs else" {
     ro text = color_fork("| 1 | цвет == Цвет.Красный | — | КОНЕЦ |\n| 2 | знак == Знак.Плюс | — | ЖДАТЬ |\n| 3 | цвет == Цвет.Зелёный | — | ЖДАТЬ |\n| 4 | цвет == Цвет.Синий | — | КОНЕЦ |")
-    assert(note_says(text, "иначе"))
+    assert(note_says(text, "else"))
 }
 
 test "v217 a fork with a joined condition needs else" {
     ro text = color_fork("| 1 | цвет == Цвет.Красный и число_ходов >= 1 | — | КОНЕЦ |\n| 2 | цвет == Цвет.Зелёный | — | ЖДАТЬ |\n| 3 | цвет == Цвет.Синий | — | КОНЕЦ |")
-    assert(note_says(text, "иначе"))
+    assert(note_says(text, "else"))
 }
 
 test "v217 a fork over a text needs else" {
     ro text = v217_ru().replace("| 1 | число_ходов >= 2 | — | КОНЕЦ |\n| 2 | иначе | — | ЖДАТЬ |", "| 1 | остановка == \"a\" | — | КОНЕЦ |\n| 2 | остановка == \"b\" | — | ЖДАТЬ |")
-    assert(note_says(text, "иначе"))
+    assert(note_says(text, "else"))
 }
 
 test "v217 a fork over an optional value needs else" {
     ro text = color_fork("| 1 | цвет == Цвет.Красный | — | КОНЕЦ |").replace("| цвет | Цвет | Цвет.Красный | — | строки |", "| цвет | ?Цвет | пусто | — | строки |")
-    assert(note_says(text, "иначе"))
+    assert(note_says(text, "else"))
 }
 
 test "v217 a duplicated value does not prove the exhaustion" {
     ro text = color_fork("| 1 | цвет == Цвет.Красный | — | КОНЕЦ |\n| 2 | цвет == Цвет.Красный | — | ЖДАТЬ |\n| 3 | цвет == Цвет.Зелёный | — | КОНЕЦ |")
-    assert(note_says(text, "иначе"))
+    assert(note_says(text, "else"))
 }
 
 test "v217 a fork over an enum in English" {

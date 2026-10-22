@@ -6,7 +6,7 @@ import std.text
 // ---- AL-58: the ten spaces of the distinctness ------------------------------------------------------------------------------------------------
 
 test "v217 two states with one JSON name collide" {
-    ro text = ru17_names("| СТОП | Wait |")
+    ro text = ru17("| СТОП | Stopped |", "| СТОП | Wait |")
     assert(!is_clean(text))
     assert(note_says(text, "коллизия"))
 }
@@ -27,7 +27,7 @@ test "v217 two fields of the input collide" {
 }
 
 test "v217 two types collide with a record and an enum" {
-    ro text = ru17_types_names("тип Токены { вход число }\nперечисление Цвет = Красный | Синий", "| Цвет | Токены |")
+    ro text = ru17_types_names("тип Токены { вход число }\nперечисление Цвет = Красный | Синий", "| Цвет | TokenUsage |")
     assert(note_says(text, "коллизия") || note_says(text, "повторён"))
 }
 

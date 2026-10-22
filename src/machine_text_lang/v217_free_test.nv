@@ -53,7 +53,7 @@ test "v217 another expression is no warning" {
 
 // ---- AL-51, AL-52: the party of a free input ---------------------------------------------------------------------------------------------------
 
-fn ru17_free() -> str => v217_ru().replace("| gatekeeper | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — | разрешить, отказать | попытка_вратаря |", "| собеседник | human | human(итог ИсходВорот) | — | сообщение(содержание текст), закрыть | — |").replace("- Сторона: gatekeeper\n- Запрос:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| число_ходов | число_ходов | исполнитель |\n\n", "- Сторона: собеседник\n\n").replace("сигнал(разрешить)", "сигнал(сообщение(содержание: слово))").replace("сигнал(отказать)", "сигнал(закрыть)")
+fn ru17_free() -> str => v217_ru().replace("| gatekeeper | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — | разрешить, отказать | попытка_вратаря |", "| собеседник | human | human(итог ИсходВорот) | — | сообщение(содержание текст), закрыть | — |").replace("- Сторона: gatekeeper\n- Запрос:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| число_ходов | число_ходов | исполнитель |\n\n", "- Сторона: собеседник\n\n").replace("сигнал(разрешить)", "сигнал(сообщение(содержание: слово))").replace("сигнал(отказать)", "сигнал(закрыть)").replace("| исполнитель_повышенного_внимания | attention_executor |\n", "")
 
 test "v217 a party of a free input is clean" {
     assert(is_clean(ru17_free()))
@@ -95,36 +95,36 @@ test "v217 a dash for the counter of the enhanced party is an error" {
 test "v217 a request at a free input is an error" {
     ro text = ru17_free().replace("- Сторона: собеседник\n\n", "- Сторона: собеседник\n- Запрос:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| число_ходов | — | исполнитель |\n\n")
     assert(!is_clean(text))
-    assert(note_says(text, "свободн"))
+    assert(note_says(text, "free input"))
 }
 
 test "v217 an idle term at a free input is an error" {
     ro text = ru17_free().replace("- Сторона: собеседник\n", "- Сторона: собеседник\n- Срок тишины: 5\n")
-    assert(note_says(text, "свободн"))
+    assert(note_says(text, "free input"))
 }
 
 test "v217 a set at a free input is an error" {
     ro text = ru17_free().replace("- Сторона: собеседник\n", "- Сторона: собеседник; набор: [\"a\"]\n")
-    assert(note_says(text, "свободн"))
+    assert(note_says(text, "free input"))
 }
 
 test "v217 an answer row at a free input is an error" {
     ro text = ru17_free().replace("| 2 | сигнал(закрыть) | — | остановка = \"a\" | СТОП |", "| 2 | сигнал(закрыть) | — | остановка = \"a\" | СТОП |\n| 3 | ответ | — | — | СТОП |")
-    assert(note_says(text, "свободн"))
+    assert(note_says(text, "free input"))
 }
 
 test "v217 a failure row at a free input is an error" {
     ro text = ru17_free().replace("| 2 | сигнал(закрыть) | — | остановка = \"a\" | СТОП |", "| 2 | сигнал(закрыть) | — | остановка = \"a\" | СТОП |\n| 3 | сбой | — | — | СТОП |")
-    assert(note_says(text, "свободн"))
+    assert(note_says(text, "free input"))
 }
 
 test "v217 form returns at a free input is an error" {
     ro text = ru17_free().replace("- Сторона: собеседник\n", "- Сторона: собеседник\n- Возвратов формы: 1\n")
-    assert(note_says(text, "свободн"))
+    assert(note_says(text, "free input"))
 }
 
 test "v217 a machine may have a gate and a free input" {
-    ro text = ru17_free().replace("| собеседник | human | human(итог ИсходВорот) | — | сообщение(содержание текст), закрыть | — |", "| собеседник | human | human(итог ИсходВорот) | — | сообщение(содержание текст), закрыть | — |\n| gatekeeper | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — | разрешить, отказать | попытка_вратаря |")
+    ro text = ru17_free().replace("| собеседник | human | human(итог ИсходВорот) | — | сообщение(содержание текст), закрыть | — |", "| собеседник | human | human(итог ИсходВорот) | — | сообщение(содержание текст), закрыть | — |\n| gatekeeper | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — | — | попытка_вратаря |").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| исполнитель_повышенного_внимания | attention_executor |\n")
     assert(is_clean(text))
     assert(json_of(text).contains("\"counter\":\"gatekeeper_attempt\""))
 }

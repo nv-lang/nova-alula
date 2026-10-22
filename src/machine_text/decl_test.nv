@@ -8,7 +8,7 @@ fn head() -> str => `# Машина: Проба
 
 machine: Probe
 machine_version: 1
-format: 2.14
+format: 2.17
 
 `
 
@@ -49,41 +49,41 @@ fn first_type_error(text str) -> str {
 // ---- the types ---------------------------------------------------------------------------------------------------------------------
 
 test "dc enum" {
-    ro text = types_json("перечисление ВидВызывающего (CallerKind) = Линза (Lens) | СессияЦикла (CycleSession) | ХодЧата (ChatTurn) | Вратарь (Gatekeeper)")
+    ro text = types_json("перечисление ВидВызывающего = Линза | СессияЦикла | ХодЧата | Вратарь")
     assert(text == "{\"records\":[],\"variants\":[{\"name\":\"CallerKind\",\"cases\":[{\"name\":\"Lens\"},{\"name\":\"CycleSession\"},{\"name\":\"ChatTurn\"},{\"name\":\"Gatekeeper\"}]}]}")
     assert(text.contains("\"cases\":[{\"name\":\"Lens\"}"))
 }
 
 test "dc enum values" {
-    ro ok = types_json("перечисление ВидДействия (ActionKind) = Чтение (Read) \"read\" | Запись (Write) \"write\" | Удаление (Delete) \"delete\"")
+    ro ok = types_json("перечисление ВидДействия = Чтение \"read\" | Запись \"write\" | Удаление \"delete\"")
     assert(ok.contains("\"name\":\"ActionKind\""))
     assert(ok.contains("{\"name\":\"Read\"},{\"name\":\"Write\"},{\"name\":\"Delete\"}"))
-    assert(types_json("перечисление ВидДействия (ActionKind) = Чтение (Read) \"reed\" | Запись (Write) \"write\"").contains("\"values\":[[\"Read\",\"reed\"],[\"Write\",\"write\"]]"))
-    assert(first_type_error("перечисление ВидДействия (ActionKind) = Чтение (Read) \"reed\" | Запись (Write) \"write\"") == "ok")
-    assert(first_type_error("перечисление ВидДействия (ActionKind) = Чтение (Read) \"read\" | Запись (Write) \"read\"").contains("повторено"))
+    assert(types_json("перечисление ВидДействия = Чтение \"reed\" | Запись \"write\"").contains("\"values\":[[\"Read\",\"reed\"],[\"Write\",\"write\"]]"))
+    assert(first_type_error("перечисление ВидДействия = Чтение \"reed\" | Запись \"write\"") == "ok")
+    assert(first_type_error("перечисление ВидДействия = Чтение \"read\" | Запись \"read\"").contains("повторено"))
 }
 
 test "dc enum lines" {
-    ro text = "перечисление ВидДействия (ActionKind) = Чтение (Read) \"read\" | Запись (Write) \"write\"\n                         | Удаление (Delete) \"delete\" | Перенос (Move) \"move\"\n"
+    ro text = "перечисление ВидДействия = Чтение \"read\" | Запись \"write\"\n                         | Удаление \"delete\" | Перенос \"move\"\n"
     assert(first_type_error(text) == "ok")
     assert(types_json(text).contains("{\"name\":\"Move\"}"))
 }
 
 test "dc fail code" {
-    ro all = "перечисление КодСбоя (FailCode) = НетРезультата (NoResult) \"no_result\" | ОтказМодели (ModelRefused) \"model_refused\" | СоединениеОборвалось (ConnectionLost) \"connection_lost\" | ФормаНеИсправлена (FormNotFixed) \"form_not_fixed\" | НетОтветаВСрок (Timeout) \"timeout\" | ОстановленоЧеловеком (StoppedByHuman) \"stopped_by_human\" | ПотолокЗаходов (CeilingReached) \"ceiling_reached\" | ОтмененоРодителем (Cancelled) \"cancelled\" | ПредельТокенов (MaxTokens) \"max_tokens\" | ПредельЗапросовХода (MaxTurnRequests) \"max_turn_requests\""
+    ro all = "перечисление КодСбоя = НетРезультата \"no_result\" | ОтказМодели \"model_refused\" | СоединениеОборвалось \"connection_lost\" | ФормаНеИсправлена \"form_not_fixed\" | НетОтветаВСрок \"timeout\" | ОстановленоЧеловеком \"stopped_by_human\" | ПотолокЗаходов \"ceiling_reached\" | ОтмененоРодителем \"cancelled\" | ПредельТокенов \"max_tokens\" | ПредельЗапросовХода \"max_turn_requests\""
     assert(types_json(all) == "{\"records\":[],\"variants\":[]}")
-    assert(first_type_error("перечисление КодСбоя (FailCode) = НетРезультата (NoResult) | ОтказМодели (ModelRefused)").starts_with("unsupported:"))
+    assert(first_type_error("перечисление КодСбоя = НетРезультата | ОтказМодели").starts_with("unsupported:"))
 }
 
 test "dc record" {
-    ro text = types_json("тип МодельАгента (AgentModel) { идентификатор (id) текст, поставщик (provider) текст, вариант (variant) ?текст }")
+    ro text = types_json("тип МодельАгента { идентификатор текст, поставщик текст, вариант ?текст }")
     assert(text == "{\"records\":[{\"name\":\"AgentModel\",\"fields\":[{\"name\":\"id\",\"type\":\"text\"},{\"name\":\"provider\",\"type\":\"text\"},{\"name\":\"variant\",\"type\":\"?text\"}]}],\"variants\":[]}")
-    ro multi = types_json("тип МодельАгента (AgentModel) {\n  идентификатор (id) текст,\n  поставщик (provider) текст,\n  вариант (variant) ?текст,\n}\n")
+    ro multi = types_json("тип МодельАгента {\n  идентификатор текст,\n  поставщик текст,\n  вариант ?текст,\n}\n")
     assert(multi == text)
 }
 
 test "dc record types" {
-    ro text = types_json("тип Токены (TokenUsage) { вход (input) ?число, выход (output) ?число>=0, рассуждение (reasoning) []число, кэш_чтение (cache_read) словарь[текст, число], кэш_запись (cache_write) (текст, число) }")
+    ro text = types_json("тип Токены { вход ?число, выход ?число>=0, рассуждение []число, кэш_чтение словарь[текст, число], кэш_запись (текст, число) }")
     assert(text.contains("\"type\":\"?int\""))
     assert(text.contains("\"type\":\"?int>=0\""))
     assert(text.contains("\"type\":\"[]int\""))
@@ -92,26 +92,26 @@ test "dc record types" {
 }
 
 test "dc variant" {
-    ro text = types_json("вариант ИтогХода (TurnResult) {\n  Закончен (Finished) { текст (text) ?текст, артефакт (artifact) ?текст }\n  Обрезан (Truncated) { расход (usage) число }\n  ВременнаяОшибка (TransientError)\n  ПостояннаяОшибка (PermanentError)\n}\n")
+    ro text = types_json("вариант ИтогХода {\n  Закончен { текст ?текст, артефакт ?текст }\n  Обрезан { расход число }\n  ВременнаяОшибка\n  ПостояннаяОшибка\n}\n")
     assert(text.contains("\"variants\":[{\"name\":\"TurnResult\",\"cases\":["))
     assert(text.contains("{\"name\":\"Finished\",\"fields\":[{\"name\":\"text\",\"type\":\"?text\"},{\"name\":\"artifact\",\"type\":\"?text\"}]}"))
     assert(text.contains("{\"name\":\"TransientError\"},{\"name\":\"PermanentError\"}"))
-    assert(text.contains("{\"name\":\"Truncated\",\"fields\":[{\"name\":\"usage\",\"type\":\"int\"}]}"))
+    assert(text.contains("{\"name\":\"Truncated\",\"fields\":[{\"name\":\"raskhod\",\"type\":\"int\"}]}"))
 }
 
 test "dc type errors" {
-    assert(first_type_error("тип Токены (TokenUsage) { вход (input): ?число }").contains("после имени поля тип пишется без двоеточия"))
-    assert(first_type_error("тип Токены (TokenUsage) { вход (input) ?число").contains("ожидается `}`"))
-    assert(first_type_error("тип Нетакоготипа { вход (input) число }").contains("у типа `Нетакоготипа` нет JSON-имени в скобках"))
-    assert(first_type_error("тип Токены (TokenUsage) { вход число }").contains("у поля `вход` нет JSON-имени в скобках"))
+    assert(first_type_error("тип Токены { вход: ?число }").contains("после имени поля тип пишется без двоеточия"))
+    assert(first_type_error("тип Токены { вход ?число").contains("ожидается `}`"))
+    assert(first_type_error("тип Токены (TokenUsage) { вход число }").contains("скобки"))
+    assert(first_type_error("тип Токены { вход (input) число }").contains("скобки"))
     assert(first_type_error("что-то Токены { }").contains("ожидается `перечисление`, `тип` или `вариант`"))
-    assert(first_type_error("вариант ИтогХода (TurnResult) { }").contains("вариант без случаев"))
-    assert(first_type_error("перечисление ВидВызывающего (CallerKind) = ").contains("ожидается значение перечисления"))
-    assert(first_type_error("тип Токены (TokenUsage) { вход (input) число } ещё слова").contains("ожидается `перечисление`"))
+    assert(first_type_error("вариант ИтогХода { }").contains("вариант без случаев"))
+    assert(first_type_error("перечисление ВидВызывающего = ").contains("ожидается значение перечисления"))
+    assert(first_type_error("тип Токены { вход число } ещё слова").contains("ожидается `перечисление`"))
 }
 
 test "dc type errors all" {
-    match translate_types("тип Токены (TokenUsage) { вход (input): ?число }\nтип Нетакого { а число }\nперечисление ВидДействия (ActionKind) = Чтение (Read) \"reed\"") {
+    match translate_types("тип Токены { вход: ?число }\nтип Нетакого (X) { а число }\nперечисление ВидДействия = Чтение \"reed\"") {
         Ok(j) => assert(false)
         Err(problems) => {
             assert(problems.len() >= 2)
@@ -120,10 +120,11 @@ test "dc type errors all" {
     }
 }
 
-test "dc names are not read from a dictionary" {
-    // the dictionary of the methodology gave `Токены` the name TokenUsage; since 2.13 only the brackets do
-    assert(first_type_error("тип Токены { вход (input) ?число }").contains("у типа `Токены` нет JSON-имени в скобках"))
-    assert(first_type_error("тип Токены (TokenUsage) { вход (input) ?число }") == "ok")
+test "dc names are built by themselves" {
+    // since 2.16 (AL-53) the dictionary of the methodology gives `Токены` the name TokenUsage and `вход` the name input; a name out of it is transliterated; a Latin name stays
+    assert(first_type_error("тип Токены { вход ?число }") == "ok")
+    assert(types_json("тип Токены { вход ?число }").contains("{\"name\":\"TokenUsage\",\"fields\":[{\"name\":\"input\",\"type\":\"?int\"}]}"))
+    assert(types_json("тип Нетакоготипа { вход число }").contains("{\"name\":\"Netakogotipa\",\"fields\":[{\"name\":\"input\",\"type\":\"int\"}]}"))
     assert(types_json("тип Tokens { input ?число }").contains("{\"name\":\"Tokens\",\"fields\":[{\"name\":\"input\",\"type\":\"?int\"}]}"))
 }
 
@@ -149,9 +150,9 @@ test "dc params" {
 }
 
 test "dc input" {
-    ro text = jsn("## Вход\n\n| имя | тип | примечание |\n|---|---|---|\n| запрос_агента (agent_request) | текст | — |\n| число_ходов (turn_count) | число>=0 | — |\n\n- Инвариант: число_ходов <= 100\n")
+    ro text = jsn("## Вход\n\n| имя | тип | примечание |\n|---|---|---|\n| запрос_агента | текст | — |\n| число_ходов | число>=0 | — |\n\n- Инвариант: число_ходов <= 100\n")
     assert(text.contains("\"input\":{\"fields\":[{\"name\":\"agent_request\",\"type\":\"text\"},{\"name\":\"turn_count\",\"type\":\"int>=0\"}],\"invariants\":[{\"op\":\"<=\""))
-    assert(says("## Вход\n\n| имя | тип | примечание |\n|---|---|---|\n| запрос_агента (agent_request) | текст | — |\n\n- Предел запросов: 1\n", "в разделе `Вход` бывают таблица полей и строки `Инвариант: …`"))
+    assert(says("## Вход\n\n| имя | тип | примечание |\n|---|---|---|\n| запрос_агента | текст | — |\n\n- Предел запросов: 1\n", "в разделе `Вход` бывают таблица полей и строки `Инвариант: …`"))
 }
 
 // ---- the data ----------------------------------------------------------------------------------------------------------------------
@@ -159,7 +160,7 @@ test "dc input" {
 fn data_head() -> str => "## Данные\n\n| имя | тип | начальное | не убывает | пишет |\n|---|---|---|---|---|\n"
 
 test "dc data initial" {
-    ro text = jsn("## Вход\n\n| имя | тип | примечание |\n|---|---|---|\n| запрос_агента (agent_request) | текст | — |\n\n${data_head()}| запрос_агента (agent_request) | текст | вход.запрос_агента | — | строки |\n| ход (turn) | ?текст | пусто | — | строки |\n| число_ходов (turn_count) | число>=0 | 0 | да, <= 20 | механика |\n")
+    ro text = jsn("## Вход\n\n| имя | тип | примечание |\n|---|---|---|\n| запрос_агента | текст | — |\n\n${data_head()}| запрос_агента | текст | вход.запрос_агента | — | строки |\n| ход | ?текст | пусто | — | строки |\n| число_ходов | число>=0 | 0 | да, <= 20 | механика |\n")
     assert(text.contains("{\"name\":\"agent_request\",\"type\":\"text\",\"initial\":{\"from_input\":\"agent_request\"},\"writes\":\"rows\"}"))
     assert(text.contains("{\"name\":\"turn\",\"type\":\"?text\",\"initial\":{\"expr\":{\"op\":\"lit\",\"value\":null}},\"writes\":\"rows\"}"))
     assert(text.contains("\"monotonic\":{\"bound\":{\"op\":\"lit\",\"value\":20}},\"writes\":\"mechanics\""))
@@ -168,20 +169,20 @@ test "dc data initial" {
 test "dc data writes" {
     ro all_pairs = [["строки", "rows"], ["механика", "mechanics"], ["строки и механика", "rows_and_mechanics"], ["фрагмент", "fragment"], ["строки и фрагмент", "rows_and_fragment"]]
     for pair in all_pairs {
-        ro text = jsn("${data_head()}| число_ходов (turn_count) | число>=0 | 0 | — | ${pair[0]} |\n")
+        ro text = jsn("${data_head()}| число_ходов | число>=0 | 0 | — | ${pair[0]} |\n")
         assert(text.contains("\"writes\":\"${pair[1]}\""))
     }
 }
 
 test "dc data path" {
-    ro text = jsn("## Типы\n\n```\nтип Линза (Lens) { попытка (attempt) число>=0 }\n```\n\n${data_head()}| линзы (lenses) | словарь[текст, Линза] | {} | — | строки |\n| линзы[*].попытка | число>=0 | — | да | механика |\n")
+    ro text = jsn("## Типы\n\n```\nтип Линза { попытка число>=0 }\n```\n\n${data_head()}| линзы | словарь[текст, Линза] | {} | — | строки |\n| линзы[*].попытка | число>=0 | — | да | механика |\n")
     assert(text.contains("{\"name\":\"lenses\",\"type\":\"{text: Lens}\""))
     assert(text.contains("{\"name\":\"lenses[*].attempt\",\"type\":\"int>=0\",\"monotonic\":true,\"writes\":\"mechanics\"}"))
     assert(says("${data_head()}| линзы[*].попытка | число>=0 | — | да | механика |\n", "называет данное, которого нет выше"))
 }
 
 test "dc data dict literal" {
-    ro text = jsn("${data_head()}| ответы_свидетеля (witness_answers) | словарь[число>=0, []текст] | {} | — | строки |\n")
+    ro text = jsn("${data_head()}| ответы_свидетеля | словарь[число>=0, []текст] | {} | — | строки |\n")
     assert(text.contains("\"initial\":{\"expr\":{\"op\":\"dict\",\"entries\":[]}}"))
 }
 
@@ -196,10 +197,10 @@ test "dc data readable name" {
 
 fn parties_head() -> str => "## Стороны\n\n| имя | идентификатор | вид | профиль | сигналы | счётчик |\n|---|---|---|---|---|---|\n"
 
-fn data_for_parties() -> str => "${data_head()}| попытка_агента (agent_attempt) | число>=0 | 0 | да | механика |\n| попытка_вратаря (gatekeeper_attempt) | число>=0 | 0 | да | механика |\n| попытка_усиленного (enhanced_attempt) | число>=0 | 0 | да | механика |\n"
+fn data_for_parties() -> str => "${data_head()}| попытка_агента | число>=0 | 0 | да | механика |\n| попытка_вратаря | число>=0 | 0 | да | механика |\n| попытка_усиленного | число>=0 | 0 | да | механика |\n"
 
 test "dc parties" {
-    ro text = jsn("${data_for_parties()}\n${parties_head()}| агент | agent | agent(итог текст) | — | — | попытка_агента |\n| вратарь | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания (attention_executor)(итог ИсходВорот) | — | разрешить (allow), отказать (deny) | попытка_вратаря |\n| усиленный | enhanced | enhanced(итог ИсходВорот) | — | продолжить (continue)(слово_человека (human_word) текст, автор (author) текст, источник (source) текст), остановить (halt) | попытка_усиленного |\n")
+    ro text = jsn("## Имена\n\n| имя | JSON-имя |\n|---|---|\n| исполнитель_повышенного_внимания | attention_executor |\n\n${data_for_parties()}\n${parties_head()}| агент | agent | agent(итог текст) | — | — | попытка_агента |\n| вратарь | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — | разрешить, отказать | попытка_вратаря |\n| усиленный | enhanced | enhanced(итог ИсходВорот) | — | продолжить(слово_человека текст, автор текст, источник текст), остановить | попытка_усиленного |\n")
     assert(text.contains("{\"name\":\"агент\",\"id\":\"agent\",\"kind\":\"agent\",\"result\":\"text\",\"counter\":\"agent_attempt\"}"))
     assert(text.contains("{\"name\":\"вратарь\",\"id\":\"gatekeeper\",\"kind\":\"gatekeeper\",\"setting\":\"attention_executor\",\"counter\":\"gatekeeper_attempt\",\"signals\":[{\"name\":\"allow\"},{\"name\":\"deny\"}]}"))
     assert(text.contains("\"kind\":\"enhanced\",\"counter\":\"enhanced_attempt\",\"signals\":[{\"name\":\"continue\",\"fields\":[{\"name\":\"human_word\",\"type\":\"text\"},{\"name\":\"author\",\"type\":\"text\"},{\"name\":\"source\",\"type\":\"text\"}]},{\"name\":\"halt\"}]"))
@@ -220,13 +221,13 @@ test "dc parties errors" {
 // ---- signals and parts of an answer ------------------------------------------------------------------------------------------------------
 
 test "dc signals parts" {
-    ro text = jsn("${data_for_parties()}\n${parties_head()}| агент | agent | agent(итог текст) | — | — | попытка_агента |\n\n## Части ответа\n\n| сторона | имя | поля |\n|---|---|---|\n| агент | кусок_ответа (agent_chunk) | текст (text) текст |\n\n## Сигналы\n\n| имя | поля |\n|---|---|\n| отмена (cancel) | — |\n")
+    ro text = jsn("## Имена\n\n| имя | JSON-имя |\n|---|---|\n| кусок_ответа | agent_chunk |\n| отмена | cancel |\n\n${data_for_parties()}\n${parties_head()}| агент | agent | agent(итог текст) | — | — | попытка_агента |\n\n## Части ответа\n\n| сторона | имя | поля |\n|---|---|---|\n| агент | кусок_ответа | текст текст |\n\n## Сигналы\n\n| имя | поля |\n|---|---|\n| отмена | — |\n")
     assert(text.contains("\"progress\":[{\"name\":\"agent_chunk\",\"fields\":[{\"name\":\"text\",\"type\":\"text\"}]}]"))
     assert(text.contains("\"signals\":[{\"name\":\"cancel\"}]"))
 }
 
 test "dc parts errors" {
-    assert(kind_says("## Части ответа\n\n| сторона | имя | поля |\n|---|---|---|\n| никто | кусок_ответа (agent_chunk) | текст (text) текст |\n", "name", "стороны `никто` нет в таблице «Стороны»"))
+    assert(kind_says("## Части ответа\n\n| сторона | имя | поля |\n|---|---|---|\n| никто | кусок_ответа | текст текст |\n", "name", "стороны `никто` нет в таблице «Стороны»"))
 }
 
 // ---- the definitions ---------------------------------------------------------------------------------------------------------------
@@ -263,7 +264,7 @@ test "dc reserved name" {
 // ---- the primitives ----------------------------------------------------------------------------------------------------------------------
 
 test "dc primitives" {
-    ro text = jsn("## Примитивы\n\n| имя | параметры | результат | класс | читает | пишет |\n|---|---|---|---|---|---|\n| time_now | — | число | reading | — | — |\n| close_agent_turn | — | — | irreversible | — | — |\n| время_сейчас (time_here) | — | число | reading | — | — |\n")
+    ro text = jsn("## Имена\n\n| имя | JSON-имя |\n|---|---|\n| время_сейчас | time_here |\n\n## Примитивы\n\n| имя | параметры | результат | класс | читает | пишет |\n|---|---|---|---|---|---|\n| time_now | — | число | reading | — | — |\n| close_agent_turn | — | — | irreversible | — | — |\n| время_сейчас | — | число | reading | — | — |\n")
     assert(text.contains("\"primitives\":[\"time_now\",\"close_agent_turn\",\"time_here\"]"))
     assert(says("## Примитивы\n\n| имя | параметры | результат | класс | читает | пишет |\n|---|---|---|---|---|---|\n| time_now | — | число | чтение | — | — |\n", "класс примитива: pure, reading, writing, irreversible"))
 }

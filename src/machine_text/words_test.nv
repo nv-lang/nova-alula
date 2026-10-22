@@ -6,7 +6,7 @@ module alula.machine_text
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
 
-fn all_kinds() -> []str => ["header", "section", "column", "kind_state", "key", "kind_party", "event", "destination", "decl", "type", "expr", "action", "operator", "readable", "enum_value", "catalog"]
+fn all_kinds() -> []str => ["header", "section", "column", "kind_state", "key", "kind_party", "kind_param", "event", "destination", "decl", "type", "expr", "action", "operator", "readable", "enum_value", "catalog"]
 
 fn method_rows() -> []TxWord {
     mut rows = []TxWord.new()
@@ -39,7 +39,7 @@ fn has_row(rows []TxWord, kind str, key str) -> bool {
 
 test "wt table shape" {
     ro rows = method_rows()
-    assert(rows.len() == 216)
+    assert(rows.len() == 219)
     for k in all_kinds() { assert(kind_count(rows, k) > 0) }
     for r in rows {
         assert(all_kinds().contains(r.kind))
@@ -84,7 +84,7 @@ test "wt product layer" {
 }
 
 test "wt all rows loaded" {
-    assert(words_rows().len() == 230)
+    assert(words_rows().len() == 233)
 }
 
 // ---- reading a word -----------------------------------------------------------------------------------------------------
@@ -303,7 +303,7 @@ test "wt every key listed" {
 // A line may hold a Cyrillic literal when the literal is (a piece of) the message of an error, or a letter of the alphabet.
 fn allowed_marks() -> []str => [
     "p_fail(", "tx_err(", "struct_error(", "cx_error(", "cx_unsupported(", "unsupported(", "note(", "cls_flush(", "foreign_error(", "Err(", "message:",
-    "decl_name(", "decl_exported(", "fn is_expansion_heading(", "cell_decl_json(", "decl_json(", "decl_json_text(", "ev_phrase_json(", "cell_phrase(", "cell_fields(", "\"слова ворот\"", "t.text == \"слово\"", "\"слово_остановки\"", "t.text == \"нет\"", "не объявлено в этой машине", "\"знак `",  "\"ключ `", "decl_fields(", "decl_internal(", "decl_field(", "tr_word(", "tr_word_f(", "decl_name_phrase(", "decl_name_phrase_in(", "ro message =", "ro why =", "ro shown =", "возможно", "конец текста", "строку", "фрагменты не подключены", "подключён:",
+    "jn_peek(", "jn_declare(", "jn_declare_fixed(", "jn_declare_internal(", "decl_name(", "decl_exported(", "fn is_expansion_heading(", "cell_decl_json(", "decl_json(", "decl_json_text(", "ev_phrase_json(", "cell_phrase(", "cell_fields(", "\"слова ворот\"", "t.text == \"слово\"", "\"слово_остановки\"", "t.text == \"нет\"", "не объявлено в этой машине", "\"знак `",  "\"ключ `", "decl_fields(", "decl_internal(", "decl_field(", "tr_word(", "tr_word_f(", "decl_name_phrase(", "decl_name_phrase_in(", "ro message =", "ro why =", "ro shown =", "возможно", "конец текста", "строку", "фрагменты не подключены", "подключён:",
     "английский", "русский", "найдено", "\"а=a\"", "\"ф=f\""
 ]
 
@@ -349,30 +349,30 @@ test "wt lint sees a word" {
 fn lines_in(text str) -> []str => lines_of(text)
 
 test "wt lang default" {
-    ro info = detect_language(lines_in("# Машина: М\n\n- machine: m\n- format: 2.14\n\n## Типы\n—\n"))
+    ro info = detect_language(lines_in("# Машина: М\n\n- machine: m\n- format: 2.17\n\n## Типы\n—\n"))
     assert(info.lang == "ru")
-    assert(info.version == "2.14")
+    assert(info.version == "2.17")
     assert(info.strict)
     assert(info.errors.len() == 0)
     assert(!detect_language(lines_in("# Машина: М\n\nmachine: m\nformat: 2.5\n")).strict)
 }
 
 test "wt lang declared" {
-    ro en = detect_language(lines_in("# Machine: M\n\n- machine: m\n- format: 2.14\n- language: en\n\n## Types\n—\n"))
+    ro en = detect_language(lines_in("# Machine: M\n\n- machine: m\n- format: 2.17\n- language: en\n\n## Types\n—\n"))
     assert(en.lang == "en")
     assert(en.errors.len() == 0)
     assert(en.strict)
-    ro ru = detect_language(lines_in("# Машина: М\n\n- machine: m\n- format: 2.14\n- language: ru\n"))
+    ro ru = detect_language(lines_in("# Машина: М\n\n- machine: m\n- format: 2.17\n- language: ru\n"))
     assert(ru.lang == "ru")
     assert(ru.errors.len() == 0)
-    ro defs = detect_language(lines_in("# Definitions: d\n\n- definitions_version: 1\n- format: 2.14\n- language: en\n"))
+    ro defs = detect_language(lines_in("# Definitions: d\n\n- definitions_version: 1\n- format: 2.17\n- language: en\n"))
     assert(defs.lang == "en" && defs.errors.len() == 0)
-    ro frag = detect_language(lines_in("# Fragment: Pause\n\n- fragment: Pause\n- format: 2.14\n- language: en\n"))
+    ro frag = detect_language(lines_in("# Fragment: Pause\n\n- fragment: Pause\n- format: 2.17\n- language: en\n"))
     assert(frag.lang == "en" && frag.errors.len() == 0)
 }
 
 test "wt lang english undeclared" {
-    ro info = detect_language(lines_in("\n# Machine: M\n\n- machine: m\n- format: 2.14\n"))
+    ro info = detect_language(lines_in("\n# Machine: M\n\n- machine: m\n- format: 2.17\n"))
     assert(info.errors.len() == 1)
     assert(info.errors[0].kind == "language")
     assert(info.errors[0].line == 2)
@@ -385,7 +385,7 @@ test "wt lang header mismatch" {
     assert(a.errors.len() == 1)
     assert(a.errors[0].line == 1)
     assert(a.errors[0].message.contains("а в строке language объявлен ru"))
-    ro b = detect_language(lines_in("# Машина: М\n\n- machine: m\n- format: 2.14\n- language: en\n"))
+    ro b = detect_language(lines_in("# Машина: М\n\n- machine: m\n- format: 2.17\n- language: en\n"))
     assert(b.errors.len() == 1)
     assert(b.errors[0].line == 5)
     assert(b.errors[0].message.contains("язык шапки русский"))
@@ -408,8 +408,8 @@ test "wt lang inside fence" {
 }
 
 test "wt versions" {
-    assert(format_versions() == ["2.14"])
-    assert(version_strict("2.14"))
+    assert(format_versions() == ["2.17"])
+    assert(version_strict("2.17"))
     assert(!version_strict("2.11") && !version_strict("2.10") && !version_strict("2.9") && !version_strict(""))
 }
 

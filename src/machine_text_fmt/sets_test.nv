@@ -14,17 +14,17 @@ fn has_json(text str, piece str) -> bool {
     report.json.contains(jq(piece))
 }
 
-fn with_data_row(row str) -> str => replaced(base_text(), "| попытка_вратаря (gatekeeper_attempt) | число>=0 | 0 | да | механика |\n", "| попытка_вратаря (gatekeeper_attempt) | число>=0 | 0 | да | механика |\n${row}\n")
+fn with_data_row(row str) -> str => replaced(base_text(), "| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n${row}\n")
 
 fn with_definition(def str) -> str => replaced(base_text(), "определение пауза_повтора(п число>=0) -> число =\n  п + 1\n", "определение пауза_повтора(п число>=0) -> число =\n  п + 1\n\n${def}\n")
 
 test "st dict value" {
-    ro text = with_data_row("| свод (set) | словарь[текст, \"allow\" \\| \"deny\"] | {} | — | строки |")
+    ro text = with_data_row("| свод | словарь[текст, \"allow\" \\| \"deny\"] | {} | — | строки |")
     assert(has_json(text, "{text: 'allow' | 'deny'}"))
 }
 
 test "st dict three" {
-    ro text = with_data_row("| свод (set) | словарь[число>=0, \"a\" \\| \"b\" \\| \"c\"] | {} | — | строки |")
+    ro text = with_data_row("| свод | словарь[число>=0, \"a\" \\| \"b\" \\| \"c\"] | {} | — | строки |")
     assert(has_json(text, "{int>=0: 'a' | 'b' | 'c'}"))
 }
 
@@ -57,37 +57,37 @@ test "st definition both" {
 }
 
 test "st under option" {
-    ro bad = with_data_row("| свод (set) | ?\"a\" \\| \"b\" | пусто | — | строки |")
+    ro bad = with_data_row("| свод | ?\"a\" \\| \"b\" | пусто | — | строки |")
     assert(errors_say(bad, "набор литералов под ? или [] пишется в скобках"))
-    assert(has_json(with_data_row("| свод (set) | ?(\"a\" \\| \"b\") | пусто | — | строки |"), "?('a' | 'b')"))
+    assert(has_json(with_data_row("| свод | ?(\"a\" \\| \"b\") | пусто | — | строки |"), "?('a' | 'b')"))
 }
 
 test "st under list" {
-    ro bad = with_data_row("| свод (set) | []\"a\" \\| \"b\" | [] | — | строки |")
+    ro bad = with_data_row("| свод | []\"a\" \\| \"b\" | [] | — | строки |")
     assert(errors_say(bad, "набор литералов под ? или [] пишется в скобках"))
-    assert(has_json(with_data_row("| свод (set) | [](\"a\" \\| \"b\") | [] | — | строки |"), "[]('a' | 'b')"))
+    assert(has_json(with_data_row("| свод | [](\"a\" \\| \"b\") | [] | — | строки |"), "[]('a' | 'b')"))
 }
 
 test "st in brackets" {
-    ro text = checked(with_data_row("| свод (set) | словарь[текст, (\"allow\" \\| \"deny\")] | {} | — | строки |"))
+    ro text = checked(with_data_row("| свод | словарь[текст, (\"allow\" \\| \"deny\")] | {} | — | строки |"))
     assert(text.errors.len() == 0)
     assert(text.json != base_json())
-    assert(same_json(with_data_row("| свод (set) | словарь[текст, \"allow\" \\| \"deny\"] | {} | — | строки |"), text.json))
+    assert(same_json(with_data_row("| свод | словарь[текст, \"allow\" \\| \"deny\"] | {} | — | строки |"), text.json))
 }
 
 test "st nested" {
-    assert(has_json(with_data_row("| свод (set) | словарь[текст, ?(\"a\" \\| \"b\")] | {} | — | строки |"), "{text: ?('a' | 'b')}"))
-    assert(has_json(with_data_row("| свод (set) | словарь[текст, [](\"a\" \\| \"b\")] | {} | — | строки |"), "{text: []('a' | 'b')}"))
-    assert(has_json(with_data_row("| свод (set) | словарь[текст, (\"a\" \\| \"b\", число)] | {} | — | строки |"), "{text: ('a' | 'b', int)}"))
+    assert(has_json(with_data_row("| свод | словарь[текст, ?(\"a\" \\| \"b\")] | {} | — | строки |"), "{text: ?('a' | 'b')}"))
+    assert(has_json(with_data_row("| свод | словарь[текст, [](\"a\" \\| \"b\")] | {} | — | строки |"), "{text: []('a' | 'b')}"))
+    assert(has_json(with_data_row("| свод | словарь[текст, (\"a\" \\| \"b\", число)] | {} | — | строки |"), "{text: ('a' | 'b', int)}"))
 }
 
 test "st one literal" {
-    ro one = with_data_row("| свод (set) | словарь[текст, \"a\"] | {} | — | строки |")
+    ro one = with_data_row("| свод | словарь[текст, \"a\"] | {} | — | строки |")
     assert(errors_say(one, "набор литералов — два значения и больше"))
 }
 
 test "st input and const" {
-    ro in_text = replaced(base_text(), "| ход (turn) | текст | первый ход |", "| ход (turn) | \"first\" \\| \"retry\" | первый ход |")
+    ro in_text = replaced(base_text(), "| ход | текст | первый ход |", "| ход | \"first\" \\| \"retry\" | первый ход |")
     assert(has_json(in_text, "'first' | 'retry'"))
     ro const_text = replaced(base_text(), "| ЧИСЛО_ПОВТОРОВ | число>=0 | 3 |", "| ЧИСЛО_ПОВТОРОВ | \"a\" \\| \"b\" | \"a\" |")
     assert(is_clean(const_text))

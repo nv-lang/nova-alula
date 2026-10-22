@@ -42,15 +42,15 @@ test "ae copied as it is" {
     ro text = en_sample()
     assert(text.starts_with("# Machine: Agent step\n"))
     assert(text.contains("- language: en"))
-    assert(text.contains("- format: 2.14"))
-    assert(text.contains("- machine_version: alula-2.14"))
+    assert(text.contains("- format: 2.17"))
+    assert(text.contains("- machine_version: alula-2.17"))
     assert(!text.contains("## Fragment expansion"))
     assert(text.byte_len() > 20000)
 }
 
 test "ae header" {
     ro json = en_report().json
-    assert(json.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.14\",\"machine\":\"agent_step\",\"version\":\"alula-2.14\",\"title\":\"Agent step\""))
+    assert(json.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.17\",\"machine\":\"agent_step\",\"version\":\"alula-2.17\",\"title\":\"Agent step\""))
 }
 
 test "ae loads" {

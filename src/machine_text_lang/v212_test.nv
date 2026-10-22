@@ -5,11 +5,11 @@ module alula.machine_text_lang
 import std.text
 import alula.machine_text.{translate_report, translate_definitions, definitions_hash, defs_file_text, TranslateReport}
 
-fn v212_ru() -> str => tiny_ru().replace("- format: 2.5\n", "- format: 2.14\n")
+fn v212_ru() -> str => tiny_ru().replace("- format: 2.5\n", "- format: 2.17\n")
 
-fn v212_en() -> str => tiny_en().replace("- format: 2.5\n", "- format: 2.14\n")
+fn v212_en() -> str => tiny_en().replace("- format: 2.5\n", "- format: 2.17\n")
 
-fn with_format(text str, version str) -> str => text.replace("- format: 2.14\n", "- format: ${version}\n")
+fn with_format(text str, version str) -> str => text.replace("- format: 2.17\n", "- format: ${version}\n")
 
 fn no_input_ru() -> str => v212_ru().replace("Запрос:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| turn | число_ходов | исполнитель |\n", "")
 
@@ -19,7 +19,7 @@ fn no_input_en() -> str => v212_en().replace("Request:\n\n| request_field | expr
 
 test "v212 version read" {
     assert(is_clean(v212_ru()))
-    assert(json_of(v212_ru()).starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.14\",\"machine\":\"Tiny\""))
+    assert(json_of(v212_ru()).starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.17\",\"machine\":\"Tiny\""))
 }
 
 test "v212 version en" {
@@ -31,7 +31,7 @@ test "v212 version 2.11 refused" {
     ro text = with_format(v212_ru(), "2.11")
     assert(!is_clean(text))
     assert(note_says(text, "2.11"))
-    assert(note_says(text, "format: 2.14"))
+    assert(note_says(text, "format: 2.17"))
     assert(has_note_at(text, 1, 1, "structure"))
 }
 
@@ -47,20 +47,20 @@ test "v212 newer version refused" {
 }
 
 test "v212 version missing" {
-    assert(!is_clean(v212_ru().replace("- format: 2.14\n", "")))
-    assert(note_says(v212_ru().replace("- format: 2.14\n", ""), "не указан"))
+    assert(!is_clean(v212_ru().replace("- format: 2.17\n", "")))
+    assert(note_says(v212_ru().replace("- format: 2.17\n", ""), "не указан"))
 }
 
 test "v212 version 2.11 en refused" {
     assert(!is_clean(with_format(v212_en(), "2.11")))
-    assert(note_says(with_format(v212_en(), "2.11"), "format: 2.14"))
+    assert(note_says(with_format(v212_en(), "2.11"), "format: 2.17"))
 }
 
 test "v212 machine version line" {
-    // the machine version is the author's string; the recommended one is `alula-2.14`
-    ro text = v212_ru().replace("- machine_version: 1\n", "- machine_version: alula-2.14\n")
+    // the machine version is the author's string; the recommended one is `alula-2.17`
+    ro text = v212_ru().replace("- machine_version: 1\n", "- machine_version: alula-2.17\n")
     assert(is_clean(text))
-    assert(json_of(text).contains("\"version\":\"alula-2.14\""))
+    assert(json_of(text).contains("\"version\":\"alula-2.17\""))
 }
 
 // ---- AL-23: an appeal without the fields of the request ---------------------------------------------------------------------------------
@@ -168,7 +168,7 @@ test "v212 set en" {
 
 // ---- AL-26: the field that is named as a datum -----------------------------------------------------------------------------------------------
 
-fn field_as_datum() -> str => v212_ru().replace("разрешить (allow), отказать (deny)", "разрешить (allow)(число_ходов (turn_count) число), отказать (deny)")
+fn field_as_datum() -> str => v212_ru().replace("разрешить, отказать", "разрешить(число_ходов число), отказать")
 
 test "v212 field named as datum" {
     ro text = field_as_datum().replace("сигнал(разрешить) | —", "сигнал(разрешить(число_ходов: step)) | —")
@@ -192,27 +192,27 @@ test "v212 binding named as constant" {
 test "v212 defs hashes" {
     ro ru = defs_file_text("арифметика_цикла")
     ro en = defs_file_text("cycle_arithmetic")
-    assert(ru.contains("- format: 2.14"))
-    assert(en.contains("- format: 2.14") && en.contains("- language: en"))
-    assert(definitions_hash(ru) == "e7df8843f017")
-    assert(definitions_hash(en) == "8f309d17b896")
-    assert(translate_definitions(ru).hash == "e7df8843f017")
-    assert(translate_definitions(en).hash == "8f309d17b896")
+    assert(ru.contains("- format: 2.17"))
+    assert(en.contains("- format: 2.17") && en.contains("- language: en"))
+    assert(definitions_hash(ru) == "1e30254f66f9")
+    assert(definitions_hash(en) == "8a2c2d564899")
+    assert(translate_definitions(ru).hash == "1e30254f66f9")
+    assert(translate_definitions(en).hash == "8a2c2d564899")
     assert(translate_definitions(ru).errors.len() == 0)
     assert(translate_definitions(en).errors.len() == 0)
 }
 
 test "v212 defs 2.11 refused" {
-    ro old = defs_file_text("арифметика_цикла").replace("- format: 2.14", "- format: 2.11")
+    ro old = defs_file_text("арифметика_цикла").replace("- format: 2.17", "- format: 2.11")
     ro report = translate_definitions(old)
     assert(report.errors.len() > 0)
-    assert(report.errors[0].message.contains("2.14"))
+    assert(report.errors[0].message.contains("2.17"))
     assert(definitions_hash(old) == "fef51ed19cf1")
 }
 
 test "v212 defs 2.11 hash is the old one" {
     // the method is the old method: for a file with `format: 2.11` the hash is the hash that was written in the format 2.11
-    ro old_en = defs_file_text("cycle_arithmetic").replace("- format: 2.14", "- format: 2.11")
+    ro old_en = defs_file_text("cycle_arithmetic").replace("- format: 2.17", "- format: 2.11")
     assert(definitions_hash(old_en) == "afe05e9a1e4d")
 }
 
@@ -225,13 +225,13 @@ fn en_include(hash str) -> str {
 }
 
 test "v212 include ru" {
-    assert(is_clean(ru_include("e7df8843f017")))
+    assert(is_clean(ru_include("1e30254f66f9")))
     assert(note_says(ru_include("fad927a77d32"), "хеш файла арифметика_цикла"))
-    assert(json_of(ru_include("e7df8843f017")).contains("\"hash\":\"e7df8843f017\""))
+    assert(json_of(ru_include("1e30254f66f9")).contains("\"hash\":\"1e30254f66f9\""))
 }
 
 test "v212 include en" {
-    assert(is_clean(en_include("8f309d17b896")))
+    assert(is_clean(en_include("8a2c2d564899")))
     assert(note_says(en_include("afe05e9a1e4d"), "хеш файла cycle_arithmetic"))
-    assert(json_of(en_include("8f309d17b896")).contains("\"hash\":\"8f309d17b896\""))
+    assert(json_of(en_include("8a2c2d564899")).contains("\"hash\":\"8a2c2d564899\""))
 }

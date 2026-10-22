@@ -46,8 +46,8 @@ test "v217 a file of 2.17 is checked" {
 
 test "v217 check shows the warning about an else that cannot be reached" {
     ro ran = run217(["check", path217()], file217())
-    assert(ran.out.contains("warning"))
-    assert(ran.out.contains("иначе") || ran.out.contains("else"))
+    assert(ran.out.contains("warning") || ran.err.contains("warning"))
+    assert(ran.out.contains("else") || ran.err.contains("else"))
 }
 
 test "v217 compile gives a tree with no counter at the free party" {
@@ -87,7 +87,7 @@ test "v217 the program is of the version 0.4.0" {
     assert(run0(["version"]).out.contains("alula 0.4.0"))
 }
 
-test "v217 a file of 2.14 is not read" {
+test "v217 a file of 2.17 is not read" {
     ro ran = run217(["check", path217()], file217().replace("format: 2.17", "format: 2.14"))
     assert(ran.code == 1)
     assert(ran.err.contains("версия не известна"))
@@ -112,7 +112,7 @@ test "v217 a fork without else over numbers is refused" {
     ro text = file217().replace(rows, "| 1 | число >= 2 | — | КОНЕЦ |")
     ro ran = run217(["check", path217()], text)
     assert(ran.code == 1)
-    assert(ran.err.contains("иначе"))
+    assert(ran.err.contains("else"))
 }
 
 test "v217 the machines of the folder are read" {

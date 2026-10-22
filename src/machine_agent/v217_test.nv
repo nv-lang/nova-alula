@@ -11,9 +11,9 @@ import alula.machine_text.{translate_checked, translate_report, translate_names,
 
 fn lf17(text str) -> str => text.replace("\r\n", "\n")
 
-fn ru17s() -> str => lf17(methodology_217_text())
+fn ru17s() -> str => lf17(methodology_text())
 
-fn en17s() -> str => lf17(methodology_217_en_text())
+fn en17s() -> str => lf17(methodology_en_text())
 
 fn meeting17s() -> str => lf17(meeting_217_text())
 
@@ -183,7 +183,7 @@ test "v217 agent step en numbers" {
     assert(count_lines_anywhere17(text, "define ") == 16)
     assert(journal_codes17(text).len() == 21)
     assert(journal_codes17(text) == journal_codes17(ru17s()))
-    assert(!text.contains("## Names"))
+    assert(!text.contains("\n## Names\n"))
 }
 
 test "v217 meeting numbers" {

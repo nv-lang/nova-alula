@@ -17,7 +17,7 @@ fn boss_text() -> str => `# Машина: Босс
 
 - machine: Boss
 - machine_version: 1
-- format: 2.14
+- format: 2.17
 
 ## Типы
 
@@ -70,7 +70,7 @@ ${ticks()}
 `
 
 // The parent with a profile in the column of the party and the field `профиль` in the input type of the nested machine.
-fn profiled_text() -> str => boss_text().replace("тип CallInput { label текст, count число>=0 }", "тип CallInput { label текст, count число>=0, профиль (profile) текст }").replace("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput) | \"fast\" |")
+fn profiled_text() -> str => boss_text().replace("тип CallInput { label текст, count число>=0 }", "тип CallInput { label текст, count число>=0, профиль текст }").replace("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput) | \"fast\" |")
 
 // The tree of the meeting examples (a whole file with every construction of nested machines).
 fn meeting_json() -> str => json_of(meeting_examples())

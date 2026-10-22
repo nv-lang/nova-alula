@@ -59,7 +59,7 @@ test "v217 the tables that need rows have the section of the names" {
 test "v217 the task runner has its rows of the names" {
     ro text = text_of_file(table_files(), "task_runner.alula.md")
     assert(text.contains("## Имена\n"))
-    assert(text.contains("| ОТКАЗ |"))
+    assert(text.contains("| последняя_проверка_реализации | last_review |"))
 }
 
 test "v217 the tables use the dash of the request" {
@@ -73,7 +73,8 @@ test "v217 the tables use the dash of the request" {
 }
 
 test "v217 the chat machines write their user as a free input" {
-    for name in ["chat.alula.md", "dialog.alula.md", "dialog_steps.alula.md"] {
+    // `dialog_steps` keeps the gates of its user: its state ЖДУ reads data through a table `Запрос` of the executor, which a free input does not have
+    for name in ["chat.alula.md", "dialog.alula.md"] {
         ro text = text_of_file(table_files(), name)
         assert(text.contains("| пользователь | user | human(итог ИсходВорот) | — |"))
         ro row = "| пользователь | user | human(итог ИсходВорот) | — |"
@@ -90,11 +91,12 @@ test "v217 the other machines keep the counters of their gates" {
     assert(text.contains("попытка_усиленного"))
 }
 
-test "v217 the trees of the chat machines have no counter of the user" {
-    for name in ["chat.alula.json", "dialog.alula.json", "dialog_steps.alula.json"] {
+test "v217 the trees of the chat machines have no counter of the user and the other keeps it" {
+    for name in ["chat.alula.json", "dialog.alula.json"] {
         ro text = text_of_file(machine_files(), name).replace(" ", "")
         assert(!text.contains("\"counter\":\"user_attempt\""))
     }
+    assert(text_of_file(machine_files(), "dialog_steps.alula.json").replace(" ", "").contains("\"counter\":\"user_attempt\""))
 }
 
 test "v217 the trees keep the counters of the agents" {

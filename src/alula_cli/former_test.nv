@@ -62,11 +62,11 @@ test "fn the correct name is read" {
 }
 
 test "fn a file of the format 2.12 is refused" {
-    ro old = tiny_ru().replace("- format: 2.14\n", "- format: 2.12\n")
+    ro old = tiny_ru().replace("- format: 2.17\n", "- format: 2.12\n")
     assert(old != tiny_ru())
     ro ran = run_with(["compile", "/work/tiny.alula.md"], one("/work/tiny.alula.md", old))
     assert(ran.code == 1)
-    assert(ran.err.contains("формат 2.12: версия не известна переводчику, он читает формат 2.14"))
+    assert(ran.err.contains("формат 2.12: версия не известна переводчику, он читает формат 2.17"))
     assert(ran.err.contains("переходного периода нет"))
     ro checked = run_with(["check", "/work/tiny.alula.md"], one("/work/tiny.alula.md", old))
     assert(checked.code == 1)
@@ -74,16 +74,16 @@ test "fn a file of the format 2.12 is refused" {
 
 test "fn a tree with the key of the former name is refused" {
     ro json = tiny_json()
-    assert(json.contains("\"alula_version\":\"2.14\""))
-    ro old = json.replace("\"alula_version\":\"2.14\"", "\"portolan_version\":\"2.12\"")
+    assert(json.contains("\"alula_version\":\"2.17\""))
+    ro old = json.replace("\"alula_version\":\"2.17\"", "\"portolan_version\":\"2.12\"")
     ro ran = run_with(["check", "/work/tiny.alula.json"], one("/work/tiny.alula.json", old))
     assert(ran.code == 1)
     assert(ran.err.contains("the former name of alula_version"))
     ro rendered = run_with(["render", "/work/tiny.alula.json"], one("/work/tiny.alula.json", old))
     assert(rendered.code == 1)
     assert(rendered.err.contains("the former name of `alula_version`"))
-    ro older = json.replace("\"alula_version\":\"2.14\"", "\"alula_version\":\"2.12\"")
+    ro older = json.replace("\"alula_version\":\"2.17\"", "\"alula_version\":\"2.12\"")
     ro refused = run_with(["check", "/work/tiny.alula.json"], one("/work/tiny.alula.json", older))
     assert(refused.code == 1)
-    assert(refused.err.contains("must be 2.14"))
+    assert(refused.err.contains("must be 2.17"))
 }

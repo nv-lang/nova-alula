@@ -17,7 +17,7 @@ test "ln tiny en equals ru" {
 
 test "ln header default" {
     // no line `language` is Russian; `language: ru` is the same file
-    ro declared = ru_with("- format: 2.14\n", "- format: 2.14\n- language: ru\n")
+    ro declared = ru_with("- format: 2.17\n", "- format: 2.17\n- language: ru\n")
     assert(declared != tiny_ru())
     assert(json_of(declared) == json_of(tiny_ru()))
     assert(is_clean(declared))
@@ -34,7 +34,7 @@ test "ln english header undeclared" {
 }
 
 test "ln russian header english declared" {
-    ro text = ru_with("- format: 2.14\n", "- format: 2.14\n- language: en\n")
+    ro text = ru_with("- format: 2.17\n", "- format: 2.17\n- language: en\n")
     ro all = notes(text)
     assert(all[0].contains("язык шапки русский"))
     assert(all[0].starts_with("${line_of(text, "- language")}:"))
@@ -119,16 +119,16 @@ test "ln foreign destination" {
 }
 
 test "ln foreign state kind" {
-    ro text = ru_with("### РЕШИТЬ — развилка (Decide)", "### РЕШИТЬ — fork (Decide)")
+    ro text = ru_with("### РЕШИТЬ — развилка", "### РЕШИТЬ — fork")
     assert(has_note_at(text, line_of(text, "### РЕШИТЬ"), 14, "language"))
     assert(note_says(text, "language ключевое слово `fork`"))
 }
 
 test "ln foreign type" {
     // a Latin word where a type stands is a name of a type of the author (AL-46), not a word of the other language: the line of the cell holds the error of the text that follows
-    ro text = ru_with("| число_ходов (turn_count) | число>=0 |", "| число_ходов (turn_count) | int>=0 |")
+    ro text = ru_with("| число_ходов | число>=0 |", "| число_ходов | int>=0 |")
     assert(!is_clean(text))
-    assert(first_note(text).starts_with("${line_of(text, "| число_ходов (turn_count) | int")}:"))
+    assert(first_note(text).starts_with("${line_of(text, "| число_ходов | int")}:"))
 }
 
 test "ln mixed first line" {
@@ -338,20 +338,20 @@ test "ln english unknown name" {
 }
 
 test "ln english cyrillic name" {
-    // the names of the author may be of any language: a Cyrillic name in an English file gets its JSON name in brackets at the declaration (AL-46)
-    ro text = en_with("| gatekeeper_attempt | int>=0", "| попытка_вратаря (gatekeeper_attempt) | int>=0").replace("| allow, deny | gatekeeper_attempt |", "| allow, deny | попытка_вратаря |")
+    // the names of the author may be of any language: a Cyrillic name in an English file gets its JSON name by itself (the dictionary of the methodology, AL-53)
+    ro text = en_with("| gatekeeper_attempt | int>=0", "| попытка_вратаря | int>=0").replace("| allow, deny | gatekeeper_attempt |", "| allow, deny | попытка_вратаря |")
     assert(is_clean(text))
     assert(json_of(text).contains("\"counter\":\"gatekeeper_attempt\""))
-    // without the brackets the name has no JSON name
-    ro bare = en_with("| gatekeeper_attempt | int>=0", "| попытка_вратаря | int>=0")
-    assert(note_says(bare, "нет JSON-имени в скобках"))
+    // a name that the dictionary has not is transliterated
+    ro other = en_with("| gatekeeper_attempt | int>=0", "| хвост_змеи | int>=0").replace("| allow, deny | gatekeeper_attempt |", "| allow, deny | хвост_змеи |")
+    assert(json_of(other).contains("\"counter\":\"khvost_zmei\""))
 }
 
 test "ln english alias" {
-    // a field of a record gets its JSON name in brackets in a file of either language; the name that the author writes is not changed by a table
-    ro text = translate_types_in("variant R {\n  Done { расход (usage) int }\n}", "en")
+    // a field of a record gets its JSON name by itself in a file of either language: `расход` has two English names in the dictionary, so it is transliterated
+    ro text = translate_types_in("variant R {\n  Done { расход int }\n}", "en")
     match text {
-        Ok(j) => assert(j.contains("\"name\":\"usage\""))
+        Ok(j) => assert(j.contains("\"name\":\"raskhod\""))
         Err(es) => assert(false)
     }
 }

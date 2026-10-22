@@ -93,14 +93,14 @@ test "eq 39 engine" {
     ro first = translated_machine()
     ro second = written_machine()
     ro all = chat_scenarios()
-    assert(all.len() == 39)
+    assert(all.len() == 42)
     mut steps = 0
     for sc in all {
         ro d = engine_diff(sc, first, second)
         if d != "" { panic(d) }
         steps += sc.steps.len()
     }
-    assert(steps == 126)
+    assert(steps == 131)
 }
 
 test "eq 39 own" {
@@ -192,7 +192,7 @@ test "eq 39 machine" {
         if d != "" { panic(d) }
         events += events_of(sc).len()
     }
-    assert(events == 91)
+    assert(events == 96)
 }
 
 test "eq the same json" {

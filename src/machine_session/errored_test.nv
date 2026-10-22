@@ -1,6 +1,6 @@
-// errored_test.nv - the end ERRORED of the table "Session start". No sequence of events enters it (it is entered through `machine_error`, whose two ways in the table are the row `else` of the fork
-// Scope and the row 6 of the common events, and both are covered by the conditions before them), so the proof runs a table changed on purpose: the two conditions of the fork are made false,
-// the fork finds no row, writes `fork_no_match` and goes to the end ERRORED. The end stops the group of the processes of the agent, writes the transition and all the data, and answers
+// errored_test.nv - the end ERRORED of the table "Session start". No sequence of events enters it (it is entered through `machine_error`; the only way in the table is the row 6 of the common events,
+// covered by the conditions before it; the fork Scope has no row `else`, since its two rows name both values of the type, AL-57), so the proof runs a table changed on purpose: the two conditions of the
+// fork are made false and the row `else` is written back, the fork finds no row but that one, writes `fork_no_match` and goes to the end ERRORED. The end stops the group of the processes of the agent, writes the transition and all the data, and answers
 // with a refusal `NoResult` whose text is the transition.
 module alula.machine_session
 
@@ -12,7 +12,7 @@ import alula.machine_run.{AlulaMachine, load_alula_machine, parse_scenario, run_
 fn broken_text() -> str {
     session_start_table_text()
         .replace("| 1 | объём == ОбъёмЗапуска.Помещается | — | СЕССИЯ |", "| 1 | ложь | — | СЕССИЯ |")
-        .replace("| 2 | объём == ОбъёмЗапуска.НеПомещается | — | В1 |", "| 2 | ложь | — | В1 |")
+        .replace("| 2 | объём == ОбъёмЗапуска.НеПомещается | — | В1 |", "| 2 | ложь | — | В1 |\n| 3 | иначе | ошибка_машины(\"fork_no_match\", fork: \"Scope\") | — |")
 }
 
 fn broken_machine() -> AlulaMachine {
@@ -40,6 +40,7 @@ test "er the changed table is a table" {
     ro text = broken_text()
     assert(text.contains("| 1 | ложь | — | СЕССИЯ |"))
     assert(text.contains("| 2 | ложь | — | В1 |"))
+    assert(text.contains("| 3 | иначе | ошибка_машины(\"fork_no_match\", fork: \"Scope\") | — |"))
     assert(!text.contains("ОбъёмЗапуска.Помещается |"))
 }
 

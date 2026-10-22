@@ -5,41 +5,44 @@ module alula.machine_text_lang
 import std.text
 import alula.machine_text.{translate_report, translate_definitions, definitions_hash, defs_file_text, TranslateReport}
 
-fn v211_ru() -> str => ru_with("- format: 2.14\n", "- format: 2.14\n")
+fn v211_ru() -> str => ru_with("- format: 2.17\n", "- format: 2.17\n")
 
-fn v211_en() -> str => en_with("- format: 2.14\n", "- format: 2.14\n")
+fn v211_en() -> str => en_with("- format: 2.17\n", "- format: 2.17\n")
 
 test "nw versions read" {
     // the only version that is read is 2.12 (task 125: no transition period); the older ones are refused
-    for v in ["2.14"] {
-        ro text = ru_with("- format: 2.14\n", "- format: ${v}\n")
+    for v in ["2.17"] {
+        ro text = ru_with("- format: 2.17\n", "- format: ${v}\n")
         assert(is_clean(text))
         assert(json_of(text).starts_with("{\"format\":\"machine/2\",\"alula_version\":\"${v}\",\"machine\":\"Tiny\""))
-        ro en = en_with("- format: 2.14\n", "- format: ${v}\n")
+        ro en = en_with("- format: 2.17\n", "- format: ${v}\n")
         assert(is_clean(en))
         assert(no_title(json_of(en)) == no_title(json_of(text)))
     }
-    assert(note_says(ru_with("- format: 2.14\n", "- format: 2.13\n"), "читает формат 2.14"))
+    assert(note_says(ru_with("- format: 2.17\n", "- format: 2.13\n"), "читает формат 2.17"))
 }
 
 test "nw state heading" {
     // the name of the JSON in the brackets is not written when the heading is that name (AL-5)
     ro plain = json_of(tiny_ru())
-    ro latin = ru_with("### ЖДАТЬ — обращение (Wait)", "### Wait — обращение").replace("Начальное состояние: ЖДАТЬ", "Начальное состояние: Wait").replace("| ЖДАТЬ |", "| Wait |")
+    ro latin = ru_with("### ЖДАТЬ — обращение", "### Wait — обращение").replace("Начальное состояние: ЖДАТЬ", "Начальное состояние: Wait").replace("| ЖДАТЬ |", "| Wait |").replace("| Wait | Wait |\n", "")
     assert(is_clean(latin))
     assert(json_of(latin) == plain)
-    ro repeated = ru_with("### РЕШИТЬ — развилка (Decide)", "### Decide — развилка (Decide)").replace("| РЕШИТЬ |", "| Decide |")
+    ro repeated = ru_with("### РЕШИТЬ — развилка", "### Decide — развилка").replace("| РЕШИТЬ |", "| Decide |").replace("| Decide | Decide |\n", "")
     assert(is_clean(repeated))
     assert(json_of(repeated) == plain)
-    ro other = en_with("### Decide — fork", "### Decide — fork (Check)").replace("| Decide |", "| Decide |")
-    assert(json_of(other).contains("\"name\":\"Check\""))
-    assert(json_of(tiny_en()) == json_of(tiny_en().replace("### Wait — appeal", "### Wait — appeal (Wait)")))
+    // the brackets after the kind of a state are an error since 2.16 (AL-60), even when they repeat the name
+    ro other = en_with("### Decide — fork", "### Decide — fork (Check)")
+    assert(note_says(other, "скобки"))
+    assert(note_says(en_with("### Wait — appeal", "### Wait — appeal (Wait)"), "скобки"))
 }
 
-test "nw russian name needs json name" {
-    ro text = ru_with("### РЕШИТЬ — развилка (Decide)", "### РЕШИТЬ — развилка")
-    assert(note_says(text, "нет имени JSON"))
-    assert(has_note_at(text, line_of(text, "### РЕШИТЬ"), 5, "syntax"))
+test "nw russian state name gets its json name by itself" {
+    ro text = ru_with("| РЕШИТЬ | Decide |\n", "")
+    assert(is_clean(text))
+    assert(json_of(text).contains("\"name\":\"Reshit\""))
+    // a row of the section of the names sets it
+    assert(json_of(tiny_ru()).contains("\"name\":\"Decide\""))
 }
 
 test "nw reads both languages" {
@@ -49,8 +52,8 @@ test "nw reads both languages" {
     assert(no_title(ru) == no_title(en))
     assert(ru.contains("\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[\"turn_count\"]"))
     assert(note_says(en_with("Reads: turn_count\n\n### Stopped", "Читает: turn_count\n\n### Stopped"), "language"))
-    assert(note_says(ru_with("Читает: число_ходов\n\n### СТОП", "Вход: число_ходов\n\n### СТОП"), "формате 2.14 не бывает"))
-    assert(note_says(en_with("Reads: turn_count\n\n### Stopped", "Input: turn_count\n\n### Stopped"), "формате 2.14 не бывает"))
+    assert(note_says(ru_with("Читает: число_ходов\n\n### СТОП", "Вход: число_ходов\n\n### СТОП"), "формате 2.17 не бывает"))
+    assert(note_says(en_with("Reads: turn_count\n\n### Stopped", "Input: turn_count\n\n### Stopped"), "формате 2.17 не бывает"))
 }
 
 test "nw paragraph pressed" {
@@ -148,30 +151,30 @@ fn ru_with_include(hash str) -> str {
 }
 
 test "nw include en" {
-    ro good = checked(en_with_include("8f309d17b896"))
+    ro good = checked(en_with_include("8a2c2d564899"))
     if good.errors.len() > 0 { panic("${good.errors[0].line}: ${good.errors[0].message}") }
     assert(good.errors.len() == 0)
-    assert(good.json.contains("\"includes\":[{\"name\":\"cycle_arithmetic\",\"version\":\"1\",\"hash\":\"8f309d17b896\"}]"))
+    assert(good.json.contains("\"includes\":[{\"name\":\"cycle_arithmetic\",\"version\":\"1\",\"hash\":\"8a2c2d564899\"}]"))
     assert(good.json.contains("\"definitions\":[{\"name\":\"ceiling_reached\""))
-    assert(note_says(en_with_include("afe05e9a1e4c"), "хеш файла cycle_arithmetic — 8f309d17b896, а в подключении afe05e9a1e4c"))
-    assert(note_says(en_with_include("e7df8843f017"), "хеш файла cycle_arithmetic"))
+    assert(note_says(en_with_include("afe05e9a1e4c"), "хеш файла cycle_arithmetic — 8a2c2d564899, а в подключении afe05e9a1e4c"))
+    assert(note_says(en_with_include("1e30254f66f9"), "хеш файла cycle_arithmetic"))
 }
 
 test "nw include ru" {
-    ro good = checked(ru_with_include("e7df8843f017"))
+    ro good = checked(ru_with_include("1e30254f66f9"))
     if good.errors.len() > 0 { panic("${good.errors[0].line}: ${good.errors[0].message}") }
     assert(good.errors.len() == 0)
-    assert(good.json.contains("\"includes\":[{\"name\":\"арифметика_цикла\",\"version\":\"1\",\"hash\":\"e7df8843f017\"}]"))
-    assert(note_says(ru_with_include("4de98da759eb"), "хеш файла арифметика_цикла — e7df8843f017, а в подключении 4de98da759eb"))
+    assert(good.json.contains("\"includes\":[{\"name\":\"арифметика_цикла\",\"version\":\"1\",\"hash\":\"1e30254f66f9\"}]"))
+    assert(note_says(ru_with_include("4de98da759eb"), "хеш файла арифметика_цикла — 1e30254f66f9, а в подключении 4de98da759eb"))
 }
 
 test "nw include words" {
     // the words of the include line are of the language of the file
-    ro foreign = ru_with_include("e7df8843f017").replace("версия 1 хеш", "version 1 hash")
+    ro foreign = ru_with_include("1e30254f66f9").replace("версия 1 хеш", "version 1 hash")
     assert(!is_clean(foreign))
-    ro bad_en = en_with_include("8f309d17b896").replace("version 1", "версия 1")
+    ro bad_en = en_with_include("8a2c2d564899").replace("version 1", "версия 1")
     assert(!is_clean(bad_en))
-    assert(note_says(en_with_include("8f309d17b896").replace("hash 8f309d17b896", "hash zz"), "12 шестнадцатеричных знаков"))
+    assert(note_says(en_with_include("8a2c2d564899").replace("hash 8a2c2d564899", "hash zz"), "12 шестнадцатеричных знаков"))
 }
 
 // The canonical file writes the section `Input` always, an empty one as a dash: a section that holds only a dash declares no input.

@@ -27,36 +27,36 @@ fn with_fragments(call_args str) -> str => tiny().replace("\"initial\":\"Wait\""
 // ---- the version of the language ---------------------------------------------------------------------------------------------------------
 
 test "v212 version accepted" {
-    assert(ok_text(with_version("2.14")))
+    assert(ok_text(with_version("2.17")))
     assert(ok_text(tiny()))
 }
 
 test "v212 version 2.11 refused" {
     assert(!ok_text(with_version("2.11")))
     assert(says(with_version("2.11"), "alula_version"))
-    assert(says(with_version("2.11"), "2.14"))
+    assert(says(with_version("2.11"), "2.17"))
 }
 
 test "v212 older versions refused" {
-    for v in ["2.5", "2.6", "2.7", "2.8", "2.9", "2.10"] {
+    for v in ["2.5", "2.6", "2.7", "2.8", "2.9", "2.10", "2.14", "2.16"] {
         assert(!ok_text(with_version(v)))
     }
 }
 
 test "v212 versions list" {
     assert(alula_versions().len() == 1)
-    assert(alula_versions()[0] == "2.14")
-    assert(ALULA_VERSION == "2.14")
+    assert(alula_versions()[0] == "2.17")
+    assert(ALULA_VERSION == "2.17")
 }
 
 test "v212 schema versions" {
     ro schema = text_of_file(schema_files(), "machine-2.schema.json")
-    assert(schema.contains("\"2.14\""))
+    assert(schema.contains("\"2.17\""))
     assert(!schema.contains("\"2.11\""))
     assert(!schema.contains("\"2.5\""))
 }
 
-test "v212 machines are 2.14" {
+test "v212 machines are 2.17" {
     for f in machine_files() {
         ro tree = decoded(f.text)
         assert(tree.states.len() > 0)

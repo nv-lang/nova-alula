@@ -22,9 +22,9 @@ fn all_rows() -> []str {
 // The rows that no event can take. The rows "иначе" of the forks whose conditions before them cover every value that the chain can bring (a bool, an enum named in full, a datum that is always set
 // before the fork) are defensive: they write `machine_error(fork_no_match)` and go to the end ERRORED. PreparationOutcome 2 is taken only after a restart whose preparation of the executor wrote
 // the datum `preparation_return`; PhaseSwitch 6 only by a phase that the gate 11 never sends through the head of the cycle (the gate leads to the end itself). The row 6 of the common events
-// (three conditions before it cover every request id) is defensive too.
+// (three conditions before it cover every request id) is defensive too. The fork PhaseSwitch names every value of the enum `Фаза`, so it has no row "иначе" (AL-57; the methodology has it as the row 7).
 fn dead_rows() -> []str => [
-    "PreparationOutcome#2", "PreparationOutcome#6", "PhaseSwitch#6", "PhaseSwitch#7", "AfterSession#20", "RouteClassification#6", "FactoryWord#4", "RouteCheck#5", "RouteRecording#3",
+    "PreparationOutcome#2", "PreparationOutcome#6", "PhaseSwitch#6", "AfterSession#20", "RouteClassification#6", "FactoryWord#4", "RouteCheck#5", "RouteRecording#3",
     "BriefCheck#3", "ApprovalCheck#3", "AfterApproval#3", "PlanPhase#6", "DecisionsOutcome#3", "ImplementationOutcome#6", "Gate8Outcome#4", "DeliveryPhase#3",
     "DeliveryLetter#5", "DeliverySecrets#3", "DeliveryDiff#3", "DeliveryMessage#3", "common#6"
 ]
@@ -88,10 +88,10 @@ fn file_of_row(row str) -> str {
 
 test "cv rows counted" {
     ro rows = all_rows()
-    // 233 rows of the states of the methodology and of the verdict fork, 4 of the pause, 6 common events, 8 rows of the ends
-    assert(rows.len() == 251)
+    // 232 rows of the states of the methodology (the row "иначе" of PhaseSwitch is not written) and of the verdict fork, 4 of the pause, 6 common events, 8 rows of the ends
+    assert(rows.len() == 250)
     for dead in dead_rows() { assert(rows.contains(dead)) }
-    assert(dead_rows().len() == 22)
+    assert(dead_rows().len() == 21)
 }
 
 test "cv kebab" {
@@ -117,8 +117,8 @@ test "cv dead rows are else" {
             }
         }
     }
-    // 19 rows "иначе"; the other three are PreparationOutcome 2, PhaseSwitch 6 and the row 6 of the common events
-    assert(seen == 19)
+    // 18 rows "иначе"; the other three are PreparationOutcome 2, PhaseSwitch 6 and the row 6 of the common events
+    assert(seen == 18)
     ro last = def.common[5]
     assert(last.n == 6)
     match last.actions[0] {

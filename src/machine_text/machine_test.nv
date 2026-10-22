@@ -8,7 +8,7 @@ import alula.machine_table.{parse_machine, load_machine}
 test "tm clean" {
     ro report = checked(tiny_text())
     assert(report.errors.len() == 0)
-    assert(report.json.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.14\",\"machine\":\"Tiny\""))
+    assert(report.json.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.17\",\"machine\":\"Tiny\""))
     assert(report.rows_total > 0 && report.rows_noted == 0)
 }
 
@@ -51,8 +51,8 @@ test "tm names of the states" {
 
 test "tm header" {
     assert(note_says(tiny_with("# Машина: Малая", "# Что-то: Малая"), "начинается со строки `# Машина:"))
-    assert(note_says(tiny_with("format: 2.14", "format: 2.4"), "формат 2.4: версия не известна переводчику, он читает формат 2.14"))
-    assert(note_says(tiny_with("format: 2.14\n", ""), "формат не указан"))
+    assert(note_says(tiny_with("format: 2.17", "format: 2.4"), "формат 2.4: версия не известна переводчику, он читает формат 2.17"))
+    assert(note_says(tiny_with("format: 2.17\n", ""), "формат не указан"))
     assert(note_says(tiny_with("machine: Tiny\n", ""), "нет строки `machine:"))
     assert(note_says(tiny_with("machine: Tiny", "machine: Малая"), "латинский идентификатор"))
     assert(note_says(tiny_with("machine_version: 1", "machine_version: 1\nлишнее: слово"), "лишняя строка в шапке"))
@@ -60,7 +60,7 @@ test "tm header" {
 }
 
 test "tm header places" {
-    ro all = notes(tiny_with("format: 2.14", "format: 2.4"))
+    ro all = notes(tiny_with("format: 2.17", "format: 2.4"))
     assert(all[0].starts_with("1:1 structure"))
 }
 
@@ -94,7 +94,7 @@ test "tm extra line" {
 
 test "tm comments" {
     assert(is_clean(tiny_with("## Данные", "> заметка\n\n## Данные")))
-    assert(is_clean(tiny_with("### РЕШИТЬ — развилка (Decide)", "### РЕШИТЬ — развилка (Decide)   // комментарий в заголовке")))
+    assert(is_clean(tiny_with("### РЕШИТЬ — развилка", "### РЕШИТЬ — развилка   // комментарий в заголовке")))
 }
 
 test "tm crlf" {
@@ -104,21 +104,21 @@ test "tm crlf" {
 // ---- the data ----------------------------------------------------------------------------------------------------------------
 
 test "tm data forms" {
-    assert(note_says(tiny_with("| число_ходов (turn_count) | число>=0 | 0 | да | строки |", "| число_ходов (turn_count) | число>=0 | 0 | да | кто-то |"), "в столбце `пишет` бывает"))
-    assert(note_says(tiny_with("| число_ходов (turn_count) | число>=0 | 0 | да | строки |", "| число_ходов (turn_count) | число>=0 | 0 | иногда | строки |"), "в столбце `не убывает`"))
-    assert(note_says(tiny_with("| число_ходов (turn_count) | число>=0 | 0 | да | строки |", "| число_ходов (turn_count) | число>=0 | 0 | да, 5 | строки |"), "после запятой ожидается `<= выр`"))
-    assert(is_clean(tiny_with("| число_ходов (turn_count) | число>=0 | 0 | да | строки |", "| число_ходов (turn_count) | число>=0 | 0 | да, <= 5 | строки |")))
-    assert(is_clean(tiny_with("| число_ходов (turn_count) | число>=0 | 0 | да | строки |", "| число_ходов (turn_count) | число>=0 | 0 | — | строки и механика |")))
+    assert(note_says(tiny_with("| число_ходов | число>=0 | 0 | да | строки |", "| число_ходов | число>=0 | 0 | да | кто-то |"), "в столбце `пишет` бывает"))
+    assert(note_says(tiny_with("| число_ходов | число>=0 | 0 | да | строки |", "| число_ходов | число>=0 | 0 | иногда | строки |"), "в столбце `не убывает`"))
+    assert(note_says(tiny_with("| число_ходов | число>=0 | 0 | да | строки |", "| число_ходов | число>=0 | 0 | да, 5 | строки |"), "после запятой ожидается `<= выр`"))
+    assert(is_clean(tiny_with("| число_ходов | число>=0 | 0 | да | строки |", "| число_ходов | число>=0 | 0 | да, <= 5 | строки |")))
+    assert(is_clean(tiny_with("| число_ходов | число>=0 | 0 | да | строки |", "| число_ходов | число>=0 | 0 | — | строки и механика |")))
 }
 
 test "tm data names" {
-    assert(note_says(tiny_with("| число_ходов (turn_count) | число>=0 |", "| число_ходав | число>=0 |"), "у данного `число_ходав` нет JSON-имени в скобках"))
-    assert(note_says(tiny_with("| число_ходов (turn_count) | число>=0 |", "| число_ходав (turn_count) | число>=0 |"), "возможно, `число_ходав`"))
-    assert(note_says(tiny_text().replace("| попытка_вратаря (gatekeeper_attempt) | число>=0 | 0 | да | механика |", "| попытка_вратаря (gatekeeper_attempt) | число>=0 | 0 | да | механика |\n| попытка_вратаря (gatekeeper_attempt) | число>=0 | 0 | да | механика |"), "уже объявлено"))
+    assert(note_says(tiny_with("| число_ходов | число>=0 |", "| число_ходов (turn_count) | число>=0 |"), "скобки"))
+    assert(note_says(tiny_with("| число_ходов | число>=0 |", "| число_ходав | число>=0 |"), "возможно, `число_ходав`"))
+    assert(note_says(tiny_text().replace("| попытка_вратаря | число>=0 | 0 | да | механика |", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| попытка_вратаря | число>=0 | 0 | да | механика |"), "уже объявлено"))
 }
 
 test "tm data types" {
-    assert(note_says(tiny_with("| число_ходов (turn_count) | число>=0 |", "| число_ходов | число>= |"), "после `>=` ожидается целое число"))
+    assert(note_says(tiny_with("| число_ходов | число>=0 |", "| число_ходов | число>= |"), "после `>=` ожидается целое число"))
     assert(note_says(tiny_with("\"\" \\| \"a\" \\| \"b\"", "\"a\""), "набор литералов"))
     assert(note_says(tiny_with("\"\" \\| \"a\" \\| \"b\"", "?\"a\" \\| \"b\""), "в скобках"))
     assert(note_says(tiny_with("| остановка | \"\" \\| \"a\" \\| \"b\" | \"\" |", "| остановка | \"\" \\| \"a\" \\| \"b\" | \"c\" |"), "\"c\" is not in"))
@@ -127,17 +127,17 @@ test "tm data types" {
 // ---- the parties -------------------------------------------------------------------------------------------------------------
 
 test "tm parties" {
-    assert(note_says(tiny_with("human или agent по настройке исполнитель_повышенного_внимания (attention_executor)(итог ИсходВорот)", "robot(итог ИсходВорот)"), "вид стороны"))
+    assert(note_says(tiny_with("human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот)", "robot(итог ИсходВорот)"), "вид стороны"))
     assert(note_says(tiny_with("(итог ИсходВорот)", "(итог Другое)"), "итог — `ИсходВорот`"))
-    assert(note_says(tiny_with("| разрешить (allow), отказать (deny) | попытка_вратаря |", "| разрешить (allow), отказать (deny) | нет_счётчика |"), "не объявлено в этой машине"))
+    assert(note_says(tiny_with("| разрешить, отказать | попытка_вратаря |", "| разрешить, отказать | нет_счётчика |"), "не объявлено в этой машине"))
 }
 
 test "tm parties nested" {
     // the party of the kind `machine` and the profile are translated now: no note says "not supported"
-    ro nested = tiny_with("human или agent по настройке исполнитель_повышенного_внимания (attention_executor)(итог ИсходВорот)", "machine шаг(вход Тип, итог Тип)")
+    ro nested = tiny_with("human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот)", "machine шаг(вход Тип, итог Тип)")
     assert(count_kind(nested, "unsupported") == 0)
     assert(note_says(nested, "Тип"))
-    ro profile = tiny_with("| gatekeeper | human или agent по настройке исполнитель_повышенного_внимания (attention_executor)(итог ИсходВорот) | — |", "| gatekeeper | human или agent по настройке исполнитель_повышенного_внимания (attention_executor)(итог ИсходВорот) | \"p\" |")
+    ro profile = tiny_with("| gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — |", "| gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | \"p\" |")
     assert(count_kind(profile, "unsupported") == 0)
 }
 
@@ -153,8 +153,8 @@ test "tm request limit" {
 // ---- the states --------------------------------------------------------------------------------------------------------------
 
 test "tm states shape" {
-    assert(note_says(tiny_with("### ЖДАТЬ — обращение (Wait)", "### ЖДАТЬ — обращен (Wait)"), "вид состояния"))
-    assert(note_says(tiny_with("### ЖДАТЬ — обращение (Wait)", "### ЖДАТЬ — обращение (Ждать)"), "латинское имя состояния"))
+    assert(note_says(tiny_with("### ЖДАТЬ — обращение", "### ЖДАТЬ — обращен"), "вид состояния"))
+    assert(note_says(tiny_with("### ЖДАТЬ — обращение", "### ЖДАТЬ — обращение (Ждать)"), "скобки"))
     assert(note_says(tiny_with("Читает: число_ходов\n\n| № | Условие", "Запрос:\n\n| № | Условие"), "бывает только у обращения"))
     assert(note_says(tiny_with("Сторона: вратарь\n", ""), "нет строки `Сторона:`"))
     assert(note_says(tiny_with("Начальное состояние: ЖДАТЬ", "Начальное состояние: ЖДАТ"), "состояния `ЖДАТ` нет"))
@@ -162,9 +162,9 @@ test "tm states shape" {
 }
 
 test "tm states twice" {
-    ro again = tiny_with("## Концы", "### КОНЕЦ — конец (Again)\nЧитает: число_ходов\n\n## Концы")
+    ro again = tiny_with("## Концы", "### КОНЕЦ — конец\nЧитает: число_ходов\n\n## Концы")
     assert(note_says(again, "состояние `КОНЕЦ` объявлено дважды"))
-    ro heading = "${tiny_text()}\n### ЛИШНЕЕ — конец (Extra)\n"
+    ro heading = "${tiny_text()}\n### ЛИШНЕЕ — конец\n"
     assert(note_says(heading, "лишняя строка в разделе `Концы`"))
 }
 
@@ -222,7 +222,7 @@ test "tm ends" {
 // ---- all the errors at once, with places -----------------------------------------------------------------------------------------
 
 test "tm all at once" {
-    ro broken = tiny_with("| число_ходов (turn_count) | число>=0 |", "| число_ходав | число>=0 |").replace("| 2 | сигнал(отказать) | — | остановка = \"a\" | СТОП |", "| 2 | сигнал(отказать) | — | остановка = \"c\" | СТОП |").replace("| КОНЕЦ | 1 | истина | Ответ(число_ходов) |", "| КОНЕЦ | 1 | истина | Ответ(число_ходав) |")
+    ro broken = tiny_with("| число_ходов | число>=0 |", "| число_ходав | число>=0 |").replace("| 2 | сигнал(отказать) | — | остановка = \"a\" | СТОП |", "| 2 | сигнал(отказать) | — | остановка = \"c\" | СТОП |").replace("| КОНЕЦ | 1 | истина | Ответ(число_ходов) |", "| КОНЕЦ | 1 | истина | Ответ(число_ходав) |")
     ro all = notes(broken)
     assert(all.len() >= 3)
     assert(note_says(broken, "число_ходав"))
@@ -230,7 +230,7 @@ test "tm all at once" {
 }
 
 test "tm sorted" {
-    ro broken = tiny_with("| число_ходов (turn_count) | число>=0 |", "| число_ходав | число>=0 |").replace("| КОНЕЦ | 1 | истина | Ответ(число_ходов) |", "| КОНЕЦ | 1 | истина | Ответ(число_ходав) |")
+    ro broken = tiny_with("| число_ходов | число>=0 |", "| число_ходав | число>=0 |").replace("| КОНЕЦ | 1 | истина | Ответ(число_ходов) |", "| КОНЕЦ | 1 | истина | Ответ(число_ходав) |")
     ro report = checked(broken)
     mut last_line = 0
     for e in report.errors {
@@ -240,13 +240,13 @@ test "tm sorted" {
 }
 
 test "tm quote" {
-    ro report = checked(tiny_with("| число_ходов (turn_count) | число>=0 |", "| число_ходав | число>=0 |"))
+    ro report = checked(tiny_with("| число_ходов | число>=0 |", "| число_ходов | число>= |"))
     assert(report.errors.len() >= 1)
-    assert(report.errors[0].quote.contains("число_ходав"))
+    assert(report.errors[0].quote.contains("| число_ходов | число>= |"))
     ro text = error_text(report.errors[0], "tiny.alula.md")
     assert(text.starts_with("tiny.alula.md:"))
-    assert(text.contains("name:"))
-    assert(text.contains("\n    | число_ходав"))
+    assert(text.contains("syntax:"))
+    assert(text.contains("\n    | число_ходов | число>= |"))
 }
 
 test "tm check places" {

@@ -307,10 +307,14 @@ test "does not decrease" {
 
 test "fork no match" {
     ro text = machine_text("calc.alula.json").replace("{ \"n\": 2, \"event\": { \"kind\": \"now\" }, \"else\": true, \"to\": \"Step\" }", "{ \"n\": 2, \"event\": { \"kind\": \"now\" }, \"cond\": { \"op\": \"lit\", \"value\": false }, \"to\": \"Step\" }")
-    ro m = build_from(text)
-    ro r = run1(m, m.initial(), start_with("{\"start\":0,\"label\":\"abc\"}"))
-    assert(r.state.name == "Errored")
-    assert(summary(r.orders).contains("log:fork_no_match(fork=Check)"))
+    // since 2.16 (AL-57) a fork with no row else and no proof of the exhaustion by the type is refused at the load: the runtime `fork_no_match` is the row `else` that the table writes itself
+    match load_alula_machine(text, standard_registry()) {
+        Ok(m) => assert(false)
+        Err(e) => {
+            assert(e.contains("no row else"))
+            assert(e.contains("Check"))
+        }
+    }
 }
 
 test "defect stops" {

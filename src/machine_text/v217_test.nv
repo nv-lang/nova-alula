@@ -213,19 +213,19 @@ test "v217 Latin letters and digits stay" {
 
 test "v217 a name of a value is written in snake case" {
     assert(jn_auto("оставить правку", false, glossary_load()) == "ostavit_pravku")
-    assert(jn_auto("находки_В3", false, glossary_load()) == "nakhodki_v3")
+    assert(jn_auto("хвосты_Д3", false, glossary_load()) == "khvosty_d3")
 }
 
 test "v217 a name of a type is written in Pascal case" {
-    assert(jn_auto("ХОД_АГЕНТА", true, glossary_load()) == "KhodAgenta")
-    assert(jn_auto("ВидВызывающего", true, glossary_load()) == "VidVyzyvayushchego")
-    assert(jn_auto("НетОтветаВСрок", true, glossary_load()) == "NetOtvetaVSrok")
-    assert(jn_auto("В3", true, glossary_load()) == "V3")
+    assert(jn_auto("ХВОСТ_ЗМЕИ", true, glossary_load()) == "KhvostZmei")
+    assert(jn_auto("ВидХвоста", true, glossary_load()) == "VidKhvosta")
+    assert(jn_auto("НетХвостаВСрок", true, glossary_load()) == "NetKhvostaVSrok")
+    assert(jn_auto("Д3", true, glossary_load()) == "D3")
 }
 
 test "v217 the empty words of a name are dropped" {
-    assert(jn_auto("ход__агента", false, glossary_load()) == "khod_agenta")
-    assert(jn_auto("_ход_агента_", false, glossary_load()) == "khod_agenta")
+    assert(jn_auto("ход__змеи", false, glossary_load()) == "khod_zmei")
+    assert(jn_auto("_ход_змеи_", false, glossary_load()) == "khod_zmei")
 }
 
 test "v217 a Latin name is its own name" {
@@ -248,7 +248,7 @@ test "v217 a mixed word is found" {
     assert(jn_mixed("ХодV2") == "ХодV2")
     assert(jn_mixed("запрос_Agent") == "")
     assert(jn_mixed("ход_v2") == "")
-    assert(jn_mixed("В3") == "")
+    assert(jn_mixed("Д3") == "")
     assert(jn_mixed("запрос агента") == "")
 }
 

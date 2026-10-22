@@ -207,7 +207,7 @@ test "data checks" {
 }
 
 test "parties" {
-    assert(says(tiny().replace("\"counter\":\"u_attempt\",", ""), "names the datum of its attempt counter"))
+    assert(says(tiny().replace("\"counter\":\"u_attempt\",", "").replace("\"kind\":\"human\"", "\"kind\":\"enhanced\""), "names the datum of its attempt counter"))
     assert(says(tiny().replace("\"counter\":\"u_attempt\"", "\"counter\":\"nothing\""), "the datum nothing is not declared"))
     assert(says(tiny().replace("\"monotonic\":true,\"writes\":\"mechanics\"", "\"writes\":\"mechanics\""), "does not decrease"))
     assert(says(tiny().replace("\"monotonic\":true,\"writes\":\"mechanics\"", "\"monotonic\":true,\"writes\":\"rows\""), "written by mechanics"))

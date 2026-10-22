@@ -67,7 +67,7 @@ test "st kinds" {
 test "st rows per state" {
     ro def = session_def()
     assert(state_named(def, "Gate2").rows.len() == 1)
-    assert(state_named(def, "Scope").rows.len() == 3)
+    assert(state_named(def, "Scope").rows.len() == 2)
     assert(state_named(def, "Gate1").rows.len() == 2)
     assert(state_named(def, "Session").rows.len() == 2)
     assert(state_named(def, "ResultParsing").rows.len() == 1)
@@ -75,7 +75,7 @@ test "st rows per state" {
     assert(state_named(def, "Pause").rows.len() == 4)
     assert(def.common.len() == 6)
     assert(def.end_rows.len() == 5)
-    assert(all_rows(def).len() == 26)
+    assert(all_rows(def).len() == 25)
 }
 
 test "st targets" {
@@ -83,7 +83,6 @@ test "st targets" {
     assert(target_name(row_of(def, "Gate2", 1)) == "Scope")
     assert(target_name(row_of(def, "Scope", 1)) == "Session")
     assert(target_name(row_of(def, "Scope", 2)) == "Gate1")
-    assert(target_name(row_of(def, "Scope", 3)) == "-")
     assert(target_name(row_of(def, "Gate1", 1)) == "Gate2")
     assert(target_name(row_of(def, "Gate1", 2)) == "Halted")
     assert(target_name(row_of(def, "Session", 1)) == "ResultParsing")
@@ -120,16 +119,9 @@ test "st the fork" {
     ro def = session_def()
     ro scope = state_named(def, "Scope")
     assert(scope.entry.len() == 1)
+    // the two rows name both values of the type: there is no row `else` (AL-57)
+    assert(scope.rows.len() == 2)
     assert(!scope.rows[0].is_else && !scope.rows[1].is_else)
-    assert(scope.rows[2].is_else)
-    assert(scope.rows[2].actions.len() == 1)
-    match scope.rows[2].actions[0] {
-        MachineErrorAct { code, params } => {
-            assert(code == "fork_no_match")
-            assert(params.len() == 1 && params[0].name == "fork")
-        }
-        _ => assert(false)
-    }
 }
 
 test "st the gates write the stop" {
@@ -391,11 +383,11 @@ test "st the gates ask what the methodology says" {
     assert(gate13 == ["session", "refusal_text"])
 }
 
-test "st the table text is a table of 2.14" {
+test "st the table text is a table of 2.17" {
     ro text = session_start_table_text()
     assert(text.starts_with("# Машина: Запуск сессии\n"))
     assert(text.contains("- machine: session_start\n"))
-    assert(text.contains("- format: 2.14\n"))
+    assert(text.contains("- format: 2.17\n"))
     assert(text.contains("Начальное состояние: В2"))
     assert(text.contains("Пауза(сигнал_остановки: остановить"))
     assert(session_start_machine_text().contains("\"format\": \"machine/2\"") || session_start_machine_text().contains("\"format\":\"machine/2\""))

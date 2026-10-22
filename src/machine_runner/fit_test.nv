@@ -81,13 +81,13 @@ test "ft the machine of the first level must be in the registry" {
 }
 
 test "ft a wrong type of the launch is found" {
-    ro def = runner_with("тип ВходЗапускаСессии (SessionLaunchInput) { сессия (session) текст,", "тип ВходЗапускаСессии (SessionLaunchInput) { сессия (session) число,")
+    ro def = runner_with("тип ВходЗапускаСессии { сессия текст,", "тип ВходЗапускаСессии { сессия число,")
     ro found = problems_text(check_nested(def, "session_start", callee_def("session_start")))
     assert(found.contains("session"))
 }
 
 test "ft a wrong type of the review is found" {
-    ro def = runner_with("тип ИтогПроверки (ReviewResult) { вердикт (verdict) Вердикт,", "тип ИтогПроверки (ReviewResult) { вердикт (verdict) текст,")
+    ro def = runner_with("тип ИтогПроверки { вердикт Вердикт,", "тип ИтогПроверки { вердикт текст,")
     ro found = problems_text(check_nested(def, "cycle_check", callee_def("cycle_check")))
     assert(found.contains("verdict") || found.contains("result"))
 }
