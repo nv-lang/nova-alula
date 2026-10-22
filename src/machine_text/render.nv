@@ -307,7 +307,9 @@ fn rn_sec_parties(mut cx RnCx, root RJ) -> []str {
             Some(e) => rn_expr(cx, e, []str.new())
             None => "—"
         }
-        rows.push(RnRow { cells: [party_word, rj_gstr(p, "id"), kind, profile, rn_words_cell(cx, p), rn_datum_name(cx, rj_gstr(p, "counter"))] })
+        // a party with no counter is a party of a free input: `—` (spec 1, AL-52)
+        ro counter = if rj_gstr(p, "counter") == "" { "—" } else { rn_datum_name(cx, rj_gstr(p, "counter")) }
+        rows.push(RnRow { cells: [party_word, rj_gstr(p, "id"), kind, profile, rn_words_cell(cx, p), counter] })
     }
     mut out = []str.new()
     if rows.len() > 0 { out = rn_table(rn_cols(cx, ["name", "id", "kind", "profile", "signals", "counter"]), rows) }

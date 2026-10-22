@@ -19,22 +19,23 @@ type TxPair { ru str, en str }
 type TxEnv {
     states []TxPair, globals []TxPair, defs []TxPair, types []TxPair, cases []TxPair, prims []TxPair,
     parties []TxPair, psignals []TxPair, parts []TxPair, signals []TxPair, input_fields []TxPair, fields []TxPair, empty_lists []str,
-    nested_lists []TxPair, owner str
+    nested_lists []TxPair, owner str, opath []str
 }
 
 fn env_new() -> TxEnv {
     TxEnv {
         states: []TxPair.new(), globals: []TxPair.new(), defs: []TxPair.new(), types: []TxPair.new(), cases: []TxPair.new(), prims: []TxPair.new(),
         parties: []TxPair.new(), psignals: []TxPair.new(), parts: []TxPair.new(), signals: []TxPair.new(), input_fields: []TxPair.new(), fields: []TxPair.new(), empty_lists: []str.new(),
-        nested_lists: []TxPair.new(), owner: ""
+        nested_lists: []TxPair.new(), owner: "", opath: []str.new()
     }
 }
 
 /// TxPlace: a place of the JSON (`$.states[2].rows[0]`) and the line of the file that it comes from; the checks of the table speak in paths.
 type TxPlace { path str, line int }
 
-/// TxCx: the context of one translation: the errors, the table of names, the names of the file, the counts of the rows, the places of the JSON and the words of the language of the file.
-type TxCx { errors []TranslateError, names TxNames, env TxEnv, rows_total int, rows_noted int, places []TxPlace, words TxWords }
+/// TxCx: the context of one translation: the errors and the warnings, the table of names of the host, the names of the file, the JSON names that it declares (`jn`, jname.nv), the counts of the rows, the places of the JSON and
+/// the words of the language of the file.
+type TxCx { errors []TranslateError, warnings []TranslateError, names TxNames, env TxEnv, jn TxJn, rows_total int, rows_noted int, places []TxPlace, words TxWords }
 
 fn cx_place(mut cx TxCx, path str, line int) -> () {
     cx.places.push(TxPlace { path, line })
@@ -266,34 +267,40 @@ fn cx_error(mut cx TxCx, t TxTok, kind str, message str) -> () {
 /// TxDeclared: a declared name as the file writes it (the token) and its JSON name.
 type TxDeclared { tok TxTok, json str }
 
-/// The JSON name of a name that is being declared (format 1a, 2.13, AL-46): the Latin name in the brackets right after it, `число_ходов (turn_count)`; the name of a bracket is Latin. `exported` says whether the name
-/// leaves the machine (a datum, a field of the input, a type, a field, a variant, an element of an enum, a signal of a party and its field, a primitive, a setting): then a name that is not Latin
-/// needs the brackets, else it is an error; a Latin name without brackets is its own JSON name, an internal name (a constant, a parameter, a definition, a party, a binding) is written to the tree as it is.
-fn decl_json(mut p TxP, mut cx TxCx, t TxTok, what str, exported bool) -> Result[str, TranslateError] => decl_json_text(p, cx, t, t.text, what, exported)
+/// The JSON name of a name that is being declared (spec 1a, AL-53, AL-60): the row of the section `## Имена`, else the name built by itself (jname.nv); it is recorded for the checks of the end of the file.
+/// `what` is the kind of the declaration (`данного`, `типа`, `поля`, …), `space` the space of the distinctness of the JSON names (AL-58) and `path` the qualified name (`Тип.Вариант.поле`). The brackets
+/// after the name, `число_ходов (turn_count)` of 2.14, are an error: the JSON name is not written at the declaration any more.
+fn decl_json(mut p TxP, mut cx TxCx, t TxTok, what str, space str, path []str) -> Result[str, TranslateError] => decl_json_text(p, cx, t, t.text, what, space, path)
 
 /// The same for a name of several words (`остановить совещание`, a phrase of a signal): `text` is the whole name, `t` its first word.
-fn decl_json_text(mut p TxP, mut cx TxCx, t TxTok, text str, what str, exported bool) -> Result[str, TranslateError] {
+fn decl_json_text(mut p TxP, mut cx TxCx, t TxTok, text str, what str, space str, path []str) -> Result[str, TranslateError] {
     if p_is(p, "(") && p_ahead(p, 1).kind == TK_NAME && t_is(p_ahead(p, 2), ")") {
-        ro l = p_ahead(p, 1)
-        if !is_identifier_latin(l.text) {
-            return Err(tx_err(l.line, l.col, "name", "JSON-имя `${l.text}` у ${what} `${text}` не латинское: в скобках пишется латинское имя `[A-Za-z_][A-Za-z0-9_]*` (Я-46)"))
-        }
+        ro open = p_tok(p)
+        ro bracket = p_ahead(p, 1)
+        cx_error(cx, open, "name", "скобки `(${bracket.text})` после имени ${what} `${text}` убраны из языка (AL-60): JSON-имя задаёт строка раздела `## Имена` (`| имя | JSON-имя |`), без строки оно строится само; переходного периода нет")
         p.pos += 3
-        return Ok(l.text)
     }
-    if exported && !is_identifier_latin(text) {
-        cx_error(cx, t, "name", "у ${what} `${text}` нет JSON-имени в скобках: нелатинское имя, которое выходит из машины, пишется `${text} (json_name)` (Я-46)")
-    }
-    Ok(text)
+    Ok(jn_declare(cx, t, text, what, space, path))
 }
 
-/// The JSON name of a name that a table cell declares (the first cell of `## Данные`, `## Вход`, `## Примитивы`): the cell is `имя (json_name)`. The cell is read to its end.
-fn cell_decl_json(cell TxCell, line int, mut cx TxCx, what str, exported bool) -> Result[TxDeclared, TranslateError] {
+/// The JSON name of a name that a table cell declares (the first cell of `## Данные`, `## Вход`, `## Примитивы`). The cell is read to its end.
+fn cell_decl_json(cell TxCell, line int, mut cx TxCx, what str, space str) -> Result[TxDeclared, TranslateError] {
     mut p = cell_p(cell, line)?
     ro t = p_tok(p)
     if t.kind != TK_NAME { return Err(p_fail(p, "ожидается имя")) }
     p_adv(p)
-    ro json = decl_json(p, cx, t, what, exported)?
+    // a readable name of the contract (`трасса`, `номер_шага`) has the JSON name of the table of words: no row names it (1a, AL-49)
+    match readable_json(cx.words, t.text) {
+        Some(key) => {
+            if !p_is(p, "(") {
+                p_end(p)?
+                jn_declare_fixed(cx, t.line, t.col, t.text, what, space, [t.text], key)
+                return Ok(TxDeclared { tok: t, json: key })
+            }
+        }
+        None => ()
+    }
+    ro json = decl_json(p, cx, t, what, space, [t.text])?
     p_end(p)?
     Ok(TxDeclared { tok: t, json })
 }

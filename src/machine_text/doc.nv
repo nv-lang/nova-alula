@@ -115,7 +115,7 @@ fn struct_error(line int, col int, message str) -> TranslateError => tx_err(line
 
 /// The keys of the sections of a file of a machine, in the order of format section 1 (the English words of the table of words; `Signals` and `Response parts` are the product's).
 fn section_keys() -> []str => [
-    "Types", "Constants", "Parameters", "Input", "Data", "Parties", "Signals", "Response parts", "Definitions", "Includes", "Common events", "States", "Ends", "Primitives"
+    "Types", "Names", "Constants", "Parameters", "Input", "Data", "Parties", "Signals", "Response parts", "Definitions", "Includes", "Common events", "States", "Ends", "Primitives"
 ]
 
 /// The words of the sections in the language of the file, for a message.
@@ -219,7 +219,7 @@ fn tab_read(entries []TxEntry, at int, last int, expected []str, mut cx TxCx) ->
             k2 += 1
         }
         if former_at >= 0 {
-            note(cx, struct_error(head.line, head.cells[former_at].col, "столбец «${head.cells[former_at].text}» в формате 2.14 называется «${kw(cx.words, "column", "signals")}» (Я-38): в нём объявлены сигналы стороны; переходного периода нет"))
+            note(cx, struct_error(head.line, head.cells[former_at].col, "столбец «${head.cells[former_at].text}» в формате 2.17 называется «${kw(cx.words, "column", "signals")}» (Я-38): в нём объявлены сигналы стороны; переходного периода нет"))
         } else if foreign_at >= 0 {
             note(cx, foreign_error(cx.words, head.line, head.cells[foreign_at].col, head.cells[foreign_at].text, "column", foreign_key))
         } else {

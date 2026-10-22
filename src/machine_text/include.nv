@@ -168,7 +168,7 @@ fn fragment_text(call TxCall, mut cx TxCx) -> Option[str] {
     for q in call.params {
         if !pause_params(words).contains(q.name) {
             if q.name == "слово_остановки" || q.name == "halt_word" {
-                note(cx, tx_err(q.tok.line, q.tok.col, "structure", "параметр `${q.name}` фрагмента в формате 2.14 называется `${kw(words, "fragment_param", "halt_signal")}` (Я-38): это сигнал стороны, а не слово ворот; переходного периода нет"))
+                note(cx, tx_err(q.tok.line, q.tok.col, "structure", "параметр `${q.name}` фрагмента в формате 2.17 называется `${kw(words, "fragment_param", "halt_signal")}` (Я-38): это сигнал стороны, а не слово ворот; переходного периода нет"))
             } else {
                 note(cx, tx_err(q.tok.line, q.tok.col, "structure", "у фрагмента `${call.name}` нет параметра `${q.name}`"))
             }
@@ -313,6 +313,8 @@ fn protocol_signals_json(mut cx TxCx) -> []TxJ {
     pair_add(cx.env.signals, proto_word(cx, "continue"), "continue")
     for s in protocol_signals() {
         pair_add(cx.env.signals, proto_word(cx, s.en), s.en)
+        // the signals of the protocol are signals of the machine: their JSON names are the registry's, no row changes them, they are in the space of the signals of the machine (AL-58)
+        jn_declare_fixed(cx, 0, 0, proto_word(cx, s.en), "сигнала машины", "сигналы машины", [s.en], s.en)
         mut fields = []TxJ.new()
         for f in s.fields {
             fields.push(jobj([kv("name", js(f)), kv("type", js("text"))]))

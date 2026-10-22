@@ -27,19 +27,27 @@ fn decl_internal(mut cx TxCx, t TxTok) -> str {
     t.text
 }
 
-// A name that leaves the machine: the JSON name comes from the brackets after it (AL-46).
-fn decl_exported(mut p TxP, mut cx TxCx, t TxTok, what str) -> Result[str, TranslateError] {
+// A name that leaves the machine: its JSON name is the row of `## Имена` or is built by itself (AL-53, AL-60).
+fn decl_exported(mut p TxP, mut cx TxCx, t TxTok, what str, space str, path []str) -> Result[str, TranslateError] {
     if is_keyword(cx.words, t.text) { cx_error(cx, t, "name", "`${t.text}` — служебное слово, именем быть не может") }
-    decl_json(p, cx, t, what, true)
+    decl_json(p, cx, t, what, space, path)
 }
 
-// A field `имя (json_name) тип` of a record, of a case or of a signal; returns the JSON {"name", "type"}. `what` says whose field it is in a message.
+// The path of a name under the owner that is being read (`cx.env.opath`): the owner and the name.
+fn path_under(cx TxCx, name str) -> []str {
+    mut out = []str.new()
+    for o in cx.env.opath { out.push(o) }
+    out.push(name)
+    out
+}
+
+// A field `имя тип` of a record, of a case or of a signal; returns the JSON {"name", "type"}. `what` says whose field it is in a message; the owner of the field is `cx.env.opath`.
 fn decl_field(mut p TxP, mut cx TxCx, what str) -> Result[TxJ, TranslateError] {
     ro n = p_tok(p)
     if n.kind != TK_NAME { return Err(p_fail(p, "ожидается имя поля")) }
     p_adv(p)
     if p_is(p, ":") { return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "после имени поля тип пишется без двоеточия (формат 2.3)")) }
-    ro en = decl_exported(p, cx, n, what)?
+    ro en = decl_exported(p, cx, n, what, "${what}:${cx.env.opath.join(".")}", path_under(cx, n.text))?
     if p_is(p, ":") { return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "после имени поля тип пишется без двоеточия (формат 2.3)")) }
     declare_field(cx, n, en)
     ro type_text = ty_parse(p, cx)?
@@ -91,7 +99,7 @@ fn decl_enum(mut p TxP, mut cx TxCx) -> Result[Option[TxJ], TranslateError] {
     ro n = p_tok(p)
     if n.kind != TK_NAME { return Err(p_fail(p, "после `перечисление` ожидается имя типа")) }
     p_adv(p)
-    ro type_en = decl_exported(p, cx, n, "типа")?
+    ro type_en = decl_exported(p, cx, n, "типа", "типы", [n.text])?
     pair_add(cx.env.types, n.text, type_en)
     p_expect(p, "=")?
     mut cases = []TxJ.new()
@@ -102,7 +110,7 @@ fn decl_enum(mut p TxP, mut cx TxCx) -> Result[Option[TxJ], TranslateError] {
         ro c = p_tok(p)
         if c.kind != TK_NAME { return Err(p_fail(p, "ожидается значение перечисления")) }
         p_adv(p)
-        ro case_en = decl_exported(p, cx, c, "элемента перечисления")?
+        ro case_en = decl_exported(p, cx, c, "элемента перечисления", "элементы:${n.text}", [n.text, c.text])?
         pair_add(cx.env.cases, c.text, case_en)
         if p_tok(p).kind == TK_STR {
             ro word = p_tok(p)
@@ -160,12 +168,14 @@ fn decl_record(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
     ro n = p_tok(p)
     if n.kind != TK_NAME { return Err(p_fail(p, "после `тип` ожидается имя типа")) }
     p_adv(p)
-    ro type_en = decl_exported(p, cx, n, "типа")?
+    ro type_en = decl_exported(p, cx, n, "типа", "типы", [n.text])?
     pair_add(cx.env.types, n.text, type_en)
     p_expect(p, "{")?
     cx.env.owner = n.text
+    cx.env.opath = [n.text]
     ro fields = decl_fields(p, cx, "}", "поля")?
     cx.env.owner = ""
+    cx.env.opath = []str.new()
     p_expect(p, "}")?
     Ok(jobj([kv("name", js(type_en)), kv("fields", TxArr(fields))]))
 }
@@ -175,7 +185,7 @@ fn decl_variant(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
     ro n = p_tok(p)
     if n.kind != TK_NAME { return Err(p_fail(p, "после `вариант` ожидается имя типа")) }
     p_adv(p)
-    ro type_en = decl_exported(p, cx, n, "типа")?
+    ro type_en = decl_exported(p, cx, n, "типа", "типы", [n.text])?
     pair_add(cx.env.types, n.text, type_en)
     p_expect(p, "{")?
     mut cases = []TxJ.new()
@@ -184,12 +194,14 @@ fn decl_variant(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
         ro c = p_tok(p)
         if c.kind != TK_NAME { return Err(p_fail(p, "ожидается имя случая варианта")) }
         p_adv(p)
-        ro case_en = decl_exported(p, cx, c, "варианта")?
+        ro case_en = decl_exported(p, cx, c, "варианта", "варианты:${n.text}", [n.text, c.text])?
         pair_add(cx.env.cases, c.text, case_en)
         if p_eat(p, "{") {
             cx.env.owner = c.text
+            cx.env.opath = [n.text, c.text]
             ro fields = decl_fields(p, cx, "}", "поля")?
             cx.env.owner = ""
+            cx.env.opath = []str.new()
             p_expect(p, "}")?
             cases.push(jobj([kv("name", js(case_en)), kv("fields", TxArr(fields))]))
         } else {
@@ -228,9 +240,7 @@ fn decl_types(entries []TxEntry, sec TxSection, mut cx TxCx) -> TxTypes {
                     ro named = p_tok(pre)
                     if named.kind == TK_NAME {
                         p_adv(pre)
-                        mut known = named.text
-                        if p_is(pre, "(") && p_ahead(pre, 1).kind == TK_NAME && t_is(p_ahead(pre, 2), ")") { known = p_ahead(pre, 1).text }
-                        if !pair_has(cx.env.types, named.text) { pair_add(cx.env.types, named.text, known) }
+                        if !pair_has(cx.env.types, named.text) { pair_add(cx.env.types, named.text, jn_peek(cx, named.text, "типа", [named.text])) }
                     }
                 }
             }
@@ -336,6 +346,7 @@ fn decl_constant_row(r TxEntry, mut cx TxCx) -> Result[TxJ, TranslateError] {
     ro value = cell_expr(r.cells[2], r.line, cx, sc_empty())?
     if pair_has(cx.env.globals, n.text) { cx_error(cx, n, "name", "имя `${n.text}` уже объявлено") }
     pair_add(cx.env.globals, n.text, en)
+    jn_declare_internal(cx, n, "константы")
     Ok(jobj([kv("name", js(en)), kv("type", js(type_text)), kv("value", value)]))
 }
 
@@ -370,6 +381,7 @@ fn decl_param_row(r TxEntry, mut cx TxCx) -> Result[TxJ, TranslateError] {
     }
     if pair_has(cx.env.globals, n.text) { cx_error(cx, n, "name", "имя `${n.text}` уже объявлено") }
     pair_add(cx.env.globals, n.text, en)
+    jn_declare_internal(cx, n, "параметра")
     Ok(jobj(pairs))
 }
 
@@ -437,7 +449,7 @@ fn decl_input(entries []TxEntry, sec TxSection, mut cx TxCx) -> TxInput {
 type TxInField { json TxJ, ru str, en str }
 
 fn decl_input_row(r TxEntry, mut cx TxCx) -> Result[TxInField, TranslateError] {
-    ro d = cell_decl_json(r.cells[0], r.line, cx, "поля входа", true)?
+    ro d = cell_decl_json(r.cells[0], r.line, cx, "поля входа", "поля входа")?
     ro type_text = cell_type(r.cells[1], r.line, cx)?
     Ok(TxInField { json: jobj([kv("name", js(d.json)), kv("type", js(type_text))]), ru: d.tok.text, en: d.json })
 }
@@ -519,17 +531,18 @@ fn data_name(cell TxCell, line int, mut cx TxCx) -> Result[TxDatumName, Translat
         }
     }
     if is_keyword(cx.words, root.text) { cx_error(cx, root, "name", "`${root.text}` — служебное слово, именем быть не может") }
-    // a readable name of the contract (`остановка`, `предыдущее`) has the JSON name of the table of words and needs no brackets (1a, AL-46)
+    // a readable name of the contract (`остановка`, `предыдущее`) has the JSON name of the table of words and no row names it (1a, AL-49)
     match readable_json(cx.words, root.text) {
         Some(key) => {
             if !p_is(p, "(") {
                 p_end(p)?
+                jn_declare_fixed(cx, root.line, root.col, root.text, "данного", "данные", [root.text], key)
                 return Ok(TxDatumName { en: key, ru: root.text, is_path: false })
             }
         }
         None => ()
     }
-    ro en = decl_json(p, cx, root, "данного", true)?
+    ro en = decl_json(p, cx, root, "данного", "данные", [root.text])?
     p_end(p)?
     Ok(TxDatumName { en, ru: root.text, is_path: false })
 }

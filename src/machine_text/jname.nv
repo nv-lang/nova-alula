@@ -1,35 +1,484 @@
-// jname.nv - the JSON names of the names that a file declares (task 151, format 2.17, AL-53 ... AL-62). STUB of the red probe: the signatures that the tests of the probe compile against.
+// jname.nv - the JSON names of the names that a file declares (task 151, format 2.17, AL-53, AL-58 ... AL-62).
+//
+// A name that leaves the machine (a state, a datum, a field of the input, a type, a field, a variant, an element of an enum, a signal of a party and its field, a primitive, the setting of a keeper) has a Latin JSON name
+// in the tree. The JSON name is built by itself, in this order (spec 1a): the row of the section `## Имена` (the qualified name `Тип.поле` is stronger than the simple one and a simple row renames every declaration of
+// the name), the Latin name as it is, the English name of the dictionary of the methodology for the WHOLE name (the version 11, 1268 pairs, the hash of its normative part is `60383c370415`, AL-62), the transliteration
+// word by word (the types and the states in Pascal case, the others in snake case). A word of two alphabets is an error (AL-59). The brackets after a name of 2.14 are an error (AL-60). The JSON names of one space are
+// different (AL-58, ten spaces); a row that changes nothing, a row for a name that is not declared, a repeated row, a JSON name that is not Latin are errors of the section.
+//
+// The dictionary is the file `glossary_names.tsv` (`русское<TAB>английское`, the pairs of the normative part in the order of the glossary of the methodology; `scripts/glossary-names.py` makes it).
 module alula.machine_text
 
 import std.text
 import std.collections.hash_map.{HashMap}
+import std.crypto.sha256.{Sha256}
 
-/// JsonName: a name that leaves the machine with its JSON name: the line of the declaration, the kind of the declaration, the name as written, the path (`Тип.Вариант.поле`) and the JSON name.
+/// JsonName: a name that leaves the machine with its JSON name: the line of the declaration, the kind of the declaration (`состояния`, `данного`, `типа`, `поля`, `сигнала`, …), the name as written, the path
+/// (`Тип.Вариант.поле`) and the JSON name.
 export type JsonName { line int, where str, name str, path str, json str }
 
-/// The names that leave the machine, with their JSON names.
-export fn translate_names(file_text str) -> []JsonName => []JsonName.new()
+// ---- the dictionary of the methodology ---------------------------------------------------------------------------------------------------------------
 
+/// TxGlossary: the names of the dictionary that have one English name (a name with two English names is not in it, spec 1a).
 type TxGlossary { names HashMap[str, str] }
 
-fn glossary_table_text() -> str => ""
+/// The normative part of the dictionary as the file of the package: the lines `русское<TAB>английское` in the order of the glossary of the methodology.
+fn glossary_table_text() -> str => embed_str("glossary_names.tsv")
 
-fn glossary_hash_text(tsv str) -> str => ""
+// The pairs of a table, in order; a comment `#` and an empty line are skipped.
+fn glossary_pairs_of(tsv str) -> []TxPair {
+    mut out = []TxPair.new()
+    for raw in tsv.split("\n") {
+        ro line = raw.strip_suffix("\r") ?? raw
+        if line.byte_len() == 0 || line.starts_with("#") { continue }
+        ro cells = line.split("\t")
+        mut parts = []str.new()
+        for c in cells { parts.push(c) }
+        if parts.len() < 2 { continue }
+        out.push(TxPair { ru: parts[0], en: parts[1] })
+    }
+    out
+}
 
-fn glossary_markdown_pairs(md str) -> str => ""
+/// The hash of the normative part (AL-62): the first twelve letters of the SHA-256 of the lines `русское → английское` joined by LF (no LF at the end), UTF-8.
+fn glossary_hash_text(tsv str) -> str {
+    mut lines = []str.new()
+    for p in glossary_pairs_of(tsv) { lines.push("${p.ru} → ${p.en}") }
+    ro full = Sha256.hash_str(lines.join("\n").bytes())
+    full[..12]
+}
 
-fn glossary_pinned_hash(format str) -> str => ""
+/// The hash that a version of the format pins (AL-62); the version and the hash change only together. "" for a version that is not read.
+fn glossary_pinned_hash(format str) -> str {
+    if format == "2.17" { return "60383c370415" }
+    ""
+}
 
-fn glossary_check() -> str => "stub"
+/// The error about the dictionary for the format `format`, or "" when the hash of the table is the one that the format pins.
+fn glossary_check_text(tsv str, format str) -> str {
+    ro pinned = glossary_pinned_hash(format)
+    if pinned == "" { return "формат ${format}: хеш словаря не закреплён" }
+    ro actual = glossary_hash_text(tsv)
+    if actual != pinned {
+        return "словарь изменён без смены формата (AL-62): хеш нормативной части словаря ${actual}, формат ${format} закрепил ${pinned}"
+    }
+    ""
+}
 
-fn glossary_check_text(tsv str, format str) -> str => "stub"
+/// The same for the dictionary that comes with the translator and the last format that it reads.
+fn glossary_check() -> str {
+    mut last = ""
+    for v in format_versions() { last = v }
+    glossary_check_text(glossary_table_text(), last)
+}
 
-fn glossary_load() -> TxGlossary => { names: HashMap[str, str].new() }
+/// The dictionary for the names: a name that the normative part gives ONE English name.
+fn glossary_load() -> TxGlossary {
+    mut first = HashMap[str, str].new()
+    mut doubtful = HashMap[str, str].new()
+    ro pairs = glossary_pairs_of(glossary_table_text())
+    for p in pairs {
+        match first.get(p.ru) {
+            Some(known) => {
+                if known != p.en {
+                    ro old = doubtful.insert(p.ru, p.en)
+                }
+            }
+            None => {
+                ro old = first.insert(p.ru, p.en)
+            }
+        }
+    }
+    mut kept = HashMap[str, str].new()
+    for p in pairs {
+        if !doubtful.contains(p.ru) {
+            ro old = kept.insert(p.ru, p.en)
+        }
+    }
+    TxGlossary { names: kept }
+}
 
-fn glossary_get(g TxGlossary, name str) -> str => ""
+/// The English name of the dictionary for the whole name, "" when there is none (or when it has two).
+fn glossary_get(g TxGlossary, name str) -> str {
+    match g.names.get(name) {
+        Some(x) => x
+        None => ""
+    }
+}
 
-fn jn_translit(word str) -> str => word
+// ---- the normative part out of the glossary of the methodology (the tests pin the hash with it; `scripts/glossary-names.py` does the same for the file) -----------
 
-fn jn_auto(name str, pascal bool, g TxGlossary) -> str => name
+// The number of a heading of the glossary: `## 2. Имена` -> `2`, `### 2.10 Записи` -> `2.10`; "" for another line.
+fn glossary_section_of(line str) -> str {
+    ro n = line.byte_len()
+    mut hashes = 0
+    while hashes < n && tx_byte(line, hashes) == 35 { hashes += 1 }
+    if hashes < 2 || hashes > 4 || hashes >= n || tx_byte(line, hashes) != 32 { return "" }
+    ro rest = line[hashes + 1..]
+    mut end = 0
+    while end < rest.byte_len() && (tx_byte(rest, end) == 46 || (tx_byte(rest, end) >= 48 && tx_byte(rest, end) <= 57)) { end += 1 }
+    if end == 0 || tx_byte(rest, 0) == 46 { return "" }
+    mut number = rest[..end]
+    if number.ends_with(".") { number = number[..number.byte_len() - 1] }
+    if end >= rest.byte_len() || tx_byte(rest, end) != 32 { return "" }
+    number
+}
 
-fn jn_mixed(name str) -> str => ""
+fn glossary_normative_tables() -> []str => ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9", "2.11", "2.12", "2.16"]
+
+// The pair of a row `| `русское` | `английское` | …`, or two empty texts.
+fn glossary_row_pair(line str) -> TxPair {
+    ro none = TxPair { ru: "", en: "" }
+    if !line.starts_with("| `") { return none }
+    ro rest = line[3..]
+    ro i = rest.find("`") ?? -1
+    if i <= 0 { return none }
+    ro first = rest[..i]
+    ro after = rest[i + 1..]
+    if !after.starts_with(" | `") { return none }
+    ro rest2 = after[4..]
+    ro j = rest2.find("`") ?? -1
+    if j <= 0 { return none }
+    ro second = rest2[..j]
+    if !rest2[j + 1..].starts_with(" |") { return none }
+    TxPair { ru: first, en: second }
+}
+
+// The pairs of a line of the records of 2.10: every `русское` → `английское`.
+fn glossary_record_pairs(line str) -> []TxPair {
+    mut out = []TxPair.new()
+    mut pos = 0
+    while pos < line.byte_len() {
+        ro a0 = line[pos..].find("`") ?? -1
+        if a0 < 0 { break }
+        ro i = pos + a0 + 1
+        ro a1 = line[i..].find("`") ?? -1
+        if a1 < 0 { break }
+        ro j = i + a1 + 1
+        if a1 > 0 && line[j..].starts_with(" → `") {
+            ro k = j + " → `".byte_len()
+            ro b1 = line[k..].find("`") ?? -1
+            if b1 > 0 {
+                out.push(TxPair { ru: line[i..i + a1], en: line[k..k + b1] })
+                pos = k + b1 + 1
+                continue
+            }
+        }
+        pos = j
+    }
+    out
+}
+
+/// The normative part of the glossary of the methodology as the lines of the table of the package: the tables of the sections 2.1 - 2.9, 2.11, 2.12, 2.16 (the first two columns, in backticks) and the records of 2.10
+/// (`русское` → `английское`), in the order of the file. A column of notes, the other sections and the prose are not in it, so they do not change the hash.
+fn glossary_markdown_pairs(md str) -> str {
+    mut out = []str.new()
+    mut section = ""
+    for raw in md.split("\n") {
+        ro line = raw.strip_suffix("\r") ?? raw
+        ro heading = glossary_section_of(line)
+        if heading != "" {
+            section = heading
+            continue
+        }
+        if glossary_normative_tables().contains(section) {
+            ro p = glossary_row_pair(line)
+            if p.ru != "" { out.push("${p.ru}\t${p.en}") }
+        } else if section == "2.10" {
+            for p in glossary_record_pairs(line) { out.push("${p.ru}\t${p.en}") }
+        }
+    }
+    if out.len() == 0 { return "" }
+    "${out.join("\n")}\n"
+}
+
+// ---- the transliteration and the case --------------------------------------------------------------------------------------------------------------------
+
+fn jn_cyrillic() -> str => "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
+
+fn jn_latin() -> []str => ["a", "b", "v", "g", "d", "e", "e", "zh", "z", "i", "y", "k", "l", "m", "n", "o", "p", "r", "s", "t", "u", "f", "kh", "ts", "ch", "sh", "shch", "", "y", "", "e", "yu", "ya"]
+
+// The index of a lower case letter of the table, -1 when it is not one.
+fn jn_index(low str) -> int {
+    mut k = 0
+    for c in jn_cyrillic().chars() {
+        if "${c}" == low { return k }
+        k += 1
+    }
+    -1
+}
+
+// The text with its first ASCII letter in the upper case.
+fn jn_upper_first(s str) -> str {
+    if s.byte_len() == 0 { return s }
+    ro b = tx_byte(s, 0)
+    if b >= 97 && b <= 122 {
+        ro first = tx_at(s, 0)
+        return "${first.to_ascii_uppercase()}${s[1..]}"
+    }
+    s
+}
+
+/// The Latin letters for the letters of a text (AL-53): a letter of the Cyrillic table is replaced (a capital letter gives a Latin letter with a capital first letter, `Ж` -> `Zh`), the hard and the soft sign are
+/// dropped, any other char stays.
+fn jn_translit(word str) -> str {
+    mut out = []str.new()
+    for ch in word.chars() {
+        ro low = tx_lower_char(ch)
+        ro at = jn_index(low)
+        if at < 0 {
+            out.push("${ch}")
+        } else {
+            ro t = jn_latin()[at]
+            if low != "${ch}" { out.push(jn_upper_first(t)) } else { out.push(t) }
+        }
+    }
+    out.join("")
+}
+
+// A letter of the Cyrillic alphabets.
+fn jn_is_cyrillic(c char) -> bool => (c as int) >= 0x0400 && (c as int) <= 0x052F
+
+fn jn_is_ascii_letter(c char) -> bool => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+
+/// The words of a name: the parts between `_` and spaces; the empty ones are dropped.
+fn jn_words(name str) -> []str {
+    mut out = []str.new()
+    mut cur = []str.new()
+    for c in name.chars() {
+        if c == '_' || c == ' ' {
+            if cur.len() > 0 {
+                out.push(cur.join(""))
+                cur = []str.new()
+            }
+        } else {
+            cur.push("${c}")
+        }
+    }
+    if cur.len() > 0 { out.push(cur.join("")) }
+    out
+}
+
+/// The first word of the name where Cyrillic and Latin letters are mixed (AL-59), "" when there is none.
+fn jn_mixed(name str) -> str {
+    for w in jn_words(name) {
+        mut cyr = false
+        mut lat = false
+        for c in w.chars() {
+            if jn_is_cyrillic(c) { cyr = true }
+            if jn_is_ascii_letter(c) { lat = true }
+        }
+        if cyr && lat { return w }
+    }
+    ""
+}
+
+/// The automatic JSON name (AL-53): a Latin name is its own name; else the English name of the dictionary for the whole name; else the transliteration of every word. `pascal`: a state, a type, a variant, an
+/// element of an enum (the words joined, each with a capital first letter); else a name of a value (the words in lower case joined by `_`).
+fn jn_auto(name str, pascal bool, g TxGlossary) -> str {
+    if is_identifier_latin(name) { return name }
+    ro known = glossary_get(g, name)
+    if known != "" { return known }
+    ro words = jn_words(name)
+    if pascal {
+        mut out = []str.new()
+        for w in words {
+            mut has_lower = false
+            for c in w.chars() {
+                if tx_is_lower(c) { has_lower = true }
+            }
+            mut shaped = w
+            if !has_lower {
+                mut cut = []str.new()
+                mut k = 0
+                for c in w.chars() {
+                    if k == 0 { cut.push("${c}") } else { cut.push(tx_lower_char(c)) }
+                    k += 1
+                }
+                shaped = cut.join("")
+            }
+            out.push(jn_upper_first(jn_translit(shaped)))
+        }
+        return out.join("")
+    }
+    mut parts = []str.new()
+    for w in words { parts.push(jn_translit(tx_lower(w))) }
+    parts.join("_")
+}
+
+// ---- the section `## Имена` and the declarations ----------------------------------------------------------------------------------------------------------
+
+/// TxJnRow: a row of the section: the name or the qualified name as written, its path, the JSON name and the places (the line, the column of the first cell and of the second).
+type TxJnRow { key str, path []str, json str, line int, col int, jcol int }
+
+/// TxJnDecl: a name that leaves the machine: where it is declared, in which space of the distinctness, as written, its path, the JSON name it got, the automatic one, the row it took (-1: none) and what it would
+/// have got without that row; `fixed` is a name of the contract (a readable word of the table of words, a name of the protocol): no row may name it.
+type TxJnDecl { line int, col int, where str, space str, name str, path []str, json str, auto str, row int, without str, fixed bool }
+
+/// TxJn: the state of the names of one file: the rows of its section `## Имена`, the declarations, the dictionary.
+type TxJn { rows []TxJnRow, decls []TxJnDecl, glossary TxGlossary }
+
+fn jn_new() -> TxJn => { rows: []TxJnRow.new(), decls: []TxJnDecl.new(), glossary: glossary_load() }
+
+fn jn_row_ix(rows []TxJnRow, key str) -> int {
+    mut k = 0
+    for r in rows {
+        if r.key == key { return k }
+        k += 1
+    }
+    -1
+}
+
+/// The section `## Имена`: `| имя | JSON-имя |`. Reads the rows into `cx.jn.rows`; a repeat, a word of two alphabets, a JSON name that is not Latin are errors at the row.
+fn jn_rows_read(entries []TxEntry, sec TxSection, mut cx TxCx) -> () {
+    for r in section_table(entries, sec, ["name", "json_name"], cx) {
+        ro key = r.cells[0].text
+        ro json = r.cells[1].text
+        mut path = []str.new()
+        for part in key.split(".") { path.push(part.trim_ascii()) }
+        ro line = r.line
+        ro col = r.cells[0].col
+        ro at = TxTok { kind: TK_NAME, text: key, line, col }
+        mut skip = false
+        for part in path {
+            ro mixed = jn_mixed(part)
+            if mixed != "" { cx_error(cx, at, "name", "в слове `${mixed}` имени `${key}` смешаны кириллица и латиница: смешивать можно только через `_` или пробел (AL-59)") }
+        }
+        ro before = jn_row_ix(cx.jn.rows, key)
+        if before >= 0 {
+            cx_error(cx, at, "name", "имя `${key}` повторено в `## Имена` (строка ${cx.jn.rows[before].line})")
+            skip = true
+        }
+        if !is_identifier_latin(json) {
+            cx_error(cx, TxTok { kind: TK_NAME, text: json, line, col: r.cells[1].col }, "name", "JSON-имя `${json}` строки `## Имена` у `${key}` не латинское: JSON-имя — латинское имя `[A-Za-z_][A-Za-z0-9_]*`")
+        }
+        if !skip { cx.jn.rows.push(TxJnRow { key, path, json, line, col, jcol: r.cells[1].col }) }
+    }
+}
+
+/// Is the kind of a declaration one whose JSON name is written in Pascal case?
+fn jn_is_pascal(what str) -> bool => what == "состояния" || what == "типа" || what == "варианта" || what == "элемента перечисления"
+
+/// TxJnPick: the JSON name of a declaration: the name, the automatic name, the row that gave it (-1: none) and what the declaration would have got without that row.
+type TxJnPick { json str, auto str, row int, without str }
+
+fn jn_pick(cx TxCx, name str, pascal bool, path []str) -> TxJnPick {
+    ro auto = jn_auto(name, pascal, cx.jn.glossary)
+    ro bare = jn_row_ix(cx.jn.rows, name)
+    if path.len() > 1 {
+        ro full = jn_row_ix(cx.jn.rows, path.join("."))
+        if full >= 0 {
+            ro without = if bare >= 0 { cx.jn.rows[bare].json } else { auto }
+            return TxJnPick { json: cx.jn.rows[full].json, auto, row: full, without }
+        }
+    }
+    if bare >= 0 { return TxJnPick { json: cx.jn.rows[bare].json, auto, row: bare, without: auto } }
+    TxJnPick { json: auto, auto, row: -1, without: auto }
+}
+
+/// The JSON name that a name would get (the same as `jn_declare` gives, nothing is recorded): for a name that other parts need before its declaration is read.
+fn jn_peek(cx TxCx, name str, what str, path []str) -> str => jn_pick(cx, name, jn_is_pascal(what), path).json
+
+/// A declaration of a name that leaves the machine: returns its JSON name and records the declaration for the checks of the end of the file (`jn_finish`).
+/// `what` is the kind of the declaration (`состояния`, `данного`, `типа`, …), `space` the space of the distinctness (AL-58), `path` the qualified name.
+fn jn_declare(mut cx TxCx, t TxTok, name str, what str, space str, path []str) -> str {
+    ro mixed = jn_mixed(name)
+    if mixed != "" {
+        cx_error(cx, t, "name", "в слове `${mixed}` имени ${what} `${name}` смешаны кириллица и латиница: смешивать можно только через `_` или пробел (AL-59)")
+    }
+    ro pick = jn_pick(cx, name, jn_is_pascal(what), path)
+    if pick.row < 0 && !is_identifier_latin(pick.json) && mixed == "" {
+        cx_error(cx, t, "name", "у ${what} `${name}` JSON-имя `${pick.json}` не латинское: автоматическое имя не вышло латинским, нужна строка в `## Имена` (AL-60)")
+    }
+    cx.jn.decls.push(TxJnDecl { line: t.line, col: t.col, where: what, space, name, path, json: pick.json, auto: pick.auto, row: pick.row, without: pick.without, fixed: false })
+    pick.json
+}
+
+/// A name of the contract with a JSON name that no row may change (`остановка` -> `stop_reason`, a signal of the protocol of a fragment): recorded for the distinctness of the space.
+fn jn_declare_fixed(mut cx TxCx, line int, col int, name str, what str, space str, path []str, json str) -> () {
+    cx.jn.decls.push(TxJnDecl { line, col, where: what, space, name, path, json, auto: json, row: -1, without: json, fixed: true })
+}
+
+/// A name that stays inside the machine and has a space of its own (a constant, a parameter): the JSON name is the name as written (spec 1a: internal names); recorded for the space 10.
+fn jn_declare_internal(mut cx TxCx, t TxTok, what str) -> () {
+    jn_declare_fixed(cx, t.line, t.col, t.text, what, "параметры и константы", [t.text], t.text)
+}
+
+fn jn_path_text(path []str) -> str => path.join(".")
+
+/// The declarations made since the index `from` belong to the contract (a connected fragment): no row names them and the report does not list them, but their JSON names are in their spaces.
+fn jn_fix_since(mut cx TxCx, from int) -> () {
+    mut out = []TxJnDecl.new()
+    mut k = 0
+    for d in cx.jn.decls {
+        if k >= from {
+            out.push(TxJnDecl { line: d.line, col: d.col, where: d.where, space: d.space, name: d.name, path: d.path, json: d.json, auto: d.auto, row: d.row, without: d.without, fixed: true })
+        } else {
+            out.push(d)
+        }
+        k += 1
+    }
+    cx.jn.decls = out
+}
+
+/// The end of a file: the rows of `## Имена` that name nothing, that change nothing; the JSON names that two declarations of one space share.
+fn jn_finish(mut cx TxCx) -> () {
+    mut k = 0
+    for row in cx.jn.rows {
+        mut known = false
+        mut extra = true
+        for d in cx.jn.decls {
+            if d.fixed { continue }
+            ro hit = if row.path.len() == 1 { d.name == row.key } else { jn_path_text(d.path) == row.key }
+            if hit { known = true }
+        }
+        for d in cx.jn.decls {
+            if d.row == k && d.without != row.json { extra = false }
+        }
+        ro at = TxTok { kind: TK_NAME, text: row.key, line: row.line, col: row.col }
+        if !known {
+            cx_error(cx, at, "name", "строка `## Имена` для `${row.key}`: такого объявления в файле нет (внутренние и читаемые имена в таблицу не пишутся, AL-60)")
+        } else if extra {
+            cx_error(cx, at, "name", "лишняя строка `## Имена` у `${row.key}`: `${row.json}` — имя, которое объявление получает без неё (AL-60)")
+        }
+        k += 1
+    }
+    // the space: the first declaration of a JSON name keeps it
+    mut seen_space = []str.new()
+    mut seen_json = []str.new()
+    mut seen_at = []int.new()
+    mut ix = 0
+    for d in cx.jn.decls {
+        mut first = -1
+        mut j = 0
+        while j < seen_json.len() {
+            if seen_space[j] == d.space && seen_json[j] == d.json {
+                first = seen_at[j]
+                break
+            }
+            j += 1
+        }
+        if first >= 0 {
+            ro other = cx.jn.decls[first]
+            cx_error(cx, TxTok { kind: TK_NAME, text: d.name, line: d.line, col: d.col }, "name", "JSON-имя `${d.json}` у ${d.where} `${jn_path_text(d.path)}` уже у ${other.where} `${jn_path_text(other.path)}` (строка ${other.line}): коллизия в одном пространстве (AL-58)")
+        } else {
+            seen_space.push(d.space)
+            seen_json.push(d.json)
+            seen_at.push(ix)
+        }
+        ix += 1
+    }
+}
+
+/// The names of the declarations that left the machine, for the report: the line, the kind, the name, the path, the JSON name (the contract names that no row may change are not among them).
+fn jn_report(cx TxCx) -> []JsonName {
+    mut out = []JsonName.new()
+    for d in cx.jn.decls {
+        if d.fixed { continue }
+        out.push(JsonName { line: d.line, where: d.where, name: d.name, path: jn_path_text(d.path), json: d.json })
+    }
+    out
+}
+
+/// The names of a file that leave the machine with their JSON names: for the tests and the tools.
+export fn translate_names(file_text str) -> []JsonName => translate_report(file_text).names

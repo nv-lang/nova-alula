@@ -117,10 +117,15 @@ fn defs_header(entries []TxEntry, mut cx TxCx) -> str {
 
 fn names_in_order(sections []TxSection) -> bool {
     mut want = ["Types", "Constants", "Definitions"]
-    if sections.len() != 3 { return false }
+    // the section `## Имена` is optional and stands after `## Типы` (AL-60)
+    mut kept = []TxSection.new()
+    for s in sections {
+        if s.name != "Names" { kept.push(s) }
+    }
+    if kept.len() != 3 { return false }
     mut k = 0
     while k < 3 {
-        if sections[k].name != want[k] { return false }
+        if kept[k].name != want[k] { return false }
         k += 1
     }
     true
@@ -164,6 +169,10 @@ fn defs_read(file_text str, mut cx TxCx) -> TxDefsDoc {
     mut types = TxTypes { records: []TxJ.new(), variants: []TxJ.new() }
     mut constants = []TxJ.new()
     mut definitions = []TxJ.new()
+    match section_of(sections, "Names") {
+        Some(sec) => { jn_rows_read(entries, sec, dcx) }
+        None => ()
+    }
     match section_of(sections, "Types") {
         Some(sec) => { types = decl_types(entries, sec, dcx) }
         None => ()
@@ -183,6 +192,7 @@ fn defs_read(file_text str, mut cx TxCx) -> TxDefsDoc {
         }
         None => ()
     }
+    jn_finish(dcx)
     for e in dcx.errors { cx.errors.push(e) }
     cx.rows_total += dcx.rows_total
     cx.rows_noted += dcx.rows_noted

@@ -1,7 +1,7 @@
 # Definitions: cycle_arithmetic
 
 - definitions_version: 1
-- format: 2.14
+- format: 2.17
 - language: en
 
 ## Types

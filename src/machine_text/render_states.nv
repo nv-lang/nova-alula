@@ -181,8 +181,13 @@ fn rn_state(mut cx RnCx, st RJ, index int) -> []str {
             out.push("")
             mut rows = []RnRow.new()
             for i in inputs {
+                // the expression that is the name of the field is written `—` (spec 4.2, 1b (г), AL-56)
+                ro same = match rj_get(i, "value") {
+                    Some(e) => rj_gstr(e, "op") == "name" && rj_gstr(e, "name") == rj_gstr(i, "field")
+                    None => false
+                }
                 ro value = match rj_get(i, "value") {
-                    Some(e) => rn_expr(cx, e, []str.new())
+                    Some(e) => if same { "—" } else { rn_expr(cx, e, []str.new()) }
                     None => "none"
                 }
                 ro reads = rn_kw(cx, "enum_value", if rj_gstr(i, "reads") == "party" { "party" } else { "executor" })
@@ -411,7 +416,7 @@ export fn render_machine_with(machine_json str, language str, copy_includes bool
             }
             // a tree of another version of the language is not written (no transition period, task 125): the file would say a version that the translator does not read
             if rj_gstr(root, "alula_version") != "" && !format_versions().contains(rj_gstr(root, "alula_version")) {
-                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 2.14 only is read and written (there is no transition period)"] }
+                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 2.17 only is read and written (there is no transition period)"] }
             }
             ro former = rn_former_note(root, "$")
             if former != "" { return RenderReport { text: "", notes: [former] } }
@@ -419,7 +424,7 @@ export fn render_machine_with(machine_json str, language str, copy_includes bool
             ro dropped = rn_dropped(cx, root, copy_includes)
             // what the fragments bring is written by the line of connection, not as the machine's own (1b (m), 2.12, AL-32)
             ro shown = if rj_garr(root, "fragments").len() == 0 { root } else { rn_without_fragments(root) }
-            ro version = if rj_gstr(shown, "alula_version") == "" { "2.14" } else { rj_gstr(shown, "alula_version") }
+            ro version = if rj_gstr(shown, "alula_version") == "" { "2.17" } else { rj_gstr(shown, "alula_version") }
             mut out = []str.new()
             out.push("# ${rn_kw(cx, "header", "Machine")}: ${rj_gstr(shown, "machine")}")
             out.push("")

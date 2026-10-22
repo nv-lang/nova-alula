@@ -4,7 +4,7 @@ module alula.machine_text
 
 import std.text
 import alula.machine.{Registry, NamedText}
-import alula.machine_table.{load_machine, issue_text, LoadError}
+import alula.machine_table.{load_machine, machine_warnings, issue_text, LoadError}
 
 // Does `prefix` name the place `path` or a place above it (the next sign after it is `.`, `[` or the end)?
 fn path_under(path str, prefix str) -> bool {
@@ -37,7 +37,19 @@ fn report_with_issues(report TranslateReport, issues []LoadError, lines []str) -
     for e in report.errors { errors.push(e) }
     for issue in issues { errors.push(issue_error(report.places, issue, lines)) }
     ro sorted = errors_sorted(errors)
-    TranslateReport { json: report.json, errors: errors_quoted(sorted, lines), warnings: report.warnings, rows_total: report.rows_total, rows_noted: report.rows_noted, places: report.places }
+    TranslateReport { json: report.json, errors: errors_quoted(sorted, lines), warnings: report.warnings, rows_total: report.rows_total, rows_noted: report.rows_noted, places: report.places, names: report.names }
+}
+
+// The warnings of the checks of the table (they are no issues) put at the lines of their places: an `иначе` that can not be reached (AL-57).
+fn report_with_warnings(report TranslateReport, warns []LoadError, lines []str) -> TranslateReport {
+    mut all = []TranslateError.new()
+    for w in report.warnings { all.push(w) }
+    for w in warns {
+        ro line = place_line(report.places, w.path)
+        all.push(TranslateError { line, col: 1, kind: "warning", message: "${w.path}: ${w.message}", quote: "" })
+    }
+    ro sorted = errors_sorted(all)
+    TranslateReport { json: report.json, errors: report.errors, warnings: errors_quoted(sorted, lines), rows_total: report.rows_total, rows_noted: report.rows_noted, places: report.places, names: report.names }
 }
 
 /// The translation with the checks of the table against the registry of the primitives of the host. A machine whose JSON the decoder or the checks refuse has the
@@ -49,7 +61,7 @@ export fn translate_checked_with(file_text str, registry Registry, files []Named
     ro report = translate_report_with(file_text, files)
     ro lines = lines_of(file_text)
     match load_machine(report.json, registry) {
-        Ok(def) => report
+        Ok(def) => report_with_warnings(report, machine_warnings(def, registry), lines)
         Err(issues) => report_with_issues(report, issues, lines)
     }
 }

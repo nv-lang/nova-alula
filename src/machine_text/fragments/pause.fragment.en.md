@@ -1,10 +1,10 @@
 # Fragment: Pause
 
 - fragment: Pause
-- format: 2.14
+- format: 2.17
 - language: en
 
-> The English twin of `pause.fragment.md` (Alula 2.14, section 9): the common events and the state Pause. In the text a parameter stands as `<parameter>` and is put in before the reading.
+> The English twin of `pause.fragment.md` (Alula 2.17, section 9): the common events and the state Pause. In the text a parameter stands as `<parameter>` and is put in before the reading.
 > The list of nested machines `nested` is a parameter of the kind `[]machine`: an empty list makes `pass` and `cancel_open(except: nested)` plain (there is no nested machine
 > to pass anything to); a non-empty list makes them the passing of signals to those machines (task 119).
 
@@ -47,7 +47,7 @@
 | request_field | expression | reads |
 |---|---|---|
 | previous | require(previous) | party |
-| call_request_id | call_request_id | party |
+| call_request_id | — | party |
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|

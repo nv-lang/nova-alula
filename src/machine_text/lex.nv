@@ -123,7 +123,7 @@ fn tx_former_sign_message(sign str) -> str {
         if f == sign { at = k }
         k += 1
     }
-    "знак `${sign}` в формате 2.14 не бывает: знаки операторов только ASCII, пишется `${tx_ascii_signs()[at]}` (Я-42); переходного периода нет"
+    "знак `${sign}` в формате 2.17 не бывает: знаки операторов только ASCII, пишется `${tx_ascii_signs()[at]}` (Я-42); переходного периода нет"
 }
 
 /// The tokens of a piece of text that stands in the line `line` from the column `col0`; a comment `//` ends the piece.
@@ -375,7 +375,7 @@ fn kv_hit_former_input(text str, w TxWords) -> TxKvHit {
 
 /// The message about the former key of the state (AL-39): what to write instead.
 fn former_input_message(w TxWords) -> str {
-    "ключ `${kw(w, "section", "Input")}:` в формате 2.14 не бывает: у обращения пишется `${kw(w, "key", "Request")}:` (таблица полей запроса), у операции, развилки и конца — `${kw(w, "key", "Reads")}:` (имена, которые читает состояние) (Я-39); переходного периода нет"
+    "ключ `${kw(w, "section", "Input")}:` в формате 2.17 не бывает: у обращения пишется `${kw(w, "key", "Request")}:` (таблица полей запроса), у операции, развилки и конца — `${kw(w, "key", "Reads")}:` (имена, которые читает состояние) (Я-39); переходного периода нет"
 }
 
 /// The error "a word of the other language": the file is written in one language (section 1a), a keyword that is not of it is an error at its place.
@@ -462,7 +462,7 @@ fn is_expansion_heading(head_text str) -> bool => head_text.starts_with("Рас�
 
 /// The error about such a section: it is removed, what a fragment brings is described by its file.
 fn expansion_error(line int, title str) -> TranslateError {
-    tx_err(line, 4, "structure", "раздел «${title}» в формате 2.14 убран (Я-44): что приносит фрагмент, описывает его файл; переходного периода нет")
+    tx_err(line, 4, "structure", "раздел «${title}» в формате 2.17 убран (Я-44): что приносит фрагмент, описывает его файл; переходного периода нет")
 }
 
 /// The entries of the lines of a file, in order, the warnings and the errors of the language. `lines` are the lines without the line feed (a carriage return at the end is cut here).

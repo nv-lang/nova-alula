@@ -74,7 +74,7 @@ fn ev_parse(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxEvent, TranslateErro
     if t_is_kw(t, words, "event", "response") { return ev_answer(p, cx, sc) }
     if t_is_kw(t, words, "event", "failure") { return ev_failure(p, cx, sc) }
     if t.text == "слово" || t.text == "word" {
-        return Err(tx_err(t.line, t.col, "syntax", "событие `${t.text}(…)` в формате 2.14 не бывает: сигнал стороны пишется `${kw(words, "event", "signal")}(…)` (Я-38), сигнал, объявленный в столбце `${kw(words, "column", "signals")}` стороны; переходного периода нет"))
+        return Err(tx_err(t.line, t.col, "syntax", "событие `${t.text}(…)` в формате 2.17 не бывает: сигнал стороны пишется `${kw(words, "event", "signal")}(…)` (Я-38), сигнал, объявленный в столбце `${kw(words, "column", "signals")}` стороны; переходного периода нет"))
     }
     if t_is_kw(t, words, "event", "signal") { return ev_named(p, cx, sc, "signal") }
     if t_is_kw(t, words, "event", "part") { return ev_named(p, cx, sc, "part") }

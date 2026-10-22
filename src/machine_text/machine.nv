@@ -13,11 +13,11 @@ import alula.machine.{NamedText}
 /// TranslateReport: what a translation gave. `json` is the machine (complete when `errors` is empty, else what could be translated); `errors` are all the
 /// notes of the translator, by place; `rows_total` is the number of the rows of the tables (and definitions) that were read, `rows_noted` the number of those
 /// that carry a note (an error or "not supported").
-export type TranslateReport { json str, errors []TranslateError, warnings []TranslateError, rows_total int, rows_noted int, places []TxPlace }
+export type TranslateReport { json str, errors []TranslateError, warnings []TranslateError, rows_total int, rows_noted int, places []TxPlace, names []JsonName }
 
 /// The context of a translation of a file in the language `lang` (`ru` or `en`).
 fn cx_new_in(lang str) -> TxCx {
-    TxCx { errors: []TranslateError.new(), names: names_load_for(lang), env: env_new(), rows_total: 0, rows_noted: 0, places: []TxPlace.new(), words: words_load(lang) }
+    TxCx { errors: []TranslateError.new(), warnings: []TranslateError.new(), names: names_load_for(lang), env: env_new(), jn: jn_new(), rows_total: 0, rows_noted: 0, places: []TxPlace.new(), words: words_load(lang) }
 }
 
 fn cx_new() -> TxCx => cx_new_in("ru")
@@ -73,7 +73,7 @@ fn header_read(entries []TxEntry, mut cx TxCx) -> TxHeader {
     }
     if !format_versions().contains(format) {
         ro shown = if format == "" { "не указан" } else { format }
-        note(cx, struct_error(1, 1, "формат ${shown}: версия не известна переводчику, он читает формат ${format_versions().join(", ")} (строка `format: 2.14`); переходного периода нет"))
+        note(cx, struct_error(1, 1, "формат ${shown}: версия не известна переводчику, он читает формат ${format_versions().join(", ")} (строка `format: 2.17`); переходного периода нет"))
     }
     TxHeader { title, machine, version, format }
 }
@@ -185,6 +185,16 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
     for e in classified.errors { cx.errors.push(e) }
     ro header = header_read(entries, cx)
     ro sections = sections_of(entries, cx)
+    // the dictionary of the names is pinned by the hash of its normative part: the format and the hash change together (AL-62)
+    if format_versions().contains(header.format) {
+        ro dictionary = glossary_check_text(glossary_table_text(), header.format)
+        if dictionary != "" { note(cx, struct_error(1, 1, dictionary)) }
+    }
+    // the rows of `## Имена` are read first: every declaration looks for its row
+    match section_of(sections, "Names") {
+        Some(sec) => { jn_rows_read(entries, sec, cx) }
+        None => ()
+    }
 
     // the fragments: the calls, the texts with the parameters put in; the files of definitions
     mut runs = []TxFragRun.new()
@@ -202,12 +212,14 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
                         accepted_calls.push(call)
                         ro fentries = tx_classify_in(lines_of(text), cx.words, false, false).entries
                         ro before = cx.errors.len()
+                        ro jn_before = cx.jn.decls.len()
                         ro fsections = sections_of(fentries, cx)
                         mut fblocks = []TxBlock.new()
                         match section_of(fsections, "States") {
                             Some(fsec) => { fblocks = states_register(fentries, fsec, cx) }
                             None => ()
                         }
+                        jn_fix_since(cx, jn_before)
                         cx_remap(cx, before, call, cx.places.len())
                         runs.push(TxFragRun { call, entries: fentries, sections: fsections, blocks: fblocks })
                         for sj in protocol_signals_json(cx) { signals.push(sj) }
@@ -371,11 +383,10 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
         None => note(cx, struct_error(1, 1, "нет раздела `## ${kw(cx.words, "section", "Ends")}`"))
     }
     // the section of the expansion of a fragment is removed in 2.13 (AL-44)
-    mut notes = []TranslateError.new()
     for x in classified.expansions { cx.errors.push(expansion_error(x.line, x.name)) }
 
     // the JSON
-    mut root = [kv("format", js("machine/2")), kv("alula_version", js(if format_versions().contains(header.format) { header.format } else { "2.14" })), kv("machine", js(header.machine)), kv("version", js(header.version))]
+    mut root = [kv("format", js("machine/2")), kv("alula_version", js(if format_versions().contains(header.format) { header.format } else { "2.17" })), kv("machine", js(header.machine)), kv("version", js(header.version))]
     if header.title != "" { root.push(kv("title", js(header.title))) }
     if types.records.len() > 0 || types.variants.len() > 0 {
         mut tp = []TxKV.new()
@@ -414,8 +425,9 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
     root.push(kv("ends", jobj([kv("result", js(ends.result)), kv("rows", TxArr(ends.rows))])))
     if primitives.len() > 0 { root.push(kv("primitives", jstrs(primitives))) }
 
+    jn_finish(cx)
     ro sorted = errors_sorted(cx.errors)
-    TranslateReport { json: tx_text(jobj(root)), errors: errors_quoted(sorted, lines), warnings: errors_quoted(errors_sorted(warnings_all(classified.warnings, notes)), lines), rows_total: cx.rows_total, rows_noted: cx.rows_noted, places: cx.places }
+    TranslateReport { json: tx_text(jobj(root)), errors: errors_quoted(sorted, lines), warnings: errors_quoted(errors_sorted(warnings_all(classified.warnings, cx.warnings)), lines), rows_total: cx.rows_total, rows_noted: cx.rows_noted, places: cx.places, names: jn_report(cx) }
 }
 
 fn warnings_all(first []TranslateError, second []TranslateError) -> []TranslateError {

@@ -16,8 +16,8 @@ fn kind_of_word(w TxWords, word str) -> str {
     }
 }
 
-/// The heading `### ИМЯ — вид (Latin_имя)`; the comment `// …` is cut by the reader. The name of the JSON in the brackets (format 2.9, AL-5) is written when it is not the name of the heading;
-/// a Latin name of the heading is the name of the JSON, and the brackets may repeat it.
+/// The heading `### ИМЯ — вид`; the comment `// …` is cut by the reader. The JSON name of the state is the row of `## Имена` or is built by itself (AL-53, AL-60); the brackets after the kind, `(Latin_имя)` of
+/// the formats 2.9 - 2.15, are an error.
 fn head_parse(entry TxEntry, mut cx TxCx) -> Result[TxBlock, TranslateError] {
     ro words = cx.words
     ro tokens = tx_lex(entry.text, entry.line, entry.level + 2)?
@@ -35,17 +35,14 @@ fn head_parse(entry TxEntry, mut cx TxCx) -> Result[TxBlock, TranslateError] {
         return Err(p_fail(p, "вид состояния: ${kw_all(words, "kind_state", ["appeal", "operation", "fork", "end"]).join(", ")}"))
     }
     p_adv(p)
-    mut latin = n.text
-    if p_eat(p, "(") {
-        ro l = p_tok(p)
-        if l.kind != TK_NAME || !is_identifier_latin(l.text) { return Err(p_fail(p, "в скобках ожидается латинское имя состояния")) }
-        p_adv(p)
-        p_expect(p, ")")?
-        latin = l.text
-    } else if !is_identifier_latin(n.text) {
-        return Err(tx_err(n.line, n.col, "syntax", "у русского имени состояния `${n.text}` нет имени JSON: после вида пишется латинское имя в скобках, `(Имя)`"))
+    if p_is(p, "(") && p_ahead(p, 1).kind == TK_NAME && t_is(p_ahead(p, 2), ")") {
+        ro open = p_tok(p)
+        ro bracket = p_ahead(p, 1)
+        cx_error(cx, open, "name", "скобки `(${bracket.text})` после вида состояния `${n.text}` убраны из языка (AL-60): JSON-имя задаёт строка раздела `## Имена` (`| имя | JSON-имя |`), без строки оно строится само; переходного периода нет")
+        p.pos += 3
     }
     p_end(p)?
+    ro latin = jn_declare(cx, n, n.text, "состояния", "состояния", [n.text])
     Ok(TxBlock { ru: n.text, kind: kind_of_word(words, k.text), latin, line: entry.line, first: 0, last: 0 })
 }
 
@@ -226,7 +223,20 @@ fn input_read(entries []TxEntry, at int, last int, mut cx TxCx, sc TxScope) -> [
 fn input_row(r TxEntry, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
     ro f = cell_name(r.cells[0], r.line)?
     ro en = tr_field_name(cx, f)
-    ro value = cell_expr(r.cells[1], r.line, cx, sc)?
+    // `—` in the cell of the expression is "the same name" (AL-56): the expression of the field is the name of the field, and the name must be readable in the request like any expression; the same name
+    // written out is a warning, the canonical file writes the dash
+    mut value = x_null()
+    if r.cells[1].text == "—" {
+        ro same = TxTok { kind: TK_NAME, text: f.text, line: r.line, col: r.cells[1].col }
+        mut sp = p_new([same], r.line, r.cells[1].col + 1)
+        value = ex_expr(sp, cx, sc)?
+        p_end(sp)?
+    } else {
+        value = cell_expr(r.cells[1], r.line, cx, sc)?
+        if r.cells[1].text == f.text {
+            cx.warnings.push(tx_err(r.line, r.cells[1].col, "warning", "выражение поля запроса `${f.text}` равно его имени: пишется `—` (AL-56)"))
+        }
+    }
     ro reads = r.cells[2].text
     if reads != kw(cx.words, "enum_value", "party") && reads != kw(cx.words, "enum_value", "executor") {
         return Err(tx_err(r.line, r.cells[2].col, "syntax", "в столбце `${kw(cx.words, "column", "reads")}` бывает `${kw(cx.words, "enum_value", "party")}` или `${kw(cx.words, "enum_value", "executor")}`"))
