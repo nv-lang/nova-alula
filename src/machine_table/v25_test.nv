@@ -1,5 +1,5 @@
 // v25_test.nv - format 2.5 on the interpreter side: the set of literals `"a" | "b"`, the built-in type `id`, the primitive `new_id`,
-// the tuple fields from zero, the key `portolan_version`. Every check is red on the broken table and green on the good one.
+// the tuple fields from zero, the key `alula_version`. Every check is red on the broken table and green on the good one.
 // ORACLE-WORKAROUND(20): these tests live in this unit because the unit of the core is near the limit of 4 KB of output (a test binary blocks on a stdout that nobody reads); join them to the tests of the core when item 20 is fixed
 module alula.machine_table
 
@@ -196,13 +196,13 @@ test "v25 id literal" {
 }
 
 test "v25 table format" {
-    ro text = tiny().replace("\"machine\":\"Tiny\"", "\"portolan_version\":\"2.12\",\"machine\":\"Tiny\"")
+    ro text = tiny().replace("\"machine\":\"Tiny\"", "\"alula_version\":\"2.14\",\"machine\":\"Tiny\"")
     assert(ok_text(text))
-    assert(says(tiny().replace("\"machine\":\"Tiny\"", "\"portolan_version\":\"2.5\",\"machine\":\"Tiny\""), "must be 2.12"))
-    ro old = tiny().replace("\"machine\":\"Tiny\"", "\"portolan_version\":\"2.2\",\"machine\":\"Tiny\"")
-    assert(says(old, "portolan_version"))
-    ro number = tiny().replace("\"machine\":\"Tiny\"", "\"portolan_version\":2.5,\"machine\":\"Tiny\"")
-    assert(says(number, "portolan_version"))
+    assert(says(tiny().replace("\"machine\":\"Tiny\"", "\"alula_version\":\"2.5\",\"machine\":\"Tiny\""), "must be 2.14"))
+    ro old = tiny().replace("\"machine\":\"Tiny\"", "\"alula_version\":\"2.2\",\"machine\":\"Tiny\"")
+    assert(says(old, "alula_version"))
+    ro number = tiny().replace("\"machine\":\"Tiny\"", "\"alula_version\":2.5,\"machine\":\"Tiny\"")
+    assert(says(number, "alula_version"))
     ro former = tiny().replace("\"machine\":\"Tiny\"", "\"table_format\":\"2.5\",\"machine\":\"Tiny\"")
     assert(says(former, "table_format"))
 }

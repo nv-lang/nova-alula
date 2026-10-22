@@ -64,7 +64,7 @@ fn diff_path(first JsonValue, second JsonValue, path str) -> str {
     path
 }
 
-// Two machines written as JSON text: where they differ, the keys `title` and `portolan_version` of the root not counted.
+// Two machines written as JSON text: where they differ, the keys `title` and `alula_version` of the root not counted.
 fn machine_diff(first_text str, second_text str) -> str {
     match Json.parse(first_text) {
         Ok(a) => {
@@ -77,7 +77,7 @@ fn machine_diff(first_text str, second_text str) -> str {
                                     mut ac = JsonObject.new()
                                     mut bc = JsonObject.new()
                                     for k in ao.keys() {
-                                        if k != "title" && k != "portolan_version" {
+                                        if k != "title" && k != "alula_version" {
                                             match ao.get(k) {
                                                 Some(v) => { ro old = ac.insert(k, v) }
                                                 None => ()
@@ -85,7 +85,7 @@ fn machine_diff(first_text str, second_text str) -> str {
                                         }
                                     }
                                     for k in bo.keys() {
-                                        if k != "title" && k != "portolan_version" {
+                                        if k != "title" && k != "alula_version" {
                                             match bo.get(k) {
                                                 Some(v) => { ro old = bc.insert(k, v) }
                                                 None => ()

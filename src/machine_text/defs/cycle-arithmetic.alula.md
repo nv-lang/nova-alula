@@ -1,7 +1,7 @@
 # Определения: арифметика_цикла
 
 - definitions_version: 1
-- format: 2.12
+- format: 2.14
 
 ## Типы
 —

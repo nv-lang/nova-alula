@@ -73,7 +73,7 @@ fn header_read(entries []TxEntry, mut cx TxCx) -> TxHeader {
     }
     if !format_versions().contains(format) {
         ro shown = if format == "" { "не указан" } else { format }
-        note(cx, struct_error(1, 1, "формат ${shown}: версия не известна переводчику, он читает формат ${format_versions().join(", ")} (строка `format: 2.12`); переходного периода нет"))
+        note(cx, struct_error(1, 1, "формат ${shown}: версия не известна переводчику, он читает формат ${format_versions().join(", ")} (строка `format: 2.14`); переходного периода нет"))
     }
     TxHeader { title, machine, version, format }
 }
@@ -383,7 +383,7 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
     }
 
     // the JSON
-    mut root = [kv("format", js("machine/2")), kv("portolan_version", js(if format_versions().contains(header.format) { header.format } else { "2.12" })), kv("machine", js(header.machine)), kv("version", js(header.version))]
+    mut root = [kv("format", js("machine/2")), kv("alula_version", js(if format_versions().contains(header.format) { header.format } else { "2.14" })), kv("machine", js(header.machine)), kv("version", js(header.version))]
     if header.title != "" { root.push(kv("title", js(header.title))) }
     if types.records.len() > 0 || types.variants.len() > 0 {
         mut tp = []TxKV.new()

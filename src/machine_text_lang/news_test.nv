@@ -5,21 +5,21 @@ module alula.machine_text_lang
 import std.text
 import alula.machine_text.{translate_report, translate_definitions, definitions_hash, defs_file_text, TranslateReport}
 
-fn v211_ru() -> str => ru_with("- format: 2.12\n", "- format: 2.12\n")
+fn v211_ru() -> str => ru_with("- format: 2.14\n", "- format: 2.14\n")
 
-fn v211_en() -> str => en_with("- format: 2.12\n", "- format: 2.12\n")
+fn v211_en() -> str => en_with("- format: 2.14\n", "- format: 2.14\n")
 
 test "nw versions read" {
     // the only version that is read is 2.12 (task 125: no transition period); the older ones are refused
-    for v in ["2.12"] {
-        ro text = ru_with("- format: 2.12\n", "- format: ${v}\n")
+    for v in ["2.14"] {
+        ro text = ru_with("- format: 2.14\n", "- format: ${v}\n")
         assert(is_clean(text))
-        assert(json_of(text).starts_with("{\"format\":\"machine/2\",\"portolan_version\":\"${v}\",\"machine\":\"Tiny\""))
-        ro en = en_with("- format: 2.12\n", "- format: ${v}\n")
+        assert(json_of(text).starts_with("{\"format\":\"machine/2\",\"alula_version\":\"${v}\",\"machine\":\"Tiny\""))
+        ro en = en_with("- format: 2.14\n", "- format: ${v}\n")
         assert(is_clean(en))
         assert(no_title(json_of(en)) == no_title(json_of(text)))
     }
-    assert(note_says(ru_with("- format: 2.12\n", "- format: 2.13\n"), "читает формат 2.12"))
+    assert(note_says(ru_with("- format: 2.14\n", "- format: 2.13\n"), "читает формат 2.14"))
 }
 
 test "nw state heading" {
@@ -147,30 +147,30 @@ fn ru_with_include(hash str) -> str {
 }
 
 test "nw include en" {
-    ro good = checked(en_with_include("eee8c3a13a08"))
+    ro good = checked(en_with_include("8f309d17b896"))
     if good.errors.len() > 0 { panic("${good.errors[0].line}: ${good.errors[0].message}") }
     assert(good.errors.len() == 0)
-    assert(good.json.contains("\"includes\":[{\"name\":\"cycle_arithmetic\",\"version\":\"1\",\"hash\":\"eee8c3a13a08\"}]"))
+    assert(good.json.contains("\"includes\":[{\"name\":\"cycle_arithmetic\",\"version\":\"1\",\"hash\":\"8f309d17b896\"}]"))
     assert(good.json.contains("\"definitions\":[{\"name\":\"ceiling_reached\""))
-    assert(note_says(en_with_include("afe05e9a1e4c"), "хеш файла cycle_arithmetic — eee8c3a13a08, а в подключении afe05e9a1e4c"))
-    assert(note_says(en_with_include("51e15e557120"), "хеш файла cycle_arithmetic"))
+    assert(note_says(en_with_include("afe05e9a1e4c"), "хеш файла cycle_arithmetic — 8f309d17b896, а в подключении afe05e9a1e4c"))
+    assert(note_says(en_with_include("2aa456d75044"), "хеш файла cycle_arithmetic"))
 }
 
 test "nw include ru" {
-    ro good = checked(ru_with_include("51e15e557120"))
+    ro good = checked(ru_with_include("2aa456d75044"))
     if good.errors.len() > 0 { panic("${good.errors[0].line}: ${good.errors[0].message}") }
     assert(good.errors.len() == 0)
-    assert(good.json.contains("\"includes\":[{\"name\":\"арифметика_цикла\",\"version\":\"1\",\"hash\":\"51e15e557120\"}]"))
-    assert(note_says(ru_with_include("4de98da759eb"), "хеш файла арифметика_цикла — 51e15e557120, а в подключении 4de98da759eb"))
+    assert(good.json.contains("\"includes\":[{\"name\":\"арифметика_цикла\",\"version\":\"1\",\"hash\":\"2aa456d75044\"}]"))
+    assert(note_says(ru_with_include("4de98da759eb"), "хеш файла арифметика_цикла — 2aa456d75044, а в подключении 4de98da759eb"))
 }
 
 test "nw include words" {
     // the words of the include line are of the language of the file
-    ro foreign = ru_with_include("51e15e557120").replace("версия 1 хеш", "version 1 hash")
+    ro foreign = ru_with_include("2aa456d75044").replace("версия 1 хеш", "version 1 hash")
     assert(!is_clean(foreign))
-    ro bad_en = en_with_include("eee8c3a13a08").replace("version 1", "версия 1")
+    ro bad_en = en_with_include("8f309d17b896").replace("version 1", "версия 1")
     assert(!is_clean(bad_en))
-    assert(note_says(en_with_include("eee8c3a13a08").replace("hash eee8c3a13a08", "hash zz"), "12 шестнадцатеричных знаков"))
+    assert(note_says(en_with_include("8f309d17b896").replace("hash 8f309d17b896", "hash zz"), "12 шестнадцатеричных знаков"))
 }
 
 // The canonical file writes the section `Input` always, an empty one as a dash: a section that holds only a dash declares no input.

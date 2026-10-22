@@ -34,7 +34,7 @@ test "ag loads" {
     match load_machine(agent_step_machine_text(), standard_registry()) {
         Ok(def) => {
             assert(def.name == "agent_step")
-            assert(def.version == "portolan-2.12")
+            assert(def.version == "alula-2.14")
             assert(def.states.len() == 14)
             assert(def.common.len() == 6)
             assert(def.parties.len() == 3)
@@ -63,13 +63,13 @@ test "ag builds" {
 
 test "ag summary" {
     ro text = render_summary(agent_step_machine_text())
-    assert(text.starts_with("machine agent_step (version portolan-2.12): 14 states, 47 rows, "))
+    assert(text.starts_with("machine agent_step (version alula-2.14): 14 states, 47 rows, "))
     assert(text.contains("  AgentTurn (appeal): 9 rows, 18 actions"))
     assert(text.contains("common events: 6 rows"))
     assert(text.contains("ends: 13 rows"))
 }
 
-// The table without the list markers and with the old continuation lines, format 2.5: the tree is the same but the key `portolan_version`.
+// The table without the list markers and with the old continuation lines, format 2.5: the tree is the same but the key `alula_version`.
 fn without_markers(text str) -> str {
     mut lines = []str.new()
     for line in text.split("\n") {
@@ -81,7 +81,7 @@ fn without_markers(text str) -> str {
             lines.push(line)
         }
     }
-    lines.join("\n").replace("format: 2.12", "format: 2.12")
+    lines.join("\n").replace("format: 2.14", "format: 2.14")
 }
 
 test "ag markers optional" {
@@ -89,5 +89,5 @@ test "ag markers optional" {
     assert(plain != agent_step_table_text())
     ro report = translate_checked(plain, standard_registry())
     if report.errors.len() > 0 { panic(errors_text(report)) }
-    assert(report.json.replace("\"portolan_version\":\"2.5\"", "\"portolan_version\":\"2.12\"") == agent_step_machine_text())
+    assert(report.json.replace("\"alula_version\":\"2.5\"", "\"alula_version\":\"2.14\"") == agent_step_machine_text())
 }

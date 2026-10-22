@@ -28,7 +28,7 @@ test "pr base clean" {
     if report.errors.len() > 0 { panic(first_error_of(report)) }
     assert(report.errors.len() == 0)
     assert(report.warnings.len() == 0)
-    assert(report.json.starts_with("{\"format\":\"machine/2\",\"portolan_version\":\"2.12\",\"machine\":\"Tiny\""))
+    assert(report.json.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.14\",\"machine\":\"Tiny\""))
     assert(report.rows_total > 8)
 }
 
@@ -42,7 +42,7 @@ test "pr every part" {
 
 test "pr header and end" {
     ro plain = base_json()
-    ro with_head = checked(after(base_text(), "- format: 2.12", prose()))
+    ro with_head = checked(after(base_text(), "- format: 2.14", prose()))
     assert(with_head.errors.len() == 0)
     assert(with_head.json == plain)
     ro with_tail = checked("${base_text()}\n${prose()}\n")
@@ -80,7 +80,7 @@ test "pr code is code" {
 }
 
 test "pr connection lines" {
-    ro include = "определения: арифметика_цикла версия 1 хеш 51e15e557120"
+    ro include = "определения: арифметика_цикла версия 1 хеш 2aa456d75044"
     ro good = replaced(base_text(), "## Состояния\n", "## Подключения\n\n${ticks()}\n${include}\n${ticks()}\n\n## Состояния\n")
     ro good_report = checked(good)
     if good_report.errors.len() > 0 { panic(first_error_of(good_report)) }
