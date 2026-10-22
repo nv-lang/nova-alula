@@ -1,0 +1,244 @@
+// v213_test.nv - task 149: the table of words of Alula 2.14 (the table of the methodology as it is, without the words of 2.12 that 2.13 removed), the product layer, the signs of the lexer
+// (ASCII only, AL-42), the hashes of the sample of definitions (AL-42 changed the writing of `число>=1`), the text of the fragment Pause (`сигнал_остановки`, AL-38).
+module alula.machine_text
+
+import std.text
+
+fn v213_lines(text str) -> int {
+    mut n = 0
+    for line in text.split("\n") {
+        if line.trim_ascii() != "" { n += 1 }
+    }
+    n
+}
+
+// ---- the table of words ----------------------------------------------------------------------------------------------------------------------
+
+test "v213 table has the rows of the methodology" {
+    // the header and 216 rows (the table of the methodology at the commit of 2.14)
+    assert(v213_lines(keywords_text()) == 217)
+}
+
+test "v213 table signals column" {
+    assert(kw(words_load("ru"), "column", "signals") == "сигналы")
+    assert(kw(words_load("en"), "column", "signals") == "signals")
+    assert(!kw_has(words_load("ru"), "column", "слова ворот"))
+    assert(!kw_has(words_load("en"), "column", "gate_words"))
+}
+
+test "v213 table request and reads keys" {
+    for lang in ["ru", "en"] {
+        ro w = words_load(lang)
+        assert(kw(w, "key", "Request") == if lang == "ru" { "Запрос" } else { "Request" })
+        assert(kw(w, "key", "Reads") == if lang == "ru" { "Читает" } else { "Reads" })
+    }
+    assert(kw_key(words_load("ru"), "key", "Вход") == None)
+    assert(kw_key(words_load("en"), "key", "Input") == None)
+    assert(kw_key(words_load("ru"), "key", "Запрос") == Some("Request"))
+    assert(kw_key(words_load("ru"), "key", "Читает") == Some("Reads"))
+}
+
+test "v213 table section input stays" {
+    assert(kw(words_load("ru"), "section", "Input") == "Вход")
+    assert(kw_key(words_load("ru"), "section", "Вход") == Some("Input"))
+}
+
+test "v213 table no word event" {
+    assert(kw_key(words_load("ru"), "event", "слово") == None)
+    assert(kw_key(words_load("en"), "event", "word") == None)
+    assert(kw_key(words_load("ru"), "event", "сигнал") == Some("signal"))
+    assert(kw_key(words_load("ru"), "type", "слово") == None)
+    assert(kw(words_load("ru"), "type", "signal") == "сигнал")
+    assert(kw(words_load("en"), "type", "signal") == "signal")
+}
+
+test "v213 table no expansion section" {
+    assert(kw_key(words_load("ru"), "section", "Раскрытие фрагмента") == None)
+    assert(kw_key(words_load("en"), "section", "Fragment expansion") == None)
+}
+
+test "v213 table reason is readable" {
+    assert(kw(words_load("ru"), "readable", "reason") == "причина")
+    assert(kw_key(words_load("ru"), "readable", "причина") == Some("reason"))
+    assert(kw_key(words_load("ru"), "readable", "идентификатор_запроса") == None)
+}
+
+test "v213 table operators are ascii" {
+    for lang in ["ru", "en"] {
+        ro w = words_load(lang)
+        for sign in [">=", "<=", "!=", "->", "...", "in"] {
+            assert(kw(w, "operator", sign) == sign)
+            assert(kw_has(w, "operator", sign))
+        }
+        for sign in ["≥", "≤", "≠", "→", "…", "∈"] {
+            assert(!kw_has(w, "operator", sign))
+        }
+    }
+}
+
+test "v213 table int bound" {
+    assert(kw(words_load("ru"), "type", "int>=") == "число>=")
+    assert(kw(words_load("en"), "type", "int>=") == "int>=")
+    assert(kw_key(words_load("ru"), "type", "число≥") == None)
+}
+
+test "v213 table none value is gone" {
+    // `нет` was a value of the key `Вход`; the empty value is no longer written (AL-40)
+    assert(kw_key(words_load("ru"), "enum_value", "нет") == None)
+    assert(kw_key(words_load("en"), "enum_value", "none") == None)
+}
+
+test "v213 table is the table of the methodology" {
+    ro text = keywords_text()
+    assert(!text.contains("слова ворот"))
+    assert(!text.contains("Раскрытие фрагмента"))
+    assert(!text.contains("≥"))
+    assert(!text.contains("∈"))
+    assert(text.contains("column\tсигналы\tsignals"))
+    assert(text.contains("key\tЗапрос\tRequest"))
+    assert(text.contains("key\tЧитает\tReads"))
+    assert(text.contains("readable\tпричина\treason"))
+}
+
+test "v213 table words are unique in a kind" {
+    mut seen = []str.new()
+    mut seen_en = []str.new()
+    for r in words_read_rows(keywords_text()) {
+        ro a = "${r.kind}\t${r.ru}"
+        ro b = "${r.kind}\t${r.en}"
+        assert(!seen.contains(a))
+        assert(!seen_en.contains(b))
+        seen.push(a)
+        seen_en.push(b)
+    }
+    assert(seen.len() == 216)
+}
+
+fn words_read_rows(text str) -> []TxWord {
+    mut rows = []TxWord.new()
+    words_read(text, rows)
+    rows
+}
+
+// ---- the product layer ---------------------------------------------------------------------------------------------------------------------------
+
+test "v213 product layer halt signal" {
+    assert(kw(words_load("ru"), "fragment_param", "halt_signal") == "сигнал_остановки")
+    assert(kw(words_load("en"), "fragment_param", "halt_signal") == "halt_signal")
+    assert(!kw_has(words_load("ru"), "fragment_param", "слово_остановки"))
+    assert(!kw_has(words_load("en"), "fragment_param", "halt_word"))
+}
+
+test "v213 fragment params" {
+    assert(pause_param_keys() == ["halt_signal", "halt_code", "nested", "cancel_requests", "reenter", "write_right"])
+    assert(pause_params(words_load("ru")) == ["сигнал_остановки", "код_остановки", "вложенные", "отмена_запросов", "вход_заново", "право_записи"])
+    assert(pause_params(words_load("en")) == ["halt_signal", "halt_code", "nested", "cancel_requests", "reenter", "write_right"])
+}
+
+test "v213 fragment text has the signal parameter" {
+    for lang in ["ru", "en"] {
+        ro text = fragment_source("Pause", lang)
+        assert(text.contains("<${kw(words_load(lang), "fragment_param", "halt_signal")}>"))
+        assert(!text.contains("слово_остановки"))
+        assert(!text.contains("halt_word"))
+    }
+}
+
+test "v213 fragment text has no word event" {
+    for lang in ["ru", "en"] {
+        ro text = fragment_source("Pause", lang)
+        assert(!text.contains("| слово("))
+        assert(!text.contains("| word("))
+        assert(!text.contains("Вход:"))
+        assert(!text.contains("Input:"))
+        assert(text.contains("Запрос:") || text.contains("Request:"))
+    }
+}
+
+test "v213 fragment text is ascii" {
+    for lang in ["ru", "en"] {
+        ro text = fragment_source("Pause", lang)
+        for sign in ["≥", "≤", "≠", "→", "…", "∈"] {
+            assert(!text.contains(sign))
+        }
+    }
+}
+
+// ---- the lexer: ASCII signs ----------------------------------------------------------------------------------------------------------------
+
+fn v213_lex_texts(text str) -> []str {
+    mut out = []str.new()
+    match tx_lex(text, 1, 1) {
+        Ok(toks) => {
+            for t in toks { out.push(t.text) }
+        }
+        Err(e) => out.push("error: ${e.message}")
+    }
+    out
+}
+
+test "v213 lexer reads ascii signs" {
+    assert(v213_lex_texts("a >= b") == ["a", ">=", "b"])
+    assert(v213_lex_texts("a <= b") == ["a", "<=", "b"])
+    assert(v213_lex_texts("a != b") == ["a", "!=", "b"])
+    assert(v213_lex_texts("x -> y") == ["x", "->", "y"])
+    assert(v213_lex_texts("{ ...x }") == ["{", "...", "x", "}"])
+    assert(v213_lex_texts("a in b") == ["a", "in", "b"])
+}
+
+test "v213 lexer refuses unicode signs" {
+    for sign in ["≥", "≤", "≠", "→", "…", "∈"] {
+        ro got = v213_lex_texts("a ${sign} b")
+        assert(got.len() == 1)
+        assert(got[0].starts_with("error:"))
+        assert(got[0].contains("знак `${sign}`"))
+        assert(got[0].contains("ASCII"))
+    }
+}
+
+test "v213 lexer names the ascii sign" {
+    assert(v213_lex_texts("a ≥ b")[0].contains("`>=`"))
+    assert(v213_lex_texts("a ≤ b")[0].contains("`<=`"))
+    assert(v213_lex_texts("a ≠ b")[0].contains("`!=`"))
+    assert(v213_lex_texts("a → b")[0].contains("`->`"))
+    assert(v213_lex_texts("a … b")[0].contains("`...`"))
+    assert(v213_lex_texts("a ∈ b")[0].contains("`in`"))
+}
+
+test "v213 lexer keeps the dash" {
+    assert(v213_lex_texts("—") == ["—"])
+}
+
+test "v213 arrow check" {
+    ro arrow = TxTok { kind: TK_SYM, text: "->", line: 1, col: 1 }
+    ro old = TxTok { kind: TK_SYM, text: "→", line: 1, col: 1 }
+    assert(tx_arrow(arrow))
+    assert(!tx_arrow(old))
+}
+
+// ---- the hashes of the sample of definitions (AL-42 changed `число≥1` to `число>=1`) ----------------------------------------------------------------
+
+test "v213 definitions hashes" {
+    ro ru = defs_file_text("арифметика_цикла")
+    ro en = defs_file_text("cycle_arithmetic")
+    assert(definitions_hash(ru) == "e7df8843f017")
+    assert(definitions_hash(en) == "8f309d17b896")
+    assert(translate_definitions(ru).hash == "e7df8843f017")
+    assert(translate_definitions(en).hash == "8f309d17b896")
+}
+
+test "v213 definitions files are ascii" {
+    for name in ["арифметика_цикла", "cycle_arithmetic"] {
+        ro text = defs_file_text(name)
+        assert(text.contains("число>=") || text.contains("int>="))
+        assert(!text.contains("≥"))
+    }
+}
+
+test "v213 definitions translate" {
+    for name in ["арифметика_цикла", "cycle_arithmetic"] {
+        ro report = translate_definitions(defs_file_text(name))
+        assert(report.errors.len() == 0)
+        assert(report.version == "1")
+    }
+}

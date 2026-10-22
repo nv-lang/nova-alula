@@ -1,0 +1,145 @@
+// v213_test.nv - task 149: Alula 2.13 in the interpreter and the scenario runner: the signal of a party is an event `signal` (the step `word` of a scenario is gone, the step `signal` may name the party
+// that declared the signal), the question `accepts_word` of the hub is answered from the signals of the table, an optional field of the input that the input does not have is none (AL-48).
+module alula.machine_run
+
+import std.text
+import alula.machine.{machine_files, scenario_files, text_of_file}
+
+fn signal_step(name str, party str, input str) -> str {
+    ro who = if party == "" { "" } else { ",\"party\":\"${party}\"" }
+    ro data = if input == "" { "" } else { ",\"input\":\"${input}\"" }
+    `{"do":"feed","event":{"kind":"signal","name":"${name}"${who}${data}}}`
+}
+
+// ---- the step signal of a scenario ------------------------------------------------------------------------------------------------------------
+
+test "v213 word step refused" {
+    ro text = one_step(`{"do":"feed","event":{"kind":"word","name":"user_message","input":"hi"}}`)
+    ro got = parse_err(text)
+    assert(got != "ok")
+    assert(got.contains("signal"))
+}
+
+test "v213 signal step parses" {
+    assert(parse_err(one_step(signal_step("user_message", "", "hi"))) == "ok")
+}
+
+test "v213 signal step with its party parses" {
+    assert(parse_err(one_step(signal_step("user_message", "user", "hi"))) == "ok")
+}
+
+test "v213 signal step runs on the chat machine" {
+    ro run = run_text(chat(), one_step(signal_step("user_message", "", "hi").replace("}}", "},\"expect\":{\"state\":\"Awaiting\"}}")))
+    assert(run_ok(run))
+}
+
+test "v213 signal step names the party that declared the signal" {
+    ro run = run_text(chat(), one_step(signal_step("user_message", "user", "hi").replace("}}", "},\"expect\":{\"state\":\"Awaiting\"}}")))
+    assert(run_ok(run))
+}
+
+test "v213 signal of another party is a mistake of the scenario" {
+    ro run = run_text(chat(), one_step(signal_step("user_message", "agent", "hi")))
+    assert(!run_ok(run))
+    assert(report_text(run).contains("agent"))
+}
+
+test "v213 party that does not exist" {
+    ro run = run_text(chat(), one_step(signal_step("user_message", "nobody", "hi")))
+    assert(!run_ok(run))
+}
+
+test "v213 signal that nobody declared" {
+    ro run = run_text(chat(), one_step(signal_step("no_such_signal", "", "")))
+    assert(!run_ok(run))
+}
+
+test "v213 event kinds" {
+    assert(!event_kinds().contains("word"))
+    assert(event_kinds().contains("signal"))
+}
+
+test "v213 scenario files use the signal step" {
+    mut words = 0
+    mut signals = 0
+    for f in scenario_files() {
+        if f.text.contains("\"kind\": \"word\"") || f.text.contains("\"kind\":\"word\"") { words += 1 }
+        if f.text.contains("\"kind\": \"signal\"") { signals += 1 }
+    }
+    assert(words == 0)
+    assert(signals > 400)
+}
+
+test "v213 scenario files that name a party name a real one" {
+    for f in scenario_files() {
+        if !f.text.contains("\"party\":") { continue }
+        assert(f.text.contains("\"kind\": \"signal\""))
+    }
+}
+
+// ---- the question of the hub -------------------------------------------------------------------------------------------------------------------
+
+test "v213 accepts a signal of the table" {
+    ro m = chat()
+    assert(m.accepts_word(m.initial(), "user_message"))
+}
+
+test "v213 does not accept what the table does not declare" {
+    ro m = chat()
+    assert(!m.accepts_word(m.initial(), "no_such_signal"))
+}
+
+test "v213 the chat machine declares its signals at the party" {
+    ro text = machine_text("chat.alula.json")
+    assert(text.contains("\"signals\""))
+    assert(!text.contains("\"words\""))
+}
+
+// ---- AL-48: an optional field of the input -------------------------------------------------------------------------------------------------------------
+
+fn opt13() -> AlulaMachine {
+    ro data = `{"name":"session","type":"text","initial":{"from_input":"session"}},{"name":"note","type":"?text","initial":{"from_input":"note"}},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}`
+    ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","signals":[{"name":"go"}]}`
+    ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"signal","name":"go"},"to":"Done"}]}`
+    ro done = `{"name":"Done","kind":"end","reads":["session"]}`
+    ro ends = `{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"name","name":"session"}}}]}`
+    build_from(`{"format":"machine/2","machine":"Opt","version":"1","input":{"fields":[{"name":"session","type":"text"},{"name":"note","type":"?text"}]},"data":[${data}],"parties":[${party}],"initial":"Wait","states":[${wait},${done}],"ends":${ends}}`)
+}
+
+test "v213 optional input absent is none" {
+    ro m = opt13()
+    ro r = run1(m, m.initial(), start_with("{\"session\":\"a\"}"))
+    assert(r.state.name == "Wait")
+    assert(datum_json(r.state, "note") == "null")
+}
+
+test "v213 required input absent is missing" {
+    ro m = opt13()
+    ro r = run1(m, m.initial(), start_with("{\"note\":\"x\"}"))
+    assert(summary(r.orders).starts_with("log:input_rejected(reason=missing;field=session),finish:refusal:NoResult"))
+}
+
+test "v213 optional input given" {
+    ro m = opt13()
+    ro r = run1(m, m.initial(), start_with("{\"session\":\"a\",\"note\":\"n\"}"))
+    assert(datum_json(r.state, "note") == "\"n\"")
+}
+
+test "v213 optional input null is none" {
+    ro m = opt13()
+    ro r = run1(m, m.initial(), start_with("{\"session\":\"a\",\"note\":null}"))
+    assert(datum_json(r.state, "note") == "null")
+}
+
+test "v213 optional input of a wrong type is refused" {
+    ro m = opt13()
+    ro r = run1(m, m.initial(), start_with("{\"session\":\"a\",\"note\":5}"))
+    assert(summary(r.orders).starts_with("log:input_rejected(reason=type;field=note)"))
+}
+
+test "v213 the signal of the table is taken by the machine" {
+    ro m = opt13()
+    ro st = run1(m, m.initial(), start_with("{\"session\":\"a\"}")).state
+    ro r = run1(m, st, word_in("go", ""))
+    assert(r.state.name == "Done")
+}

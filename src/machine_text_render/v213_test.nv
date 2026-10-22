@@ -1,0 +1,180 @@
+// v213_test.nv - task 149: the reverse generator writes Alula 2.14 (the rules AL-38 ... AL-49): the signals of a party in the column `сигналы` and the event `сигнал(…)`, the keys `Запрос:` and `Читает:`
+// (no `Вход:`), no key with an empty value (AL-40), only ASCII signs of the operators (AL-42), every name as it lies in the tree and no brackets of JSON names (1b (ж), AL-46), the parameter
+// `сигнал_остановки` of the fragment. The circles "tree -> file -> tree" are equal in both languages.
+module alula.machine_text_render
+
+import std.text
+import alula.machine_text.{render, render_machine}
+
+// A small tree of 2.14 written by hand: a Cyrillic constant and party name stay as they are (internal names), the data and the states have Latin JSON names, the party has two signals, one with a field.
+fn tree13() -> str => `{"format":"machine/2","alula_version":"2.14","machine":"Tiny","version":"1","constants":[{"name":"ПРЕДЕЛ","type":"int>=0","value":{"op":"lit","value":5}}],"data":[{"name":"n","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":{"bound":{"op":"name","name":"ПРЕДЕЛ"}},"writes":"rows"},{"name":"stop","type":"\"\" | \"a\" | \"b\"","initial":{"expr":{"op":"lit","value":""}},"writes":"rows"},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}],"parties":[{"name":"пользователь","id":"user","kind":"human","counter":"u_attempt","signals":[{"name":"go","fields":[{"name":"author","type":"text"}]},{"name":"halt"}]}],"initial":"Wait","states":[{"name":"Wait","kind":"appeal","party":"пользователь","inputs":[{"field":"n","value":{"op":"name","name":"n"},"reads":"executor"}],"rows":[{"n":1,"event":{"kind":"signal","name":"go","bind":{"author":"автор"}},"actions":[{"do":"assign","target":"n","value":{"op":"+","left":{"op":"name","name":"n"},"right":{"op":"lit","value":1}}}],"to":"Decide"},{"n":2,"event":{"kind":"signal","name":"halt"},"actions":[{"do":"assign","target":"stop","value":{"op":"lit","value":"a"}}],"to":"Stopped"}]},{"name":"Decide","kind":"fork","reads":["n"],"rows":[{"n":1,"event":{"kind":"now"},"cond":{"op":">=","left":{"op":"name","name":"n"},"right":{"op":"name","name":"ПРЕДЕЛ"}},"to":"Finished"},{"n":2,"event":{"kind":"now"},"else":true,"to":"Wait"}]},{"name":"Finished","kind":"end","reads":["n"]},{"name":"Stopped","kind":"end","reads":["stop"],"except":{"field":"stop","values":[""]}}],"ends":{"result":"int","rows":[{"state":"Finished","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"name","name":"n"}}},{"state":"Stopped","n":1,"when":{"op":"==","left":{"op":"name","name":"stop"},"right":{"op":"lit","value":"a"}},"answer":{"kind":"refusal","code":{"op":"variant","type":"FailCode","name":"StoppedByHuman"},"text":{"op":"lit","value":"stopped"}}},{"state":"Stopped","n":2,"when":{"op":"==","left":{"op":"name","name":"stop"},"right":{"op":"lit","value":"b"}},"answer":{"kind":"refusal","code":{"op":"variant","type":"FailCode","name":"NoResult"},"text":{"op":"lit","value":"b"}}}]}}`
+
+fn written(lang str) -> str {
+    ro made = render_machine(tree13(), lang)
+    if made.notes.len() > 0 { panic(made.notes.join(" ## ")) }
+    made.text
+}
+
+// ---- AL-38: the signals of a party ---------------------------------------------------------------------------------------------------------------
+
+test "v213 render column signals" {
+    assert(written("ru").contains("| имя | идентификатор | вид | профиль | сигналы | счётчик |"))
+    assert(written("en").contains("| name | id | kind | profile | signals | counter |"))
+    assert(!written("ru").contains("слова ворот"))
+    assert(!written("en").contains("gate_words"))
+}
+
+test "v213 render signals of the party" {
+    assert(written("ru").contains("| пользователь | user | human(итог ИсходВорот) | — | go(author текст), halt | u_attempt |"))
+    assert(written("en").contains("| пользователь | user | human(result GateOutcome) | — | go(author text), halt | u_attempt |"))
+}
+
+test "v213 render event signal" {
+    ro ru = written("ru")
+    assert(ru.contains("| 1 | сигнал(go(author: автор)) | — | n += 1 | Decide |"))
+    assert(ru.contains("| 2 | сигнал(halt) | — | stop = \"a\" | Stopped |"))
+    assert(!ru.contains("слово("))
+    ro en = written("en")
+    assert(en.contains("| 1 | signal(go(author: автор)) | — | n += 1 | Decide |"))
+    assert(!en.contains("word("))
+}
+
+// ---- AL-39, AL-40: Запрос and Читает, no empty keys ---------------------------------------------------------------------------------------------------
+
+test "v213 render request and reads" {
+    ro ru = written("ru")
+    assert(ru.contains("- Запрос:\n\n| поле запроса | выражение | читает |"))
+    assert(ru.contains("### Decide — развилка\n- Читает: n\n"))
+    assert(!ru.contains("Вход:"))
+    ro en = written("en")
+    assert(en.contains("- Request:\n\n| request_field | expression | reads |"))
+    assert(en.contains("### Decide — fork\n- Reads: n\n"))
+    assert(!en.contains("Input:"))
+}
+
+test "v213 render no empty keys" {
+    for lang in ["ru", "en"] {
+        ro text = written(lang)
+        assert(!text.contains(": —\n"))
+        assert(!text.contains(": нет\n"))
+        assert(!text.contains(": none\n"))
+        assert(!text.contains("Срок тишины"))
+        assert(!text.contains("Idle term"))
+        assert(!text.contains("При входе"))
+        assert(!text.contains("On entry"))
+    }
+}
+
+test "v213 render an end without reads writes no key" {
+    ro tree = tree13().replace("{\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[\"n\"]}", "{\"name\":\"Finished\",\"kind\":\"end\"}").replace("\"answer\":{\"kind\":\"answer\",\"value\":{\"op\":\"name\",\"name\":\"n\"}}", "\"answer\":{\"kind\":\"answer\",\"value\":{\"op\":\"lit\",\"value\":0}}")
+    ro text = render(tree, "ru")
+    assert(text.contains("### Finished — конец\n\n### Stopped — конец\n"))
+}
+
+test "v213 render the sections keep the dash" {
+    // an empty section is the dash, not a key with a dash
+    assert(written("ru").contains("## Типы\n—\n"))
+    assert(written("ru").contains("## Примитивы\n—\n"))
+}
+
+// ---- AL-42: ASCII only ------------------------------------------------------------------------------------------------------------------------
+
+test "v213 render ascii operators" {
+    for lang in ["ru", "en"] {
+        ro text = written(lang)
+        for sign in ["≥", "≤", "≠", "→", "…", "∈"] {
+            assert(!text.contains(sign))
+        }
+        assert(text.contains("n >= ПРЕДЕЛ"))
+        assert(text.contains("int>=0") || text.contains("число>=0"))
+    }
+}
+
+test "v213 render member sign" {
+    ro ru = written("ru")
+    assert(ru.contains("- Кроме: stop in {\"\"}"))
+    ro en = written("en")
+    assert(en.contains("- Except: stop in {\"\"}"))
+}
+
+test "v213 render lambda arrow and spread" {
+    ro tree = tree13().replace("\"answer\":{\"kind\":\"answer\",\"value\":{\"op\":\"name\",\"name\":\"n\"}}", "\"answer\":{\"kind\":\"answer\",\"value\":{\"op\":\"call\",\"fn\":\"count\",\"args\":[{\"op\":\"list\",\"items\":[{\"op\":\"lit\",\"value\":1}]},{\"lambda\":[\"х\"],\"body\":{\"op\":\"==\",\"left\":{\"op\":\"name\",\"name\":\"х\"},\"right\":{\"op\":\"lit\",\"value\":1}}}]}}")
+    for lang in ["ru", "en"] {
+        ro text = render(tree, lang)
+        assert(text.contains("х -> х == 1"))
+        assert(!text.contains("→"))
+    }
+}
+
+// ---- AL-46: every name as it lies in the tree ----------------------------------------------------------------------------------------------------
+
+test "v213 render names as they lie" {
+    ro ru = written("ru")
+    assert(ru.contains("| n | число>=0 | 0 | да, <= ПРЕДЕЛ | строки |"))
+    assert(ru.contains("| ПРЕДЕЛ | число>=0 | 5 |"))
+    assert(ru.contains("- Сторона: пользователь"))
+    assert(!ru.contains("(turn"))
+}
+
+test "v213 render writes no brackets of json names" {
+    for lang in ["ru", "en"] {
+        ro text = written(lang)
+        for marker in [" (n)", " (go)", " (halt)", " (author)", "(Wait)", "(Decide)"] {
+            assert(!text.contains(marker))
+        }
+    }
+}
+
+test "v213 render keeps internal names in both languages" {
+    for lang in ["ru", "en"] {
+        ro text = written(lang)
+        assert(text.contains("ПРЕДЕЛ"))
+        assert(text.contains("пользователь"))
+    }
+}
+
+test "v213 render a datum named like a readable word" {
+    ro tree = tree13().replace("\"name\":\"stop\"", "\"name\":\"stop_reason\"").replace("\"field\":\"stop\"", "\"field\":\"stop_reason\"").replace("\"reads\":[\"stop\"]", "\"reads\":[\"stop_reason\"]").replace("\"name\":\"stop\"", "\"name\":\"stop_reason\"").replace("\"target\":\"stop\"", "\"target\":\"stop_reason\"")
+    ro ru = render(tree, "ru")
+    assert(ru.contains("stop_reason"))
+}
+
+// ---- the circles -------------------------------------------------------------------------------------------------------------------------------
+
+test "v213 circle ru" {
+    assert(circle(tree13(), "ru") == "")
+}
+
+test "v213 circle en" {
+    assert(circle(tree13(), "en") == "")
+}
+
+test "v213 circle ru to en to ru" {
+    ro en = render(tree13(), "en")
+    ro back = render(json_of(en), "ru")
+    assert(back == written("ru"))
+}
+
+test "v213 circle en to ru to en" {
+    ro ru = render(tree13(), "ru")
+    ro back = render(json_of(ru), "en")
+    assert(back == written("en"))
+}
+
+test "v213 render is stable" {
+    assert(render(json_of(written("ru")), "ru") == written("ru"))
+    assert(render(json_of(written("en")), "en") == written("en"))
+}
+
+test "v213 render of a former tree is refused" {
+    ro former = tree13().replace("\"signals\":[{\"name\":\"go\"", "\"words\":[{\"name\":\"go\"")
+    ro made = render_machine(former, "ru")
+    assert(made.text == "")
+    assert(made.notes.len() >= 1)
+}
+
+test "v213 render of a word event is refused" {
+    ro former = tree13().replace("{\"kind\":\"signal\",\"name\":\"halt\"}", "{\"kind\":\"word\",\"word\":\"halt\"}")
+    ro made = render_machine(former, "ru")
+    assert(made.text == "" || made.notes.len() >= 1)
+}

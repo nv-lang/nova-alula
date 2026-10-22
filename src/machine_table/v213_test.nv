@@ -1,0 +1,216 @@
+// v213_test.nv - Alula 2.13 on the side of the tree and of the checks (task 149): the signals of a party (AL-38: the key `signals` of a party, the event `signal`, no `words` and no event `word`), the key
+// `values` of an enum (AL-41), the argument `halt_signal` of the fragment Pause (AL-38), the names that stay as they are written (AL-46: a constant, a parameter, a definition, a party may be Cyrillic;
+// a datum, a state, a type may not). Every check is red on the old tree and green on the new one.
+module alula.machine_table
+
+import std.text
+import alula.machine.{schema_files, text_of_file, machine_files, scenario_files}
+
+// The tiny machine of the support file, in the tree of 2.13: the words of the party are its signals.
+fn tiny13() -> str => tiny().replace("\"words\":[{\"name\":\"go\"},{\"name\":\"halt\"}]", "\"signals\":[{\"name\":\"go\"},{\"name\":\"halt\"}]").replace("{\"kind\":\"word\",\"word\":\"go\"}", "{\"kind\":\"signal\",\"name\":\"go\"}").replace("{\"kind\":\"word\",\"word\":\"halt\"}", "{\"kind\":\"signal\",\"name\":\"halt\"}")
+
+fn pause_args13() -> str => `"halt_signal":{"op":"lit","value":"halt"},"halt_code":{"op":"lit","value":"pause_halt"},"nested":{"op":"list","items":[]},"cancel_requests":{"op":"lit","value":"mechanics"},"reenter":{"op":"lit","value":"nothing"},"write_right":{"op":"lit","value":"x"}`
+
+fn with_fragments13(call_args str) -> str => tiny13().replace("\"initial\":\"Wait\"", "\"fragments\":[{\"name\":\"Pause\",\"args\":{${call_args}}}],\"initial\":\"Wait\"")
+
+// ---- AL-38: the signals of a party --------------------------------------------------------------------------------------------------------------
+
+test "v213 tiny with signals loads" {
+    assert(ok_text(tiny13()))
+}
+
+test "v213 party key signals" {
+    assert(party_keys().contains("signals"))
+    assert(!party_keys().contains("words"))
+}
+
+test "v213 event kinds have no word" {
+    assert(event_kind_names().contains("signal"))
+    assert(!event_kind_names().contains("word"))
+}
+
+test "v213 party words key refused" {
+    ro text = tiny().replace("\"words\":[{\"name\":\"go\"},{\"name\":\"halt\"}]", "\"words\":[{\"name\":\"go\"},{\"name\":\"halt\"}]").replace("{\"kind\":\"word\",\"word\":\"go\"}", "{\"kind\":\"signal\",\"name\":\"go\"}").replace("{\"kind\":\"word\",\"word\":\"halt\"}", "{\"kind\":\"signal\",\"name\":\"halt\"}")
+    assert(!ok_text(text))
+    assert(says(text, "words"))
+    assert(says(text, "signals"))
+}
+
+test "v213 word event refused" {
+    ro text = tiny13().replace("{\"kind\":\"signal\",\"name\":\"go\"}", "{\"kind\":\"word\",\"word\":\"go\"}")
+    assert(!ok_text(text))
+    assert(says(text, "word"))
+    assert(says(text, "signal"))
+}
+
+test "v213 signal of the party is checked" {
+    ro text = tiny13().replace("{\"kind\":\"signal\",\"name\":\"go\"}", "{\"kind\":\"signal\",\"name\":\"stray\"}")
+    assert(!ok_text(text))
+    assert(says(text, "stray"))
+}
+
+test "v213 signal of the party is used" {
+    ro text = tiny13().replace("\"signals\":[{\"name\":\"go\"},{\"name\":\"halt\"}]", "\"signals\":[{\"name\":\"go\"},{\"name\":\"halt\"},{\"name\":\"idle\"}]")
+    assert(says(text, "idle"))
+    assert(says(text, "used by no row"))
+}
+
+test "v213 signal with a field is bound" {
+    ro text = tiny13().replace("{\"name\":\"go\"}", "{\"name\":\"go\",\"fields\":[{\"name\":\"author\",\"type\":\"text\"}]}").replace("{\"kind\":\"signal\",\"name\":\"go\"}", "{\"kind\":\"signal\",\"name\":\"go\",\"bind\":{\"author\":\"a\"}}")
+    assert(ok_text(text))
+    ro bad = text.replace("\"bind\":{\"author\":\"a\"}", "\"bind\":{\"nobody\":\"a\"}")
+    assert(says(bad, "nobody"))
+}
+
+test "v213 signals are for the gates" {
+    ro text = tiny13().replace("{\"name\":\"user\",\"id\":\"user\",\"kind\":\"human\"", "{\"name\":\"user\",\"id\":\"user\",\"kind\":\"agent\",\"result\":\"text\"")
+    assert(says(text, "signals"))
+}
+
+test "v213 decoded event is a signal" {
+    ro def = decoded(tiny13())
+    match def.states[0].rows[0].event {
+        SignalEv { name, binds } => assert(name == "go")
+        _ => assert(false)
+    }
+}
+
+test "v213 machine signal and party signal both are signals" {
+    ro text = tiny13().replace("\"parties\":", "\"signals\":[{\"name\":\"stop\"}],\"parties\":").replace("\"event\":{\"kind\":\"signal\",\"name\":\"halt\"}", "\"event\":{\"kind\":\"signal\",\"name\":\"stop\"}")
+    assert(says(text, "halt") || ok_text(text))
+}
+
+// ---- AL-41: the values of an enum -----------------------------------------------------------------------------------------------------------------
+
+fn tiny_enum(key str) -> str => tiny13().replace("\"data\":", "\"types\":{\"variants\":[{\"name\":\"Kind\",\"cases\":[{\"name\":\"One\"},{\"name\":\"Two\"}],\"${key}\":[[\"One\",\"one\"],[\"Two\",\"two\"]]}]},\"data\":")
+
+test "v213 enum values accepted" {
+    assert(ok_text(tiny_enum("values")))
+}
+
+test "v213 enum words refused" {
+    ro text = tiny_enum("words")
+    assert(!ok_text(text))
+    assert(says(text, "words"))
+    assert(says(text, "values"))
+}
+
+test "v213 enum values are codes" {
+    assert(says(tiny_enum("values").replace("\"one\"", "\"One Two\""), "lower case"))
+    assert(says(tiny_enum("values").replace("\"two\"", "\"one\""), "once"))
+}
+
+test "v213 enum value of an unknown case" {
+    assert(says(tiny_enum("values").replace("[\"Two\",\"two\"]", "[\"Three\",\"two\"]"), "Three"))
+}
+
+// ---- AL-38: the fragment Pause takes a signal ---------------------------------------------------------------------------------------------------------
+
+test "v213 fragments halt signal accepted" {
+    assert(ok_text(with_fragments13(pause_args13())))
+    assert(pause_arg_names()[0] == "halt_signal")
+}
+
+test "v213 fragments halt word refused" {
+    ro text = with_fragments13(pause_args13().replace("\"halt_signal\"", "\"halt_word\""))
+    assert(!ok_text(text))
+    assert(says(text, "halt_signal"))
+}
+
+test "v213 schema knows the signals" {
+    ro schema = text_of_file(schema_files(), "machine-2.schema.json")
+    assert(schema.contains("\"signals\""))
+    assert(schema.contains("\"halt_signal\""))
+    assert(!schema.contains("\"halt_word\""))
+    assert(!schema.contains("\"words\""))
+    assert(schema.contains("\"values\""))
+}
+
+test "v213 schema has no word event" {
+    ro schema = text_of_file(schema_files(), "machine-2.schema.json")
+    assert(!schema.contains("\"word\""))
+    assert(!schema.contains("\"kind\": { \"const\": \"word\""))
+}
+
+test "v213 scenario schema has no word step" {
+    ro schema = text_of_file(schema_files(), "scenario-0.schema.json")
+    assert(!schema.contains("\"word\""))
+    assert(schema.contains("\"party\""))
+}
+
+test "v213 machines hold no words" {
+    for f in machine_files() {
+        assert(!f.text.contains("\"words\""))
+        assert(!f.text.contains("\"kind\":\"word\""))
+        assert(!f.text.contains("\"kind\": \"word\""))
+        assert(!f.text.contains("\"halt_word\""))
+    }
+}
+
+test "v213 scenarios hold no word steps" {
+    mut words = 0
+    for f in scenario_files() {
+        if f.text.contains("\"kind\": \"word\"") || f.text.contains("\"kind\":\"word\"") { words += 1 }
+    }
+    assert(words == 0)
+}
+
+// ---- AL-46: the names that stay as they are written --------------------------------------------------------------------------------------------------
+
+test "v213 a constant may be Cyrillic" {
+    ro text = tiny13().replace("\"data\":", "\"constants\":[{\"name\":\"ПРЕДЕЛ\",\"type\":\"int>=0\",\"value\":${jl("5")}}],\"data\":")
+    assert(ok_text(text))
+}
+
+test "v213 a parameter and a definition may be Cyrillic" {
+    ro with_param = tiny13().replace("\"data\":", "\"params\":[{\"name\":\"ПАУЗА\",\"type\":\"int>=0\",\"default\":${jl("5")}}],\"data\":")
+    assert(ok_text(with_param))
+    ro with_def = tiny13().replace("\"data\":", "\"definitions\":[{\"name\":\"удвоить\",\"params\":[{\"name\":\"х\",\"type\":\"int\"}],\"result\":\"int\",\"body\":${jb("*", jn("х"), jl("2"))}}],\"data\":")
+    assert(ok_text(with_def))
+}
+
+test "v213 a party name may be Cyrillic" {
+    ro text = tiny13().replace("{\"name\":\"user\",\"id\":\"user\"", "{\"name\":\"пользователь\",\"id\":\"user\"").replace("\"party\":\"user\"", "\"party\":\"пользователь\"")
+    assert(ok_text(text))
+}
+
+test "v213 a party id must be latin" {
+    ro text = tiny13().replace("{\"name\":\"user\",\"id\":\"user\"", "{\"name\":\"user\",\"id\":\"польз\"")
+    assert(says(text, "latin"))
+}
+
+test "v213 a datum must be latin" {
+    ro text = tiny13().replace("{\"name\":\"n\",\"type\":\"int>=0\"", "{\"name\":\"ход\",\"type\":\"int>=0\"")
+    assert(says(text, "ход"))
+    assert(says(text, "identifier"))
+}
+
+test "v213 a state must be latin" {
+    ro text = tiny13().replace("\"name\":\"Decide\"", "\"name\":\"Решить\"")
+    assert(says(text, "latin identifier"))
+}
+
+test "v213 a type must be latin" {
+    ro text = tiny13().replace("\"data\":", "\"types\":{\"records\":[{\"name\":\"Пара\",\"fields\":[{\"name\":\"left\",\"type\":\"int\"}]}]},\"data\":")
+    assert(!ok_text(text))
+}
+
+test "v213 a field of a type must be latin" {
+    ro text = tiny13().replace("\"data\":", "\"types\":{\"records\":[{\"name\":\"Pair\",\"fields\":[{\"name\":\"левая\",\"type\":\"int\"}]}]},\"data\":")
+    assert(!ok_text(text))
+}
+
+test "v213 internal names read in an expression" {
+    ro text = tiny13().replace("\"data\":", "\"constants\":[{\"name\":\"ПРЕДЕЛ\",\"type\":\"int>=0\",\"value\":${jl("5")}}],\"data\":").replace("\"cond\":${jb(">=", jn("n"), jl("2"))}", "\"cond\":${jb(">=", jn("n"), jn("ПРЕДЕЛ"))}")
+    assert(ok_text(text))
+}
+
+test "v213 a name of the executor is a name of the language" {
+    ro text = tiny13().replace("\"data\":", "\"constants\":[{\"name\":\"party\",\"type\":\"int>=0\",\"value\":${jl("5")}}],\"data\":")
+    assert(says(text, "taken"))
+}
+
+test "v213 a constant twice" {
+    ro text = tiny13().replace("\"data\":", "\"constants\":[{\"name\":\"ПРЕДЕЛ\",\"type\":\"int>=0\",\"value\":${jl("5")}},{\"name\":\"ПРЕДЕЛ\",\"type\":\"int>=0\",\"value\":${jl("6")}}],\"data\":")
+    assert(says(text, "ПРЕДЕЛ"))
+}

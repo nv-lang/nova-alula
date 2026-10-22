@@ -1,0 +1,136 @@
+// v213_test.nv - task 149: the program `alula` and the syntax of 2.12 that the format 2.14 does not read any more: a file that says `format: 2.14` and still writes `Вход:`, `слово(…)`, the column
+// `слова ворот` or a sign `≥` is refused with a message that names the new writing (there is no transition period); the machines of the folder are read.
+module alula.alula_cli
+
+import std.text
+import alula.machine.{NamedText, table_files, text_of_file}
+
+// A file at the syntax of 2.12 under the line of the format 2.14: every old writing is here once.
+fn old_syntax() -> str => `# Машина: Малая
+
+- machine: Tiny
+- machine_version: 1
+- format: 2.14
+
+## Данные
+
+| имя | тип | начальное | не убывает | пишет |
+|---|---|---|---|---|
+| n | число≥0 | 0 | да | строки |
+| u_attempt | число≥0 | 0 | да | механика |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | слова ворот | счётчик |
+|---|---|---|---|---|---|
+| user | user | human(итог ИсходВорот) | — | go | u_attempt |
+
+## Состояния
+
+Начальное состояние: Wait
+
+### Wait — обращение
+- Сторона: user
+- Вход: нет
+
+| № | Событие | Условие | Действия | Куда |
+|---|---|---|---|---|
+| 1 | слово(go) | — | n += 1 | Done |
+
+### Done — конец
+- Вход: n
+
+## Концы
+
+- Результат: число
+
+| конец | № | когда | ответ |
+|---|---|---|---|
+| Done | 1 | истина | Ответ(n) |
+`
+
+fn old_file() -> []NamedText => one("/work/old.alula.md", old_syntax())
+
+fn error_of(command str, text str) -> str {
+    ro ran = run_with([command, "/work/old.alula.md"], one("/work/old.alula.md", text))
+    ran.err
+}
+
+test "v213 old input key is refused by compile" {
+    ro ran = run_with(["compile", "/work/old.alula.md"], old_file())
+    assert(ran.code == 1)
+    assert(ran.out == "")
+    assert(ran.err.contains("`Вход:`"))
+    assert(ran.err.contains("`Запрос:`"))
+}
+
+test "v213 old word event is refused by check" {
+    ro ran = run_with(["check", "/work/old.alula.md"], old_file())
+    assert(ran.code == 1)
+    assert(ran.err.contains("слово(…)"))
+    assert(ran.err.contains("сигнал(…)"))
+}
+
+test "v213 old column is refused" {
+    assert(error_of("check", old_syntax()).contains("слова ворот"))
+    assert(error_of("check", old_syntax()).contains("сигналы"))
+}
+
+test "v213 old signs are refused" {
+    assert(error_of("check", old_syntax()).contains("знак `≥`"))
+    assert(error_of("check", old_syntax()).contains("ASCII"))
+}
+
+test "v213 no transition period is said" {
+    assert(error_of("compile", old_syntax()).contains("переходного периода нет"))
+}
+
+test "v213 summary refuses it too" {
+    ro ran = run_with(["summary", "/work/old.alula.md"], old_file())
+    assert(ran.code == 1)
+    assert(ran.err.contains("`Вход:`"))
+}
+
+test "v213 convert refuses it" {
+    ro ran = run_with(["convert", "/work/old.alula.md", "--language", "en"], old_file())
+    assert(ran.code == 1)
+    assert(ran.out == "")
+}
+
+test "v213 a tree with words is refused by check" {
+    ro words = tiny_json().replace("\"signals\"", "\"words\"")
+    assert(words != tiny_json())
+    ro ran = run_with(["check", "/work/tiny.alula.json"], one("/work/tiny.alula.json", words))
+    assert(ran.code == 1)
+    assert(ran.err.contains("words"))
+    assert(ran.err.contains("signals"))
+}
+
+test "v213 a tree with a word event is refused by render" {
+    ro word = tiny_json().replace("\"kind\":\"signal\",\"name\":\"go\"", "\"kind\":\"word\",\"word\":\"go\"")
+    assert(word != tiny_json())
+    ro ran = run_with(["render", "/work/tiny.alula.json"], one("/work/tiny.alula.json", word))
+    assert(ran.code == 1)
+    assert(ran.err.contains("word"))
+}
+
+test "v213 a scenario with the step word is refused" {
+    ro old_scenario = `{"format":"scenario/0","machine":"Tiny","name":"old","start_at":1000,"steps":[{"do":"feed","event":{"kind":"start"}},{"do":"feed","event":{"kind":"word","name":"go"}}]}`
+    ro files = [file("/c/tiny.alula.json", tiny_json()), file("/c/tiny.scenario.test.json", old_scenario)]
+    ro ran = run_with(["test", "/c"], files)
+    assert(ran.code != 0)
+    assert(ran.err.contains("signal") || ran.out.contains("signal"))
+}
+
+test "v213 the machines of the folder are read" {
+    for name in ["chat.alula.md", "dialog.alula.md", "callee.alula.md"] {
+        ro ran = run_with(["check", "/m/${name}"], one("/m/${name}", text_of_file(table_files(), name)))
+        if ran.code != 0 { panic("check ${name}: ${ran.err}") }
+        assert(ran.code == 0)
+    }
+}
+
+test "v213 help names the signals" {
+    ro ran = run0(["help"])
+    assert(ran.out.contains("2.14"))
+}

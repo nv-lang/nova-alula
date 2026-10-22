@@ -1,0 +1,117 @@
+// v213_test.nv - task 149: Alula 2.13 for the nested machines and the fragment "Pause": `число` and `число>=n` fit each other both ways when the input and the result of a called machine are compared
+// (AL-47), the parameter `сигнал_остановки` of the fragment (AL-38), the machines of the folder that call the fragment, the old parameter refused.
+module alula.machine_nested
+
+import std.text
+import alula.machine.{table_files, text_of_file}
+import alula.machine_text.{render}
+
+// ---- AL-47: `число` and `число>=n` fit each other -----------------------------------------------------------------------------------------------
+
+fn count_int() -> str => `{"name":"label","type":"text"},{"name":"count","type":"int"}`
+
+fn score_int() -> str => `{"name":"answer","type":"text"},{"name":"score","type":"int"}`
+
+test "v213 input int fits int bound" {
+    // the caller has `число`, the called machine has `число>=0`: one field, the called machine checks the bound
+    assert(pair_texts(parent_tree(count_int(), answer_score()), callee_tree()).len() == 0)
+}
+
+test "v213 input int bound fits int" {
+    // the other way: the called machine takes `число`, the caller gives `число>=0`
+    ro callee = callee_tree().replace("{\"name\":\"count\",\"type\":\"int>=0\"}", "{\"name\":\"count\",\"type\":\"int\"}")
+    assert(pair_texts(parent_tree(label_count(), answer_score()), callee).len() == 0)
+}
+
+test "v213 result int fits int bound" {
+    assert(pair_texts(parent_tree(label_count(), score_int()), callee_tree()).len() == 0)
+}
+
+test "v213 result int bound fits int" {
+    ro callee = callee_tree().replace("{\"name\":\"score\",\"type\":\"int>=0\"}", "{\"name\":\"score\",\"type\":\"int\"}")
+    assert(pair_texts(parent_tree(label_count(), answer_score()), callee).len() == 0)
+}
+
+test "v213 text does not fit int" {
+    assert(pair_says(parent_tree(`{"name":"label","type":"text"},{"name":"count","type":"text"}`, answer_score()), "count"))
+    assert(pair_says(parent_tree(label_count(), `{"name":"answer","type":"text"},{"name":"score","type":"text"}`), "result"))
+}
+
+test "v213 bounds of different size do not fit" {
+    assert(pair_says(parent_tree(`{"name":"label","type":"text"},{"name":"count","type":"int>=1"}`, answer_score()), "count"))
+}
+
+test "v213 int fits in a list and in an optional" {
+    ro parent = parent_tree(`{"name":"label","type":"text"},{"name":"count","type":"?int"}`, answer_score())
+    ro callee = callee_tree().replace("{\"name\":\"count\",\"type\":\"int>=0\"}", "{\"name\":\"count\",\"type\":\"?int>=0\"}")
+    assert(pair_texts(parent, callee).len() == 0)
+    ro list_parent = parent_tree(label_count(), `{"name":"answer","type":"text"},{"name":"score","type":"int>=0"}`)
+    assert(pair_texts(list_parent, callee_tree()).len() == 0)
+}
+
+test "v213 optional does not fit required" {
+    ro parent = parent_tree(`{"name":"label","type":"text"},{"name":"count","type":"?int"}`, answer_score())
+    assert(pair_says(parent, "count"))
+}
+
+// ---- the fragment: the parameter is a signal ---------------------------------------------------------------------------------------------------------
+
+fn callee_text() -> str => text_of_file(table_files(), "callee.alula.md")
+
+fn caller_text() -> str => text_of_file(table_files(), "caller.alula.md")
+
+test "v213 the machines of the folder call the fragment with a signal" {
+    for text in [callee_text(), caller_text()] {
+        assert(text.contains("Пауза(сигнал_остановки:"))
+        assert(!text.contains("слово_остановки"))
+    }
+}
+
+test "v213 callee reads" {
+    ro report = checked(callee_text())
+    if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
+    assert(report.errors.len() == 0)
+}
+
+test "v213 old parameter refused" {
+    ro text = callee_text().replace("Пауза(сигнал_остановки:", "Пауза(слово_остановки:")
+    assert(!is_clean_text(text))
+    assert(note_says(text, "слово_остановки"))
+    assert(note_says(text, "сигнал_остановки"))
+}
+
+test "v213 fragment arg is the halt signal" {
+    ro json = json_of(callee_text())
+    assert(json.contains("\"halt_signal\":{\"op\":\"lit\",\"value\":\""))
+    assert(!json.contains("\"halt_word\""))
+}
+
+test "v213 halt signal is a signal of the party" {
+    ro json = json_of(callee_text())
+    ro name = after_marker(json, "\"halt_signal\":{\"op\":\"lit\",\"value\":\"")
+    assert(name != "")
+    assert(json.contains("\"signals\":[{\"name\":\"continue\""))
+    assert(json.contains("{\"name\":\"${name}\"}"))
+}
+
+test "v213 fragment args order" {
+    ro json = json_of(callee_text())
+    ro a = json.find("\"halt_signal\"") ?? -1
+    ro b = json.find("\"halt_code\"") ?? -1
+    ro c = json.find("\"write_right\"") ?? -1
+    assert(a > 0 && a < b && b < c)
+}
+
+test "v213 reverse generator writes the signal parameter" {
+    ro text = render(json_of(callee_text()), "ru")
+    assert(text.contains("Пауза(сигнал_остановки:"))
+    assert(!text.contains("слово_остановки"))
+    ro en = render(json_of(callee_text()), "en")
+    assert(en.contains("Pause(halt_signal:"))
+}
+
+test "v213 signal parameter must be a signal of the party" {
+    ro text = callee_text().replace("Пауза(сигнал_остановки: остановить", "Пауза(сигнал_остановки: улетучиться")
+    assert(!is_clean_text(text))
+}
+

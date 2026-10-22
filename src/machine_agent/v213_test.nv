@@ -1,0 +1,279 @@
+// v213_test.nv - task 149: the samples of the methodology at the commit of the format 2.14 (the illustration of the agent step in both languages and the record of the machine "Meeting"), copied as they are
+// into `cases/`, go through the translator without a hand edit and give the numbers that the methodology gives (the agent step: 13 states, 37 rows of transitions, 13 rows of ends, 16 definitions, 21 codes
+// of the journal, 149 JSON names in brackets; the meeting: 30 states, 67 rows of transitions, 12 rows of ends, 29 data, 22 primitives).
+module alula.machine_agent
+
+import std.text
+import std.encoding.json.{Json, JsonValue, JsonObject}
+import alula.machine.{standard_registry}
+import alula.machine_text.{translate_checked, translate_report, TranslateReport, error_text, render}
+
+fn lf13(text str) -> str => text.replace("\r\n", "\n")
+
+fn ru13() -> str => lf13(methodology_214_text())
+
+fn en13() -> str => lf13(methodology_214_en_text())
+
+fn meeting13() -> str => lf13(meeting_214_text())
+
+fn ru_report() -> TranslateReport => translate_checked(ru13(), standard_registry())
+
+fn en_report() -> TranslateReport => translate_checked(en13(), standard_registry())
+
+fn first_error(report TranslateReport) -> str {
+    if report.errors.len() == 0 { return "ok" }
+    error_text(report.errors[0], "sample")
+}
+
+// ---- the text of a sample: the numbers by counting ---------------------------------------------------------------------------------------------
+
+fn count_lines_starting(text str, prefix str) -> int {
+    mut n = 0
+    mut in_code = false
+    for line in text.split("\n") {
+        if line.starts_with("```") { in_code = !in_code }
+        if !in_code && line.starts_with(prefix) { n += 1 }
+    }
+    n
+}
+
+// The rows of the tables of the states: a row whose first cell is a number and that stands in the section of the states.
+fn count_transition_rows(text str) -> int {
+    mut n = 0
+    mut in_states = false
+    for line in text.split("\n") {
+        if line.starts_with("## ") { in_states = line.starts_with("## Состояния") || line.starts_with("## States") }
+        if in_states && line.starts_with("| ") {
+            ro cells = line.split("|")
+            mut first = ""
+            mut k = 0
+            for c in cells {
+                if k == 1 { first = c.trim_ascii() }
+                k += 1
+            }
+            if first != "" && first.to_int() != None { n += 1 }
+        }
+    }
+    n
+}
+
+fn count_table_rows(text str, section_prefix str, first_cell_numeric bool) -> int {
+    mut n = 0
+    mut inside = false
+    mut seen_header = false
+    for line in text.split("\n") {
+        if line.starts_with("## ") {
+            inside = line.starts_with(section_prefix)
+            seen_header = false
+        }
+        if inside && line.starts_with("|") {
+            if line.starts_with("|---") || line.starts_with("|:--") { continue }
+            if !seen_header {
+                seen_header = true
+                continue
+            }
+            n += 1
+        }
+    }
+    n
+}
+
+// The codes of the journal in `журнал(код` / `journal(code` of the text, once each.
+fn journal_codes(text str) -> []str {
+    mut out = []str.new()
+    for marker in ["журнал(", "journal("] {
+        mut rest = text
+        while true {
+            ro at = rest.find(marker) ?? -1
+            if at < 0 { break }
+            rest = rest[at + marker.byte_len()..]
+            mut code = []str.new()
+            for c in rest.chars() {
+                ro one = "${c}"
+                if (one >= "a" && one <= "z") || one == "_" { code.push(one) } else { break }
+            }
+            ro word = code.join("")
+            ro end_ok = rest[word.byte_len()..].starts_with(",") || rest[word.byte_len()..].starts_with(")")
+            if word != "" && end_ok && !["usage_event", "transition_note", "all_data"].contains(word) && !out.contains(word) { out.push(word) }
+        }
+    }
+    out
+}
+
+// The JSON names in brackets: ` (Latin)` after a name.
+fn json_names_in(text str) -> int {
+    mut n = 0
+    mut rest = text
+    while true {
+        ro at = rest.find(" (") ?? -1
+        if at < 0 { break }
+        rest = rest[at + 2..]
+        mut word = []str.new()
+        mut closed = false
+        for c in rest.chars() {
+            ro one = "${c}"
+            ro letter = (one >= "a" && one <= "z") || (one >= "A" && one <= "Z") || one == "_" || (one >= "0" && one <= "9")
+            if letter { word.push(one) } else {
+                closed = one == ")"
+                break
+            }
+        }
+        if closed && word.len() > 0 { n += 1 }
+    }
+    n
+}
+
+test "v213 agent step ru numbers" {
+    ro text = ru13()
+    assert(count_lines_starting(text, "### ") == 13)
+    assert(count_transition_rows(text) == 37)
+    assert(count_table_rows(text, "## Концы", false) == 13)
+    assert(count_lines_starting(text, "определение ") == 16)
+    assert(journal_codes(text).len() == 21)
+    assert(json_names_in(text) == 149)
+}
+
+test "v213 agent step en numbers" {
+    ro text = en13()
+    assert(count_lines_starting(text, "### ") == 13)
+    assert(count_transition_rows(text) == 37)
+    assert(count_table_rows(text, "## Ends", false) == 13)
+    assert(count_lines_starting(text, "define ") == 16)
+    assert(journal_codes(text).len() == 21)
+    assert(journal_codes(text) == journal_codes(ru13()))
+}
+
+test "v213 meeting numbers" {
+    ro text = meeting13()
+    assert(count_lines_starting(text, "### ") == 30)
+    assert(count_transition_rows(text) == 67)
+    assert(count_table_rows(text, "## Концы", false) == 12)
+    assert(count_table_rows(text, "## Данные", false) == 29 + 0)
+    assert(count_table_rows(text, "## Примитивы", false) == 22)
+}
+
+// ---- the translation --------------------------------------------------------------------------------------------------------------------
+
+test "v213 agent step ru is clean" {
+    ro report = ru_report()
+    if report.errors.len() > 0 { panic(first_error(report)) }
+    assert(report.errors.len() == 0)
+    assert(report.warnings.len() == 0)
+    assert(report.rows_noted == 0)
+}
+
+test "v213 agent step en is clean" {
+    ro report = en_report()
+    if report.errors.len() > 0 { panic(first_error(report)) }
+    assert(report.errors.len() == 0)
+    assert(report.warnings.len() == 0)
+}
+
+test "v213 agent step tree numbers" {
+    ro j = ru_report().json
+    assert(j.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.14\",\"machine\":\"agent_step\",\"version\":\"alula-2.14\""))
+    ro o = obj_of(j)
+    assert(items_of(o, "states").len() == 14)
+    assert(items_of(o, "data").len() == 21)
+    assert(items_of(o, "definitions").len() == 16)
+    assert(items_of(o, "common_events").len() == 6)
+}
+
+test "v213 meeting is clean" {
+    ro report = translate_report(meeting13())
+    if report.errors.len() > 0 { panic(first_error(report)) }
+    assert(report.errors.len() == 0)
+    assert(report.warnings.len() == 0)
+}
+
+test "v213 meeting tree numbers" {
+    ro report = translate_report(meeting13())
+    ro o = obj_of(report.json)
+    assert(items_of(o, "states").len() == 31)
+    assert(items_of(o, "primitives").len() == 22)
+    ro ends = match (o.get("ends") ?? JsonValue.null()).object() {
+        Some(x) => x
+        None => panic("no ends")
+    }
+    assert(items_of(ends, "rows").len() == 12)
+}
+
+// ---- the two languages: one machine ------------------------------------------------------------------------------------------------------------
+
+fn obj_of(text str) -> JsonObject {
+    match Json.parse(text) {
+        Ok(v) => {
+            match v.object() {
+                Some(o) => o
+                None => panic("not an object")
+            }
+        }
+        Err(e) => panic("not a JSON")
+    }
+}
+
+fn items_of(o JsonObject, key str) -> []JsonValue {
+    match (o.get(key) ?? JsonValue.null()).array() {
+        Some(items) => items
+        None => []JsonValue.new()
+    }
+}
+
+fn names_of(o JsonObject, key str, field str) -> []str {
+    mut out = []str.new()
+    for item in items_of(o, key) {
+        match item.object() {
+            Some(x) => out.push((x.get(field) ?? JsonValue.null()).str() ?? "")
+            None => ()
+        }
+    }
+    out
+}
+
+test "v213 ru and en have one surface" {
+    ro ru = obj_of(ru_report().json)
+    ro en = obj_of(en_report().json)
+    assert(names_of(ru, "states", "name") == names_of(en, "states", "name"))
+    assert(names_of(ru, "data", "name") == names_of(en, "data", "name"))
+    assert(names_of(ru, "parties", "id") == names_of(en, "parties", "id"))
+    assert(names_of(ru, "signals", "name") == names_of(en, "signals", "name"))
+}
+
+test "v213 internal names stay as written" {
+    ro j = ru_report().json
+    // a constant, a parameter, a definition and a party of the Russian sample are Cyrillic in the tree; the English twin has Latin ones
+    assert(j.contains("\"name\":\"ЧИСЛО_ПОВТОРОВ\""))
+    assert(j.contains("\"name\":\"требует_повышенного_внимания\""))
+    assert(j.contains("\"name\":\"усиленный\""))
+    ro en = en_report().json
+    assert(!en.contains("\"name\":\"ЧИСЛО_ПОВТОРОВ\""))
+}
+
+test "v213 signals of the sample" {
+    ro j = ru_report().json
+    assert(j.contains("\"signals\":[{\"name\":\"allow\"},{\"name\":\"deny\"}]"))
+    assert(j.contains("{\"name\":\"continue\",\"fields\":[{\"name\":\"human_word\",\"type\":\"text\"},{\"name\":\"author\",\"type\":\"text\"},{\"name\":\"source\",\"type\":\"text\"}]},{\"name\":\"halt\"}"))
+    assert(!j.contains("\"words\""))
+}
+
+test "v213 fragment of the sample" {
+    ro j = ru_report().json
+    assert(j.contains("\"fragments\":[{\"name\":\"Pause\",\"args\":{\"halt_signal\":{\"op\":\"lit\",\"value\":\"halt\"}"))
+    ro en = en_report().json
+    assert(en.contains("\"halt_signal\":{\"op\":\"lit\",\"value\":\"halt\"}"))
+}
+
+test "v213 circle of the agent step sample" {
+    for lang in ["ru", "en"] {
+        ro tree = ru_report().json
+        ro made = render(tree, lang)
+        ro back = translate_checked(made, standard_registry())
+        if back.errors.len() > 0 { panic(first_error(back)) }
+        assert(back.errors.len() == 0)
+    }
+}
+
+test "v213 reason of the sample" {
+    ro j = ru_report().json
+    assert(j.contains("\"bind\":\"reason\""))
+}

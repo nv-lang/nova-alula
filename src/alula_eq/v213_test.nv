@@ -1,0 +1,129 @@
+// v213_test.nv - task 149: the machines of the product are written at Alula 2.13 (format 2.14): the keys `Запрос:` and `Читает:`, `сигнал(…)`, the column `сигналы`, ASCII signs, the JSON names in brackets,
+// no section of the expansion of a fragment; every JSON is what `compile` makes of its file; the circles `compile -> render -> compile` and `convert ru -> en -> ru` give an equal tree in both languages,
+// the line of connection of the fragment has the parameter `сигнал_остановки`.
+module alula.alula_eq
+
+import std.text
+import alula.machine.{table_files, machine_files, text_of_file}
+
+fn all_tables() -> []str => ["callee.alula.md", "caller.alula.md", "chat.alula.md", "cycle_check.alula.md", "dialog.alula.md", "dialog_steps.alula.md", "fan.alula.md", "session_start.alula.md", "task_runner.alula.md", "agent_step.alula.txt"]
+
+fn tree_name(name str) -> str => name.replace(".alula.md", ".alula.json").replace(".alula.txt", ".alula.json")
+
+fn has_line_starting(text str, prefix str) -> bool {
+    for line in text.split("\n") {
+        if line.starts_with(prefix) { return true }
+    }
+    false
+}
+
+test "v213 tables use the new keys" {
+    for name in all_tables() {
+        ro text = text_of_file(table_files(), name)
+        assert(!has_line_starting(text, "- Вход:"))
+        assert(!has_line_starting(text, "Вход:"))
+        assert(!text.contains("| слово("))
+        assert(!text.contains("слова ворот"))
+        assert(!text.contains("Раскрытие фрагмента"))
+    }
+}
+
+test "v213 tables have no unicode signs" {
+    for name in all_tables() {
+        ro text = text_of_file(table_files(), name)
+        for sign in ["≥", "≤", "≠", "→", "∈"] {
+            assert(!text.contains(sign))
+        }
+    }
+}
+
+test "v213 tables write signals" {
+    mut with_signals = 0
+    for name in all_tables() {
+        ro text = text_of_file(table_files(), name)
+        if text.contains("| сигнал(") { with_signals += 1 }
+    }
+    assert(with_signals >= 8)
+}
+
+test "v213 tables write request and reads" {
+    for name in all_tables() {
+        ro text = text_of_file(table_files(), name)
+        assert(has_line_starting(text, "- Запрос:") || has_line_starting(text, "- Читает:"))
+    }
+}
+
+test "v213 tables have no empty keys" {
+    for name in all_tables() {
+        ro text = text_of_file(table_files(), name)
+        for key in ["Запрос", "Читает", "Срок тишины", "При входе"] {
+            assert(!has_line_starting(text, "- ${key}: —"))
+            assert(!has_line_starting(text, "- ${key}: нет"))
+        }
+    }
+}
+
+test "v213 tables say 2.14" {
+    for name in all_tables() {
+        assert(text_of_file(table_files(), name).contains("format: 2.14\n"))
+    }
+}
+
+test "v213 trees hold signals" {
+    for f in machine_files() {
+        assert(!f.text.contains("\"words\""))
+        assert(!f.text.contains("\"kind\":\"word\""))
+        assert(!f.text.contains("\"kind\": \"word\""))
+    }
+}
+
+test "v213 compile makes the json of the product" {
+    for name in all_tables() {
+        ro made = run_with(["compile", "/m/${name}"], one("/m/${name}", text_of_file(table_files(), name)))
+        if made.code != 0 { panic("compile ${name}: ${made.err}") }
+        assert(same_tree(text_of_file(machine_files(), tree_name(name)), made.out) == "")
+    }
+}
+
+test "v213 check takes every table" {
+    for name in all_tables() {
+        ro made = run_with(["check", "/m/${name}"], one("/m/${name}", text_of_file(table_files(), name)))
+        if made.code != 0 { panic("check ${name}: ${made.err}") }
+        assert(made.code == 0)
+    }
+}
+
+test "v213 the fragment line has the signal parameter" {
+    for name in ["callee.alula.md", "caller.alula.md", "fan.alula.md", "dialog_steps.alula.md", "session_start.alula.md", "cycle_check.alula.md", "agent_step.alula.txt"] {
+        ro text = text_of_file(table_files(), name)
+        assert(text.contains("Пауза(сигнал_остановки:"))
+        assert(!text.contains("слово_остановки"))
+    }
+}
+
+test "v213 circle of every machine that includes the fragment" {
+    for name in ["callee.alula.md", "fan.alula.md", "dialog_steps.alula.md"] {
+        for lang in ["ru", "en"] {
+            ro first = run_with(["compile", "/m/${name}"], one("/m/${name}", text_of_file(table_files(), name)))
+            if first.code != 0 { panic("compile ${name}: ${first.err}") }
+            ro rendered = run_with(["render", "/m/x.alula.json", "--language", lang], one("/m/x.alula.json", first.out))
+            if rendered.code != 0 { panic("render ${name}: ${rendered.err}") }
+            ro second = run_with(["compile", "/m/y.alula.md"], one("/m/y.alula.md", rendered.out))
+            if second.code != 0 { panic("recompile ${name} ${lang}: ${second.err}") }
+            assert(same_tree(first.out, second.out) == "")
+        }
+    }
+}
+
+test "v213 convert ru en ru" {
+    for name in ["callee.alula.md", "dialog.alula.md", "chat.alula.md"] {
+        ro text = text_of_file(table_files(), name)
+        ro en = run_with(["convert", "/m/${name}", "--language", "en"], one("/m/${name}", text))
+        if en.code != 0 { panic("convert ${name}: ${en.err}") }
+        ro back = run_with(["convert", "/m/b.alula.md", "--language", "ru"], one("/m/b.alula.md", en.out))
+        if back.code != 0 { panic("convert back ${name}: ${back.err}") }
+        ro first = run_with(["compile", "/m/${name}"], one("/m/${name}", text))
+        ro second = run_with(["compile", "/m/c.alula.md"], one("/m/c.alula.md", back.out))
+        assert(same_tree(first.out, second.out) == "")
+    }
+}
