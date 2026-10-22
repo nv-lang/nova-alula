@@ -13,7 +13,7 @@ import std.text
 import std.unicode.{GeneralCategory}
 import alula.machine.{Expr, TypeDefs, FieldDef, Bind, DefFn, Registry, Position, check_expr_positions, check_call_position, find_primitive, primitive_names, class_word, journal_find, find_role, has_roles}
 import alula.machine.{ConditionPos, InputPos, ProfilePos, ForkEntryPos, OperationEntryPos, EndEntryPos, AcceptPos, ActionPos}
-import alula.machine.{Pure, Reading, Value, Text, TypeSpec, TextSet, IdType, OptionalType, spec_text, is_uuid}
+import alula.machine.{Pure, Reading, Value, Text, TypeSpec, TextSet, IdType, OptionalType, VariantType, spec_text, is_uuid}
 
 // ---- the places of expressions ------------------------------------------------------------------------------------------
 
@@ -676,6 +676,7 @@ fn check_state_shape(mut cx Checker, st StateDef, path str) -> () {
                 cx_issue(cx, "${path}.party", "the party ${st.party} is not declared")
             }
             if st.rows.len() == 0 { cx_issue(cx, "${path}.rows", "an appeal needs a row") }
+            check_free_input_state(cx, st, path)
             mut k = 0
             for r in st.rows {
                 if is_now(r.event) { cx_issue(cx, "${path}.rows[${k}].event", "an appeal does not have the event now (only an operation does)") }
@@ -1842,7 +1843,8 @@ fn check_parties(mut cx Checker) -> () {
         if pt.kind != MachineParty && pt.nested != "" { cx_issue(cx, "${p}.nested", "only a machine party names a nested machine") }
         if sends_requests(pt.kind) && pt.result_spec.len() == 0 { cx_issue(cx, "${p}.result", "an agent or a machine party declares the type of its result (format 2.2, the column kind: result)") }
         if pt.counter == "" {
-            cx_issue(cx, "${p}.counter", "a party names the datum of its attempt counter (rule 15)")
+            // only a human may have no counter: a party of a free input (spec 1, AL-52); the other parties name the datum of their attempt counter (rule 15)
+            if pt.kind != HumanParty { cx_issue(cx, "${p}.counter", "a party names the datum of its attempt counter (rule 15); only a party of the kind human may have none, a party of a free input (AL-52)") }
         } else if pt.id != "" {
             ro at = find_data(def, pt.counter)
             if at < 0 {
@@ -2346,6 +2348,173 @@ export fn check_nested(def MachineDef, name str, callee MachineDef) -> []NestedP
     out
 }
 
+// ---- the party of a free input (spec 1, 4.2, AL-51, AL-52) -------------------------------------------------------------------------------------
+
+/// Is the party a party of a free input: a human with no counter, so with no gates?
+fn is_free_party(pt PartyDef) -> bool => pt.kind == HumanParty && pt.counter == ""
+
+fn is_answer_event(ev EventPat) -> bool {
+    match ev {
+        AnswerEv { bind } => true
+        AnswerVariantEv { variant, binds } => true
+        FailureEv { reasons, bind } => true
+        _ => false
+    }
+}
+
+// An appeal to a party of a free input has no gates and no request: no table Request, no set, no idle term, no edits, no returns of the form, no On accept and no rows `answer` and `failure`.
+fn check_free_input_state(mut cx Checker, st StateDef, path str) -> () {
+    ro pi = find_party(cx.def, st.party)
+    if pi < 0 || !is_free_party(cx.def.parties[pi]) { return }
+    ro why = "the party ${st.party} has no counter: its appeal is a free input (AL-51, AL-52), the gates are not opened"
+    if st.inputs.len() > 0 { cx_issue(cx, "${path}.inputs", "a free input has no table Request: ${why}") }
+    if st.set.len() > 0 { cx_issue(cx, "${path}.set", "a free input has no set: ${why}") }
+    if st.silence.len() > 0 { cx_issue(cx, "${path}.silence", "a free input has no idle term: ${why}") }
+    if st.edits != "" { cx_issue(cx, "${path}.edits", "a free input has no edits: ${why}") }
+    if st.form_returns > 0 { cx_issue(cx, "${path}.form_returns", "a free input has no returns of the form: ${why}") }
+    if st.accept.len() > 0 { cx_issue(cx, "${path}.accept", "a free input has no On accept (no answer comes): ${why}") }
+    mut k = 0
+    for r in st.rows {
+        if is_answer_event(r.event) { cx_issue(cx, "${path}.rows[${k}].event", "a free input has no events answer and failure: ${why}") }
+        k += 1
+    }
+}
+
+// ---- the forks: `else` only where the type does not prove the exhaustion (spec 4.1, AL-57) -------------------------------------------------------
+
+/// ForkTerm: a condition `x == V` of a fork: the name `x`, the value and whether it is a case of a type (`Type.Case`) or a literal text.
+type ForkTerm { subject str, type_name str, value str, is_case bool }
+
+fn fork_value(subject str, v Expr) -> Option[ForkTerm] {
+    match v {
+        VariantLit { type_name, name, fields } => {
+            if fields.len() > 0 { return None }
+            Some(ForkTerm { subject, type_name, value: name, is_case: true })
+        }
+        Lit(val) => {
+            match val {
+                Text(s) => Some(ForkTerm { subject, type_name: "", value: s, is_case: false })
+                _ => None
+            }
+        }
+        _ => None
+    }
+}
+
+fn fork_term_of(cond Expr) -> Option[ForkTerm] {
+    match cond {
+        Binary { op, left, right } => {
+            if op != Eq { return None }
+            match left {
+                Name(x) => return fork_value(x, right)
+                _ => ()
+            }
+            match right {
+                Name(x) => return fork_value(x, left)
+                _ => ()
+            }
+            None
+        }
+        _ => None
+    }
+}
+
+/// Do the rows of a fork prove that one of them is taken, by the type of what they compare (AL-57)? Every row but `else` is `x == V` for one name `x` and a value of its closed type, and the rows name every
+/// value of the type: the cases of an enum or of a variant whose cases have no fields (`x == Type.Case`), the literals of a set (`x == "a"`). A text, a pair of fields, an optional value, `and`, `!=`, `<` prove nothing.
+fn fork_proved(def MachineDef, st StateDef) -> bool {
+    mut subject = ""
+    mut type_name = ""
+    mut is_case = false
+    mut values = []str.new()
+    mut first = true
+    for r in st.rows {
+        if r.is_else { continue }
+        if r.cond.len() == 0 { return false }
+        match fork_term_of(r.cond[0]) {
+            None => return false
+            Some(t) => {
+                if first {
+                    subject = t.subject
+                    type_name = t.type_name
+                    is_case = t.is_case
+                    first = false
+                } else if t.subject != subject || t.is_case != is_case || t.type_name != type_name {
+                    return false
+                }
+                values.push(t.value)
+            }
+        }
+    }
+    if first { return false }
+    ro at = find_data(def, subject)
+    if is_case {
+        // the subject, when it is a datum, is of the type of the values
+        if at >= 0 {
+            match def.data[at].spec {
+                VariantType(n) => { if n != type_name { return false } }
+                _ => return false
+            }
+        }
+        for v in def.types.variants {
+            if v.name == type_name {
+                for c in v.cases {
+                    if c.fields.len() > 0 { return false }
+                    if !values.contains(c.name) { return false }
+                }
+                return true
+            }
+        }
+        return false
+    }
+    if at < 0 { return false }
+    match def.data[at].spec {
+        TextSet(words) => {
+            for w in words {
+                if !values.contains(w) { return false }
+            }
+            true
+        }
+        _ => false
+    }
+}
+
+fn check_forks(mut cx Checker) -> () {
+    mut i = 0
+    for st in cx.def.states {
+        if st.kind == ForkKind && st.rows.len() > 0 {
+            mut has_else = false
+            for r in st.rows {
+                if r.is_else { has_else = true }
+            }
+            if !has_else && !fork_proved(cx.def, st) {
+                cx_issue(cx, "$.states[${i}].rows", "the fork ${st.name} has no row else and the type does not prove that one of the rows is taken (the rows must be `x == value` for one name and name every value of an enum, of a variant without fields or of a set of literals) (AL-57)")
+            }
+        }
+        i += 1
+    }
+}
+
+/// The warnings of a decoded machine (they are no issues): the row else of a fork whose rows already prove the exhaustion by the type can not be reached (AL-57).
+export fn machine_warnings(def MachineDef, registry Registry) -> []LoadError {
+    mut out = []LoadError.new()
+    mut i = 0
+    for st in def.states {
+        if st.kind == ForkKind {
+            mut at = -1
+            mut k = 0
+            for r in st.rows {
+                if r.is_else { at = k }
+                k += 1
+            }
+            if at >= 0 && fork_proved(def, st) {
+                out.push(LoadError { path: "$.states[${i}].rows[${at}]", message: "the row else of the fork ${st.name} can not be reached: the rows name every value of the type (AL-57)" })
+            }
+        }
+        i += 1
+    }
+    out
+}
+
 /// Every issue found in a decoded machine, in a fixed order; the registry gives the classes and the signatures of the primitives.
 export fn check_machine(def MachineDef, registry Registry) -> []LoadError {
     mut cx = Checker { def, registry, issues: []LoadError.new(), sites: []Site.new() }
@@ -2357,6 +2526,7 @@ export fn check_machine(def MachineDef, registry Registry) -> []LoadError {
     check_definitions(cx)
     check_includes(cx)
     check_events(cx)
+    check_forks(cx)
     collect_sites(cx)
     check_reads(cx)
     check_all_writes(cx)
@@ -2367,9 +2537,6 @@ export fn check_machine(def MachineDef, registry Registry) -> []LoadError {
     check_ends(cx)
     cx.issues
 }
-
-/// The warnings of a decoded machine (STUB of the red probe).
-export fn machine_warnings(def MachineDef, registry Registry) -> []LoadError => []LoadError.new()
 
 /// The text of one issue: `<path>: <message>`.
 export fn issue_text(e LoadError) -> str => "${e.path}: ${e.message}"
