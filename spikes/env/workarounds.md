@@ -43,4 +43,4 @@ Marks: 138 in 93 files. Items with marks: 36. Items without marks: 0 (no workaro
 | 55 | `mock_fs_create_dir_all`: `create_dir_all("/a/b/c")` on the memory file system (`mock_fs`) makes only the LAST folder... | `src/alula_cli/support_test.nv`, `src/alula_eq/support_test.nv`, `src/alula_scenarios/support_test.nv` | 3 |
 | 60 | A protocol method that nothing calls is cut from the program, and the C of the program does not build (no small reproduction... | `src/engine/machine.nv` | 1 |
 | 61 | `none_arg_generic_option`: a literal `None` as the argument of a parameter of the type `Option[Wrap[str]]`, where `Wrap` is a... | `src/machine_nested_run/proto_test.nv` | 1 |
-| 127 | `str_to_int_none`: `word.to_int() != None` is TRUE for a text that is no number (`word.to_int() ?? -1` gives -1, so the value is... | `src/machine_agent/v213_test.nv` | 1 |
+| 127 | `str_to_int_none`: `word.to_int() != None` is TRUE for a text that is no number (`word.to_int() ?? -1` gives -1, so the value is... | `src/machine_agent/v217_test.nv` | 1 |

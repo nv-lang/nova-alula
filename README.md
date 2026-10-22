@@ -19,15 +19,11 @@ star Alula in the paw of the Great Bear, from the Arabic "first leap" (a leap is
 feathers on the first digit of a bird's wing (from the Latin *ala*, "wing") that helps the bird to steer at a low speed. Until the format 2.14 the language was called Portolan. <!-- guard-allow(legacy-name): the history of the name -->
 
 The program is `alula`, the files of machines are `*.alula.md` (`.txt`) and `*.alula.json`, the key of the version of a tree is `alula_version`, the line of the version of
-a machine is `machine_version: alula-2.14`, the table of the words is a copy of `alula-keywords.tsv` of the methodology. There is no transition period (the owner, 2026-10-20):
-a file of the format 2.12 or older, a tree with the key of the former name and the former file names are refused with a message.
+a machine is `machine_version: alula-2.17`, the table of the words is a copy of `alula-keywords.tsv` of the methodology. There is no transition period (the owner, 2026-10-20):
+a file of the format 2.14 or older, a tree with the key of the former name and the former file names are refused with a message.
 
-The format read here is **2.14**. Since task 148 the package has the name and the number of the format of the methodology 2.14; since task 149 (version 0.3.0) it reads and writes the notation of
-2.14 by the rules of 2.13 of the methodology (AL-38 ... AL-49): a signal of a party instead of a gate word, `Запрос` and `Читает` instead of `Вход`, a key with no value is not written, "values" of an
-enum, ASCII signs of the operators, no section of the expansion of a fragment, the Latin JSON name in brackets after a name that leaves the machine and the other names as they are written, `int` and
-`int>=n` fit each other in a call. The table of the words is the table of the methodology as it is (216 rows), the samples of the methodology 2.14 (the agent step in both languages, the machine
-"Meeting") are the data of the tests and give the numbers of the methodology. The details are in [src/machine_text/README.md](src/machine_text/README.md) and [src/machine/README.md](src/machine/README.md).
-Open questions to the methodology (a field with two JSON names named without its owner, the JSON name of a nested machine) are in the log of the task 149 of the CrewHarness repository.
+The format read here is **2.17**. Since task 148 the package has the name and the number of the format of the methodology; since task 149 (version 0.3.0) it read the notation of 2.14 by the rules of 2.13 (AL-38 ... AL-49); since task 151 (version 0.4.0) it reads and writes the formats 2.15 - 2.17 of the methodology (AL-51 ... AL-64): the JSON name of a name that leaves the machine is built by itself (the row of the section `## Имена`, the Latin name, the dictionary of the methodology of the version 11 pinned by the hash `60383c370415` of its normative part, the transliteration) and the brackets after a name are an error; ten spaces of the distinctness of the JSON names; a party of the kind `human` with `—` in the column `счётчик` is a party of a free input (no key `counter` in the tree); `—` in the table `Запрос` is "the same name"; the row `иначе` of a fork is needed only where the type does not prove the exhaustion. The table of the words is the table of the methodology of 2.17 as it is (219 rows), the samples of the methodology 2.17 (the agent step in both languages, the machine "Meeting") are the data of the tests and give the numbers and the JSON names of the methodology. The details are in [src/machine_text/README.md](src/machine_text/README.md) and [src/machine/README.md](src/machine/README.md).
+Open questions to the methodology (a field with two JSON names named without its owner, the JSON name of a nested machine) are in the logs of the tasks 149 and 151 of the CrewHarness repository.
 
 The package has no dependencies except Nova's `std` (`std.io`, `std.os` and `std.fs` are used only in `src/alula_cli/` and `src/alula.nv`).
 Built and tested with **Nova Oracle 0.1.0** and Clang, see [spikes/env/README.md](spikes/env/README.md).
@@ -41,7 +37,7 @@ One folder under `src/` is one module `alula.<folder>` and one unit of tests (Or
 | `alula.engine` | the state machine engine: `Machine[S]`, `Engine`, the effects `Journal`, `Store`, `Link`, the journal line and the snapshot, in-memory handlers ([README](src/engine/README.md)) |
 | `alula.machine` | the core of the machines: the dynamic `Value`, the types, the tree of an expression, the pure evaluator, the registry of the primitives of the host, the table of the journal codes, and the data compiled in: `schema/`, `machines/` (15 machines as JSON, 10 of them also as tables), `scenarios/` (621 scenarios) ([README](src/machine/README.md)) |
 | `alula.machine_table` | the model of a machine, the decoder of the tree `machine/2`, the type syntax, the checks of a table |
-| `alula.machine_text` | the translator of tables (Russian and English, format 2.14) to the JSON and the reverse generator ([README](src/machine_text/README.md)) |
+| `alula.machine_text` | the translator of tables (Russian and English, format 2.17) to the JSON and the reverse generator ([README](src/machine_text/README.md)) |
 | `alula.machine_run` | the interpreter `AlulaMachine`, the state, the host of the primitives, nested machines (`machine` parties), the runner of scenarios |
 | `alula.alula_cli`, program `alula` | the commands `compile`, `render`, `convert`, `check`, `summary`, `run`, `test`, `version` ([README](src/alula_cli/README.md)); `src/alula.nv` is the program |
 | `alula.alula_scenarios`, `alula.alula_eq` | tests only: a folder of scenarios through the program; the circles of the program equal the library |
