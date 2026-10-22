@@ -42,7 +42,7 @@ test "mx limit with a set" {
 
 test "mx entry again sends nothing" {
     // the pause does not cancel the request of the agent: the return to the saved state finds the request open and sends nothing (rule 12, task 119); it was a second request
-    ro m = build_from(agent_text().replace("{\"do\":\"cancel_open\"}", "{\"do\":\"cancel_open\",\"party\":\"gatekeeper\"}"))
+    ro m = build_from(agent_text().replace("{\"do\":\"cancel_open\"}", "{\"do\":\"cancel_open\",\"party\":\"вратарь\"}"))
     ro run = run_scenario(m, scenario_of("agent-step-pause-1.scenario.test.json"))
     ro last = run.traces[run.traces.len() - 1]
     assert(last.journal.len() == 1)

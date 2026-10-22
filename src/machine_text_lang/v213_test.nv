@@ -522,10 +522,19 @@ test "v213 undeclared name refused" {
     assert(note_says(text, "неизвестное"))
 }
 
-test "v213 field has one json name" {
-    ro text = ru13_before_data("## Типы\n\n```\nтип Пара (Pair) { левая (left) число }\nтип Двойка (Two) { левая (first) число }\n```\n")
-    assert(note_says(text, "поле `левая`"))
-    assert(note_says(text, "JSON-имя"))
+test "v213 a field word with two json names is told by its owner" {
+    // the same word of a field in two types with two JSON names is allowed (the methodology writes `утверждение (statement)` and `утверждение (claim)`); the literal of a type finds the field of that type,
+    // a reference with no owner (`x.левая`) is the error that says the word has two names
+    ro types = "## Типы\n\n```\nтип Пара (Pair) { левая (left) число }\nтип Двойка (Two) { левая (first) число }\n```\n"
+    ro clean = ru13_before_data(types)
+    assert(is_clean(clean))
+    ro rows = "| p1 | Пара | Пара { левая: 1 } | — | строки |\n| p2 | Двойка | Двойка { левая: 2 } | — | строки |\n"
+    ro with_rows = clean.replace("|---|---|---|---|---|\n", "|---|---|---|---|---|\n${rows}")
+    ro json = json_of(with_rows)
+    assert(json.contains("\"fields\":{\"left\":"))
+    assert(json.contains("\"fields\":{\"first\":"))
+    ro by_name = with_rows.replace("Двойка { левая: 2 }", "Двойка { левая: p1.левая }")
+    assert(note_says(by_name, "объявлено в машине с разными JSON-именами"))
 }
 
 // ---- AL-49: the binding причина ------------------------------------------------------------------------------------------------------------------------

@@ -141,7 +141,7 @@ test "pp agent full dict" {
     ro m = build_from(agent_text())
     match alula_machine_with(m.def, standard_registry(), given("проект.политика_разрешений", Int(1))) {
         Ok(b) => panic("built")
-        Err(e) => assert(e.contains("the parameter PERMISSION_POLICY"))
+        Err(e) => assert(e.contains("the parameter ПОЛИТИКА_РАЗРЕШЕНИЙ"))
     }
     match alula_machine_with(m.def, standard_registry(), given("проект.пауза_повтора", Int(5000))) {
         Ok(b) => assert(b.name() == "agent_step")
@@ -149,7 +149,7 @@ test "pp agent full dict" {
     }
     match alula_machine_with(m.def, standard_registry(), given("проект.пауза_повтора", Int(-1))) {
         Ok(b) => panic("built")
-        Err(e) => assert(e.contains("the parameter RETRY_PAUSE"))
+        Err(e) => assert(e.contains("the parameter ПАУЗА_ПОВТОРА"))
     }
 }
 
