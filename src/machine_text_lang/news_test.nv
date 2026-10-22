@@ -23,7 +23,7 @@ test "nw versions read" {
 }
 
 test "nw state heading" {
-    // the name of the JSON in the brackets is not written when the heading is that name (Я-5)
+    // the name of the JSON in the brackets is not written when the heading is that name (AL-5)
     ro plain = json_of(tiny_ru())
     ro latin = ru_with("### ЖДАТЬ — обращение (Wait)", "### Wait — обращение").replace("Начальное состояние: ЖДАТЬ", "Начальное состояние: Wait").replace("| ЖДАТЬ |", "| Wait |")
     assert(is_clean(latin))
@@ -109,7 +109,7 @@ test "nw expansion name" {
 }
 
 test "nw to is no key" {
-    // `Куда` is a column, not a key line (Я-14): a paragraph that starts with it gives no warning
+    // `Куда` is a column, not a key line (AL-14): a paragraph that starts with it gives no warning
     ro text = v211_ru().replace("## Данные\n", "## Данные\n\nКуда ведёт строка\n")
     assert(translate_report(text).warnings.len() == 0)
     ro key = v211_ru().replace("## Данные\n", "## Данные\n\nВход без пояснений\n")

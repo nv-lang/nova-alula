@@ -45,10 +45,10 @@ export type ParamSpec { name str, spec TypeSpec }
 /// Primitive: the signature and the class of a primitive of the host.
 export type Primitive { name str, params []ParamSpec, result TypeSpec, class PrimitiveClass, reads []str, writes []str }
 
-/// RoleRow: one row of the table "by role" of a parse primitive (format 7, 2.12, Ya-33): the result for the literal of the role and the data that the primitive reads for that role.
+/// RoleRow: one row of the table "by role" of a parse primitive (format 7, 2.12, AL-33): the result for the literal of the role and the data that the primitive reads for that role.
 export type RoleRow { primitive str, role str, result TypeSpec, reads []str }
 
-/// Registry: the primitives, in the order of registration; the codes of the journal that the host declares (the table of the methodology and the table of the product, format 5, 2.12, Ya-31;
+/// Registry: the primitives, in the order of registration; the codes of the journal that the host declares (the table of the methodology and the table of the product, format 5, 2.12, AL-31;
 /// empty means that the codes are not checked against a table); the tables "by role" of the parse primitives.
 export type Registry { primitives []Primitive, journal []JournalCode, roles []RoleRow }
 
@@ -285,7 +285,7 @@ export fn standard_registry() -> Registry {
     std_add(reg, std_prim("role_context", [param("context", VariantType("RoleContext"))], TextType, Reading, ["project objects"], nothing()))
     std_add(reg, std_prim("call_trace", no_params(), TextType, Reading, ["envelope of the call"], nothing()))
     std_add(reg, std_prim("call_step", no_params(), count_spec(), Reading, ["envelope of the call"], nothing()))
-    // the parse of a party of the kind machine (format 7): the answer of the nested machine and the role literal of the `разбор`; the result is by the role (the table "by role" is below, 2.12, Ya-33)
+    // the parse of a party of the kind machine (format 7): the answer of the nested machine and the role literal of the `разбор`; the result is by the role (the table "by role" is below, 2.12, AL-33)
     std_add(reg, std_prim("parse_agent_reply", [param("reply", RecordType("AgentReply")), param("role", TextSet(["witness", "author", "lens"]))], VariantType("RoleResult"), Reading, ["object: artifact file of the reply"], nothing()))
     std_add(reg, std_prim("proposal_read", no_params(), BoolType, Reading, ["object: proposal"], nothing()))
     std_add(reg, std_prim("proposal_with_fingerprint", no_params(), TextType, Reading, ["object: proposal"], nothing()))
@@ -319,7 +319,7 @@ export fn standard_registry() -> Registry {
     // the primitive of the cycle check (task 122) and of the session start (task 121), below: the last, repeatable stage of the commit of their ends HALTED and ERRORED (rule 13); the group of the agent processes stops as a whole and it is checked that none is left
     std_add(reg, std_prim("stop_agent_group", no_params(), NothingType, Irreversible, nothing(), nothing()))
     // the task runner (task 123): what the methodology leaves to the executor of the runner - the documents of the task, the preparation, the files of the delivery, the settings of the project.
-    // Reading primitives stand in `пусть` of the entry of a fork or an operation (rule Ya-29) and in the input of an appeal; the writing and the irreversible ones in the rows (the irreversible last, rule 13).
+    // Reading primitives stand in `пусть` of the entry of a fork or an operation (rule AL-29) and in the input of an appeal; the writing and the irreversible ones in the rows (the irreversible last, rule 13).
     std_add(reg, std_prim("run_preparation", [param("task_dir", TextType), param("repo_dir", TextType)], RecordType("PreparationResult"), Writing,
         ["objects: state of the runner, files of the cycles on the disk, lock, mark of the tree"], ["objects: lock of the runner, state, file of a torn pass"]))
     std_add(reg, std_prim("specification", no_params(), RecordType("TaskDocumentState"), Reading, ["objects: spec.md"], nothing()))
@@ -350,11 +350,11 @@ export fn standard_registry() -> Registry {
     std_add(reg, std_prim("rename_letter", [param("round", count_spec())], NothingType, Irreversible, nothing(), nothing()))
     std_add(reg, std_prim("release_lock", no_params(), NothingType, Irreversible, nothing(), nothing()))
     std_add(reg, std_prim("show_human", [param("text", TextType)], NothingType, Irreversible, nothing(), nothing()))
-    // the table "by role" of the parse (format 7, 2.12, Ya-33): the type of the value is chosen by the literal of the role when the table is checked; what the primitive reads for the role joins the Input of the state
+    // the table "by role" of the parse (format 7, 2.12, AL-33): the type of the value is chosen by the literal of the role when the table is checked; what the primitive reads for the role joins the Input of the state
     std_role(reg, "parse_agent_reply", "witness", ListType(VariantType("WitnessAnswer")), ["object: proposal"])
     std_role(reg, "parse_agent_reply", "author", VariantType("EditResult"), nothing())
     std_role(reg, "parse_agent_reply", "lens", RecordType("LensResult"), nothing())
-    // the codes of the journal: the table of the methodology and the table of the product (format 5, 2.12, Ya-31)
+    // the codes of the journal: the table of the methodology and the table of the product (format 5, 2.12, AL-31)
     with_journal(reg, journal_union())
     reg
 }

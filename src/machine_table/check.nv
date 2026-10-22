@@ -996,7 +996,7 @@ fn state_input_names(def MachineDef, st StateDef) -> []str {
     out
 }
 
-// The names a state reads with what the parse of its party reads for the role (the table "by role", 2.12, Ya-33): the hidden reads of the primitive join the Input of the state (rule 11).
+// The names a state reads with what the parse of its party reads for the role (the table "by role", 2.12, AL-33): the hidden reads of the primitive join the Input of the state (rule 11).
 fn state_names_with_roles(cx Checker, st StateDef) -> []str {
     mut out = state_input_names(cx.def, st)
     if st.kind != AppealKind { return out }
@@ -1749,7 +1749,7 @@ fn check_journal(mut cx Checker) -> () {
             if !is_snake(n) { cx_issue(cx, c.place, "the parameter ${n} of the code ${c.code} must be lower case latin with underscores") }
         }
     }
-    // the codes against the union of the table of the methodology and the table of the product (format 2.12, Ya-31); a host that names no table has no codes to compare with
+    // the codes against the union of the table of the methodology and the table of the product (format 2.12, AL-31); a host that names no table has no codes to compare with
     if cx.registry.journal.len() > 0 {
         for c in seen {
             match journal_find(cx.registry.journal, c.code) {
@@ -2068,7 +2068,7 @@ fn check_party_parse(mut cx Checker, pt PartyDef, path str) -> () {
                         _ => ()
                     }
                 }
-                // the table "by role" (format 7, 2.12, Ya-33): the type of the value is chosen by the literal of the role, and the type after `->` is that type
+                // the table "by role" (format 7, 2.12, AL-33): the type of the value is chosen by the literal of the role, and the type after `->` is that type
                 if has_roles(cx.registry, pr.primitive) {
                     if pr.role == "" {
                         cx_issue(cx, "${path}.parse.role", "the primitive ${pr.primitive} has a table by role: the parse names the role")

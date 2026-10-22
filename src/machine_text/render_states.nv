@@ -183,7 +183,7 @@ fn rn_state(mut cx RnCx, st RJ, index int) -> []str {
             None => ()
         }
         ro inputs = rj_garr(st, "inputs")
-        // an appeal without the fields of the request writes `Вход: нет`, without a table (format 4.1, 2.12, Ya-23)
+        // an appeal without the fields of the request writes `Вход: нет`, without a table (format 4.1, 2.12, AL-23)
         out.push(if inputs.len() == 0 { "- ${rn_kw(cx, "key", "Input")}: ${rn_kw(cx, "enum_value", "none")}" } else { "- ${rn_kw(cx, "key", "Input")}:" })
         if inputs.len() > 0 {
             out.push("")
@@ -453,7 +453,7 @@ export fn render_machine_with(machine_json str, language str, copy_includes bool
             mut cx = rn_cx(language)
             ro dropped = rn_dropped(cx, root, copy_includes)
             rn_register(cx, root, dropped)
-            // what the fragments bring is written by the line of connection, not as the machine's own (1b (m), 2.12, Ya-32)
+            // what the fragments bring is written by the line of connection, not as the machine's own (1b (m), 2.12, AL-32)
             ro shown = if rj_garr(root, "fragments").len() == 0 { root } else { rn_without_fragments(root) }
             ro version = if rj_gstr(shown, "alula_version") == "" { "2.14" } else { rj_gstr(shown, "alula_version") }
             mut out = []str.new()

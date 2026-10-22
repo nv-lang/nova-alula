@@ -889,7 +889,7 @@ fn ex_call(mut p TxP, mut cx TxCx, sc TxScope, name TxTok) -> Result[TxJ, Transl
             match pair_get(cx.env.defs, name.text) {
                 Some(en) => { fn_en = en }
                 None => {
-                    // a primitive that the machine names in `## Примитивы` is called as a function too (format 4.6, 2.12, Ya-29): the same node as `вызвать(имя, арг)`; which class may stand where is the check's
+                    // a primitive that the machine names in `## Примитивы` is called as a function too (format 4.6, 2.12, AL-29): the same node as `вызвать(имя, арг)`; which class may stand where is the check's
                     match pair_get(cx.env.prims, name.text) {
                         Some(prim_en) => {
                             if args.named.len() > 0 { return Err(tx_err(args.named_tokens[0].line, args.named_tokens[0].col, "syntax", "именованные аргументы — только у `${kw(cx.words, "catalog", "journal_event")}`")) }

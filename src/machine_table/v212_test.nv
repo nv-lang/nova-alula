@@ -1,5 +1,5 @@
 // v212_test.nv - Alula 2.12 on the side of the tree and of the checks (task 125): the version of the language, the key `fragments`, the journal tables of the methodology and of the product
-// (Ya-31), the table "by role" of the parse (Ya-33). Every check is red on the broken tree and green on the good one.
+// (AL-31), the table "by role" of the parse (AL-33). Every check is red on the broken tree and green on the good one.
 module alula.machine_table
 
 import std.text
@@ -66,7 +66,7 @@ test "v212 machines are 2.14" {
     }
 }
 
-// ---- the key `fragments` (1b (м), Ya-32) -----------------------------------------------------------------------------------------------------
+// ---- the key `fragments` (1b (м), AL-32) -----------------------------------------------------------------------------------------------------
 
 fn pause_args() -> str => `"halt_word":{"op":"lit","value":"halt"},"halt_code":{"op":"lit","value":"pause_halt"},"nested":{"op":"list","items":[]},"cancel_requests":{"op":"lit","value":"mechanics"},"reenter":{"op":"lit","value":"nothing"},"write_right":{"op":"lit","value":"x"}`
 
@@ -104,7 +104,7 @@ test "v212 fragments behavior word" {
     assert(says(with_fragments(pause_args().replace(`"value":"nothing"`, `"value":"always"`)), "reenter"))
 }
 
-// ---- the journal tables (Ya-31) ----------------------------------------------------------------------------------------------------------
+// ---- the journal tables (AL-31) ----------------------------------------------------------------------------------------------------------
 
 test "v212 methodology table" {
     ro table = methodology_journal()
@@ -217,7 +217,7 @@ test "v212 empty registry skips the table" {
     }
 }
 
-// ---- the table "by role" of the parse (Ya-33) ------------------------------------------------------------------------------------------
+// ---- the table "by role" of the parse (AL-33) ------------------------------------------------------------------------------------------
 
 test "v212 role table of the host" {
     ro reg = standard_registry()

@@ -283,10 +283,10 @@ fn tx_is_separator(cells []TxCell) -> bool {
     true
 }
 
-/// TxExpansion: a section `## Раскрытие фрагмента «Имя»` (format 2.9, Я-17): the line of its heading and the name that the heading holds.
+/// TxExpansion: a section `## Раскрытие фрагмента «Имя»` (format 2.9, AL-17): the line of its heading and the name that the heading holds.
 type TxExpansion { line int, name str }
 
-/// TxClassified: the entries of a file; the warnings of the reading (P-1, Я-12, Я-13: a line of a paragraph that starts with the word of a key, a line pressed against a table, a declaration
+/// TxClassified: the entries of a file; the warnings of the reading (P-1, AL-12, AL-13: a line of a paragraph that starts with the word of a key, a line pressed against a table, a declaration
 /// outside a block of code); the errors of the language of the file (a key line of the other language); the sections of the expansion of a fragment.
 type TxClassified { entries []TxEntry, warnings []TranslateError, errors []TranslateError, expansions []TxExpansion }
 
@@ -356,7 +356,7 @@ fn foreign_error(w TxWords, line int, col int, word str, kind str, key str) -> T
 
 // ---- the paragraphs ------------------------------------------------------------------------------------------------------------
 
-/// The closed list of the key words of a state, a section and a connection (format 4.1; `Куда` is a column, not a key, Я-14): a paragraph that starts with one of them without the list marker is warned about.
+/// The closed list of the key words of a state, a section and a connection (format 4.1; `Куда` is a column, not a key, AL-14): a paragraph that starts with one of them without the list marker is warned about.
 fn prose_keys(w TxWords) -> []str => kw_all(w, "key", ["Party", "Idle term", "Input", "Edits", "Form returns", "On entry", "On accept", "Result", "Except", "Request limit"])
 
 // A line that begins a declaration of the sections `Типы` and `Определения`.
@@ -408,7 +408,7 @@ type TxParaLine { line int, indent int, text str }
 // ORACLE-WORKAROUND(46): the lists are fields of a `mut` record and are assigned as fields, because assigning a `mut` parameter changes only the local name; pass the lists as `mut` parameters when item 46 is fixed
 type TxClsState { out []TxEntry, warnings []TranslateError, para []TxParaLine, forced bool }
 
-// The open paragraph ends. `touching`: it ends against a table, a heading or a list item with no empty line between (format 2.9, Я-12): its lines are no paragraph, the reader takes
+// The open paragraph ends. `touching`: it ends against a table, a heading or a list item with no empty line between (format 2.9, AL-12): its lines are no paragraph, the reader takes
 // them for extra lines of the neighbour block and the warning says so. Otherwise it is a comment; the lines that start with a key word are warned about.
 fn cls_flush(mut st TxClsState, touching bool, what str, w TxWords) -> () {
     if st.para.len() == 0 { return }
@@ -434,8 +434,8 @@ fn expansion_name(head_text str, prefix str) -> str {
 
 /// The entries of the lines of a file, in order, the warnings and the errors of the language. `lines` are the lines without the line feed (a carriage return at the end is cut here).
 /// Format 2.7 (P-1, P-2): a paragraph (a line after an empty line, outside the tables, the blocks of code and the key lines, with the lines that follow it up to an empty line) is a comment and
-/// gives no entry; the section `## Раскрытие фрагмента …` gives no entry but its heading. `strict` is format 2.9 and later (Я-12): a paragraph pressed against a table, a heading or a list
-/// item is no paragraph. `decl_comment` (a machine of format 2.9 and later, Я-13): a declaration outside a block of code is a comment with a warning.
+/// gives no entry; the section `## Раскрытие фрагмента …` gives no entry but its heading. `strict` is format 2.9 and later (AL-12): a paragraph pressed against a table, a heading or a list
+/// item is no paragraph. `decl_comment` (a machine of format 2.9 and later, AL-13): a declaration outside a block of code is a comment with a warning.
 fn tx_classify_in(lines []str, w TxWords, strict bool, decl_comment bool) -> TxClassified {
     mut st = TxClsState { out: []TxEntry.new(), warnings: []TranslateError.new(), para: []TxParaLine.new(), forced: false }
     mut errors = []TranslateError.new()
@@ -550,7 +550,7 @@ fn tx_classify_in(lines []str, w TxWords, strict bool, decl_comment bool) -> TxC
         // a line of free text: a line of a paragraph (a comment) or a line of a declaration or a connection
         ro declaration = indent == 0 && !in_fence && is_decl_start(text, w)
         if decl_comment && declaration {
-            // format 2.9 (Я-13): a declaration stands in a block of code only; outside it is a comment, with a warning, and so are the lines that follow it up to an empty line
+            // format 2.9 (AL-13): a declaration stands in a block of code only; outside it is a comment, with a warning, and so are the lines that follow it up to an empty line
             cls_flush(st, false, "", w)
             st.warnings.push(tx_err(no, 1, "warning", "объявление вне блока кода — это комментарий, разбор его пропускает; объявления (`${kw(w, "decl", "type")}`, `${kw(w, "decl", "enum")}`, `${kw(w, "decl", "variant")}`, `${kw(w, "decl", "define")}`) пишутся внутри блока кода (три обратные кавычки)"))
             st.para.push(TxParaLine { line: no, indent, text })

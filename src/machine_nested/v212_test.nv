@@ -1,5 +1,5 @@
-// v212_test.nv - task 125: Alula 2.12 for the nested machines and the fragment "Pause": the line of connection of the fragment in the tree (`fragments`, Ya-32) and in the file written by the
-// reverse generator, `Вход: нет` of an appeal, a pure primitive called as a function in a condition (Ya-29), a field of the request that is named as a datum (Ya-28), the table "by role" of the parse (Ya-33).
+// v212_test.nv - task 125: Alula 2.12 for the nested machines and the fragment "Pause": the line of connection of the fragment in the tree (`fragments`, AL-32) and in the file written by the
+// reverse generator, `Вход: нет` of an appeal, a pure primitive called as a function in a condition (AL-29), a field of the request that is named as a datum (AL-28), the table "by role" of the parse (AL-33).
 module alula.machine_nested
 
 import std.text
@@ -27,7 +27,7 @@ fn after_marker(json str, marker str) -> str {
     rest[..end]
 }
 
-// ---- the line of connection of the fragment (Ya-32) -----------------------------------------------------------------------------------
+// ---- the line of connection of the fragment (AL-32) -----------------------------------------------------------------------------------
 
 test "v212 meeting reads" {
     ro report = checked(meeting212())
@@ -239,7 +239,7 @@ test "v212 pause call missing parameter" {
     assert(note_says(meeting212().replace("вход_заново: запросы_из_к_отправке,\n", ""), "не назван параметр `вход_заново`"))
 }
 
-// ---- Вход: нет of an appeal (Ya-23) ---------------------------------------------------------------------------------------------------------
+// ---- Вход: нет of an appeal (AL-23) ---------------------------------------------------------------------------------------------------------
 
 fn no_request() -> str => agent212().replace("- Вход:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| подсказка | text_reply | сторона |\n", "- Вход: нет\n")
 
@@ -280,7 +280,7 @@ test "v212 call without the fields it needs" {
     assert(note_says(text, "count"))
 }
 
-// ---- a pure primitive in a condition (Ya-29) --------------------------------------------------------------------------------------------
+// ---- a pure primitive in a condition (AL-29) --------------------------------------------------------------------------------------------
 
 fn pure_registry() -> Registry {
     mut reg = standard_registry()
@@ -353,7 +353,7 @@ fn note_says_in(report TranslateReport, needle str) -> bool {
     false
 }
 
-// ---- a field of the request that is named as a datum (Ya-28) --------------------------------------------------------------------------
+// ---- a field of the request that is named as a datum (AL-28) --------------------------------------------------------------------------
 
 fn named_as_datum() -> str => boss212().replace("| reply | ?CallOutput | пусто | — | строки |", "| reply | ?CallOutput | пусто | — | строки |\n| label | текст | \"\" | — | строки |").replace("| label | \"m\" | сторона |", "| label | если reply == пусто то \"first\" иначе \"again\" | сторона |").replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | reply = итог; label = \"seen\" | DONE |")
 
@@ -378,7 +378,7 @@ test "v212 field named as a datum read by the rows" {
     assert(report.errors.len() == 0)
 }
 
-// ---- the table "by role" of the parse (Ya-33) ---------------------------------------------------------------------------------------------
+// ---- the table "by role" of the parse (AL-33) ---------------------------------------------------------------------------------------------
 
 fn roles_registry() -> Registry {
     mut reg = standard_registry()
@@ -438,7 +438,7 @@ test "v212 role circle" {
     assert(circle_with(report.json, "en", roles_registry()) == "")
 }
 
-// ---- the bindings of the rows of the fragment against the data of the machine (Ya-26) ---------------------------------------------------------------------
+// ---- the bindings of the rows of the fragment against the data of the machine (AL-26) ---------------------------------------------------------------------
 
 fn meeting_with_datum(name str) -> str => meeting212().replace("| попытка_вратаря | число≥0 | 0 | да | механика |", "| попытка_вратаря | число≥0 | 0 | да | механика |\n| ${name} | текст | \"\" | — | строки |")
 
