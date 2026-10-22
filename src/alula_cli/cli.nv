@@ -69,7 +69,7 @@ fn scan_folder(dir str, mut names []str) Fs -> bool {
             here.sort()
             for name in here {
                 ro full = "${dir}/${name}"
-                if is_test_file(name) {
+                if is_test_file(name) || is_former_name(name) {
                     names.push(full)
                 } else if !name.starts_with(".") {
                     // a folder is read; anything else (a file, a link) fails to be read as a folder and is skipped
@@ -117,6 +117,7 @@ fn output_error(a Args) Fs -> str {
 
 fn run_file_command(command str, a Args) Fs Io -> int {
     ro file = a.files[0]
+    if is_former_name(file) { return usage_error(command, former_name_message(file)) }
     ro language = if a.has_language { a.language } else { "ru" }
     if command == "convert" && !a.has_language { return usage_error(command, "--language ru|en is needed") }
     ro blocked = output_error(a)
@@ -135,6 +136,7 @@ fn run_file_command(command str, a Args) Fs Io -> int {
 fn run_scenario_command(a Args) Fs Io -> int {
     ro machine_file = a.files[0]
     ro scenario_file = a.files[1]
+    if is_former_name(machine_file) { return usage_error("run", former_name_message(machine_file)) }
     ro machine_text = match read_file(machine_file) {
         Some(t) => t
         None => return usage_error("run", "cannot read ${machine_file}")

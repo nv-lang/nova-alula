@@ -201,6 +201,20 @@ fn is_text_machine_name(name str) -> bool => name.ends_with(".alula.md") || name
 /// Is the file one that `alula test` reads: a scenario or a machine?
 export fn is_test_file(name str) -> bool => is_scenario_name(name) || is_json_machine_name(name) || is_text_machine_name(name)
 
+const FORMER_MARK = ".portolan." // guard-allow(legacy-name): the former extension is named here to be refused
+
+/// Is it a former name of a file (`<name>` + the former mark + `md`, `txt` or `json`)? The language was called Portolan before the format 2.14; its files are not names of Alula
+/// and are refused, not skipped (there is no transition period).
+export fn is_former_name(name str) -> bool {
+    for extension in ["md", "txt", "json"] {
+        if name.ends_with("${FORMER_MARK}${extension}") { return true }
+    }
+    false
+}
+
+/// The refusal of a file with a former name.
+export fn former_name_message(name str) -> str => "${name}: the name of the file is the former one (*${FORMER_MARK}*): rename it to *.alula.* (the language is called Alula since the format 2.14; there is no transition period)"
+
 /// A machine found in the folder: the file it came from and the machine.
 type FoundMachine { file str, machine AlulaMachine }
 
@@ -272,6 +286,9 @@ export fn test_command(files []NamedText, dir str, verbose bool) -> CmdResult {
     mut scenarios = []NamedText.new()
     for f in files {
         if is_scenario_name(f.name) { scenarios.push(f) }
+    }
+    for f in files {
+        if is_former_name(f.name) { return done("", "alula test: ${former_name_message(f.name)}\n", 2) }
     }
     if scenarios.len() == 0 { return done("", "alula test: no scenarios in ${dir}\n", 2) }
     mut found = []FoundMachine.new()
