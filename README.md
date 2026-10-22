@@ -22,10 +22,12 @@ The program is `alula`, the files of machines are `*.alula.md` (`.txt`) and `*.a
 a machine is `machine_version: alula-2.14`, the table of the words is a copy of `alula-keywords.tsv` of the methodology. There is no transition period (the owner, 2026-10-20):
 a file of the format 2.12 or older, a tree with the key of the former name and the former file names are refused with a message.
 
-The format read here is **2.14**: since task 148 the package takes the name and the number of the format of the methodology 2.14 (a rename of the language, of the files and of
-the keys). The notation itself is still that of 2.12: the simplifications of 2.13 of the methodology (a signal of a party instead of a gate word, `Запрос` and `Читает` instead
-of `Вход`, ASCII signs of operators, "values" of an enum, no section of the expansion of a fragment) are not read yet, so the files of the package are not the samples of the
-methodology 2.14 character for character (the table of the words and the hash of the Russian sample of the definitions differ for that reason).
+The format read here is **2.14**. Since task 148 the package has the name and the number of the format of the methodology 2.14; since task 149 (version 0.3.0) it reads and writes the notation of
+2.14 by the rules of 2.13 of the methodology (AL-38 ... AL-49): a signal of a party instead of a gate word, `Запрос` and `Читает` instead of `Вход`, a key with no value is not written, "values" of an
+enum, ASCII signs of the operators, no section of the expansion of a fragment, the Latin JSON name in brackets after a name that leaves the machine and the other names as they are written, `int` and
+`int>=n` fit each other in a call. The table of the words is the table of the methodology as it is (216 rows), the samples of the methodology 2.14 (the agent step in both languages, the machine
+"Meeting") are the data of the tests and give the numbers of the methodology. The details are in [src/machine_text/README.md](src/machine_text/README.md) and [src/machine/README.md](src/machine/README.md).
+Open questions to the methodology (a field with two JSON names named without its owner, the JSON name of a nested machine) are in the log of the task 149 of the CrewHarness repository.
 
 The package has no dependencies except Nova's `std` (`std.io`, `std.os` and `std.fs` are used only in `src/alula_cli/` and `src/alula.nv`).
 Built and tested with **Nova Oracle 0.1.0** and Clang, see [spikes/env/README.md](spikes/env/README.md).
