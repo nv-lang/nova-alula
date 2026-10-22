@@ -5,7 +5,7 @@
   "start_at": 1000,
   "params": {"проект.срок_бездействия": 30000},
   "steps": [
-    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
+    {"do": "feed", "event": {"kind": "signal", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
     {"do": "deliver", "event": {"kind": "progress", "name": "agent_chunk", "request": "agent-1", "input": "a", "source": "acp-7"}},
     {"do": "pump", "expect": {"state": "Awaiting", "journal": [{"code": "agent_chunk", "params": {"text": "a"}}]}}
   ]

@@ -5,11 +5,11 @@
   "start_at": 1000,
   "params": {"проект.срок_бездействия": 30000},
   "steps": [
-    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "one"}, "expect": {"state": "Awaiting"}},
+    {"do": "feed", "event": {"kind": "signal", "name": "user_message", "input": "one"}, "expect": {"state": "Awaiting"}},
     {"do": "deliver", "event": {"kind": "progress", "name": "agent_chunk", "request": "agent-1", "input": "text", "source": "acp-1"}},
     {"do": "deliver", "event": {"kind": "answer", "name": "agent_done", "request": "agent-1", "source": "acp-2"}},
     {"do": "restart", "expect": {"state": "Awaiting"}},
     {"do": "pump", "expect": {"state": "Idle", "journal": [{"code": "agent_chunk", "params": {"text": "text"}}, {"code": "agent_done", "params": {}}], "open": [], "outcome": "none"}},
-    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "two"}, "expect": {"state": "Awaiting", "open": ["agent-2"], "sent": ["agent-1", "agent-2"]}}
+    {"do": "feed", "event": {"kind": "signal", "name": "user_message", "input": "two"}, "expect": {"state": "Awaiting", "open": ["agent-2"], "sent": ["agent-1", "agent-2"]}}
   ]
 }

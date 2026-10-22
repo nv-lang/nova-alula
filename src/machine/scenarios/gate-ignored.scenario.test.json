@@ -5,7 +5,7 @@
   "start_at": 1000,
   "steps": [
     {"do": "feed", "event": {"kind": "start"}, "expect": {"state": "Work"}},
-    {"do": "feed", "event": {"kind": "word", "name": "halt"}, "expect": {"state": "Work", "journal": [{"code": "event_ignored", "params": {"event": "halt", "state": "Work"}}]}},
+    {"do": "feed", "event": {"kind": "signal", "name": "halt"}, "expect": {"state": "Work", "journal": [{"code": "event_ignored", "params": {"event": "halt", "state": "Work"}}]}},
     {"do": "feed", "event": {"kind": "answer", "name": "answer", "request": "agent-1"}, "expect": {"state": "Done"}},
     {"do": "feed", "event": {"kind": "signal", "name": "stop", "input": {"author": "x", "source": "y"}}, "expect": {"state": "Done", "journal": [{"code": "stop_discarded", "params": {"author": "x"}}]}}
   ]

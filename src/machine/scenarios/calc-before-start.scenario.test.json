@@ -4,7 +4,7 @@
   "name": "an event before the start is ignored; the start with a broken input is refused",
   "start_at": 1000,
   "steps": [
-    {"do": "feed", "event": {"kind": "word", "name": "go"}, "expect": {"state": "Start", "journal": [{"code": "event_ignored", "params": {"event": "go", "state": "Start"}}]}},
+    {"do": "feed", "event": {"kind": "signal", "name": "go"}, "expect": {"state": "Start", "journal": [{"code": "event_ignored", "params": {"event": "go", "state": "Start"}}]}},
     {"do": "feed", "event": {"kind": "start", "input": {"start": 500, "label": "x"}}, "expect": {"state": "Start", "outcome": "refusal:NoResult", "journal": [{"code": "input_rejected", "params": {"reason": "invariant", "index": "0"}}]}}
   ]
 }

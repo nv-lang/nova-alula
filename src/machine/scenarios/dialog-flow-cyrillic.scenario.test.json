@@ -5,7 +5,7 @@
   "start_at": 1000,
   "params": {"проект.срок_бездействия": 30000},
   "steps": [
-    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "Привет, как дела? Ёжик, щётка, 日本"}, "expect": {"state": "Awaiting", "journal": [{"code": "user_message", "params": {"text": "Привет, как дела? Ёжик, щётка, 日本"}}]}},
+    {"do": "feed", "event": {"kind": "signal", "name": "user_message", "input": "Привет, как дела? Ёжик, щётка, 日本"}, "expect": {"state": "Awaiting", "journal": [{"code": "user_message", "params": {"text": "Привет, как дела? Ёжик, щётка, 日本"}}]}},
     {"do": "feed", "event": {"kind": "progress", "name": "agent_chunk", "request": "agent-1", "input": "Отлично, "}, "expect": {"state": "Awaiting"}},
     {"do": "feed", "event": {"kind": "progress", "name": "agent_chunk", "request": "agent-1", "input": "спасибо"}, "expect": {"state": "Awaiting", "data": {"reply": "Отлично, спасибо"}}},
     {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-1"}, "expect": {"state": "Idle", "outcome": "none"}}

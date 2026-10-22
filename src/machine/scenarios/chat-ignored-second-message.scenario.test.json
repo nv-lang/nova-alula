@@ -4,7 +4,7 @@
   "name": "a second message while waiting is ignored",
   "start_at": 1000,
   "steps": [
-    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
-    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "second"}, "expect": {"state": "Awaiting", "journal": [{"code": "event_ignored", "params": {"event": "user_message", "state": "Awaiting"}}], "data": {"user": "hi"}}}
+    {"do": "feed", "event": {"kind": "signal", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
+    {"do": "feed", "event": {"kind": "signal", "name": "user_message", "input": "second"}, "expect": {"state": "Awaiting", "journal": [{"code": "event_ignored", "params": {"event": "user_message", "state": "Awaiting"}}], "data": {"user": "hi"}}}
   ]
 }

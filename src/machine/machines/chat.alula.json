@@ -18,7 +18,7 @@
   "parties": [
     {
       "name": "user", "id": "user", "kind": "human", "counter": "user_attempt",
-      "words": [
+      "signals": [
         { "name": "user_message", "fields": [ { "name": "content", "type": "text" } ] },
         { "name": "cancel" }
       ]
@@ -35,7 +35,7 @@
       "name": "Idle", "kind": "appeal", "party": "user",
       "rows": [
         {
-          "n": 1, "event": { "kind": "word", "word": "user_message", "bind": { "content": "message" } },
+          "n": 1, "event": { "kind": "signal", "name": "user_message", "bind": { "content": "message" } },
           "actions": [
             { "do": "journal", "code": "user_message", "params": [ { "name": "text", "value": { "op": "name", "name": "message" } } ] },
             { "do": "assign", "target": "user", "value": { "op": "name", "name": "message" } },
@@ -44,7 +44,7 @@
           "to": "Awaiting"
         },
         {
-          "n": 2, "event": { "kind": "word", "word": "cancel" },
+          "n": 2, "event": { "kind": "signal", "name": "cancel" },
           "actions": [
             { "do": "journal", "code": "cancelled_before_request" },
             { "do": "assign", "target": "stop_code", "value": { "op": "variant", "type": "FailCode", "name": "StoppedByHuman" } },

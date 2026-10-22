@@ -4,7 +4,7 @@
   "name": "restart after the answer: stays finished, nothing sent",
   "start_at": 1000,
   "steps": [
-    {"do": "feed", "event": {"kind": "word", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
+    {"do": "feed", "event": {"kind": "signal", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
     {"do": "feed", "event": {"kind": "progress", "name": "agent_chunk", "request": "agent-1", "input": "fine"}, "expect": {"state": "Awaiting"}},
     {"do": "feed", "event": {"kind": "answer", "name": "agent_done", "request": "agent-1"}, "expect": {"state": "Done", "outcome": "answer:fine"}},
     {"do": "restart", "expect": {"state": "Done", "outcome": "answer:fine", "open": []}},

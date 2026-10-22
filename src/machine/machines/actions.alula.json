@@ -19,7 +19,7 @@
   "parties": [
     {
       "name": "p", "id": "p", "kind": "human", "counter": "p_attempt",
-      "words": [
+      "signals": [
         { "name": "add", "fields": [ { "name": "n", "type": "int" } ] },
         { "name": "tag", "fields": [ { "name": "s", "type": "text" } ] },
         { "name": "push", "fields": [ { "name": "item", "type": "text" } ] },
@@ -47,49 +47,49 @@
         { "field": "items", "value": { "op": "name", "name": "items" }, "reads": "executor" }
       ],
       "rows": [
-        { "n": 1, "event": { "kind": "word", "word": "add", "bind": { "n": "n" } },
+        { "n": 1, "event": { "kind": "signal", "name": "add", "bind": { "n": "n" } },
           "actions": [ { "do": "add", "target": "total", "value": { "op": "name", "name": "n" } } ], "to": "@same" },
-        { "n": 2, "event": { "kind": "word", "word": "tag", "bind": { "s": "s" } },
+        { "n": 2, "event": { "kind": "signal", "name": "tag", "bind": { "s": "s" } },
           "actions": [ { "do": "add", "target": "label", "value": { "op": "name", "name": "s" } } ], "to": "@same" },
-        { "n": 3, "event": { "kind": "word", "word": "push", "bind": { "item": "item" } },
+        { "n": 3, "event": { "kind": "signal", "name": "push", "bind": { "item": "item" } },
           "actions": [
             { "do": "add", "target": "log", "value": { "op": "list", "items": [ { "op": "name", "name": "item" } ] } },
             { "do": "assign", "target": { "name": "counts", "path": [ { "key": { "op": "name", "name": "item" } } ] },
               "value": { "op": "+", "left": { "op": "??", "left": { "op": "index", "of": { "op": "name", "name": "counts" }, "index": { "op": "name", "name": "item" } }, "right": { "op": "lit", "value": 0 } }, "right": { "op": "lit", "value": 1 } } }
           ], "to": "@same" },
-        { "n": 4, "event": { "kind": "word", "word": "put", "bind": { "key": "key", "val": "val" } },
+        { "n": 4, "event": { "kind": "signal", "name": "put", "bind": { "key": "key", "val": "val" } },
           "actions": [
             { "do": "assign", "target": { "name": "items", "path": [ { "key": { "op": "name", "name": "key" } } ] },
               "value": { "op": "record", "type": "Item", "fields": { "name": { "op": "name", "name": "val" } } } }
           ], "to": "@same" },
-        { "n": 5, "event": { "kind": "word", "word": "rename", "bind": { "key": "key", "val": "val" } },
+        { "n": 5, "event": { "kind": "signal", "name": "rename", "bind": { "key": "key", "val": "val" } },
           "actions": [
             { "do": "assign", "target": { "name": "items", "path": [ { "key": { "op": "name", "name": "key" } }, { "field": "name" } ] }, "value": { "op": "name", "name": "val" } }
           ], "to": "@same" },
-        { "n": 6, "event": { "kind": "word", "word": "each" },
+        { "n": 6, "event": { "kind": "signal", "name": "each" },
           "actions": [
             { "do": "for_each", "var": "x", "in": { "op": "name", "name": "log" },
               "body": [ { "do": "journal", "code": "seen", "params": [ { "name": "item", "value": { "op": "name", "name": "x" } } ] } ] }
           ], "to": "@same" },
-        { "n": 7, "event": { "kind": "word", "word": "branch", "bind": { "n": "n" } },
+        { "n": 7, "event": { "kind": "signal", "name": "branch", "bind": { "n": "n" } },
           "actions": [
             { "do": "if", "cond": { "op": ">", "left": { "op": "name", "name": "n" }, "right": { "op": "lit", "value": 5 } },
               "then": [ { "do": "journal", "code": "big" } ], "else": [ { "do": "journal", "code": "small" } ] }
           ], "to": "@same" },
-        { "n": 8, "event": { "kind": "word", "word": "letit", "bind": { "n": "n" } },
+        { "n": 8, "event": { "kind": "signal", "name": "letit", "bind": { "n": "n" } },
           "actions": [
             { "do": "let", "name": "m", "value": { "op": "*", "left": { "op": "name", "name": "n" }, "right": { "op": "lit", "value": 2 } },
               "body": [ { "do": "journal", "code": "doubled", "params": [ { "name": "value", "value": { "op": "call", "fn": "text", "args": [ { "op": "name", "name": "m" } ] } } ] },
                         { "do": "assign", "target": "total", "value": { "op": "name", "name": "m" } } ] }
           ], "to": "@same" },
-        { "n": 9, "event": { "kind": "word", "word": "shut" },
+        { "n": 9, "event": { "kind": "signal", "name": "shut" },
           "actions": [ { "do": "call", "primitive": "close_agent_turn" } ], "to": "@same" },
-        { "n": 10, "event": { "kind": "word", "word": "boom" },
+        { "n": 10, "event": { "kind": "signal", "name": "boom" },
           "actions": [
             { "do": "assign", "target": "total", "value": { "op": "lit", "value": 99 } },
             { "do": "machine_error", "code": "boom", "params": [ { "name": "why", "value": { "op": "lit", "value": "asked" } } ] }
           ] },
-        { "n": 11, "event": { "kind": "word", "word": "finish" }, "to": "Done" }
+        { "n": 11, "event": { "kind": "signal", "name": "finish" }, "to": "Done" }
       ]
     },
     { "name": "Done", "kind": "end", "reads": [ "total" ] },

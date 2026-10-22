@@ -15,7 +15,7 @@
     { "name": "agent", "id": "agent", "kind": "agent", "result": "text", "counter": "agent_attempt" },
     {
       "name": "enhanced", "id": "enhanced", "kind": "enhanced", "counter": "enhanced_attempt",
-      "words": [
+      "signals": [
         { "name": "continue", "fields": [ { "name": "author", "type": "text" }, { "name": "source", "type": "text" } ] },
         { "name": "halt" }
       ]
@@ -76,7 +76,7 @@
       "inputs": [ { "field": "previous", "value": { "op": "call", "fn": "require", "args": [ { "op": "name", "name": "previous" } ] }, "reads": "executor" } ],
       "rows": [
         {
-          "n": 1, "event": { "kind": "word", "word": "continue", "bind": { "author": "author", "source": "source" } },
+          "n": 1, "event": { "kind": "signal", "name": "continue", "bind": { "author": "author", "source": "source" } },
           "actions": [
             { "do": "journal", "code": "human_continue", "params": [
                 { "name": "previous", "value": { "op": "call", "fn": "text", "args": [ { "op": "call", "fn": "require", "args": [ { "op": "name", "name": "previous" } ] } ] } },
@@ -87,7 +87,7 @@
           "to": "@previous"
         },
         {
-          "n": 2, "event": { "kind": "word", "word": "halt" },
+          "n": 2, "event": { "kind": "signal", "name": "halt" },
           "actions": [ { "do": "assign", "target": "halt", "value": { "op": "lit", "value": "pause_halt" } } ],
           "to": "Halted"
         }
