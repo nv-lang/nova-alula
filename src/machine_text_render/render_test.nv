@@ -8,9 +8,9 @@ import alula.machine_agent.{methodology_text, methodology_en_text}
 import alula.machine_text_eq.{case_text}
 import alula.machine_text.{render_machine, render_machine_with, render, translate_report, render_type_in, render_expression_in, render_actions_in}
 
-fn chat_json() -> str => machine_json("chat.portolan.json")
+fn chat_json() -> str => machine_json("chat.alula.json")
 
-fn calc_json() -> str => machine_json("calc.portolan.json")
+fn calc_json() -> str => machine_json("calc.alula.json")
 
 // ---- the canonical form ----------------------------------------------------------------------------------------------------------
 
@@ -94,7 +94,7 @@ test "rn tables" {
 }
 
 test "rn appeal keys in order" {
-    ro en = render(machine_json("gate.portolan.json"), "en")
+    ro en = render(machine_json("gate.alula.json"), "en")
     ro party = index_of_line(en, "- Party: agent")
     assert(party > 0)
     assert(lines_from(en, party, 1) == "- Party: agent")
@@ -115,14 +115,14 @@ test "rn state heading no brackets" {
 test "rn operators en ascii" {
     ro en = render(calc_json(), "en")
     for sign in ["≥", "≤", "≠", "→", "…", "∈"] { assert(!en.contains(sign)) }
-    ro agent = render(machine_json("agent_step.portolan.json"), "en")
+    ro agent = render(machine_json("agent_step.alula.json"), "en")
     for sign in ["≥", "≤", "≠", "→", "…", "∈"] { assert(!agent.contains(sign)) }
     assert(agent.contains("int>=0"))
     assert(agent.contains("-> "))
 }
 
 test "rn operators ru canon" {
-    ro agent = render(machine_json("agent_step.portolan.json"), "ru")
+    ro agent = render(machine_json("agent_step.alula.json"), "ru")
     assert(agent.contains("число≥0"))
     assert(agent.contains("→"))
     assert(agent.contains(" ∈ {") || agent.contains("Кроме: "))
@@ -131,7 +131,7 @@ test "rn operators ru canon" {
 }
 
 test "rn declarations in blocks" {
-    ro agent = render(machine_json("agent_step.portolan.json"), "en")
+    ro agent = render(machine_json("agent_step.alula.json"), "en")
     ro at = index_of_line(agent, "## Types")
     assert(lines_from(agent, at + 1, 2) == "\n```")
     assert(agent.contains("\nenum CallerKind = Lens | CycleSession | ChatTurn | Gatekeeper\n"))
@@ -140,7 +140,7 @@ test "rn declarations in blocks" {
 }
 
 test "rn words of an enum" {
-    ro agent = render(machine_json("agent_step.portolan.json"), "en")
+    ro agent = render(machine_json("agent_step.alula.json"), "en")
     assert(agent.contains("Read \"read\""))
     assert(agent.contains("SwitchMode \"switch_mode\""))
 }
@@ -219,7 +219,7 @@ test "rn include unknown file" {
 // ---- circles on the machines of the product ------------------------------------------------------------------------------------
 
 test "rn circle en actions" {
-    assert(circle(machine_json("actions.portolan.json"), "en") == "")
+    assert(circle(machine_json("actions.alula.json"), "en") == "")
 }
 
 test "rn circle en calc" {
@@ -227,15 +227,15 @@ test "rn circle en calc" {
 }
 
 test "rn circle en gate" {
-    assert(circle(machine_json("gate.portolan.json"), "en") == "")
+    assert(circle(machine_json("gate.alula.json"), "en") == "")
 }
 
 test "rn circle en lenses" {
-    assert(circle(machine_json("lenses.portolan.json"), "en") == "")
+    assert(circle(machine_json("lenses.alula.json"), "en") == "")
 }
 
 test "rn circle en variants" {
-    assert(circle(machine_json("variants.portolan.json"), "en") == "")
+    assert(circle(machine_json("variants.alula.json"), "en") == "")
 }
 
 test "rn circle en chat" {
@@ -243,7 +243,7 @@ test "rn circle en chat" {
 }
 
 test "rn circle ru actions" {
-    assert(circle(machine_json("actions.portolan.json"), "ru") == "")
+    assert(circle(machine_json("actions.alula.json"), "ru") == "")
 }
 
 test "rn circle ru calc" {
@@ -251,15 +251,15 @@ test "rn circle ru calc" {
 }
 
 test "rn circle ru gate" {
-    assert(circle(machine_json("gate.portolan.json"), "ru") == "")
+    assert(circle(machine_json("gate.alula.json"), "ru") == "")
 }
 
 test "rn circle ru lenses" {
-    assert(circle(machine_json("lenses.portolan.json"), "ru") == "")
+    assert(circle(machine_json("lenses.alula.json"), "ru") == "")
 }
 
 test "rn circle ru variants" {
-    assert(circle(machine_json("variants.portolan.json"), "ru") == "")
+    assert(circle(machine_json("variants.alula.json"), "ru") == "")
 }
 
 test "rn circle ru chat" {
@@ -488,12 +488,12 @@ test "rn circle product table" {
 }
 
 test "rn circle pilot and examples" {
-    ro pilot = json_of(case_text("agent-step.portolan.md"))
+    ro pilot = json_of(case_text("agent-step.alula.md"))
     assert(!pilot.starts_with("ERROR "))
     assert(circle(pilot, "ru") == "")
     assert(circle(pilot, "en") == "")
     // the examples of the format are pieces of a machine, not a machine: they are translated without the checks of the table
-    ro examples = translate_report(case_text("format-examples.portolan.md")).json
+    ro examples = translate_report(case_text("format-examples.alula.md")).json
     assert(examples.byte_len() > 1000)
     assert(circle_loose(examples, "ru") == "")
     assert(circle_loose(examples, "en") == "")

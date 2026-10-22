@@ -10,9 +10,9 @@ fn machine_named(name str) -> PortolanMachine {
     if name == "ChatSession" { return chat() }
     if name == "DialogSession" { return dialog() }
     if name == "Calc" { return calc() }
-    if name == "Gate" { return build("gate.portolan.json") }
-    if name == "Lenses" { return build("lenses.portolan.json") }
-    if name == "Variants" { return build("variants.portolan.json") }
+    if name == "Gate" { return build("gate.alula.json") }
+    if name == "Lenses" { return build("lenses.alula.json") }
+    if name == "Variants" { return build("variants.alula.json") }
     if name == "agent_step" { return agent_step() }
     panic("no machine ${name}")
 }
@@ -250,14 +250,14 @@ test "names by the Portolan" {
     for f in scenarios { assert(f.name.ends_with(".scenario.test.json")) }
     ro tables = table_files()
     assert(tables.len() == 10)
-    for f in tables { assert(f.name.ends_with(".portolan.md") || f.name.ends_with(".portolan.txt")) }
+    for f in tables { assert(f.name.ends_with(".alula.md") || f.name.ends_with(".alula.txt")) }
     assert(machine_files().len() == 15)
-    for f in machine_files() { assert(f.name.ends_with(".portolan.json")) }
+    for f in machine_files() { assert(f.name.ends_with(".alula.json")) }
 }
 
 test "name of a compiled machine" {
-    assert(is_machine_json_name("a.portolan.json"))
-    for n in ["a.json", "a.portolan", "a.portolan.md", "a.table.json", "machine.json", "a.scenario.test.json", "a.schema.json", "foo.machine.json", "foo.table.md", "foo.table.txt"] { assert(!is_machine_json_name(n)) }
+    assert(is_machine_json_name("a.alula.json"))
+    for n in ["a.json", "a.portolan", "a.alula.md", "a.table.json", "machine.json", "a.scenario.test.json", "a.schema.json", "foo.machine.json", "foo.table.md", "foo.table.txt"] { assert(!is_machine_json_name(n)) }
     assert(data_dir_names("machines").len() == 15)
 }
 

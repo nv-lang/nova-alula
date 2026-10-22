@@ -30,13 +30,13 @@ test "ps scenario families" {
 // ---- nested machines (task 119): a parent and the machines it calls are found in the folder ------------------------------------------------------------
 
 fn nested_files(callee_file str, callee_text str) -> []NamedText => [
-    NamedText { name: "/n/caller.portolan.json", text: text_of_file(machine_files(), "caller.portolan.json") },
+    NamedText { name: "/n/caller.alula.json", text: text_of_file(machine_files(), "caller.alula.json") },
     NamedText { name: callee_file, text: callee_text },
     NamedText { name: "/n/nested-call-ok.scenario.test.json", text: text_of_file(scenario_files(), "nested-call-ok.scenario.test.json") }
 ]
 
 test "ps test folder nested" {
-    ro ran = run_with(["test", "/n"], nested_files("/n/callee.portolan.json", text_of_file(machine_files(), "callee.portolan.json")))
+    ro ran = run_with(["test", "/n"], nested_files("/n/callee.alula.json", text_of_file(machine_files(), "callee.alula.json")))
     assert(ran.err == "")
     assert(ran.out == "1 of 1 scenarios passed\n")
     assert(ran.code == 0)
@@ -44,7 +44,7 @@ test "ps test folder nested" {
 
 test "ps test folder nested from a table" {
     // the nested machine has no JSON in the folder: it is read from its table when the parent calls it
-    ro ran = run_with(["test", "/n"], nested_files("/n/callee.portolan.md", text_of_file(table_files(), "callee.portolan.md")))
+    ro ran = run_with(["test", "/n"], nested_files("/n/callee.alula.md", text_of_file(table_files(), "callee.alula.md")))
     assert(ran.err == "")
     assert(ran.out == "1 of 1 scenarios passed\n")
     assert(ran.code == 0)
@@ -52,7 +52,7 @@ test "ps test folder nested from a table" {
 
 test "ps test folder nested lacks" {
     ro files = [
-        NamedText { name: "/n/caller.portolan.json", text: text_of_file(machine_files(), "caller.portolan.json") },
+        NamedText { name: "/n/caller.alula.json", text: text_of_file(machine_files(), "caller.alula.json") },
         NamedText { name: "/n/nested-call-ok.scenario.test.json", text: text_of_file(scenario_files(), "nested-call-ok.scenario.test.json") }
     ]
     ro ran = run_with(["test", "/n"], files)
@@ -64,15 +64,15 @@ test "ps test folder nested lacks" {
 
 test "ps test folder nested does not fit" {
     // a machine of the name `callee` whose input is not the input type of the party
-    ro other = text_of_file(machine_files(), "fan.portolan.json").replace("\"machine\":\"fan\"", "\"machine\":\"callee\"")
-    ro ran = run_with(["test", "/n"], nested_files("/n/callee.portolan.json", other))
+    ro other = text_of_file(machine_files(), "fan.alula.json").replace("\"machine\":\"fan\"", "\"machine\":\"callee\"")
+    ro ran = run_with(["test", "/n"], nested_files("/n/callee.alula.json", other))
     assert(ran.code == 1)
     assert(ran.out.contains("the nested machines do not fit"))
 }
 
 test "ps run refuses a parent" {
-    ro files = nested_files("/n/callee.portolan.json", text_of_file(machine_files(), "callee.portolan.json"))
-    ro ran = run_with(["run", "/n/caller.portolan.json", "/n/nested-call-ok.scenario.test.json"], files)
+    ro files = nested_files("/n/callee.alula.json", text_of_file(machine_files(), "callee.alula.json"))
+    ro ran = run_with(["run", "/n/caller.alula.json", "/n/nested-call-ok.scenario.test.json"], files)
     assert(ran.code == 1)
     assert(ran.err.contains("calls nested machines"))
     assert(ran.err.contains("portolan test"))
@@ -83,8 +83,8 @@ test "ps test folder nested changed" {
     ro changed = original.replace("\"outcome\": \"answer:hi\"", "\"outcome\": \"answer:bye\"")
     assert(changed != original)
     ro files = [
-        NamedText { name: "/n/caller.portolan.json", text: text_of_file(machine_files(), "caller.portolan.json") },
-        NamedText { name: "/n/callee.portolan.json", text: text_of_file(machine_files(), "callee.portolan.json") },
+        NamedText { name: "/n/caller.alula.json", text: text_of_file(machine_files(), "caller.alula.json") },
+        NamedText { name: "/n/callee.alula.json", text: text_of_file(machine_files(), "callee.alula.json") },
         NamedText { name: "/n/nested-call-ok.scenario.test.json", text: changed }
     ]
     ro ran = run_with(["test", "/n"], files)
@@ -102,7 +102,7 @@ test "ps test folder verbose" {
 
 test "ps test folder from a table only" {
     // no JSON of the chat in the folder: the machine is read from its table
-    mut files = [NamedText { name: "/c/chat.portolan.md", text: chat_table_text() }]
+    mut files = [NamedText { name: "/c/chat.alula.md", text: chat_table_text() }]
     for s in scenarios_with("chat-") { files.push(NamedText { name: "/c/${s.name}", text: s.text }) }
     ro ran = run_with(["test", "/c"], files)
     assert(ran.err == "")
@@ -112,7 +112,7 @@ test "ps test folder from a table only" {
 
 test "ps test folder agent step table" {
     // the table of the agent step (format 2.5, the copy `.txt`) runs the scenarios like its JSON
-    mut files = [NamedText { name: "/a/agent_step.portolan.txt", text: agent_step_table_text() }]
+    mut files = [NamedText { name: "/a/agent_step.alula.txt", text: agent_step_table_text() }]
     mut n = 0
     for s in scenarios_with("agent-step-flow") {
         files.push(NamedText { name: "/a/${s.name}", text: s.text })
@@ -127,31 +127,31 @@ test "ps test folder agent step table" {
 test "ps run agent step one by one a" {
     ro all = scenarios_with("agent-step-agent")
     assert(all.len() == 9)
-    assert(run_all("agent_step.portolan.json", text_of_file(machine_files(), "agent_step.portolan.json"), all) == "")
+    assert(run_all("agent_step.alula.json", text_of_file(machine_files(), "agent_step.alula.json"), all) == "")
 }
 
 test "ps run agent step one by one b" {
     ro all = scenarios_with("agent-step-b")
     assert(all.len() == 4)
-    assert(run_all("agent_step.portolan.json", text_of_file(machine_files(), "agent_step.portolan.json"), all) == "")
+    assert(run_all("agent_step.alula.json", text_of_file(machine_files(), "agent_step.alula.json"), all) == "")
 }
 
 test "ps run agent step one by one c" {
     ro all = scenarios_with("agent-step-c")
     assert(all.len() == 7)
-    assert(run_all("agent_step.portolan.json", text_of_file(machine_files(), "agent_step.portolan.json"), all) == "")
+    assert(run_all("agent_step.alula.json", text_of_file(machine_files(), "agent_step.alula.json"), all) == "")
 }
 
 test "ps run agent step one by one e" {
     ro all = scenarios_with("agent-step-e")
     assert(all.len() == 13)
-    assert(run_all("agent_step.portolan.json", text_of_file(machine_files(), "agent_step.portolan.json"), all) == "")
+    assert(run_all("agent_step.alula.json", text_of_file(machine_files(), "agent_step.alula.json"), all) == "")
 }
 
 test "ps run agent step one by one f" {
     ro all = scenarios_with("agent-step-f")
     assert(all.len() > 10)
-    assert(run_all("agent_step.portolan.json", text_of_file(machine_files(), "agent_step.portolan.json"), all) == "")
+    assert(run_all("agent_step.alula.json", text_of_file(machine_files(), "agent_step.alula.json"), all) == "")
 }
 
 test "ps run agent step one by one rest" {
@@ -161,26 +161,26 @@ test "ps run agent step one by one rest" {
         if !(name.starts_with("agent") || name.starts_with("b") || name.starts_with("c") || name.starts_with("e") || name.starts_with("f")) { rest.push(s) }
     }
     assert(rest.len() > 0)
-    assert(run_all("agent_step.portolan.json", text_of_file(machine_files(), "agent_step.portolan.json"), rest) == "")
+    assert(run_all("agent_step.alula.json", text_of_file(machine_files(), "agent_step.alula.json"), rest) == "")
 }
 
 test "ps run chat one by one" {
     ro all = scenarios_with("chat-")
     assert(all.len() == 39)
-    assert(run_all("chat.portolan.json", text_of_file(machine_files(), "chat.portolan.json"), all) == "")
+    assert(run_all("chat.alula.json", text_of_file(machine_files(), "chat.alula.json"), all) == "")
 }
 
 test "ps run chat from its table" {
     ro all = scenarios_with("chat-m")
     assert(all.len() > 0)
-    assert(run_all("chat.portolan.md", chat_table_text(), all) == "")
+    assert(run_all("chat.alula.md", chat_table_text(), all) == "")
 }
 
 test "ps run small machines" {
-    assert(run_all("calc.portolan.json", text_of_file(machine_files(), "calc.portolan.json"), scenarios_with("calc-")) == "")
-    assert(run_all("gate.portolan.json", text_of_file(machine_files(), "gate.portolan.json"), scenarios_with("gate-")) == "")
-    assert(run_all("lenses.portolan.json", text_of_file(machine_files(), "lenses.portolan.json"), scenarios_with("lenses-")) == "")
-    assert(run_all("variants.portolan.json", text_of_file(machine_files(), "variants.portolan.json"), scenarios_with("variants-")) == "")
+    assert(run_all("calc.alula.json", text_of_file(machine_files(), "calc.alula.json"), scenarios_with("calc-")) == "")
+    assert(run_all("gate.alula.json", text_of_file(machine_files(), "gate.alula.json"), scenarios_with("gate-")) == "")
+    assert(run_all("lenses.alula.json", text_of_file(machine_files(), "lenses.alula.json"), scenarios_with("lenses-")) == "")
+    assert(run_all("variants.alula.json", text_of_file(machine_files(), "variants.alula.json"), scenarios_with("variants-")) == "")
 }
 
 test "ps changed scenario is a report" {
@@ -188,10 +188,10 @@ test "ps changed scenario is a report" {
     ro changed = original.replace("\"state\": \"Done\"", "\"state\": \"Work\"")
     assert(changed != original)
     ro files = [
-        NamedText { name: "/g/gate.portolan.json", text: text_of_file(machine_files(), "gate.portolan.json") },
+        NamedText { name: "/g/gate.alula.json", text: text_of_file(machine_files(), "gate.alula.json") },
         NamedText { name: "/g/gate-done.scenario.test.json", text: changed }
     ]
-    ro ran = run_with(["run", "/g/gate.portolan.json", "/g/gate-done.scenario.test.json"], files)
+    ro ran = run_with(["run", "/g/gate.alula.json", "/g/gate-done.scenario.test.json"], files)
     assert(ran.code == 1)
     assert(ran.out.contains("difference(s)"))
     assert(ran.out.contains("Done"))
@@ -206,10 +206,10 @@ test "ps changed agent step scenario" {
     ro original = text_of_file(scenario_files(), "agent-step-flow-happy.scenario.test.json")
     ro changed = original.replace("\"outcome\": \"answer", "\"outcome\": \"refusal")
     ro files = [
-        NamedText { name: "/g/agent_step.portolan.json", text: text_of_file(machine_files(), "agent_step.portolan.json") },
+        NamedText { name: "/g/agent_step.alula.json", text: text_of_file(machine_files(), "agent_step.alula.json") },
         NamedText { name: "/g/happy.scenario.test.json", text: changed }
     ]
-    ro ran = run_with(["run", "/g/agent_step.portolan.json", "/g/happy.scenario.test.json"], files)
+    ro ran = run_with(["run", "/g/agent_step.alula.json", "/g/happy.scenario.test.json"], files)
     assert(changed != original)
     assert(ran.code == 1)
     assert(ran.out.contains("difference(s)"))

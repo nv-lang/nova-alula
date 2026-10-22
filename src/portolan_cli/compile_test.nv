@@ -11,7 +11,7 @@ import alula.machine_text.{translate_checked, translate_report}
 fn ru_unknown_format() -> str => tiny_ru().replace("- format: 2.12\n", "- format: 9.9\n")
 
 test "cc json on the standard output" {
-    ro ran = run_with(["compile", "/work/tiny.portolan.md"], tiny_file())
+    ro ran = run_with(["compile", "/work/tiny.alula.md"], tiny_file())
     assert(ran.code == 0)
     assert(ran.err == "")
     assert(ran.out == "${tiny_json()}\n")
@@ -22,19 +22,19 @@ test "cc json on the standard output" {
 test "cc equals the translator" {
     ro report = translate_checked(tiny_ru(), standard_registry())
     assert(report.errors.len() == 0)
-    ro ran = run_with(["compile", "/work/tiny.portolan.md"], tiny_file())
+    ro ran = run_with(["compile", "/work/tiny.alula.md"], tiny_file())
     assert(ran.out == "${report.json}\n")
 }
 
 test "cc english file" {
-    ro ran = run_with(["compile", "/work/tiny.portolan.md"], one("/work/tiny.portolan.md", tiny_en()))
+    ro ran = run_with(["compile", "/work/tiny.alula.md"], one("/work/tiny.alula.md", tiny_en()))
     assert(ran.code == 0)
     assert(ran.out == "${tiny_json_en()}\n")
     assert(no_title(ran.out) == no_title("${tiny_json()}\n"))
 }
 
 test "cc extension is not looked at" {
-    for name in ["/work/tiny.portolan.txt", "/work/tiny.txt", "/work/tiny"] {
+    for name in ["/work/tiny.alula.txt", "/work/tiny.txt", "/work/tiny"] {
         ro ran = run_with(["compile", name], one(name, tiny_ru()))
         assert(ran.code == 0)
         assert(ran.out == "${tiny_json()}\n")
@@ -42,59 +42,59 @@ test "cc extension is not looked at" {
 }
 
 test "cc errors form and code 1" {
-    ro ran = run_with(["compile", "/work/tiny.portolan.md"], one("/work/tiny.portolan.md", broken_ru()))
+    ro ran = run_with(["compile", "/work/tiny.alula.md"], one("/work/tiny.alula.md", broken_ru()))
     assert(ran.code == 1)
     assert(ran.out == "")
     ro lines = lines_of_text(ran.err)
-    assert(lines[0].starts_with("/work/tiny.portolan.md:"))
-    assert(ran.err.contains("errors in /work/tiny.portolan.md"))
+    assert(lines[0].starts_with("/work/tiny.alula.md:"))
+    assert(ran.err.contains("errors in /work/tiny.alula.md"))
     assert(ran.err.contains("НЕТ"))
 }
 
 test "cc errors are the translator's" {
     ro report = translate_checked(broken_ru(), standard_registry())
     assert(report.errors.len() > 0)
-    ro ran = run_with(["compile", "/work/tiny.portolan.md"], one("/work/tiny.portolan.md", broken_ru()))
+    ro ran = run_with(["compile", "/work/tiny.alula.md"], one("/work/tiny.alula.md", broken_ru()))
     // the first line of the output is the first note of the translator: file:line:column: kind: message
-    assert(ran.err.starts_with("/work/tiny.portolan.md:${report.errors[0].line}:${report.errors[0].col}: ${report.errors[0].kind}: "))
+    assert(ran.err.starts_with("/work/tiny.alula.md:${report.errors[0].line}:${report.errors[0].col}: ${report.errors[0].kind}: "))
 }
 
 test "cc errors quote the line" {
-    ro ran = run_with(["compile", "/work/tiny.portolan.md"], one("/work/tiny.portolan.md", ru_unknown_format()))
+    ro ran = run_with(["compile", "/work/tiny.alula.md"], one("/work/tiny.alula.md", ru_unknown_format()))
     assert(ran.code == 1)
     assert(ran.err.contains("format"))
     assert(ran.err.contains("\n    "))
 }
 
 test "cc lenient prints the json and code 1" {
-    ro ran = run_with(["compile", "/work/tiny.portolan.md", "--lenient"], one("/work/tiny.portolan.md", broken_ru()))
+    ro ran = run_with(["compile", "/work/tiny.alula.md", "--lenient"], one("/work/tiny.alula.md", broken_ru()))
     assert(ran.code == 1)
     assert(ran.out.starts_with("{"))
     assert(ran.out.ends_with("}\n"))
-    assert(ran.err.contains("/work/tiny.portolan.md:"))
+    assert(ran.err.contains("/work/tiny.alula.md:"))
 }
 
 test "cc lenient on a clean file is plain" {
-    ro ran = run_with(["compile", "--lenient", "/work/tiny.portolan.md"], tiny_file())
+    ro ran = run_with(["compile", "--lenient", "/work/tiny.alula.md"], tiny_file())
     assert(ran.code == 0)
     assert(ran.out == "${tiny_json()}\n")
     assert(ran.err == "")
 }
 
 test "cc no check" {
-    ro ran = run_with(["compile", "/work/tiny.portolan.md", "--no-check"], tiny_file())
+    ro ran = run_with(["compile", "/work/tiny.alula.md", "--no-check"], tiny_file())
     assert(ran.code == 0)
     assert(ran.out == "${translate_report(tiny_ru()).json}\n")
 }
 
 test "cc no check still reports translation errors" {
-    ro ran = run_with(["compile", "/work/tiny.portolan.md", "--no-check"], one("/work/tiny.portolan.md", ru_unknown_format()))
+    ro ran = run_with(["compile", "/work/tiny.alula.md", "--no-check"], one("/work/tiny.alula.md", ru_unknown_format()))
     assert(ran.code == 1)
-    assert(ran.err.contains("/work/tiny.portolan.md:"))
+    assert(ran.err.contains("/work/tiny.alula.md:"))
 }
 
 test "cc output file" {
-    ro ran = run_cli(["compile", "/work/tiny.portolan.md", "-o", "/work/tiny.portolan.json"], tiny_file(), "/work/tiny.portolan.json")
+    ro ran = run_cli(["compile", "/work/tiny.alula.md", "-o", "/work/tiny.alula.json"], tiny_file(), "/work/tiny.alula.json")
     assert(ran.code == 0)
     assert(ran.out == "")
     assert(ran.err == "")
@@ -103,15 +103,15 @@ test "cc output file" {
 }
 
 test "cc output long form and place" {
-    ro ran = run_cli(["compile", "--output", "/work/out.portolan.json", "/work/tiny.portolan.md"], tiny_file(), "/work/out.portolan.json")
+    ro ran = run_cli(["compile", "--output", "/work/out.alula.json", "/work/tiny.alula.md"], tiny_file(), "/work/out.alula.json")
     assert(ran.code == 0)
     assert(ran.back == "${tiny_json()}\n")
 }
 
 test "cc output not over a file" {
     mut files = tiny_file()
-    files.push(file("/work/tiny.portolan.json", "old"))
-    ro ran = run_cli(["compile", "/work/tiny.portolan.md", "-o", "/work/tiny.portolan.json"], files, "/work/tiny.portolan.json")
+    files.push(file("/work/tiny.alula.json", "old"))
+    ro ran = run_cli(["compile", "/work/tiny.alula.md", "-o", "/work/tiny.alula.json"], files, "/work/tiny.alula.json")
     assert(ran.code == 2)
     assert(ran.err.contains("already exists"))
     assert(ran.err.contains("--force"))
@@ -121,41 +121,41 @@ test "cc output not over a file" {
 
 test "cc force overwrites" {
     mut files = tiny_file()
-    files.push(file("/work/tiny.portolan.json", "old"))
-    ro ran = run_cli(["compile", "/work/tiny.portolan.md", "-o", "/work/tiny.portolan.json", "--force"], files, "/work/tiny.portolan.json")
+    files.push(file("/work/tiny.alula.json", "old"))
+    ro ran = run_cli(["compile", "/work/tiny.alula.md", "-o", "/work/tiny.alula.json", "--force"], files, "/work/tiny.alula.json")
     assert(ran.code == 0)
     assert(ran.back == "${tiny_json()}\n")
 }
 
 test "cc output without value" {
-    ro ran = run_with(["compile", "/work/tiny.portolan.md", "-o"], tiny_file())
+    ro ran = run_with(["compile", "/work/tiny.alula.md", "-o"], tiny_file())
     assert(ran.code == 2)
     assert(ran.err.contains("-o needs a file"))
 }
 
 test "cc errors write no file" {
-    ro ran = run_cli(["compile", "/work/tiny.portolan.md", "-o", "/work/x.portolan.json"], one("/work/tiny.portolan.md", broken_ru()), "/work/x.portolan.json")
+    ro ran = run_cli(["compile", "/work/tiny.alula.md", "-o", "/work/x.alula.json"], one("/work/tiny.alula.md", broken_ru()), "/work/x.alula.json")
     assert(ran.code == 1)
     assert(!ran.present)
 }
 
 test "cc lenient writes the file" {
-    ro ran = run_cli(["compile", "/work/tiny.portolan.md", "--lenient", "-o", "/work/x.portolan.json"], one("/work/tiny.portolan.md", broken_ru()), "/work/x.portolan.json")
+    ro ran = run_cli(["compile", "/work/tiny.alula.md", "--lenient", "-o", "/work/x.alula.json"], one("/work/tiny.alula.md", broken_ru()), "/work/x.alula.json")
     assert(ran.code == 1)
     assert(ran.present)
     assert(ran.back.starts_with("{"))
 }
 
 test "cc output cannot be written" {
-    ro ran = run_full(["compile", "/work/tiny.portolan.md", "-o", "/nowhere/deep/x.portolan.json"], tiny_file(), "", true)
+    ro ran = run_full(["compile", "/work/tiny.alula.md", "-o", "/nowhere/deep/x.alula.json"], tiny_file(), "", true)
     assert(ran.code == 2)
-    assert(ran.err.contains("cannot write /nowhere/deep/x.portolan.json"))
+    assert(ran.err.contains("cannot write /nowhere/deep/x.alula.json"))
 }
 
 test "cc missing file" {
-    ro ran = run0(["compile", "/work/none.portolan.md"])
+    ro ran = run0(["compile", "/work/none.alula.md"])
     assert(ran.code == 2)
-    assert(ran.err.contains("cannot read /work/none.portolan.md"))
+    assert(ran.err.contains("cannot read /work/none.alula.md"))
     assert(ran.out == "")
 }
 
@@ -166,26 +166,26 @@ test "cc no file" {
 }
 
 test "cc two files" {
-    ro ran = run_with(["compile", "/work/tiny.portolan.md", "/work/other.portolan.md"], tiny_file())
+    ro ran = run_with(["compile", "/work/tiny.alula.md", "/work/other.alula.md"], tiny_file())
     assert(ran.code == 2)
     assert(ran.err.contains("one file"))
 }
 
 test "cc unknown option" {
-    ro ran = run_with(["compile", "/work/tiny.portolan.md", "--frob"], tiny_file())
+    ro ran = run_with(["compile", "/work/tiny.alula.md", "--frob"], tiny_file())
     assert(ran.code == 2)
     assert(ran.err.contains("unknown option `--frob`"))
     assert(ran.out == "")
 }
 
 test "cc option of another command" {
-    ro ran = run_with(["compile", "/work/tiny.portolan.md", "--language", "en"], tiny_file())
+    ro ran = run_with(["compile", "/work/tiny.alula.md", "--language", "en"], tiny_file())
     assert(ran.code == 2)
     assert(ran.err.contains("unknown option `--language`"))
 }
 
 test "cc warnings do not change the code" {
-    ro ran = run_with(["compile", "/work/tiny.portolan.md"], one("/work/tiny.portolan.md", noted_ru()))
+    ro ran = run_with(["compile", "/work/tiny.alula.md"], one("/work/tiny.alula.md", noted_ru()))
     assert(ran.err.contains(": warning: "))
     assert(ran.code == 0)
     assert(ran.out.starts_with("{"))

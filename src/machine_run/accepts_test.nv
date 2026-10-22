@@ -11,9 +11,9 @@ fn ac_load(file str) -> PortolanMachine {
     }
 }
 
-fn ac_dialog() -> PortolanMachine => ac_load("dialog.portolan.json")
+fn ac_dialog() -> PortolanMachine => ac_load("dialog.alula.json")
 
-fn ac_chat() -> PortolanMachine => ac_load("chat.portolan.json")
+fn ac_chat() -> PortolanMachine => ac_load("chat.alula.json")
 
 fn ac_feed(m PortolanMachine, s PortolanState, e Incoming) -> PortolanState {
     mut environment = StepEnvironment.new()
@@ -132,7 +132,7 @@ test "ac chat: the end takes nothing" {
 }
 
 test "ac common event: a signal of the machine of the session start is taken in a state and not in the pause or the end" {
-    ro m = ac_load("session_start.portolan.json")
+    ro m = ac_load("session_start.alula.json")
     ro base = PortolanState { name: "Gate2", started: true, input: Null, data: m.initial_data, taken: []str.new() }
     assert(m.accepts_word(base, "human_stop"))
     assert(m.accepts_word(base, "parent_stop"))

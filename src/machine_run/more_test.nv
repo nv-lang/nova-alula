@@ -5,7 +5,7 @@ import std.text
 import alula.machine.{Null, Int, standard_registry}
 import alula.engine.{Incoming, EventKind}
 
-fn gate() -> PortolanMachine => build("gate.portolan.json")
+fn gate() -> PortolanMachine => build("gate.alula.json")
 
 fn gate_started() -> Out {
     ro m = gate()
@@ -73,13 +73,13 @@ test "before the start" {
 }
 
 test "failure fallback" {
-    ro text = machine_text("gate.portolan.json").replace("\"kind\": \"failure\", \"bind\": \"why\"", "\"kind\": \"failure\", \"reasons\": [ \"NoResult\" ], \"bind\": \"why\"")
+    ro text = machine_text("gate.alula.json").replace("\"kind\": \"failure\", \"bind\": \"why\"", "\"kind\": \"failure\", \"reasons\": [ \"NoResult\" ], \"bind\": \"why\"")
     ro m = build_from(text)
     ro working = run1(m, m.initial(), start_with("")).state
     ro r = run1(m, working, refused("ModelRefused"))
     assert(r.state.name == "Halted")
     assert(summary(r.orders) == "log:work_failed(reason=no_result),finish:refusal:NoResult,save")
-    ro none = build_from(machine_text("gate.portolan.json").replace("\"kind\": \"failure\", \"bind\": \"why\"", "\"kind\": \"failure\", \"reasons\": [ \"Timeout\" ], \"bind\": \"why\""))
+    ro none = build_from(machine_text("gate.alula.json").replace("\"kind\": \"failure\", \"bind\": \"why\"", "\"kind\": \"failure\", \"reasons\": [ \"Timeout\" ], \"bind\": \"why\""))
     ro w2 = run1(none, none.initial(), start_with("")).state
     ro ignored = run1(none, w2, refused("ModelRefused"))
     assert(!ignored.moved)
@@ -87,7 +87,7 @@ test "failure fallback" {
 }
 
 test "set of parties" {
-    ro m = build("lenses.portolan.json")
+    ro m = build("lenses.alula.json")
     ro r = run1(m, m.initial(), start_with("{\"order\":[\"a\",\"b\",\"c\"]}"))
     assert(r.state.name == "Ask")
     assert(summary(r.orders) == "send:a:a:0,send:b:b:0,send:c:c:0,save")
@@ -105,7 +105,7 @@ test "set of parties" {
 }
 
 test "restart request" {
-    ro m = build("variants.portolan.json")
+    ro m = build("variants.alula.json")
     ro started = run1(m, m.initial(), start_with(""))
     assert(summary(started.orders) == "send:agent:go:5000,save")
     ro retry = run1(m, started.state, stamped(EventKind.Answered, "answer", Some("agent-1"), "{\"$variant\":\"Outcome\",\"name\":\"Retry\"}"))
@@ -119,21 +119,21 @@ test "restart request" {
 }
 
 test "constants" {
-    ro text = machine_text("calc.portolan.json").replace("\"value\": 3 }", "\"value\": 5 }")
+    ro text = machine_text("calc.alula.json").replace("\"value\": 3 }", "\"value\": 5 }")
     ro m = build_from(text)
     ro r = run1(m, m.initial(), start_with("{\"start\":0,\"label\":\"x\"}"))
     assert(summary(r.orders) == "log:started(label=x),log:stepped(count=4),log:stepped(count=8),log:reached_limit(count=8),finish:answer:8,save")
-    ro wrong = machine_text("calc.portolan.json").replace("\"value\": 3 }", "\"value\": -1 }")
+    ro wrong = machine_text("calc.alula.json").replace("\"value\": 3 }", "\"value\": -1 }")
     match load_portolan_machine(wrong, standard_registry()) {
         Ok(x) => assert(false)
         Err(e) => assert(e.contains("the constant LIMIT"))
     }
-    ro bad_param = machine_text("calc.portolan.json").replace("\"default\": { \"op\": \"lit\", \"value\": 2 }", "\"default\": { \"op\": \"lit\", \"value\": 0 }")
+    ro bad_param = machine_text("calc.alula.json").replace("\"default\": { \"op\": \"lit\", \"value\": 2 }", "\"default\": { \"op\": \"lit\", \"value\": 0 }")
     match load_portolan_machine(bad_param, standard_registry()) {
         Ok(x) => assert(false)
         Err(e) => assert(e.contains("the parameter STEP"))
     }
-    ro bad_initial = machine_text("calc.portolan.json").replace("{ \"name\": \"began\", \"type\": \"int\", \"initial\": { \"expr\": { \"op\": \"lit\", \"value\": 0 } } }", "{ \"name\": \"began\", \"type\": \"int\", \"initial\": { \"expr\": { \"op\": \"lit\", \"value\": \"zero\" } } }")
+    ro bad_initial = machine_text("calc.alula.json").replace("{ \"name\": \"began\", \"type\": \"int\", \"initial\": { \"expr\": { \"op\": \"lit\", \"value\": 0 } } }", "{ \"name\": \"began\", \"type\": \"int\", \"initial\": { \"expr\": { \"op\": \"lit\", \"value\": \"zero\" } } }")
     match load_portolan_machine(bad_initial, standard_registry()) {
         Ok(x) => assert(false)
         Err(e) => assert(e.contains("the initial value of began"))

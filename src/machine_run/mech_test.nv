@@ -5,7 +5,7 @@ module alula.machine_run
 import std.text
 import alula.machine.{scenario_files, text_of_file, standard_registry}
 
-fn agent_text() -> str => machine_text("agent_step.portolan.json")
+fn agent_text() -> str => machine_text("agent_step.alula.json")
 
 fn load_err(text str) -> str {
     match load_portolan_machine(text, standard_registry()) {
@@ -22,7 +22,7 @@ fn agent_run(file str) -> ScenarioRun {
 test "mx limit is read" {
     ro m = build_from(agent_text())
     assert(m.limit == 1)
-    assert(build("chat.portolan.json").limit == 0)
+    assert(build("chat.alula.json").limit == 0)
 }
 
 test "mx limit zero" {
@@ -32,7 +32,7 @@ test "mx limit zero" {
 
 test "mx limit with a set" {
     // a limit with a set sends at most so many at once (task 119); it was refused before
-    ro lenses = machine_text("lenses.portolan.json")
+    ro lenses = machine_text("lenses.alula.json")
     assert(load_err(lenses) == "ok")
     ro limited = lenses.replace("\"initial\": \"Prepare\",", "\"request_limit\": { \"op\": \"lit\", \"value\": 2 }, \"initial\": \"Prepare\",")
     assert(limited != lenses)

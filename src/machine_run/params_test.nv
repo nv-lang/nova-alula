@@ -7,7 +7,7 @@ import alula.machine.{Value, Int, Text, Float, Null, List, standard_registry, sc
 import alula.machine_table.{MachineDef, load_machine}
 
 fn calc_def() -> MachineDef {
-    match load_machine(machine_text("calc.portolan.json"), standard_registry()) {
+    match load_machine(machine_text("calc.alula.json"), standard_registry()) {
         Ok(def) => def
         Err(issues) => panic("calc does not load")
     }
@@ -68,8 +68,8 @@ test "pp key shape" {
 }
 
 test "pp no column" {
-    ro bare = machine_text("calc.portolan.json").replace(", \"project_key\": \"calc.step\"", "")
-    assert(bare != machine_text("calc.portolan.json"))
+    ro bare = machine_text("calc.alula.json").replace(", \"project_key\": \"calc.step\"", "")
+    assert(bare != machine_text("calc.alula.json"))
     ro def = match load_machine(bare, standard_registry()) {
         Ok(d) => d
         Err(issues) => panic("calc without a key does not load")

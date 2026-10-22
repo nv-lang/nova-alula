@@ -22,15 +22,15 @@ Usage:
   portolan <command> --help
 
 Commands:
-  portolan compile <file.portolan.md> [-o <file.portolan.json>] [--lenient] [--no-check] [--force]
+  portolan compile <file.alula.md> [-o <file.alula.json>] [--lenient] [--no-check] [--force]
       Portolan -> the JSON machine/2 (the language of the file is read from its header).
-  portolan render <file.portolan.json> [--language ru|en] [-o <file.portolan.md>] [--lenient] [--force]
+  portolan render <file.alula.json> [--language ru|en] [-o <file.alula.md>] [--lenient] [--force]
       the JSON machine/2 -> a file of Portolan in the canonical form (Russian by default).
-  portolan convert <file.portolan.md> --language ru|en [-o <file.portolan.md>] [--no-check] [--lenient] [--force]
+  portolan convert <file.alula.md> --language ru|en [-o <file.alula.md>] [--no-check] [--lenient] [--force]
       a file of Portolan in the other language, through the JSON.
-  portolan check <file.portolan.md|file.portolan.json> [--no-check]
+  portolan check <file.alula.md|file.alula.json> [--no-check]
       the translation and the checks of the table; the errors and the warnings.
-  portolan summary <file.portolan.md|file.portolan.json> [--no-check]
+  portolan summary <file.alula.md|file.alula.json> [--no-check]
       the states, the rows, the actions, the data, the parties.
   portolan run <machine> <scenario.scenario.test.json>
       one scenario on a machine: ok, or the report of the difference.
@@ -40,8 +40,8 @@ Commands:
       the version of the program and of the languages it reads.
 
 Files:
-  *.portolan.md            a machine written in Portolan (Russian or English; the header says which)
-  *.portolan.json          the compiled machine (machine/2)
+  *.alula.md            a machine written in Portolan (Russian or English; the header says which)
+  *.alula.json          the compiled machine (machine/2)
   *.scenario.test.json     a scenario (scenario/0)
 
 An error is "file:line:column: kind: message" and the quoted line under it (a JSON file has no lines: 1:1).
@@ -51,7 +51,7 @@ Exit codes: 0 success; 1 errors in a file, or a scenario that differs; 2 a wrong
 /// The help of one command; "" when there is no such command.
 export fn command_help(command str) -> str {
     if command == "compile" {
-        return `portolan compile <file.portolan.md> [-o <file.portolan.json>] [--lenient] [--no-check] [--force]
+        return `portolan compile <file.alula.md> [-o <file.alula.json>] [--lenient] [--no-check] [--force]
 
 Portolan -> the JSON machine/2. The language of the file (ru or en) is read from its header; the extension is not looked at.
 The JSON goes to the standard output; with -o it goes to the file (an existing file is not overwritten without --force).
@@ -64,7 +64,7 @@ The errors and the warnings go to the standard error as "file:line:column: kind:
 `
     }
     if command == "render" {
-        return `portolan render <file.portolan.json> [--language ru|en] [-o <file.portolan.md>] [--lenient] [--force]
+        return `portolan render <file.alula.json> [--language ru|en] [-o <file.alula.md>] [--lenient] [--force]
 
 The JSON machine/2 -> a file of Portolan in the canonical form of the specification (section 1b). Russian by default.
 What the file cannot say goes to the standard error and the code is 1.
@@ -76,7 +76,7 @@ What the file cannot say goes to the standard error and the code is 1.
 `
     }
     if command == "convert" {
-        return `portolan convert <file.portolan.md> --language ru|en [-o <file.portolan.md>] [--no-check] [--lenient] [--force]
+        return `portolan convert <file.alula.md> --language ru|en [-o <file.alula.md>] [--no-check] [--lenient] [--force]
 
 A file of Portolan in the other language: compile, then render. The meaning is kept; the comments (the paragraphs of free text and the lines
 starting with ">" or "//") are not carried over, and the program says so on the standard error.
@@ -89,7 +89,7 @@ starting with ">" or "//") are not carried over, and the program says so on the 
 `
     }
     if command == "check" {
-        return `portolan check <file.portolan.md|file.portolan.json> [--no-check]
+        return `portolan check <file.alula.md|file.alula.json> [--no-check]
 
 A file of Portolan: the translation, the checks of the table, the warnings. A file *.json: the decoding of machine/2 and the checks of the table.
 Prints "ok" and the code 0 when there are no errors; the errors and the warnings go to the standard error.
@@ -98,7 +98,7 @@ Prints "ok" and the code 0 when there are no errors; the errors and the warnings
 `
     }
     if command == "summary" {
-        return `portolan summary <file.portolan.md|file.portolan.json> [--no-check]
+        return `portolan summary <file.alula.md|file.alula.json> [--no-check]
 
 The summary of a machine: the states, the rows, the actions, the data, the parties; one line per state.
 
@@ -106,7 +106,7 @@ The summary of a machine: the states, the rows, the actions, the data, the parti
 `
     }
     if command == "run" {
-        return `portolan run <machine.portolan.json|machine.portolan.md> <scenario.scenario.test.json>
+        return `portolan run <machine.alula.json|machine.alula.md> <scenario.scenario.test.json>
 
 One scenario (scenario/0) on a machine. Prints "ok" and the code 0, or the report of the first differences and the code 1.
 The scenario names its machine; a machine with another name is an error.
@@ -115,8 +115,8 @@ The scenario names its machine; a machine with another name is an error.
     if command == "test" {
         return `portolan test <folder> [-v]
 
-Every *.scenario.test.json of the folder (and of the folders under it) on the machine that the scenario names; the machines are the *.portolan.json files
-of the folder, or the *.portolan.md files when a machine has no JSON. Prints the report of every scenario that differs and "N of M scenarios passed".
+Every *.scenario.test.json of the folder (and of the folders under it) on the machine that the scenario names; the machines are the *.alula.json files
+of the folder, or the *.alula.md files when a machine has no JSON. Prints the report of every scenario that differs and "N of M scenarios passed".
 The code is 1 when a scenario differs.
 
   -v, --verbose         one line "ok <file>" for every scenario that passed

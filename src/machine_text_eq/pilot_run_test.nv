@@ -9,7 +9,7 @@ import alula.machine_run.{PortolanState, PortolanMachine, load_portolan_machine,
 import alula.machine_text.{translate_checked}
 
 fn agent_machine(check Value) -> PortolanMachine {
-    ro report = translate_checked(case_text("agent-step.portolan.md"), standard_registry())
+    ro report = translate_checked(case_text("agent-step.alula.md"), standard_registry())
     match load_portolan_machine(report.json, standard_registry()) {
         Ok(m) => with_replies(m, [ScriptedReply { name: "reply_validation", value: check }, ScriptedReply { name: "close_agent_turn", value: Null }])
         Err(e) => panic("the pilot does not build: ${e}")

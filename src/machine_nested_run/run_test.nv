@@ -7,7 +7,7 @@ import alula.machine.{scenario_files, machine_files, text_of_file, standard_regi
 import alula.machine_run.{PortolanMachine, NestedRegistry, load_portolan_machine, parse_scenario, run_nested_scenario, run_ok, report_text, Scenario, ScenarioRun, check_registry}
 
 fn machine_of(name str) -> PortolanMachine {
-    match load_portolan_machine(text_of_file(machine_files(), "${name}.portolan.json"), standard_registry()) {
+    match load_portolan_machine(text_of_file(machine_files(), "${name}.alula.json"), standard_registry()) {
         Ok(m) => m
         Err(e) => panic("the machine ${name} does not load: ${e}")
     }

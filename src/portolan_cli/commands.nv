@@ -26,7 +26,7 @@ fn lines_text(lines []str) -> str {
 /// The text of a file of Portolan as the translator reads it: the lines end with a newline (a file saved with CR LF is the same file).
 fn portolan_text(text str) -> str => text.replace("\r\n", "\n")
 
-/// Is the file the compiled JSON? The name says so (`*.portolan.json`, or any `*.json`); every other file is a text of Portolan.
+/// Is the file the compiled JSON? The name says so (`*.alula.json`, or any `*.json`); every other file is a text of Portolan.
 export fn is_json_file(file str) -> bool => file.ends_with(".json")
 
 fn translated(text str, no_check bool) -> TranslateReport {
@@ -194,9 +194,9 @@ export fn run_command(machine_text str, machine_file str, scenario_text str, sce
 
 fn is_scenario_name(name str) -> bool => name.ends_with(".scenario.test.json")
 
-fn is_json_machine_name(name str) -> bool => name.ends_with(".portolan.json")
+fn is_json_machine_name(name str) -> bool => name.ends_with(".alula.json")
 
-fn is_text_machine_name(name str) -> bool => name.ends_with(".portolan.md") || name.ends_with(".portolan.txt")
+fn is_text_machine_name(name str) -> bool => name.ends_with(".alula.md") || name.ends_with(".alula.txt")
 
 /// Is the file one that `portolan test` reads: a scenario or a machine?
 export fn is_test_file(name str) -> bool => is_scenario_name(name) || is_json_machine_name(name) || is_text_machine_name(name)
@@ -267,7 +267,7 @@ fn missing_names(found []FoundMachine, scenarios []NamedText) -> []str {
 }
 
 /// `portolan test`: every scenario of `files` (the files of the folder `dir`, scenarios and machines, in the order of their names) on the machine of the folder that it names. The
-/// machines are the `*.portolan.json` files; a machine that has no JSON file is read from `*.portolan.md` (`*.portolan.txt`) when a scenario asks for it.
+/// machines are the `*.alula.json` files; a machine that has no JSON file is read from `*.alula.md` (`*.alula.txt`) when a scenario asks for it.
 export fn test_command(files []NamedText, dir str, verbose bool) -> CmdResult {
     mut scenarios = []NamedText.new()
     for f in files {

@@ -5,37 +5,37 @@ module alula.portolan_eq
 import std.text
 import alula.machine.{machine_files, table_files, text_of_file}
 
-fn probe_names() -> []str => ["callee.portolan.json", "caller.portolan.json", "dialog_steps.portolan.json", "fan.portolan.json"]
+fn probe_names() -> []str => ["callee.alula.json", "caller.alula.json", "dialog_steps.alula.json", "fan.alula.json"]
 
-test "pn circle callee ru" { assert(circle("callee.portolan.json", "ru") == "") }
+test "pn circle callee ru" { assert(circle("callee.alula.json", "ru") == "") }
 
-test "pn circle callee en" { assert(circle("callee.portolan.json", "en") == "") }
+test "pn circle callee en" { assert(circle("callee.alula.json", "en") == "") }
 
-test "pn circle caller ru" { assert(circle("caller.portolan.json", "ru") == "") }
+test "pn circle caller ru" { assert(circle("caller.alula.json", "ru") == "") }
 
-test "pn circle caller en" { assert(circle("caller.portolan.json", "en") == "") }
+test "pn circle caller en" { assert(circle("caller.alula.json", "en") == "") }
 
-test "pn circle fan ru" { assert(circle("fan.portolan.json", "ru") == "") }
+test "pn circle fan ru" { assert(circle("fan.alula.json", "ru") == "") }
 
-test "pn circle fan en" { assert(circle("fan.portolan.json", "en") == "") }
+test "pn circle fan en" { assert(circle("fan.alula.json", "en") == "") }
 
-test "pn circle dialog steps ru" { assert(circle("dialog_steps.portolan.json", "ru") == "") }
+test "pn circle dialog steps ru" { assert(circle("dialog_steps.alula.json", "ru") == "") }
 
-test "pn circle dialog steps en" { assert(circle("dialog_steps.portolan.json", "en") == "") }
+test "pn circle dialog steps en" { assert(circle("dialog_steps.alula.json", "en") == "") }
 
-test "pn convert callee" { assert(convert_circle("callee.portolan.json") == "") }
+test "pn convert callee" { assert(convert_circle("callee.alula.json") == "") }
 
-test "pn convert caller" { assert(convert_circle("caller.portolan.json") == "") }
+test "pn convert caller" { assert(convert_circle("caller.alula.json") == "") }
 
-test "pn convert fan" { assert(convert_circle("fan.portolan.json") == "") }
+test "pn convert fan" { assert(convert_circle("fan.alula.json") == "") }
 
-test "pn convert dialog steps" { assert(convert_circle("dialog_steps.portolan.json") == "") }
+test "pn convert dialog steps" { assert(convert_circle("dialog_steps.alula.json") == "") }
 
 test "pn the tables compile to the json of the product" {
     // the file of Portolan of a machine and its JSON in src/machine/machines/ are the same tree
     for name in probe_names() {
-        ro base = name.replace(".portolan.json", "")
-        ro ran = run_with(["compile", "/m/${base}.portolan.md"], one("/m/${base}.portolan.md", text_of_file(table_files(), "${base}.portolan.md")))
+        ro base = name.replace(".alula.json", "")
+        ro ran = run_with(["compile", "/m/${base}.alula.md"], one("/m/${base}.alula.md", text_of_file(table_files(), "${base}.alula.md")))
         assert(ran.err == "")
         assert(ran.code == 0)
         assert(same_tree(machine_json(name), ran.out) == "")

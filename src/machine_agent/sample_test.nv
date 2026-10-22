@@ -1,4 +1,4 @@
-// sample_test.nv - the sample of the methodology (state-machine-agent-step.portolan.md, format 2.7, copied as it is into `cases/`) goes through the translator without a hand edit: no errors,
+// sample_test.nv - the sample of the methodology (state-machine-agent-step.alula.md, format 2.7, copied as it is into `cases/`) goes through the translator without a hand edit: no errors,
 // the checks of the table pass, the paragraphs are skipped, the expansion of the fragment is skipped, the JSON is the JSON of the product table but for the keys of the project.
 module alula.machine_agent
 
@@ -203,13 +203,13 @@ test "sm json differs by keys" {
 }
 
 test "sm table names" {
-    for n in ["a.portolan.md", "a.portolan.txt"] { assert(is_table_name(n)) }
-    for n in ["a.md", "a.json", "a.portolan", "table.md", "a.portolan.json", "a.table.json", "foo.table.md", "foo.table.txt", "foo.machine.json"] { assert(!is_table_name(n)) }
+    for n in ["a.alula.md", "a.alula.txt"] { assert(is_table_name(n)) }
+    for n in ["a.md", "a.json", "a.portolan", "table.md", "a.alula.json", "a.table.json", "foo.table.md", "foo.table.txt", "foo.machine.json"] { assert(!is_table_name(n)) }
     // the translator reads the text and not the name of the file: the notes of one text differ only by the name that the caller prints
     ro broken = translate_checked(sample().replace("число_ходов += 1", "число_ходов +="), standard_registry())
     assert(broken.errors.len() > 0)
     ro old_name = error_text(broken.errors[0], "agent_step.table.md")
-    ro new_name = error_text(broken.errors[0], "agent_step.portolan.md")
-    assert(old_name.replace("agent_step.table.md", "F") == new_name.replace("agent_step.portolan.md", "F"))
+    ro new_name = error_text(broken.errors[0], "agent_step.alula.md")
+    assert(old_name.replace("agent_step.table.md", "F") == new_name.replace("agent_step.alula.md", "F"))
     assert(sample_report().json == translate_checked(sample(), standard_registry()).json)
 }

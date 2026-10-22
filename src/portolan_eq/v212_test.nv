@@ -5,9 +5,9 @@ module alula.portolan_eq
 import std.text
 import alula.machine.{NamedText, table_files, machine_files, text_of_file}
 
-fn product_tables() -> []str => ["callee.portolan.md", "caller.portolan.md", "chat.portolan.md", "cycle_check.portolan.md", "dialog.portolan.md", "dialog_steps.portolan.md", "fan.portolan.md", "session_start.portolan.md", "agent_step.portolan.txt"]
+fn product_tables() -> []str => ["callee.alula.md", "caller.alula.md", "chat.alula.md", "cycle_check.alula.md", "dialog.alula.md", "dialog_steps.alula.md", "fan.alula.md", "session_start.alula.md", "agent_step.alula.txt"]
 
-fn json_of_table(name str) -> str => name.replace(".portolan.md", ".portolan.json").replace(".portolan.txt", ".portolan.json")
+fn json_of_table(name str) -> str => name.replace(".alula.md", ".alula.json").replace(".alula.txt", ".alula.json")
 
 test "v212 table files say 2.12" {
     for name in product_tables() {
@@ -41,51 +41,51 @@ test "v212 check takes every table" {
 }
 
 test "v212 compile refuses 2.11" {
-    ro old = text_of_file(table_files(), "dialog.portolan.md").replace("format: 2.12", "format: 2.11")
+    ro old = text_of_file(table_files(), "dialog.alula.md").replace("format: 2.12", "format: 2.11")
     assert(old.contains("format: 2.11"))
-    ro made = run_with(["compile", "/m/dialog.portolan.md"], one("/m/dialog.portolan.md", old))
+    ro made = run_with(["compile", "/m/dialog.alula.md"], one("/m/dialog.alula.md", old))
     assert(made.code != 0)
     assert(made.err.contains("2.11"))
     assert(made.err.contains("format: 2.12"))
 }
 
 test "v212 check refuses 2.11" {
-    ro old = text_of_file(table_files(), "chat.portolan.md").replace("format: 2.12", "format: 2.11")
+    ro old = text_of_file(table_files(), "chat.alula.md").replace("format: 2.12", "format: 2.11")
     assert(old.contains("format: 2.11"))
-    ro made = run_with(["check", "/m/chat.portolan.md"], one("/m/chat.portolan.md", old))
+    ro made = run_with(["check", "/m/chat.alula.md"], one("/m/chat.alula.md", old))
     assert(made.code != 0)
 }
 
 test "v212 render writes 2.12" {
-    ro made = run_with(["render", "/m/dialog.portolan.json"], one("/m/dialog.portolan.json", text_of_file(machine_files(), "dialog.portolan.json")))
+    ro made = run_with(["render", "/m/dialog.alula.json"], one("/m/dialog.alula.json", text_of_file(machine_files(), "dialog.alula.json")))
     assert(made.code == 0)
     assert(made.out.contains("- format: 2.12\n"))
-    ro en = run_with(["render", "/m/dialog.portolan.json", "--language", "en"], one("/m/dialog.portolan.json", text_of_file(machine_files(), "dialog.portolan.json")))
+    ro en = run_with(["render", "/m/dialog.alula.json", "--language", "en"], one("/m/dialog.alula.json", text_of_file(machine_files(), "dialog.alula.json")))
     assert(en.out.contains("- format: 2.12\n"))
 }
 
 test "v212 json of 2.11 is refused" {
-    ro old = text_of_file(machine_files(), "dialog.portolan.json").replace("\"portolan_version\":\"2.12\"", "\"portolan_version\":\"2.11\"")
-    ro made = run_with(["render", "/m/dialog.portolan.json"], one("/m/dialog.portolan.json", old))
+    ro old = text_of_file(machine_files(), "dialog.alula.json").replace("\"portolan_version\":\"2.12\"", "\"portolan_version\":\"2.11\"")
+    ro made = run_with(["render", "/m/dialog.alula.json"], one("/m/dialog.alula.json", old))
     assert(made.code != 0)
 }
 
 test "v212 the line of the fragment in the written file" {
-    ro made = run_with(["render", "/m/dialog_steps.portolan.json"], one("/m/dialog_steps.portolan.json", text_of_file(machine_files(), "dialog_steps.portolan.json")))
+    ro made = run_with(["render", "/m/dialog_steps.alula.json"], one("/m/dialog_steps.alula.json", text_of_file(machine_files(), "dialog_steps.alula.json")))
     assert(made.code == 0)
     assert(made.out.contains("Пауза(слово_остановки: остановить, код_остановки: \"pause_halt\", вложенные: [шаг_агента], отмена_запросов: механика, вход_заново: ничего, право_записи: \"сессия ничего не пишет\")"))
     assert(!made.out.contains("### Pause"))
 }
 
 test "v212 the line of the fragment in english" {
-    ro made = run_with(["render", "/m/dialog_steps.portolan.json", "--language", "en"], one("/m/dialog_steps.portolan.json", text_of_file(machine_files(), "dialog_steps.portolan.json")))
+    ro made = run_with(["render", "/m/dialog_steps.alula.json", "--language", "en"], one("/m/dialog_steps.alula.json", text_of_file(machine_files(), "dialog_steps.alula.json")))
     assert(made.code == 0)
     assert(made.out.contains("Pause(halt_word: "))
     assert(made.out.contains("reenter: nothing"))
 }
 
 test "v212 circle of every machine that includes the fragment" {
-    for name in ["dialog_steps.portolan.json", "session_start.portolan.json", "cycle_check.portolan.json", "caller.portolan.json", "fan.portolan.json", "callee.portolan.json", "agent_step.portolan.json", "dialog.portolan.json"] {
+    for name in ["dialog_steps.alula.json", "session_start.alula.json", "cycle_check.alula.json", "caller.alula.json", "fan.alula.json", "callee.alula.json", "agent_step.alula.json", "dialog.alula.json"] {
         assert(circle(name, "ru") == "")
         assert(circle(name, "en") == "")
         assert(convert_circle(name) == "")

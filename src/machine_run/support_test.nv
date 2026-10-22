@@ -17,13 +17,13 @@ fn build_from(text str) -> PortolanMachine {
 
 fn build(name str) -> PortolanMachine => build_from(machine_text(name))
 
-fn chat() -> PortolanMachine => build("chat.portolan.json")
-fn calc() -> PortolanMachine => build("calc.portolan.json")
-fn dialog() -> PortolanMachine => build("dialog.portolan.json")
-fn actions() -> PortolanMachine => build("actions.portolan.json")
+fn chat() -> PortolanMachine => build("chat.alula.json")
+fn calc() -> PortolanMachine => build("calc.alula.json")
+fn dialog() -> PortolanMachine => build("dialog.alula.json")
+fn actions() -> PortolanMachine => build("actions.alula.json")
 
 // The agent step with the answers of its primitives: the reply is valid, closing the turn answers nothing.
-fn agent_step() -> PortolanMachine => with_replies(build("agent_step.portolan.json"), [
+fn agent_step() -> PortolanMachine => with_replies(build("agent_step.alula.json"), [
     ScriptedReply { name: "reply_validation", value: enum_value("ReplyCheck", "Valid") },
     ScriptedReply { name: "close_agent_turn", value: Null }
 ])

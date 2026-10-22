@@ -58,7 +58,7 @@ test "v212 parse failure after the returns is the code of the form" {
 fn agent_fields() -> []str => ["kind", "profile", "session", "dialog_kind", "context", "limits", "trace", "step"]
 
 test "v212 agent step input is the eight fields" {
-    ro text = machine_text("agent_step.portolan.json")
+    ro text = machine_text("agent_step.alula.json")
     ro at = text.find("\"input\":") ?? -1
     assert(at >= 0)
     ro part = text[at..]
@@ -69,12 +69,12 @@ test "v212 agent step input is the eight fields" {
 }
 
 test "v212 agent step builds the record" {
-    ro text = machine_text("agent_step.portolan.json")
+    ro text = machine_text("agent_step.alula.json")
     assert(text.contains("\"op\":\"record\",\"type\":\"AgentRequest\""))
 }
 
 test "v212 callers send the flat record" {
-    for name in ["dialog_steps.portolan.json", "session_start.portolan.json"] {
+    for name in ["dialog_steps.alula.json", "session_start.alula.json"] {
         ro text = machine_text(name)
         assert(text.contains("\"input_type\":\"AgentRequest\""))
         assert(!text.contains("StepInput"))
@@ -82,7 +82,7 @@ test "v212 callers send the flat record" {
 }
 
 test "v212 callers give the profile by the column" {
-    for name in ["dialog_steps.portolan.json", "session_start.portolan.json"] {
+    for name in ["dialog_steps.alula.json", "session_start.alula.json"] {
         ro text = machine_text(name)
         assert(text.contains("\"nested\":\"agent_step\""))
         assert(text.contains("\"profile\":{"))

@@ -5,7 +5,7 @@ module alula.portolan_cli
 import std.text
 import alula.machine.{NamedText, machine_files, scenario_files, text_of_file, cycle_check_machine_text}
 
-fn cycle_json() -> NamedText => file("/c/cycle_check.portolan.json", cycle_check_machine_text())
+fn cycle_json() -> NamedText => file("/c/cycle_check.alula.json", cycle_check_machine_text())
 
 fn scenario_file(name str) -> NamedText => file("/c/${name}.scenario.test.json", text_of_file(scenario_files(), "${name}.scenario.test.json"))
 
@@ -16,7 +16,7 @@ fn not_standalone(name str) -> NamedText {
 }
 
 test "sa run a standalone scenario" {
-    ro ran = run_with(["run", "/c/cycle_check.portolan.json", "/c/cycle-flow-clean.scenario.test.json"], [cycle_json(), scenario_file("cycle-flow-clean")])
+    ro ran = run_with(["run", "/c/cycle_check.alula.json", "/c/cycle-flow-clean.scenario.test.json"], [cycle_json(), scenario_file("cycle-flow-clean")])
     assert(ran.err == "")
     assert(ran.out == "ok\n")
     assert(ran.code == 0)
@@ -25,7 +25,7 @@ test "sa run a standalone scenario" {
 test "sa run without the key is refused" {
     ro plain = not_standalone("cycle-flow-clean")
     assert(plain.text != scenario_file("cycle-flow-clean").text)
-    ro ran = run_with(["run", "/c/cycle_check.portolan.json", "/c/cycle-flow-clean.scenario.test.json"], [cycle_json(), plain])
+    ro ran = run_with(["run", "/c/cycle_check.alula.json", "/c/cycle-flow-clean.scenario.test.json"], [cycle_json(), plain])
     assert(ran.code == 1)
     assert(ran.out == "")
     assert(ran.err.contains("calls nested machines: they are found in a folder, use `portolan test <folder>`"))

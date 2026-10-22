@@ -6,7 +6,7 @@ import alula.engine.{FailCode, Incoming, EventKind, StepEnvironment, fail_code_w
 import alula.machine.{standard_registry}
 
 test "loads" {
-    for name in ["chat.portolan.json", "calc.portolan.json", "actions.portolan.json", "gate.portolan.json", "lenses.portolan.json", "variants.portolan.json"] {
+    for name in ["chat.alula.json", "calc.alula.json", "actions.alula.json", "gate.alula.json", "lenses.alula.json", "variants.alula.json"] {
         match load_portolan_machine(machine_text(name), standard_registry()) {
             Ok(m) => assert(m.def.states.len() >= 3)
             Err(e) => assert(e == "")
@@ -181,7 +181,7 @@ test "calc bad input" {
 }
 
 test "calc overflow" {
-    ro text = machine_text("calc.portolan.json").replace("\"default\": { \"op\": \"lit\", \"value\": 2 }", "\"default\": { \"op\": \"lit\", \"value\": 9223372036854775807 }")
+    ro text = machine_text("calc.alula.json").replace("\"default\": { \"op\": \"lit\", \"value\": 2 }", "\"default\": { \"op\": \"lit\", \"value\": 9223372036854775807 }")
     ro m = build_from(text)
     ro r = run1(m, m.initial(), start_with("{\"start\":0,\"label\":\"abc\"}"))
     assert(r.state.name == "Errored")
@@ -281,7 +281,7 @@ test "actions bad words" {
 }
 
 test "bound on write" {
-    ro text = machine_text("actions.portolan.json").replace("{ \"name\": \"total\", \"type\": \"int\"", "{ \"name\": \"total\", \"type\": \"int>=0\"")
+    ro text = machine_text("actions.alula.json").replace("{ \"name\": \"total\", \"type\": \"int\"", "{ \"name\": \"total\", \"type\": \"int>=0\"")
     ro m = build_from(text)
     ro r = run1(m, m.initial(), word_in("add", "-5"))
     assert(r.state.name == "Errored")
@@ -292,21 +292,21 @@ test "bound on write" {
 
 test "does not decrease" {
     ro plain = "{ \"name\": \"total\", \"type\": \"int\", \"initial\": { \"expr\": { \"op\": \"lit\", \"value\": 0 } }"
-    ro text = machine_text("actions.portolan.json").replace(plain, "${plain}, \"monotonic\": true")
+    ro text = machine_text("actions.alula.json").replace(plain, "${plain}, \"monotonic\": true")
     ro m = build_from(text)
     ro up = run1(m, m.initial(), word_in("add", "5"))
     assert(up.state.name == "Wait")
     ro down = run1(m, up.state, word_in("add", "-1"))
     assert(down.state.name == "Errored")
     assert(summary(down.orders).starts_with("log:machine_error(reason=bound_violation)"))
-    ro capped = machine_text("actions.portolan.json").replace(plain, "${plain}, \"monotonic\": { \"bound\": { \"op\": \"lit\", \"value\": 10 } }")
+    ro capped = machine_text("actions.alula.json").replace(plain, "${plain}, \"monotonic\": { \"bound\": { \"op\": \"lit\", \"value\": 10 } }")
     ro c = build_from(capped)
     assert(run1(c, c.initial(), word_in("add", "10")).state.name == "Wait")
     assert(run1(c, c.initial(), word_in("add", "11")).state.name == "Errored")
 }
 
 test "fork no match" {
-    ro text = machine_text("calc.portolan.json").replace("{ \"n\": 2, \"event\": { \"kind\": \"now\" }, \"else\": true, \"to\": \"Step\" }", "{ \"n\": 2, \"event\": { \"kind\": \"now\" }, \"cond\": { \"op\": \"lit\", \"value\": false }, \"to\": \"Step\" }")
+    ro text = machine_text("calc.alula.json").replace("{ \"n\": 2, \"event\": { \"kind\": \"now\" }, \"else\": true, \"to\": \"Step\" }", "{ \"n\": 2, \"event\": { \"kind\": \"now\" }, \"cond\": { \"op\": \"lit\", \"value\": false }, \"to\": \"Step\" }")
     ro m = build_from(text)
     ro r = run1(m, m.initial(), start_with("{\"start\":0,\"label\":\"abc\"}"))
     assert(r.state.name == "Errored")
@@ -314,7 +314,7 @@ test "fork no match" {
 }
 
 test "defect stops" {
-    ro text = machine_text("actions.portolan.json")
+    ro text = machine_text("actions.alula.json")
     ro m = build_from(text.replace("{ \"op\": \"lit\", \"value\": 99 }", "{ \"op\": \"call\", \"fn\": \"require\", \"args\": [ { \"op\": \"lit\", \"value\": null } ] }"))
     ro r = run1(m, m.initial(), word_in("boom", ""))
     assert(summary(r.orders).starts_with("log:machine_defect(kind=unreachable"))

@@ -13,7 +13,7 @@ fn unsayable_json() -> str => `{"format":"machine/2","machine":"M","version":"1"
 // ---- render ----------------------------------------------------------------------------------------------------------------------
 
 test "rc russian by default" {
-    ro ran = run_with(["render", "/work/tiny.portolan.json"], json_file())
+    ro ran = run_with(["render", "/work/tiny.alula.json"], json_file())
     assert(ran.code == 0)
     assert(ran.err == "")
     assert(ran.out.starts_with("# Машина: Tiny\n"))
@@ -21,7 +21,7 @@ test "rc russian by default" {
 }
 
 test "rc english" {
-    ro ran = run_with(["render", "/work/tiny.portolan.json", "--language", "en"], json_file())
+    ro ran = run_with(["render", "/work/tiny.alula.json", "--language", "en"], json_file())
     assert(ran.code == 0)
     assert(ran.out.starts_with("# Machine: Tiny\n"))
     assert(ran.out.contains("- language: en\n"))
@@ -29,32 +29,32 @@ test "rc english" {
 }
 
 test "rc language with equal sign" {
-    ro ran = run_with(["render", "--language=en", "/work/tiny.portolan.json"], json_file())
+    ro ran = run_with(["render", "--language=en", "/work/tiny.alula.json"], json_file())
     assert(ran.code == 0)
     assert(ran.out == render(tiny_json(), "en"))
 }
 
 test "rc language russian named" {
-    ro ran = run_with(["render", "/work/tiny.portolan.json", "--language", "ru"], json_file())
+    ro ran = run_with(["render", "/work/tiny.alula.json", "--language", "ru"], json_file())
     assert(ran.out == render(tiny_json(), "ru"))
 }
 
 test "rc bad language" {
-    ro ran = run_with(["render", "/work/tiny.portolan.json", "--language", "de"], json_file())
+    ro ran = run_with(["render", "/work/tiny.alula.json", "--language", "de"], json_file())
     assert(ran.code == 2)
     assert(ran.err.contains("--language is ru or en"))
     assert(ran.out == "")
 }
 
 test "rc language without value" {
-    ro ran = run_with(["render", "/work/tiny.portolan.json", "--language"], json_file())
+    ro ran = run_with(["render", "/work/tiny.alula.json", "--language"], json_file())
     assert(ran.code == 2)
     assert(ran.err.contains("--language needs"))
 }
 
 test "rc canonical form" {
     // the canonical form of the specification: the header, the sections in order, one newline at the end
-    ro ran = run_with(["render", "/work/tiny.portolan.json", "--language", "en"], json_file())
+    ro ran = run_with(["render", "/work/tiny.alula.json", "--language", "en"], json_file())
     assert(ran.out.contains("\n## States\n"))
     assert(ran.out.contains("- machine_version: 1\n- format: 2.12\n"))
     assert(ran.out.ends_with("\n"))
@@ -62,21 +62,21 @@ test "rc canonical form" {
 }
 
 test "rc not a json" {
-    ro ran = run_with(["render", "/work/tiny.portolan.json"], one("/work/tiny.portolan.json", "{"))
+    ro ran = run_with(["render", "/work/tiny.alula.json"], one("/work/tiny.alula.json", "{"))
     assert(ran.code == 1)
     assert(ran.out == "")
     assert(ran.err.contains("not a JSON"))
-    assert(ran.err.starts_with("/work/tiny.portolan.json:1:1: render: "))
+    assert(ran.err.starts_with("/work/tiny.alula.json:1:1: render: "))
 }
 
 test "rc a file of portolan is not a json" {
-    ro ran = run_with(["render", "/work/tiny.portolan.md"], tiny_file())
+    ro ran = run_with(["render", "/work/tiny.alula.md"], tiny_file())
     assert(ran.code == 1)
     assert(ran.err.contains("not a JSON"))
 }
 
 test "rc unsayable is code 1" {
-    ro ran = run_with(["render", "/work/m.portolan.json", "--language", "en"], one("/work/m.portolan.json", unsayable_json()))
+    ro ran = run_with(["render", "/work/m.alula.json", "--language", "en"], one("/work/m.alula.json", unsayable_json()))
     assert(ran.code == 1)
     assert(ran.out == "")
     assert(ran.err.contains("$.parties[0]"))
@@ -85,14 +85,14 @@ test "rc unsayable is code 1" {
 }
 
 test "rc lenient prints what could be said" {
-    ro ran = run_with(["render", "--lenient", "/work/m.portolan.json", "--language", "en"], one("/work/m.portolan.json", unsayable_json()))
+    ro ran = run_with(["render", "--lenient", "/work/m.alula.json", "--language", "en"], one("/work/m.alula.json", unsayable_json()))
     assert(ran.code == 1)
     assert(ran.out.starts_with("# Machine: M\n"))
     assert(ran.err.contains("$.parties[0]"))
 }
 
 test "rc output file" {
-    ro ran = run_cli(["render", "/work/tiny.portolan.json", "--language", "en", "-o", "/work/tiny.en.portolan.md"], json_file(), "/work/tiny.en.portolan.md")
+    ro ran = run_cli(["render", "/work/tiny.alula.json", "--language", "en", "-o", "/work/tiny.en.alula.md"], json_file(), "/work/tiny.en.alula.md")
     assert(ran.code == 0)
     assert(ran.out == "")
     assert(ran.present)
@@ -101,23 +101,23 @@ test "rc output file" {
 
 test "rc output not over a file" {
     mut files = json_file()
-    files.push(file("/work/tiny.portolan.md", "mine"))
-    ro ran = run_cli(["render", "/work/tiny.portolan.json", "-o", "/work/tiny.portolan.md"], files, "/work/tiny.portolan.md")
+    files.push(file("/work/tiny.alula.md", "mine"))
+    ro ran = run_cli(["render", "/work/tiny.alula.json", "-o", "/work/tiny.alula.md"], files, "/work/tiny.alula.md")
     assert(ran.code == 2)
     assert(ran.back == "mine")
-    ro forced = run_cli(["render", "/work/tiny.portolan.json", "-o", "/work/tiny.portolan.md", "--force"], files, "/work/tiny.portolan.md")
+    ro forced = run_cli(["render", "/work/tiny.alula.json", "-o", "/work/tiny.alula.md", "--force"], files, "/work/tiny.alula.md")
     assert(forced.code == 0)
     assert(forced.back == render(tiny_json(), "ru"))
 }
 
 test "rc missing file" {
-    ro ran = run0(["render", "/work/none.portolan.json"])
+    ro ran = run0(["render", "/work/none.alula.json"])
     assert(ran.code == 2)
-    assert(ran.err.contains("cannot read /work/none.portolan.json"))
+    assert(ran.err.contains("cannot read /work/none.alula.json"))
 }
 
 test "rc unknown option" {
-    ro ran = run_with(["render", "/work/tiny.portolan.json", "--no-check"], json_file())
+    ro ran = run_with(["render", "/work/tiny.alula.json", "--no-check"], json_file())
     assert(ran.code == 2)
     assert(ran.err.contains("unknown option `--no-check`"))
 }
@@ -126,7 +126,7 @@ test "rc rendered file compiles back" {
     // the rendered file is a file of Portolan: `compile` of it gives the same tree
     for language in ["ru", "en"] {
         ro text = render(tiny_json(), language)
-        ro ran = run_with(["compile", "/work/back.portolan.md"], one("/work/back.portolan.md", text))
+        ro ran = run_with(["compile", "/work/back.alula.md"], one("/work/back.alula.md", text))
         assert(ran.code == 0)
         assert(no_title(ran.out) == no_title("${tiny_json()}\n"))
     }
@@ -135,7 +135,7 @@ test "rc rendered file compiles back" {
 // ---- convert ---------------------------------------------------------------------------------------------------------------------
 
 test "cv russian to english" {
-    ro ran = run_with(["convert", "/work/tiny.portolan.md", "--language", "en"], tiny_file())
+    ro ran = run_with(["convert", "/work/tiny.alula.md", "--language", "en"], tiny_file())
     assert(ran.code == 0)
     assert(ran.out.starts_with("# Machine: "))
     assert(ran.out.contains("- language: en\n"))
@@ -144,63 +144,63 @@ test "cv russian to english" {
 }
 
 test "cv english to russian" {
-    ro ran = run_with(["convert", "/work/tiny.portolan.md", "--language", "ru"], one("/work/tiny.portolan.md", tiny_en()))
+    ro ran = run_with(["convert", "/work/tiny.alula.md", "--language", "ru"], one("/work/tiny.alula.md", tiny_en()))
     assert(ran.code == 0)
     assert(ran.out.contains("\n## Состояния\n"))
     assert(ran.out == render(tiny_json_en(), "ru"))
 }
 
 test "cv says what is not carried" {
-    ro ran = run_with(["convert", "/work/tiny.portolan.md", "--language", "en"], tiny_file())
+    ro ran = run_with(["convert", "/work/tiny.alula.md", "--language", "en"], tiny_file())
     assert(ran.err.contains("portolan: note: "))
     assert(ran.err.contains("comments"))
     assert(ran.err.contains("not carried over"))
 }
 
 test "cv language is needed" {
-    ro ran = run_with(["convert", "/work/tiny.portolan.md"], tiny_file())
+    ro ran = run_with(["convert", "/work/tiny.alula.md"], tiny_file())
     assert(ran.code == 2)
     assert(ran.err.contains("--language ru|en is needed"))
 }
 
 test "cv bad language" {
-    ro ran = run_with(["convert", "/work/tiny.portolan.md", "--language", "fr"], tiny_file())
+    ro ran = run_with(["convert", "/work/tiny.alula.md", "--language", "fr"], tiny_file())
     assert(ran.code == 2)
 }
 
 test "cv same language" {
     // the file of the same language comes back in the canonical form: the same tree
-    ro ran = run_with(["convert", "/work/tiny.portolan.md", "--language", "ru"], tiny_file())
+    ro ran = run_with(["convert", "/work/tiny.alula.md", "--language", "ru"], tiny_file())
     assert(ran.code == 0)
-    ro back = run_with(["compile", "/work/b.portolan.md"], one("/work/b.portolan.md", ran.out))
+    ro back = run_with(["compile", "/work/b.alula.md"], one("/work/b.alula.md", ran.out))
     assert(no_title(back.out) == no_title("${tiny_json()}\n"))
 }
 
 test "cv round trip ru en ru" {
-    ro first = run_with(["convert", "/work/tiny.portolan.md", "--language", "en"], tiny_file())
+    ro first = run_with(["convert", "/work/tiny.alula.md", "--language", "en"], tiny_file())
     assert(first.code == 0)
-    ro second = run_with(["convert", "/work/e.portolan.md", "--language", "ru"], one("/work/e.portolan.md", first.out))
+    ro second = run_with(["convert", "/work/e.alula.md", "--language", "ru"], one("/work/e.alula.md", first.out))
     assert(second.code == 0)
-    ro back = run_with(["compile", "/work/r.portolan.md"], one("/work/r.portolan.md", second.out))
+    ro back = run_with(["compile", "/work/r.alula.md"], one("/work/r.alula.md", second.out))
     assert(back.code == 0)
     assert(no_title(back.out) == no_title("${tiny_json()}\n"))
 }
 
 test "cv errors" {
-    ro ran = run_with(["convert", "/work/tiny.portolan.md", "--language", "en"], one("/work/tiny.portolan.md", tiny_ru().replace("| 2 | иначе | — | ЖДАТЬ |", "| 2 | иначе | — | НЕТ |")))
+    ro ran = run_with(["convert", "/work/tiny.alula.md", "--language", "en"], one("/work/tiny.alula.md", tiny_ru().replace("| 2 | иначе | — | ЖДАТЬ |", "| 2 | иначе | — | НЕТ |")))
     assert(ran.code == 1)
     assert(ran.out == "")
-    assert(ran.err.contains("/work/tiny.portolan.md:"))
+    assert(ran.err.contains("/work/tiny.alula.md:"))
 }
 
 test "cv output file" {
-    ro ran = run_cli(["convert", "/work/tiny.portolan.md", "--language", "en", "-o", "/work/tiny.en.portolan.md"], tiny_file(), "/work/tiny.en.portolan.md")
+    ro ran = run_cli(["convert", "/work/tiny.alula.md", "--language", "en", "-o", "/work/tiny.en.alula.md"], tiny_file(), "/work/tiny.en.alula.md")
     assert(ran.code == 0)
     assert(ran.out == "")
     assert(ran.back == render(tiny_json(), "en"))
 }
 
 test "cv missing file" {
-    ro ran = run0(["convert", "/work/none.portolan.md", "--language", "en"])
+    ro ran = run0(["convert", "/work/none.alula.md", "--language", "en"])
     assert(ran.code == 2)
 }

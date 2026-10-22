@@ -24,12 +24,12 @@ be copied where the user wants it. The first build takes about a minute.
 ## Commands
 
 ```
-portolan compile <file.portolan.md> [-o <file.portolan.json>] [--lenient] [--no-check] [--force]
-portolan render  <file.portolan.json> [--language ru|en] [-o <file.portolan.md>] [--lenient] [--force]
-portolan convert <file.portolan.md> --language ru|en [-o <file.portolan.md>] [--no-check] [--lenient] [--force]
-portolan check   <file.portolan.md | file.portolan.json> [--no-check]
-portolan summary <file.portolan.md | file.portolan.json> [--no-check]
-portolan run     <machine.portolan.json | machine.portolan.md> <scenario.scenario.test.json>
+portolan compile <file.alula.md> [-o <file.alula.json>] [--lenient] [--no-check] [--force]
+portolan render  <file.alula.json> [--language ru|en] [-o <file.alula.md>] [--lenient] [--force]
+portolan convert <file.alula.md> --language ru|en [-o <file.alula.md>] [--no-check] [--lenient] [--force]
+portolan check   <file.alula.md | file.alula.json> [--no-check]
+portolan summary <file.alula.md | file.alula.json> [--no-check]
+portolan run     <machine.alula.json | machine.alula.md> <scenario.scenario.test.json>
 portolan test    <folder> [-v]
 portolan version
 portolan --help | portolan <command> --help | portolan help [<command>]
@@ -43,7 +43,7 @@ portolan --help | portolan <command> --help | portolan help [<command>]
 | `check` | the translation and the checks of the table of a file of Portolan, or the decoding and the checks of a JSON. Prints `ok` (`ok (2 warnings)`) and the code 0 when there are no errors; the errors and the warnings (P-1) go to the standard error. |
 | `summary` | the summary of a machine: the states with their kinds, the rows, the actions, the data, the parties. |
 | `run` | one scenario (`scenario/0`) on a machine (a machine that calls nested machines is refused with the code 1 and the hint to use `portolan test <folder>`, because the nested machines are found in a folder; a scenario with the key `"standalone": true` plays the nested parties itself and is run, task 122): `ok`, or the report of the differences (the step, the part, what was expected and what came) and the code 1. The machine can be a JSON or a file of Portolan. The scenario names its machine; another name is an error. |
-| `test` | every `*.scenario.test.json` of the folder (and of the folders under it) on the machine that the scenario names; prints a report of each scenario that differs and `N of M scenarios passed`. The machines are the `*.portolan.json` files of the folder; a machine that has no JSON file is read from `*.portolan.md` (`*.portolan.txt`) when a scenario asks for it. `-v` also prints `ok <file>` for every scenario that passed. The code is 1 when one differs. A machine with a party of the kind `machine` (task 119) is run together with the machines it calls: they are found in the same folder by the name in the cell `вид` (a JSON file, else a file of Portolan), the pair is checked first (`the nested machines do not fit: ...`, a machine that is not in the folder is `the machine X of the party Y is not in the registry`), and the steps `on` / `also` of its scenarios act on and compare the nested machines. A scenario with `"standalone": true` (task 122) is not run so: the steps play the nested parties and no nested machine is looked for in the folder. |
+| `test` | every `*.scenario.test.json` of the folder (and of the folders under it) on the machine that the scenario names; prints a report of each scenario that differs and `N of M scenarios passed`. The machines are the `*.alula.json` files of the folder; a machine that has no JSON file is read from `*.alula.md` (`*.alula.txt`) when a scenario asks for it. `-v` also prints `ok <file>` for every scenario that passed. The code is 1 when one differs. A machine with a party of the kind `machine` (task 119) is run together with the machines it calls: they are found in the same folder by the name in the cell `вид` (a JSON file, else a file of Portolan), the pair is checked first (`the nested machines do not fit: ...`, a machine that is not in the folder is `the machine X of the party Y is not in the registry`), and the steps `on` / `also` of its scenarios act on and compare the nested machines. A scenario with `"standalone": true` (task 122) is not run so: the steps play the nested parties and no nested machine is looked for in the folder. |
 | `version` | `portolan 0.1.0 (Portolan 2.12, machine/2)`. Since task 125 the program reads the version 2.12 only: a file of 2.11 or of an older version is refused by `compile`, `convert` and `check` with "версия не известна ... читает формат 2.12", a JSON tree of another version by `render` (code 1); there is no transition period. |
 
 `-o` (`--output`) writes the product into a file instead of the standard output; an existing file is not overwritten without `--force`, and nothing is written when the command has errors (except with `--lenient`). There is no
@@ -68,23 +68,23 @@ Check a machine written in Russian, make the JSON, make the English file, check 
 
 ```powershell
 $p = "target/portolan.exe"
-& $p check src/machine/machines/chat.portolan.md                                          # ok
-& $p compile src/machine/machines/chat.portolan.md -o target/chat.portolan.json           # the JSON machine/2
-& $p render target/chat.portolan.json --language en -o target/chat.en.portolan.md         # the same machine in English, canonical form
-& $p check target/chat.en.portolan.md                                                     # ok
-& $p convert target/chat.en.portolan.md --language ru -o target/chat.ru.portolan.md       # back to Russian (through the JSON)
-& $p summary target/chat.portolan.json                                                    # the states, the rows, the actions
-& $p run src/machine/machines/chat.portolan.json src/machine/scenarios/chat-message-opens-request.scenario.test.json   # ok
+& $p check src/machine/machines/chat.alula.md                                          # ok
+& $p compile src/machine/machines/chat.alula.md -o target/chat.alula.json           # the JSON machine/2
+& $p render target/chat.alula.json --language en -o target/chat.en.alula.md         # the same machine in English, canonical form
+& $p check target/chat.en.alula.md                                                     # ok
+& $p convert target/chat.en.alula.md --language ru -o target/chat.ru.alula.md       # back to Russian (through the JSON)
+& $p summary target/chat.alula.json                                                    # the states, the rows, the actions
+& $p run src/machine/machines/chat.alula.json src/machine/scenarios/chat-message-opens-request.scenario.test.json   # ok
 & $p test src/machine                                                                     # 301 of 301 scenarios passed
 ```
 
 An error in a file (a transition leads to a state that is not there; the quoted line is cut here):
 
 ```
-> portolan check broken.portolan.md
-broken.portolan.md:58:1: check: $.states[0].rows[0].to: ОЖИДАНИЕ_НЕТ is not a state
+> portolan check broken.alula.md
+broken.alula.md:58:1: check: $.states[0].rows[0].to: ОЖИДАНИЕ_НЕТ is not a state
     | 1 | слово(сообщение_пользователя(текст: сообщение)) | — | журнал(user_message, text: сообщение); ... | ОЖИДА…
-broken.portolan.md:58:156: name: состояния `ОЖИДАНИЕ_НЕТ` нет в этой машине; возможно, `ОЖИДАНИЕ`
+broken.alula.md:58:156: name: состояния `ОЖИДАНИЕ_НЕТ` нет в этой машине; возможно, `ОЖИДАНИЕ`
     | 1 | слово(сообщение_пользователя(текст: сообщение)) | — | журнал(user_message, text: сообщение); ... | ОЖИДА…
 > echo $LASTEXITCODE
 1

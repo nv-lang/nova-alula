@@ -12,7 +12,7 @@ import alula.engine.{JournalEntry}
 import alula.machine_run.{PortolanMachine, NestedRegistry, load_portolan_machine, parse_scenario, drive_table_scenario, drive_nested_scenario, scenario_through_parent, prepare_child, StepTrace, NestedStepTrace, Scenario, check_registry}
 
 fn load(name str) -> PortolanMachine {
-    match load_portolan_machine(text_of_file(machine_files(), "${name}.portolan.json"), standard_registry()) {
+    match load_portolan_machine(text_of_file(machine_files(), "${name}.alula.json"), standard_registry()) {
         Ok(m) => m
         Err(e) => panic("the machine ${name} does not load: ${e}")
     }

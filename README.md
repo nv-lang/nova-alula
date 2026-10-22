@@ -34,7 +34,7 @@ One folder under `src/` is one module `alula.<folder>` and one unit of tests (Or
 ## The samples
 
 The machines that the tests run are the samples of the package, and they live where the compiler can embed them (`embed_str` reads a file relative to its module):
-`src/machine/machines/` (tables `*.portolan.md`/`.txt` and the compiled `*.portolan.json`) and `src/machine/scenarios/` (`*.scenario.test.json`). The agent step
+`src/machine/machines/` (tables `*.alula.md`/`.txt` and the compiled `*.alula.json`) and `src/machine/scenarios/` (`*.scenario.test.json`). The agent step
 (`agent_step`), the caller and the callee (`caller`, `callee`), the pair `dialog_steps`, the chat (`chat`) and the dialog (`dialog`) are the smallest samples to start from;
 `portolan test src/machine` runs all 621 scenarios.
 

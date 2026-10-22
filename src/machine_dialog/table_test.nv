@@ -1,5 +1,5 @@
-// table_test.nv - the many-turn chat as data (task 114): the table `machines/dialog.portolan.md` (Portolan 2.11) translates without a note, its translation is the committed file
-// `dialog.portolan.json`, the machine loads, builds, takes the idle term from the parameter of the project, has no primitives; every row of the table has a scenario (the mark `taken`).
+// table_test.nv - the many-turn chat as data (task 114): the table `machines/dialog.alula.md` (Portolan 2.11) translates without a note, its translation is the committed file
+// `dialog.alula.json`, the machine loads, builds, takes the idle term from the parameter of the project, has no primitives; every row of the table has a scenario (the mark `taken`).
 module alula.machine_dialog
 
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
@@ -15,8 +15,8 @@ fn dialog_report() -> TranslateReport => translate_checked(dialog_table_text(), 
 
 fn errors_text(report TranslateReport) -> str {
     mut parts = []str.new()
-    for e in report.errors { parts.push(error_text(e, "dialog.portolan.md")) }
-    for w in report.warnings { parts.push(error_text(w, "dialog.portolan.md")) }
+    for e in report.errors { parts.push(error_text(e, "dialog.alula.md")) }
+    for w in report.warnings { parts.push(error_text(w, "dialog.alula.md")) }
     parts.join(" ## ")
 }
 

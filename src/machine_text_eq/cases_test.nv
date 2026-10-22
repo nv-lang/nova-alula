@@ -60,14 +60,14 @@ test "cs files" {
 
 test "cs names by the Portolan" {
     assert(case_files().len() == 4)
-    for f in case_files() { assert(f.name.ends_with(".portolan.md")) }
+    for f in case_files() { assert(f.name.ends_with(".alula.md")) }
 }
 
 // ---- the pilot "Agent step" ---------------------------------------------------------------------------------------------------
 
 test "cs pilot" {
-    ro report = translate_checked(case_text("agent-step.portolan.md"), standard_registry())
-    if report.errors.len() > 0 { panic(lines_of_errors(report, "agent-step.portolan.md")) }
+    ro report = translate_checked(case_text("agent-step.alula.md"), standard_registry())
+    if report.errors.len() > 0 { panic(lines_of_errors(report, "agent-step.alula.md")) }
     assert(report.errors.len() == 0)
     assert(report.rows_noted == 0)
     assert(report.rows_total == 120)
@@ -75,7 +75,7 @@ test "cs pilot" {
 }
 
 test "cs pilot loads" {
-    ro report = translate_checked(case_text("agent-step.portolan.md"), standard_registry())
+    ro report = translate_checked(case_text("agent-step.alula.md"), standard_registry())
     match load_machine(report.json, standard_registry()) {
         Ok(def) => {
             assert(def.name == "agent_step")
@@ -93,7 +93,7 @@ test "cs pilot loads" {
 }
 
 test "cs pilot builds" {
-    ro report = translate_checked(case_text("agent-step.portolan.md"), standard_registry())
+    ro report = translate_checked(case_text("agent-step.alula.md"), standard_registry())
     match load_portolan_machine(report.json, standard_registry()) {
         Ok(m) => {
             assert(m.name() == "agent_step")
@@ -104,7 +104,7 @@ test "cs pilot builds" {
 }
 
 test "cs pilot summary" {
-    ro report = translate_checked(case_text("agent-step.portolan.md"), standard_registry())
+    ro report = translate_checked(case_text("agent-step.alula.md"), standard_registry())
     ro text = render_summary(report.json)
     assert(text.starts_with("machine agent_step (version pilot-2.5): 14 states, 47 rows, "))
     assert(text.contains("  AgentTurn (appeal): 9 rows, 18 actions"))
@@ -114,14 +114,14 @@ test "cs pilot summary" {
 }
 
 test "cs pilot twice" {
-    ro a = translate_report(case_text("agent-step.portolan.md"))
-    ro b = translate_report(case_text("agent-step.portolan.md"))
+    ro a = translate_report(case_text("agent-step.alula.md"))
+    ro b = translate_report(case_text("agent-step.alula.md"))
     assert(a.json == b.json)
     assert(a.rows_total == b.rows_total)
 }
 
 test "cs pilot pause" {
-    ro report = translate_checked(case_text("agent-step.portolan.md"), standard_registry())
+    ro report = translate_checked(case_text("agent-step.alula.md"), standard_registry())
     assert(report.json.contains("\"name\":\"human_stop\",\"fields\":[{\"name\":\"human_word\",\"type\":\"text\"}"))
     assert(report.json.contains("\"to\":\"@previous\""))
     assert(report.json.contains("{\"name\":\"previous\",\"type\":\"?State\""))
@@ -132,15 +132,15 @@ test "cs pilot pause" {
 // ---- the examples of the format -----------------------------------------------------------------------------------------------
 
 test "cs examples" {
-    ro report = translate_checked(case_text("format-examples.portolan.md"), examples_registry())
-    if report.errors.len() > 0 { panic(lines_of_errors(report, "format-examples.portolan.md")) }
+    ro report = translate_checked(case_text("format-examples.alula.md"), examples_registry())
+    if report.errors.len() > 0 { panic(lines_of_errors(report, "format-examples.alula.md")) }
     assert(report.errors.len() == 0)
     assert(report.rows_noted == 0)
     assert(report.rows_total == 70)
 }
 
 test "cs examples shape" {
-    ro report = translate_checked(case_text("format-examples.portolan.md"), examples_registry())
+    ro report = translate_checked(case_text("format-examples.alula.md"), examples_registry())
     ro text = render_summary(report.json)
     assert(text.contains("  Gate3 (appeal): 2 rows, 4 actions"))
     assert(text.contains("  Lock (operation): 1 rows, 6 actions"))
@@ -151,9 +151,9 @@ test "cs examples shape" {
 }
 
 test "cs examples new id" {
-    ro report = translate_checked(case_text("format-examples.portolan.md"), examples_registry())
+    ro report = translate_checked(case_text("format-examples.alula.md"), examples_registry())
     assert(report.json.contains("\"entry\":[{\"do\":\"bind\",\"name\":\"novaya\",\"value\":{\"op\":\"primitive_call\",\"name\":\"new_id\",\"args\":[]}}]"))
-    ro broken = case_text("format-examples.portolan.md").replace("| 1 | сразу | — | ид_сессии = новая | ХОД_АГЕНТА |", "| 1 | сразу | — | журнал(opened) | ХОД_АГЕНТА |")
+    ro broken = case_text("format-examples.alula.md").replace("| 1 | сразу | — | ид_сессии = новая | ХОД_АГЕНТА |", "| 1 | сразу | — | журнал(opened) | ХОД_АГЕНТА |")
     ro bad = translate_checked(broken, examples_registry())
     assert(has_message(bad, "of new_id is not written to the data by a row of the state"))
 }

@@ -1,5 +1,5 @@
-// agent_test.nv - the machine "Agent step" of the product: the table `machines/agent_step.portolan.txt` (format 2.7: the sample of the methodology and the keys of the project) translates without a note, its translation is the committed
-// file `agent_step.portolan.json`, the machine passes the checks of the load and is made; the same table without the list markers (format 2.5) gives the same tree.
+// agent_test.nv - the machine "Agent step" of the product: the table `machines/agent_step.alula.txt` (format 2.7: the sample of the methodology and the keys of the project) translates without a note, its translation is the committed
+// file `agent_step.alula.json`, the machine passes the checks of the load and is made; the same table without the list markers (format 2.5) gives the same tree.
 module alula.machine_agent
 
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
@@ -13,7 +13,7 @@ fn agent_report() -> TranslateReport => translate_checked(agent_step_table_text(
 
 fn errors_text(report TranslateReport) -> str {
     mut parts = []str.new()
-    for e in report.errors { parts.push(error_text(e, "agent_step.portolan.txt")) }
+    for e in report.errors { parts.push(error_text(e, "agent_step.alula.txt")) }
     parts.join(" ## ")
 }
 

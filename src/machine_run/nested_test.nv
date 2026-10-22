@@ -7,9 +7,9 @@ import std.text
 import alula.machine.{Value, Null, Bool, Text, RecordField, make_record, enum_value, value_json, Registry, Primitive, ParamSpec, RecordType, Reading, BoolType, register, standard_registry}
 import alula.engine.{Incoming, EventKind}
 
-fn caller() -> PortolanMachine => build("caller.portolan.json")
+fn caller() -> PortolanMachine => build("caller.alula.json")
 
-fn fan() -> PortolanMachine => build("fan.portolan.json")
+fn fan() -> PortolanMachine => build("fan.alula.json")
 
 fn child_answer(answer str, score int) -> str => "{\"$record\":\"CallOutput\",\"fields\":{\"answer\":\"${answer}\",\"score\":${score}}}"
 
@@ -268,7 +268,7 @@ test "nr set cancel returns" {
 
 test "nr set one by one" {
     // the limit 1 makes the set a queue in the order of the list
-    ro text = machine_text("fan.portolan.json").replace("{\"op\":\"lit\",\"value\":2}", "{\"op\":\"lit\",\"value\":1}")
+    ro text = machine_text("fan.alula.json").replace("{\"op\":\"lit\",\"value\":2}", "{\"op\":\"lit\",\"value\":1}")
     ro m = build_from(text)
     ro r = run1(m, m.initial(), word_in("start", "{\"order\":[\"x\",\"y\"]}"))
     assert(datum_json(r.state, "open_requests") == "[\"x-1\"]")
@@ -279,7 +279,7 @@ test "nr set one by one" {
 
 test "nr set no limit" {
     // without a limit every party goes at once
-    ro text = machine_text("fan.portolan.json").replace("\"request_limit\":{\"op\":\"name\",\"name\":\"LIMIT\"},", "")
+    ro text = machine_text("fan.alula.json").replace("\"request_limit\":{\"op\":\"name\",\"name\":\"LIMIT\"},", "")
     ro m = build_from(text)
     ro r = run1(m, m.initial(), word_in("start", "{\"order\":[\"x\",\"y\",\"z\"]}"))
     assert(datum_json(r.state, "open_requests") == "[\"x-1\",\"y-1\",\"z-1\"]")

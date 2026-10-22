@@ -13,58 +13,58 @@ fn session_scenario_files() -> []NamedText {
     out
 }
 
-test "ps circle session start ru" { assert(circle("session_start.portolan.json", "ru") == "") }
+test "ps circle session start ru" { assert(circle("session_start.alula.json", "ru") == "") }
 
-test "ps circle session start en" { assert(circle("session_start.portolan.json", "en") == "") }
+test "ps circle session start en" { assert(circle("session_start.alula.json", "en") == "") }
 
-test "ps convert session start" { assert(convert_circle("session_start.portolan.json") == "") }
+test "ps convert session start" { assert(convert_circle("session_start.alula.json") == "") }
 
 test "ps the table compiles to the json of the product" {
-    ro ran = run_with(["compile", "/m/session_start.portolan.md"], one("/m/session_start.portolan.md", session_start_table_text()))
+    ro ran = run_with(["compile", "/m/session_start.alula.md"], one("/m/session_start.alula.md", session_start_table_text()))
     assert(ran.err == "")
     assert(ran.code == 0)
-    assert(same_tree(machine_json("session_start.portolan.json"), ran.out) == "")
+    assert(same_tree(machine_json("session_start.alula.json"), ran.out) == "")
 }
 
 test "ps the program checks the machine" {
-    ro table = run_with(["check", "/m/session_start.portolan.md"], one("/m/session_start.portolan.md", session_start_table_text()))
+    ro table = run_with(["check", "/m/session_start.alula.md"], one("/m/session_start.alula.md", session_start_table_text()))
     assert(table.err == "")
     assert(table.code == 0)
     assert(table.out == "ok\n")
-    ro json = run_with(["check", "/m/session_start.portolan.json"], one("/m/session_start.portolan.json", machine_json("session_start.portolan.json")))
+    ro json = run_with(["check", "/m/session_start.alula.json"], one("/m/session_start.alula.json", machine_json("session_start.alula.json")))
     assert(json.err == "")
     assert(json.code == 0)
     assert(json.out == "ok\n")
 }
 
 test "ps the english file of the machine says the same" {
-    ro english = run_with(["convert", "/m/session_start.portolan.md", "--language", "en"], one("/m/session_start.portolan.md", session_start_table_text()))
+    ro english = run_with(["convert", "/m/session_start.alula.md", "--language", "en"], one("/m/session_start.alula.md", session_start_table_text()))
     assert(english.code == 0)
     assert(english.out.contains("- language: en\n"))
     assert(english.out.contains("# Machine: session_start\n"))
     assert(english.out.contains("Initial state: Gate2"))
-    ro back = run_with(["compile", "/m/e.portolan.md"], one("/m/e.portolan.md", english.out))
+    ro back = run_with(["compile", "/m/e.alula.md"], one("/m/e.alula.md", english.out))
     assert(back.code == 0)
-    assert(same_tree(machine_json("session_start.portolan.json"), back.out) == "")
+    assert(same_tree(machine_json("session_start.alula.json"), back.out) == "")
 }
 
 test "ps the summary names the states" {
-    ro ran = run_with(["summary", "/m/session_start.portolan.json"], one("/m/session_start.portolan.json", machine_json("session_start.portolan.json")))
+    ro ran = run_with(["summary", "/m/session_start.alula.json"], one("/m/session_start.alula.json", machine_json("session_start.alula.json")))
     assert(ran.code == 0)
     for name in ["Gate2", "Scope", "Gate1", "Session", "ResultParsing", "Gate13Session", "Pause", "End", "Halted", "Errored"] { assert(ran.out.contains(name)) }
 }
 
 test "ps a machine with a nested machine is not run alone" {
-    ro ran = run_with(["run", "/m/session_start.portolan.json", "/m/s.scenario.test.json"],
-        [NamedText { name: "/m/session_start.portolan.json", text: machine_json("session_start.portolan.json") }, NamedText { name: "/m/s.scenario.test.json", text: text_of_file(scenario_files(), "session-gate2-1.scenario.test.json") }])
+    ro ran = run_with(["run", "/m/session_start.alula.json", "/m/s.scenario.test.json"],
+        [NamedText { name: "/m/session_start.alula.json", text: machine_json("session_start.alula.json") }, NamedText { name: "/m/s.scenario.test.json", text: text_of_file(scenario_files(), "session-gate2-1.scenario.test.json") }])
     assert(ran.code == 1)
     assert(ran.err.contains("portolan test"))
 }
 
 test "ps the program runs the scenarios of the folder with the agent step" {
     mut files = session_scenario_files()
-    files.push(NamedText { name: "/m/session_start.portolan.json", text: machine_json("session_start.portolan.json") })
-    files.push(NamedText { name: "/m/agent_step.portolan.json", text: machine_json("agent_step.portolan.json") })
+    files.push(NamedText { name: "/m/session_start.alula.json", text: machine_json("session_start.alula.json") })
+    files.push(NamedText { name: "/m/agent_step.alula.json", text: machine_json("agent_step.alula.json") })
     ro ran = run_with(["test", "/m"], files)
     assert(ran.err == "")
     assert(ran.code == 0)
@@ -73,8 +73,8 @@ test "ps the program runs the scenarios of the folder with the agent step" {
 
 test "ps the program takes the machine from its table when there is no json" {
     mut files = session_scenario_files()
-    files.push(NamedText { name: "/m/session_start.portolan.md", text: session_start_table_text() })
-    files.push(NamedText { name: "/m/agent_step.portolan.json", text: machine_json("agent_step.portolan.json") })
+    files.push(NamedText { name: "/m/session_start.alula.md", text: session_start_table_text() })
+    files.push(NamedText { name: "/m/agent_step.alula.json", text: machine_json("agent_step.alula.json") })
     ro ran = run_with(["test", "/m"], files)
     assert(ran.err == "")
     assert(ran.code == 0)
@@ -82,7 +82,7 @@ test "ps the program takes the machine from its table when there is no json" {
 
 test "ps a folder without the agent step says so" {
     mut files = session_scenario_files()
-    files.push(NamedText { name: "/m/session_start.portolan.json", text: machine_json("session_start.portolan.json") })
+    files.push(NamedText { name: "/m/session_start.alula.json", text: machine_json("session_start.alula.json") })
     ro ran = run_with(["test", "/m"], files)
     assert(ran.code == 1)
     assert(ran.out.contains("the machine agent_step of the party agent_step is not in the registry"))

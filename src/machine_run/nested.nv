@@ -50,7 +50,7 @@ export fn NestedRegistry @find(name str) -> Option[PortolanMachine] {
 export fn product_registry() -> NestedRegistry {
     mut reg = NestedRegistry.empty()
     for name in ["agent_step", "session_start", "cycle_check"] {
-        match load_portolan_machine(text_of_file(machine_files(), "${name}.portolan.json"), standard_registry()) {
+        match load_portolan_machine(text_of_file(machine_files(), "${name}.alula.json"), standard_registry()) {
             Ok(m) => { reg = reg.add(m.def.name, m) }
             Err(e) => panic("the machine ${name} of the registry of the product does not load: ${e}")
         }
