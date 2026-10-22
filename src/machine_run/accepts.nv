@@ -37,7 +37,7 @@ fn rows_take(ctx Ctx, rows []TableRow, wanted str) -> bool {
 /// Does the state take the word (or the signal) `name`? False: the machine has not started; the word is declared nowhere in the table (the machine would write `event_unknown`);
 /// the state is not an appeal and the common events have no row for it; no row of the common events and of the state is for it. The names of the states are the table's own:
 /// the caller does not need to know them.
-export fn PortolanMachine @accepts_word(state PortolanState, name str) -> bool {
+export fn AlulaMachine @accepts_word(state AlulaState, name str) -> bool {
     if !state.started { return false }
     match input_decl(@def, name) {
         Some(fields) => ()

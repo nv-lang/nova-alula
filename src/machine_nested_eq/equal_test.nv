@@ -9,10 +9,10 @@ module alula.machine_nested_eq
 import std.text
 import alula.machine.{scenario_files, machine_files, text_of_file, standard_registry, NamedText}
 import alula.engine.{JournalEntry}
-import alula.machine_run.{PortolanMachine, NestedRegistry, load_portolan_machine, parse_scenario, drive_table_scenario, drive_nested_scenario, scenario_through_parent, prepare_child, StepTrace, NestedStepTrace, Scenario, check_registry}
+import alula.machine_run.{AlulaMachine, NestedRegistry, load_alula_machine, parse_scenario, drive_table_scenario, drive_nested_scenario, scenario_through_parent, prepare_child, StepTrace, NestedStepTrace, Scenario, check_registry}
 
-fn load(name str) -> PortolanMachine {
-    match load_portolan_machine(text_of_file(machine_files(), "${name}.alula.json"), standard_registry()) {
+fn load(name str) -> AlulaMachine {
+    match load_alula_machine(text_of_file(machine_files(), "${name}.alula.json"), standard_registry()) {
         Ok(m) => m
         Err(e) => panic("the machine ${name} does not load: ${e}")
     }
@@ -91,7 +91,7 @@ fn kid_trace(t NestedStepTrace, request str) -> Option[StepTrace] {
 fn compare_file(file NamedText) -> str => compare_with(file, load("agent_step"))
 
 // The same with the machine that the session calls given: the nested machine is `called`, the machine alone is the agent step as it is.
-fn compare_with(file NamedText, called PortolanMachine) -> str {
+fn compare_with(file NamedText, called AlulaMachine) -> str {
     ro sc = scenario_of(file)
     match scenario_through_parent(sc, "dialog_steps", "up-1", "call-1") {
         None => "skipped"

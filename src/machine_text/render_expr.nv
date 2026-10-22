@@ -1,4 +1,4 @@
-// render_expr.nv - the reverse generator, the pieces (task 113): the words of a language for a name of the JSON, the types, the expressions and the actions as the text of Portolan
+// render_expr.nv - the reverse generator, the pieces (task 113): the words of a language for a name of the JSON, the types, the expressions and the actions as the text of Alula
 // (section 1b of the specification: the operators of the language, one writing, brackets only where the grammar of section 3 needs them).
 module alula.machine_text
 
@@ -219,13 +219,13 @@ fn rn_ty_read(cx RnCx, mut t RnTy) -> str {
     rn_type_name(cx, name)
 }
 
-/// A type string of the JSON as the type of Portolan in the language: `int>=0` -> `число≥0` / `int>=0`.
+/// A type string of the JSON as the type of Alula in the language: `int>=0` -> `число≥0` / `int>=0`.
 fn rn_type(cx RnCx, ty str) -> str {
     mut t = RnTy { text: ty, pos: 0 }
     rn_ty_read(cx, t)
 }
 
-/// A type string of the JSON as the type of Portolan in the language `lang` (`ru` or `en`).
+/// A type string of the JSON as the type of Alula in the language `lang` (`ru` or `en`).
 export fn render_type_in(ty str, lang str) -> str {
     ro cx = rn_cx(lang)
     rn_type(cx, ty)
@@ -546,7 +546,7 @@ fn rn_expr(mut cx RnCx, v RJ, locals []str) -> str {
         ro sign = if op == "and" { rn_kw(cx, "expr", "and") } else if op == "or" { rn_kw(cx, "expr", "or") } else { op }
         return "${left} ${sign} ${right}"
     }
-    rn_note(cx, "an expression of the kind `${op}` has no writing in Portolan")
+    rn_note(cx, "an expression of the kind `${op}` has no writing in Alula")
     "none"
 }
 
@@ -711,7 +711,7 @@ fn rn_action(mut cx RnCx, a RJ, locals []str) -> str {
         }
         return "${rn_kw(cx, "action", "let")} ${rj_gstr(a, "name")} = ${value}"
     }
-    rn_note(cx, "an action of the kind `${kind}` has no writing in Portolan")
+    rn_note(cx, "an action of the kind `${kind}` has no writing in Alula")
     "—"
 }
 

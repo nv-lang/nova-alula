@@ -6,7 +6,7 @@ import std.encoding.json.{Json}
 import alula.machine.{scenario_files, machine_files, table_files, schema_files, data_dir_names, is_machine_json_name, NamedText, text_of_file}
 
 // The machine a scenario names.
-fn machine_named(name str) -> PortolanMachine {
+fn machine_named(name str) -> AlulaMachine {
     if name == "ChatSession" { return chat() }
     if name == "DialogSession" { return dialog() }
     if name == "Calc" { return calc() }
@@ -29,7 +29,7 @@ fn run_file(file str) -> ScenarioRun {
     run_scenario(machine_named(sc.machine), sc)
 }
 
-fn run_text(machine PortolanMachine, text str) -> ScenarioRun {
+fn run_text(machine AlulaMachine, text str) -> ScenarioRun {
     match parse_scenario(text) {
         Ok(sc) => run_scenario(machine, sc)
         Err(e) => panic("${e.path}: ${e.message}")
@@ -186,7 +186,7 @@ test "no expectation" {
 // ORACLE-WORKAROUND(12, 13, 26): the type arguments of `drive_scenario` are written out here and in the tests below; infer them when items 12 and 13 are fixed
 test "drive is generic" {
     ro sc = scenario_of("chat-silent-agent.scenario.test.json")
-    ro traces = drive_scenario[PortolanState, PortolanMachine](chat(), sc)
+    ro traces = drive_scenario[AlulaState, AlulaMachine](chat(), sc)
     assert(traces.len() == sc.steps.len())
     assert(traces[4].state == "Failed")
     assert(traces[4].cancelled.len() == 1)
@@ -244,7 +244,7 @@ test "lists of files" {
     assert(data_dir_names("elsewhere").len() == 0)
 }
 
-test "names by the Portolan" {
+test "names by the Alula" {
     ro scenarios = scenario_files()
     assert(scenarios.len() == 621)
     for f in scenarios { assert(f.name.ends_with(".scenario.test.json")) }
@@ -257,7 +257,7 @@ test "names by the Portolan" {
 
 test "name of a compiled machine" {
     assert(is_machine_json_name("a.alula.json"))
-    for n in ["a.json", "a.portolan", "a.alula.md", "a.table.json", "machine.json", "a.scenario.test.json", "a.schema.json", "foo.machine.json", "foo.table.md", "foo.table.txt"] { assert(!is_machine_json_name(n)) }
+    for n in ["a.json", "a.alula", "a.alula.md", "a.table.json", "machine.json", "a.scenario.test.json", "a.schema.json", "foo.machine.json", "foo.table.md", "foo.table.txt"] { assert(!is_machine_json_name(n)) }
     assert(data_dir_names("machines").len() == 15)
 }
 

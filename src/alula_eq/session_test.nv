@@ -1,6 +1,6 @@
-// session_test.nv - task 121: the program `portolan` on the machine "Session start" (AC-1): `compile` -> `render` -> `compile` gives an equal tree in Russian and in English, `convert` ru -> en -> ru
+// session_test.nv - task 121: the program `alula` on the machine "Session start" (AC-1): `compile` -> `render` -> `compile` gives an equal tree in Russian and in English, `convert` ru -> en -> ru
 // gives an equal tree, the table compiles to the JSON of the product and the program checks it, summarizes it and runs the scenarios of its folder together with the agent step.
-module alula.portolan_eq
+module alula.alula_eq
 
 import std.text
 import alula.machine.{NamedText, machine_files, table_files, scenario_files, text_of_file, session_start_table_text}
@@ -58,7 +58,7 @@ test "ps a machine with a nested machine is not run alone" {
     ro ran = run_with(["run", "/m/session_start.alula.json", "/m/s.scenario.test.json"],
         [NamedText { name: "/m/session_start.alula.json", text: machine_json("session_start.alula.json") }, NamedText { name: "/m/s.scenario.test.json", text: text_of_file(scenario_files(), "session-gate2-1.scenario.test.json") }])
     assert(ran.code == 1)
-    assert(ran.err.contains("portolan test"))
+    assert(ran.err.contains("alula test"))
 }
 
 test "ps the program runs the scenarios of the folder with the agent step" {

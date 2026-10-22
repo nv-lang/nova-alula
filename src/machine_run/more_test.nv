@@ -5,7 +5,7 @@ import std.text
 import alula.machine.{Null, Int, standard_registry}
 import alula.engine.{Incoming, EventKind}
 
-fn gate() -> PortolanMachine => build("gate.alula.json")
+fn gate() -> AlulaMachine => build("gate.alula.json")
 
 fn gate_started() -> Out {
     ro m = gate()
@@ -55,7 +55,7 @@ test "pause words" {
 
 test "no previous" {
     ro m = gate()
-    ro lost = PortolanState { name: "Pause", started: true, input: Null, data: m.initial().data, taken: []str.new() }
+    ro lost = AlulaState { name: "Pause", started: true, input: Null, data: m.initial().data, taken: []str.new() }
     ro r = run1(m, lost, word_in("continue", "{\"author\":\"a\",\"source\":\"s\"}"))
     assert(!r.moved)
     assert(r.state.name == "Pause")
@@ -124,17 +124,17 @@ test "constants" {
     ro r = run1(m, m.initial(), start_with("{\"start\":0,\"label\":\"x\"}"))
     assert(summary(r.orders) == "log:started(label=x),log:stepped(count=4),log:stepped(count=8),log:reached_limit(count=8),finish:answer:8,save")
     ro wrong = machine_text("calc.alula.json").replace("\"value\": 3 }", "\"value\": -1 }")
-    match load_portolan_machine(wrong, standard_registry()) {
+    match load_alula_machine(wrong, standard_registry()) {
         Ok(x) => assert(false)
         Err(e) => assert(e.contains("the constant LIMIT"))
     }
     ro bad_param = machine_text("calc.alula.json").replace("\"default\": { \"op\": \"lit\", \"value\": 2 }", "\"default\": { \"op\": \"lit\", \"value\": 0 }")
-    match load_portolan_machine(bad_param, standard_registry()) {
+    match load_alula_machine(bad_param, standard_registry()) {
         Ok(x) => assert(false)
         Err(e) => assert(e.contains("the parameter STEP"))
     }
     ro bad_initial = machine_text("calc.alula.json").replace("{ \"name\": \"began\", \"type\": \"int\", \"initial\": { \"expr\": { \"op\": \"lit\", \"value\": 0 } } }", "{ \"name\": \"began\", \"type\": \"int\", \"initial\": { \"expr\": { \"op\": \"lit\", \"value\": \"zero\" } } }")
-    match load_portolan_machine(bad_initial, standard_registry()) {
+    match load_alula_machine(bad_initial, standard_registry()) {
         Ok(x) => assert(false)
         Err(e) => assert(e.contains("the initial value of began"))
     }

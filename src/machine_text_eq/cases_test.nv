@@ -6,7 +6,7 @@ module alula.machine_text_eq
 import std.text
 import alula.machine.{standard_registry, Registry, Primitive, ParamSpec, TextType, ListType, Reading, register, NamedText, find_primitive}
 import alula.machine_table.{parse_machine, load_machine}
-import alula.machine_run.{load_portolan_machine}
+import alula.machine_run.{load_alula_machine}
 import alula.machine_text.{translate_report, translate_checked, translate_checked_with, TranslateReport, TranslateError, translate_definitions, DefsReport, definitions_hash, normalize_definitions, render_summary, error_text}
 
 // The registry of the examples: the standard one and the two primitives of the meeting that it lacks.
@@ -58,7 +58,7 @@ test "cs files" {
     assert(case_text("nothing.md") == "")
 }
 
-test "cs names by the Portolan" {
+test "cs names by the Alula" {
     assert(case_files().len() == 4)
     for f in case_files() { assert(f.name.ends_with(".alula.md")) }
 }
@@ -94,7 +94,7 @@ test "cs pilot loads" {
 
 test "cs pilot builds" {
     ro report = translate_checked(case_text("agent-step.alula.md"), standard_registry())
-    match load_portolan_machine(report.json, standard_registry()) {
+    match load_alula_machine(report.json, standard_registry()) {
         Ok(m) => {
             assert(m.name() == "agent_step")
             assert(m.state_name(m.initial()) == "Start")

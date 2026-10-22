@@ -1,4 +1,4 @@
-// table_test.nv - the many-turn chat as data (task 114): the table `machines/dialog.alula.md` (Portolan 2.11) translates without a note, its translation is the committed file
+// table_test.nv - the many-turn chat as data (task 114): the table `machines/dialog.alula.md` (Alula 2.11) translates without a note, its translation is the committed file
 // `dialog.alula.json`, the machine loads, builds, takes the idle term from the parameter of the project, has no primitives; every row of the table has a scenario (the mark `taken`).
 module alula.machine_dialog
 
@@ -7,7 +7,7 @@ import std.text
 import std.encoding.json.{Json}
 import alula.machine.{standard_registry, dialog_machine_text, dialog_table_text, scenario_files, NamedText, Int, Text}
 import alula.machine_table.{MachineDef, load_machine}
-import alula.machine_run.{PortolanMachine, PortolanState, ProjectValue, Scenario, ScenarioRun, load_portolan_machine, load_portolan_machine_with, parse_scenario, run_scenario, run_ok, report_text}
+import alula.machine_run.{AlulaMachine, AlulaState, ProjectValue, Scenario, ScenarioRun, load_alula_machine, load_alula_machine_with, parse_scenario, run_scenario, run_ok, report_text}
 import alula.machine_text.{translate_checked, translate_report, TranslateReport, error_text, render_summary}
 import alula.engine.{Incoming, EventKind, StepEnvironment, Order}
 
@@ -30,8 +30,8 @@ fn dialog_def() -> MachineDef {
 // ORACLE-WORKAROUND(51): the table of the project is built by a function, not by a literal inside the `match` that loads the machine (a record literal in the scrutinee is a syntax error); write it in place when item 51 is fixed
 fn term_value(ms int) -> []ProjectValue => [ProjectValue { key: "проект.срок_бездействия", value: Int(ms) }]
 
-fn dialog_with(ms int) -> PortolanMachine {
-    match load_portolan_machine_with(dialog_machine_text(), standard_registry(), term_value(ms)) {
+fn dialog_with(ms int) -> AlulaMachine {
+    match load_alula_machine_with(dialog_machine_text(), standard_registry(), term_value(ms)) {
         Ok(m) => m
         Err(e) => panic("the dialog machine is not made: ${e}")
     }
@@ -117,7 +117,7 @@ fn orders_text(orders []Order) -> str {
     parts.join(",")
 }
 
-fn first_message(m PortolanMachine) -> str {
+fn first_message(m AlulaMachine) -> str {
     mut environment = StepEnvironment.new()
     ro event = Incoming { id: "e-1", trace: "t-1", step: 2, kind: EventKind.Input, name: "user_message", request: None, input: "hi", at: 1000 }
     ro transition = m.step(m.initial(), event, environment)
@@ -132,7 +132,7 @@ test "dl idle term from the project" {
 }
 
 test "dl idle term default" {
-    match load_portolan_machine(dialog_machine_text(), standard_registry()) {
+    match load_alula_machine(dialog_machine_text(), standard_registry()) {
         Ok(m) => assert(first_message(m) == "log:user_message,send:agent:hi:900000,save")
         Err(e) => panic("the dialog machine does not load: ${e}")
     }
@@ -140,22 +140,22 @@ test "dl idle term default" {
 
 test "dl idle term refused" {
     ro bad_key = [ProjectValue { key: "проект.срок", value: Int(5) }]
-    match load_portolan_machine_with(dialog_machine_text(), standard_registry(), bad_key) {
+    match load_alula_machine_with(dialog_machine_text(), standard_registry(), bad_key) {
         Ok(m) => assert(false)
         Err(e) => assert(e.contains("проект.срок"))
     }
     ro bad_type = [ProjectValue { key: "проект.срок_бездействия", value: Text("soon") }]
-    match load_portolan_machine_with(dialog_machine_text(), standard_registry(), bad_type) {
+    match load_alula_machine_with(dialog_machine_text(), standard_registry(), bad_type) {
         Ok(m) => assert(false)
         Err(e) => assert(e.contains("IDLE_TERM"))
     }
     ro negative = term_value(-1)
-    match load_portolan_machine_with(dialog_machine_text(), standard_registry(), negative) {
+    match load_alula_machine_with(dialog_machine_text(), standard_registry(), negative) {
         Ok(m) => assert(false)
         Err(e) => assert(e.contains("IDLE_TERM"))
     }
     ro twice = [ProjectValue { key: "проект.срок_бездействия", value: Int(5) }, ProjectValue { key: "проект.срок_бездействия", value: Int(6) }]
-    match load_portolan_machine_with(dialog_machine_text(), standard_registry(), twice) {
+    match load_alula_machine_with(dialog_machine_text(), standard_registry(), twice) {
         Ok(m) => assert(false)
         Err(e) => assert(e.contains("twice"))
     }

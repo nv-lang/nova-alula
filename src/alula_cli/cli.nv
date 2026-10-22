@@ -1,7 +1,7 @@
-// cli.nv - the program `portolan` over its effects: the arguments (`Os`), the files (`Fs`), the standard output and error (`Io`). `execute` returns the exit code; the entry point
-// `src/portolan.nv` ends the process with it, and the tests run it over the memory handlers (`mock_os`, `mock_fs`, `mock_io`).
+// cli.nv - the program `alula` over its effects: the arguments (`Os`), the files (`Fs`), the standard output and error (`Io`). `execute` returns the exit code; the entry point
+// `src/alula.nv` ends the process with it, and the tests run it over the memory handlers (`mock_os`, `mock_fs`, `mock_io`).
 //   0 success; 1 errors in a file (or a scenario that differs); 2 a wrong command or arguments, a file that cannot be read or written.
-module alula.portolan_cli
+module alula.alula_cli
 
 // ORACLE-WORKAROUND(32): std.fs comes first: with the imports of the modules of the product before it, `.join` on a `Vec` resolves to `Path.join` (E_RECV_METHOD_MISMATCH); order the imports freely when item 32 is fixed
 import std.fs.{Fs, Path, read, write_text, try_exists, read_dir}
@@ -22,9 +22,9 @@ fn put_err(text str) Io -> () {
     ro written = e.write(text.bytes())
 }
 
-// A usage error: `portolan <command>: <reason>` on the standard error, the code 2.
+// A usage error: `alula <command>: <reason>` on the standard error, the code 2.
 fn usage_error(command str, reason str) Io -> int {
-    put_err("portolan ${command}: ${reason}\n")
+    put_err("alula ${command}: ${reason}\n")
     2
 }
 
@@ -54,7 +54,7 @@ fn trimmed_dir(dir str) -> str {
 }
 
 // ORACLE-WORKAROUND(53): the function is not named `collect_names`: the registry of the machines has a private one without `Fs`, and under --strict-effects the call there is checked against this one; use the name when item 53 is fixed
-// The files of a folder that `portolan test` reads (scenarios and machines), with the folders under it, in the order of their names; false when the folder cannot be read.
+// The files of a folder that `alula test` reads (scenarios and machines), with the folders under it, in the order of their names; false when the folder cannot be read.
 fn scan_folder(dir str, mut names []str) Fs -> bool {
     match read_dir(path_of(dir)) {
         Err(e) => false
@@ -201,14 +201,14 @@ export fn execute() Os Fs Io -> int {
         }
         ro wanted = argv[2]
         if !is_command(wanted) {
-            put_err("portolan: unknown command `${wanted}` (try `portolan --help`)\n")
+            put_err("alula: unknown command `${wanted}` (try `alula --help`)\n")
             return 2
         }
         put_out(command_help(wanted))
         return 0
     }
     if !is_command(first) {
-        put_err("portolan: unknown command `${first}` (try `portolan --help`)\n")
+        put_err("alula: unknown command `${first}` (try `alula --help`)\n")
         return 2
     }
     ro a = parse_args(first, rest_of(argv, 2))

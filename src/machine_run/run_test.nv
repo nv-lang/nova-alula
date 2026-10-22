@@ -7,12 +7,12 @@ import alula.machine.{standard_registry}
 
 test "loads" {
     for name in ["chat.alula.json", "calc.alula.json", "actions.alula.json", "gate.alula.json", "lenses.alula.json", "variants.alula.json"] {
-        match load_portolan_machine(machine_text(name), standard_registry()) {
+        match load_alula_machine(machine_text(name), standard_registry()) {
             Ok(m) => assert(m.def.states.len() >= 3)
             Err(e) => assert(e == "")
         }
     }
-    match load_portolan_machine("{}", standard_registry()) {
+    match load_alula_machine("{}", standard_registry()) {
         Ok(m) => assert(false)
         Err(e) => assert(e.contains("format"))
     }

@@ -1,21 +1,21 @@
-// accepts_test.nv - task 126: the question "does the state take this word?" (`PortolanMachine.accepts_word`), the hub asks it in place of the name of a state.
+// accepts_test.nv - task 126: the question "does the state take this word?" (`AlulaMachine.accepts_word`), the hub asks it in place of the name of a state.
 module alula.machine_run
 
 import alula.machine.{standard_registry, text_of_file, machine_files, Null}
 import alula.engine.{Incoming, EventKind, StepEnvironment}
 
-fn ac_load(file str) -> PortolanMachine {
-    match load_portolan_machine(text_of_file(machine_files(), file), standard_registry()) {
+fn ac_load(file str) -> AlulaMachine {
+    match load_alula_machine(text_of_file(machine_files(), file), standard_registry()) {
         Ok(m) => m
         Err(e) => panic("${file} does not load: ${e}")
     }
 }
 
-fn ac_dialog() -> PortolanMachine => ac_load("dialog.alula.json")
+fn ac_dialog() -> AlulaMachine => ac_load("dialog.alula.json")
 
-fn ac_chat() -> PortolanMachine => ac_load("chat.alula.json")
+fn ac_chat() -> AlulaMachine => ac_load("chat.alula.json")
 
-fn ac_feed(m PortolanMachine, s PortolanState, e Incoming) -> PortolanState {
+fn ac_feed(m AlulaMachine, s AlulaState, e Incoming) -> AlulaState {
     mut environment = StepEnvironment.new()
     match m.step(s, e, environment) {
         Go(next) => next
@@ -23,11 +23,11 @@ fn ac_feed(m PortolanMachine, s PortolanState, e Incoming) -> PortolanState {
     }
 }
 
-fn ac_in(m PortolanMachine, s PortolanState, name str, input str) -> PortolanState => ac_feed(m, s, stamped(EventKind.Input, name, None, input))
+fn ac_in(m AlulaMachine, s AlulaState, name str, input str) -> AlulaState => ac_feed(m, s, stamped(EventKind.Input, name, None, input))
 
-fn ac_open(m PortolanMachine) -> PortolanState => ac_in(m, m.initial(), "user_message", "hi")
+fn ac_open(m AlulaMachine) -> AlulaState => ac_in(m, m.initial(), "user_message", "hi")
 
-fn ac_named(s PortolanState, name str) -> PortolanState => { name, started: s.started, input: s.input, data: s.data, taken: []str.new() }
+fn ac_named(s AlulaState, name str) -> AlulaState => { name, started: s.started, input: s.input, data: s.data, taken: []str.new() }
 
 test "ac dialog: Idle takes a message" {
     ro m = ac_dialog()
@@ -100,7 +100,7 @@ test "ac dialog: a state that is not in the table takes nothing" {
 test "ac dialog: a machine that has not started takes no word" {
     ro m = ac_dialog()
     ro s = m.initial()
-    ro idle PortolanState = { name: s.name, started: false, input: s.input, data: s.data, taken: []str.new() }
+    ro idle AlulaState = { name: s.name, started: false, input: s.input, data: s.data, taken: []str.new() }
     assert(!m.accepts_word(idle, "user_message"))
 }
 
@@ -133,7 +133,7 @@ test "ac chat: the end takes nothing" {
 
 test "ac common event: a signal of the machine of the session start is taken in a state and not in the pause or the end" {
     ro m = ac_load("session_start.alula.json")
-    ro base = PortolanState { name: "Gate2", started: true, input: Null, data: m.initial_data, taken: []str.new() }
+    ro base = AlulaState { name: "Gate2", started: true, input: Null, data: m.initial_data, taken: []str.new() }
     assert(m.accepts_word(base, "human_stop"))
     assert(m.accepts_word(base, "parent_stop"))
     assert(!m.accepts_word(ac_named(base, "Pause"), "human_stop"))

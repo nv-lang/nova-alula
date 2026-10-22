@@ -1,6 +1,6 @@
 // standalone_test.nv - task 122: a scenario with `"standalone": true` runs a machine that calls nested machines ALONE: the parties of the kind `machine` are played by the steps of the scenario, so
-// `portolan run` takes it and `portolan test` needs no nested machine in the folder. The machine is the cycle check (the session launch and the meeting are not in the folder).
-module alula.portolan_cli
+// `alula run` takes it and `alula test` needs no nested machine in the folder. The machine is the cycle check (the session launch and the meeting are not in the folder).
+module alula.alula_cli
 
 import std.text
 import alula.machine.{NamedText, machine_files, scenario_files, text_of_file, cycle_check_machine_text}
@@ -28,7 +28,7 @@ test "sa run without the key is refused" {
     ro ran = run_with(["run", "/c/cycle_check.alula.json", "/c/cycle-flow-clean.scenario.test.json"], [cycle_json(), plain])
     assert(ran.code == 1)
     assert(ran.out == "")
-    assert(ran.err.contains("calls nested machines: they are found in a folder, use `portolan test <folder>`"))
+    assert(ran.err.contains("calls nested machines: they are found in a folder, use `alula test <folder>`"))
 }
 
 test "sa test a folder without the nested machines" {

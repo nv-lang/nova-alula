@@ -50,7 +50,7 @@ fn with_binding(globals []Binding, name str, value Value) -> []Binding {
 
 /// A machine ready to run. The constants and the parameters are evaluated in order (a later one may read an earlier one); a wrong
 /// value of a type, an error of the evaluator or an initial value that does not fit its datum refuses the machine.
-export fn portolan_machine(def MachineDef, registry Registry) -> Result[PortolanMachine, str] => portolan_machine_with(def, registry, []ProjectValue.new())
+export fn alula_machine(def MachineDef, registry Registry) -> Result[AlulaMachine, str] => alula_machine_with(def, registry, []ProjectValue.new())
 
 /// ProjectValue: a row of the table of the parameters of the project (format 2.7, P-9): the key `проект.<ключ>` and the value.
 export type ProjectValue { key str, value Value }
@@ -82,7 +82,7 @@ fn project_table_checked(def MachineDef, given_table []ProjectValue) -> Result[(
 
 /// The same with the table "key -> value" of the project (format 2.7, P-9): a key is `проект.<ключ>` of the column "project override" of a parameter, the value is checked against the
 /// type of that parameter like a default; a key the column does not have refuses the machine.
-export fn portolan_machine_with(def MachineDef, registry Registry, overrides []ProjectValue) -> Result[PortolanMachine, str] {
+export fn alula_machine_with(def MachineDef, registry Registry, overrides []ProjectValue) -> Result[AlulaMachine, str] {
     project_table_checked(def, overrides)?
     mut globals = []Binding.new()
     globals.push(Binding { name: "end_states", value: end_state_names(def) })
@@ -146,7 +146,7 @@ export fn portolan_machine_with(def MachineDef, registry Registry, overrides []P
             _ => return Err("the request limit must be an int")
         }
     }
-    Ok(PortolanMachine { def, table, initial_data: data, quiet_start: quiet, replies: []ScriptedReply.new(), limit })
+    Ok(AlulaMachine { def, table, initial_data: data, quiet_start: quiet, replies: []ScriptedReply.new(), limit })
 }
 
 // Does the expression read the input of the call: the name `input` or one of the fields of the input?
@@ -213,12 +213,12 @@ fn initial_data_of(def MachineDef, table DefTable, input Value, lenient bool) ->
 }
 
 /// The machine from the text of its JSON tree: decoded, checked as a table, made ready. The error is every issue in one text.
-export fn load_portolan_machine(text str, registry Registry) -> Result[PortolanMachine, str] => load_portolan_machine_with(text, registry, []ProjectValue.new())
+export fn load_alula_machine(text str, registry Registry) -> Result[AlulaMachine, str] => load_alula_machine_with(text, registry, []ProjectValue.new())
 
 /// The same with the table "key -> value" of the project (format 2.7, P-9): the server gives the idle term of a chat turn this way (`проект.срок_бездействия`).
-export fn load_portolan_machine_with(text str, registry Registry, overrides []ProjectValue) -> Result[PortolanMachine, str] {
+export fn load_alula_machine_with(text str, registry Registry, overrides []ProjectValue) -> Result[AlulaMachine, str] {
     match load_machine(text, registry) {
-        Ok(def) => portolan_machine_with(def, registry, overrides)
+        Ok(def) => alula_machine_with(def, registry, overrides)
         Err(issues) => {
             mut lines = []str.new()
             for e in issues { lines.push(issue_text(e)) }
@@ -228,8 +228,8 @@ export fn load_portolan_machine_with(text str, registry Registry, overrides []Pr
 }
 
 /// The same machine with the answers of the primitives of its default host (`ScriptedHost`).
-export fn with_replies(machine PortolanMachine, replies []ScriptedReply) -> PortolanMachine {
-    PortolanMachine {
+export fn with_replies(machine AlulaMachine, replies []ScriptedReply) -> AlulaMachine {
+    AlulaMachine {
         def: machine.def, table: machine.table, initial_data: machine.initial_data, quiet_start: machine.quiet_start, replies, limit: machine.limit
     }
 }

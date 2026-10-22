@@ -7,7 +7,7 @@ import std.text
 import std.encoding.json.{Json, JsonValue, JsonObject}
 import alula.machine.{standard_registry, task_runner_table_text, task_runner_machine_text, scenario_files, NamedText}
 import alula.machine_table.{MachineDef, StateDef, TableRow, Target, ToState, ToNothing, ToPrevious, ToSame, ToPrepareReturn, load_machine}
-import alula.machine_run.{PortolanMachine, ScenarioRun, load_portolan_machine, parse_scenario, run_scenario, run_nested_scenario, product_registry, run_ok, report_text}
+import alula.machine_run.{AlulaMachine, ScenarioRun, load_alula_machine, parse_scenario, run_scenario, run_nested_scenario, product_registry, run_ok, report_text}
 import alula.machine_text.{translate_checked, TranslateReport, TranslateError, error_text, render_machine}
 
 fn table_report() -> TranslateReport => translate_checked(task_runner_table_text(), standard_registry())
@@ -25,8 +25,8 @@ fn runner_def() -> MachineDef {
     }
 }
 
-fn runner_machine() -> PortolanMachine {
-    match load_portolan_machine(task_runner_machine_text(), standard_registry()) {
+fn runner_machine() -> AlulaMachine {
+    match load_alula_machine(task_runner_machine_text(), standard_registry()) {
         Ok(m) => m
         Err(e) => panic("the task runner is not made: ${e}")
     }
@@ -87,7 +87,7 @@ fn scenario_files_all() -> []str {
     out
 }
 
-fn run_with(m PortolanMachine, file NamedText) -> ScenarioRun {
+fn run_with(m AlulaMachine, file NamedText) -> ScenarioRun {
     match parse_scenario(file.text) {
         Ok(sc) => if sc.standalone { run_scenario(m, sc) } else { run_nested_scenario(m, product_registry(), sc) }
         Err(e) => panic("${file.name}: ${e.path}: ${e.message}")

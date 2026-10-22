@@ -548,7 +548,7 @@ fn compare_step(n int, s ScStep, t StepTrace, mut out []str) -> () {
 }
 
 // The machine with the parameters the scenario gives (the same machine when it gives none).
-fn with_params(machine PortolanMachine, params []ScHost) -> Result[PortolanMachine, str] {
+fn with_params(machine AlulaMachine, params []ScHost) -> Result[AlulaMachine, str] {
     if params.len() == 0 { return Ok(machine) }
     mut values = []ProjectValue.new()
     for h in params {
@@ -562,7 +562,7 @@ fn with_params(machine PortolanMachine, params []ScHost) -> Result[PortolanMachi
         }
         values.push(ProjectValue { key: h.name, value: v })
     }
-    ro built = portolan_machine_with(machine.def, machine.table.registry, values)?
+    ro built = alula_machine_with(machine.def, machine.table.registry, values)?
     Ok(with_replies(built, machine.replies))
 }
 
@@ -592,7 +592,7 @@ fn replies_after(before []ScriptedReply, step ScStep) -> Result[[]ScriptedReply,
 
 /// The reason a scenario cannot be run on a machine, or "" when it can: the values of the parameters that the scenario gives and the answers of the host that its steps give must be
 /// right, or `drive_table_scenario` stops with a panic. A program that runs the scenarios of a file asks this first and reports the reason as an error of the file.
-export fn scenario_problem(first_machine PortolanMachine, sc Scenario) -> str {
+export fn scenario_problem(first_machine AlulaMachine, sc Scenario) -> str {
     ro machine = match with_params(first_machine, sc.params) {
         Ok(m) => m
         Err(m) => return m
@@ -613,13 +613,13 @@ export fn scenario_problem(first_machine PortolanMachine, sc Scenario) -> str {
 
 /// Run a scenario on a machine that is data with the answers of the primitives of the host that the steps change (`host`): like `drive_scenario`,
 /// but the machine of the engine is made again before a step that has `host`.
-export fn drive_table_scenario(first_machine PortolanMachine, sc Scenario) -> []StepTrace {
+export fn drive_table_scenario(first_machine AlulaMachine, sc Scenario) -> []StepTrace {
     ro machine = match with_params(first_machine, sc.params) {
         Ok(m) => m
         Err(m) => panic("scenario ${sc.name}: ${m}")
     }
     mut world = MemoryWorld.at(sc.start_at)
-    mut e = begin_engine[PortolanState, PortolanMachine](machine, world)
+    mut e = begin_engine[AlulaState, AlulaMachine](machine, world)
     // ORACLE-WORKAROUND(45): a copy of a `ro` list (`machine.replies`) built by hand in a loop; write `mut replies = machine.replies` when item 45 is fixed
     mut replies = []ScriptedReply.new()
     for r in machine.replies { replies.push(r) }
@@ -633,20 +633,20 @@ export fn drive_table_scenario(first_machine PortolanMachine, sc Scenario) -> []
             }
             e.machine = with_replies(machine, replies)
         }
-        if s.op == "feed" { engine_feed[PortolanState, PortolanMachine](e, world, scenario_incoming(s.event)) }
-        if s.op == "accept" { engine_accept[PortolanState, PortolanMachine](e, world, scenario_incoming(s.event)) }
-        if s.op == "dispatch" { engine_dispatch[PortolanState, PortolanMachine](e, world) }
-        if s.op == "pump" { ro made = engine_pump[PortolanState, PortolanMachine](e, world) }
+        if s.op == "feed" { engine_feed[AlulaState, AlulaMachine](e, world, scenario_incoming(s.event)) }
+        if s.op == "accept" { engine_accept[AlulaState, AlulaMachine](e, world, scenario_incoming(s.event)) }
+        if s.op == "dispatch" { engine_dispatch[AlulaState, AlulaMachine](e, world) }
+        if s.op == "pump" { ro made = engine_pump[AlulaState, AlulaMachine](e, world) }
         if s.op == "deliver" { world.deliver(scenario_incoming(s.event)) }
         if s.op == "advance" { world.advance(s.ms) }
-        if s.op == "restart" { e = resumed_engine[PortolanState, PortolanMachine](e.machine, world) }
-        traces.push(trace_of[PortolanState, PortolanMachine](e.machine, e, world, s.op, from))
+        if s.op == "restart" { e = resumed_engine[AlulaState, AlulaMachine](e.machine, world) }
+        traces.push(trace_of[AlulaState, AlulaMachine](e.machine, e, world, s.op, from))
     }
     traces
 }
 
 /// Run a scenario on a machine that is data and compare every step with what the file expects.
-export fn run_scenario(machine PortolanMachine, sc Scenario) -> ScenarioRun {
+export fn run_scenario(machine AlulaMachine, sc Scenario) -> ScenarioRun {
     ro traces = drive_table_scenario(machine, sc)
     mut mismatches = []str.new()
     mut i = 0

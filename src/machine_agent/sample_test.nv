@@ -204,7 +204,7 @@ test "sm json differs by keys" {
 
 test "sm table names" {
     for n in ["a.alula.md", "a.alula.txt"] { assert(is_table_name(n)) }
-    for n in ["a.md", "a.json", "a.portolan", "table.md", "a.alula.json", "a.table.json", "foo.table.md", "foo.table.txt", "foo.machine.json"] { assert(!is_table_name(n)) }
+    for n in ["a.md", "a.json", "a.alula", "table.md", "a.alula.json", "a.table.json", "foo.table.md", "foo.table.txt", "foo.machine.json"] { assert(!is_table_name(n)) }
     // the translator reads the text and not the name of the file: the notes of one text differ only by the name that the caller prints
     ro broken = translate_checked(sample().replace("число_ходов += 1", "число_ходов +="), standard_registry())
     assert(broken.errors.len() > 0)

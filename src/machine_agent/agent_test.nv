@@ -6,7 +6,7 @@ module alula.machine_agent
 import std.text
 import alula.machine.{standard_registry, agent_step_table_text, agent_step_machine_text}
 import alula.machine_table.{load_machine}
-import alula.machine_run.{load_portolan_machine}
+import alula.machine_run.{load_alula_machine}
 import alula.machine_text.{translate_checked, translate_report, TranslateReport, error_text, render_summary}
 
 fn agent_report() -> TranslateReport => translate_checked(agent_step_table_text(), standard_registry())
@@ -51,7 +51,7 @@ test "ag loads" {
 }
 
 test "ag builds" {
-    match load_portolan_machine(agent_step_machine_text(), standard_registry()) {
+    match load_alula_machine(agent_step_machine_text(), standard_registry()) {
         Ok(m) => {
             assert(m.name() == "agent_step")
             assert(m.limit == 1)

@@ -19,13 +19,13 @@ type Kid { run ChildRun, world MemoryWorld, from int, id str, kids []Kid, sent_s
 /// The name of the engine of the parent in its store (the same as for a scenario without nested machines).
 const PARENT_ID = "chat-1"
 
-fn start_child_in(machine PortolanMachine, parent_id str, nested str, request PartyRequest[str], mut world MemoryWorld) -> ChildRun {
+fn start_child_in(machine AlulaMachine, parent_id str, nested str, request PartyRequest[str], mut world MemoryWorld) -> ChildRun {
     with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
         child_start(machine, parent_id, nested, request)
     }
 }
 
-fn kid_start(machine PortolanMachine, parent_id str, nested str, request PartyRequest[str], now int) -> Kid {
+fn kid_start(machine AlulaMachine, parent_id str, nested str, request PartyRequest[str], now int) -> Kid {
     mut world = MemoryWorld.at(now)
     ro run = start_child_in(machine, parent_id, nested, request, world)
     // the line `machine_started` of the creation of the engine is not a line of the step that started the nested machine (a machine run alone has it before its first step too)
@@ -87,22 +87,22 @@ fn share_in_tree(mut node Kid, step ScStep, mut problems []str) -> () {
     }
 }
 
-fn kid_resumed(machine PortolanMachine, id str, mut world MemoryWorld) -> Engine[PortolanMachine, PortolanState] {
+fn kid_resumed(machine AlulaMachine, id str, mut world MemoryWorld) -> Engine[AlulaMachine, AlulaState] {
     with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
-        match resume_engine[PortolanState, PortolanMachine](machine, id) {
+        match resume_engine[AlulaState, AlulaMachine](machine, id) {
             Some(e) => e
             None => panic("no snapshot of the nested machine ${id}")
         }
     }
 }
 
-fn parent_signals_passed(mut e Engine[PortolanMachine, PortolanState], mut world MemoryWorld, done []SignalOrder) -> () {
+fn parent_signals_passed(mut e Engine[AlulaMachine, AlulaState], mut world MemoryWorld, done []SignalOrder) -> () {
     with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
         e.signals_passed(done)
     }
 }
 
-fn parent_repeat(mut e Engine[PortolanMachine, PortolanState], ids []str) -> int => e.repeat_open(ids)
+fn parent_repeat(mut e Engine[AlulaMachine, AlulaState], ids []str) -> int => e.repeat_open(ids)
 
 // The state of the world of the run between the steps: the registry, the tree (its root is the parent), the problems found on the way, the answers of the host that hold for all.
 type NestedWorld {
@@ -234,11 +234,11 @@ fn nested_ids_open(node Kid) -> []str {
 }
 
 // One operation of a step on an engine.
-fn apply_op(op str, event ScEvent, ms int, mut e Engine[PortolanMachine, PortolanState], mut world MemoryWorld, machine PortolanMachine, id str) -> Engine[PortolanMachine, PortolanState] {
-    if op == "feed" { engine_feed[PortolanState, PortolanMachine](e, world, scenario_incoming(event)) }
-    if op == "accept" { engine_accept[PortolanState, PortolanMachine](e, world, scenario_incoming(event)) }
-    if op == "dispatch" { engine_dispatch[PortolanState, PortolanMachine](e, world) }
-    if op == "pump" { ro made = engine_pump[PortolanState, PortolanMachine](e, world) }
+fn apply_op(op str, event ScEvent, ms int, mut e Engine[AlulaMachine, AlulaState], mut world MemoryWorld, machine AlulaMachine, id str) -> Engine[AlulaMachine, AlulaState] {
+    if op == "feed" { engine_feed[AlulaState, AlulaMachine](e, world, scenario_incoming(event)) }
+    if op == "accept" { engine_accept[AlulaState, AlulaMachine](e, world, scenario_incoming(event)) }
+    if op == "dispatch" { engine_dispatch[AlulaState, AlulaMachine](e, world) }
+    if op == "pump" { ro made = engine_pump[AlulaState, AlulaMachine](e, world) }
     if op == "deliver" { world.deliver(scenario_incoming(event)) }
     if op == "advance" { world.advance(ms) }
     e
@@ -290,7 +290,7 @@ export type NestedStepTrace { parent StepTrace, kids []StepTrace, requests []str
 
 fn collect_traces(node Kid, prefix str, op str, mut kid_traces []StepTrace, mut requests []str) -> () {
     for k in node.kids {
-        kid_traces.push(trace_of[PortolanState, PortolanMachine](k.run.engine.machine, k.run.engine, k.world, op, k.from))
+        kid_traces.push(trace_of[AlulaState, AlulaMachine](k.run.engine.machine, k.run.engine, k.world, op, k.from))
         requests.push("${prefix}${k.run.request}")
         collect_traces(k, "${prefix}${k.run.request}/", op, kid_traces, requests)
     }
@@ -326,13 +326,13 @@ fn target_trace(t NestedStepTrace, target str) -> Option[StepTrace] {
 }
 
 /// Run a scenario of a parent with its nested machines and give the trace of every step.
-export fn drive_nested_scenario(first_machine PortolanMachine, registry NestedRegistry, sc Scenario) -> []NestedStepTrace {
+export fn drive_nested_scenario(first_machine AlulaMachine, registry NestedRegistry, sc Scenario) -> []NestedStepTrace {
     ro machine = match with_params(first_machine, sc.params) {
         Ok(m) => m
         Err(m) => panic("scenario ${sc.name}: ${m}")
     }
     mut parent_world = MemoryWorld.at(sc.start_at)
-    ro parent = begin_engine[PortolanState, PortolanMachine](machine, parent_world)
+    ro parent = begin_engine[AlulaState, AlulaMachine](machine, parent_world)
     ro root_run = ChildRun { request: "", nested: "", engine: parent, replied: false }
     mut w = NestedWorld {
         registry, root: Kid { run: root_run, world: parent_world, from: 1, id: PARENT_ID, kids: []Kid.new(), sent_seen: 0, cancelled_seen: 0 },
@@ -360,7 +360,7 @@ export fn drive_nested_scenario(first_machine PortolanMachine, registry NestedRe
         }
         if s.on == "" {
             if s.op == "restart" {
-                w.root.run.engine = resumed_engine[PortolanState, PortolanMachine](w.root.run.engine.machine, w.root.world)
+                w.root.run.engine = resumed_engine[AlulaState, AlulaMachine](w.root.run.engine.machine, w.root.world)
                 // rule 22: the requests to the nested machines are not cancelled by a restart, they are sent again with the same identifier
                 ro repeated = parent_repeat(w.root.run.engine, nested_ids_open(w.root))
             } else {
@@ -378,13 +378,13 @@ export fn drive_nested_scenario(first_machine PortolanMachine, registry NestedRe
         mut kid_traces = []StepTrace.new()
         mut requests = []str.new()
         collect_traces(w.root, "", s.op, kid_traces, requests)
-        traces.push(NestedStepTrace { parent: trace_of[PortolanState, PortolanMachine](w.root.run.engine.machine, w.root.run.engine, w.root.world, s.op, from), kids: kid_traces, requests })
+        traces.push(NestedStepTrace { parent: trace_of[AlulaState, AlulaMachine](w.root.run.engine.machine, w.root.run.engine, w.root.world, s.op, from), kids: kid_traces, requests })
     }
     traces
 }
 
 /// Run a scenario of a parent with its nested machines and compare every step with what the file expects: `expect` for the engine the step acts on, `also` for the others.
-export fn run_nested_scenario(machine PortolanMachine, registry NestedRegistry, sc Scenario) -> ScenarioRun {
+export fn run_nested_scenario(machine AlulaMachine, registry NestedRegistry, sc Scenario) -> ScenarioRun {
     ro traces = drive_nested_scenario(machine, registry, sc)
     mut mismatches = []str.new()
     mut parents = []StepTrace.new()
@@ -436,7 +436,7 @@ export fn scenario_through_parent(sc Scenario, parent_machine str, parent_reques
 }
 
 /// The machine a scenario runs on, made ready to be called: the parameters of the scenario and the answers of the host that its first step gives (they hold from the start of the machine).
-export fn prepare_child(machine PortolanMachine, sc Scenario) -> Result[PortolanMachine, str] {
+export fn prepare_child(machine AlulaMachine, sc Scenario) -> Result[AlulaMachine, str] {
     ro prepared = with_params(machine, sc.params)?
     if sc.steps.len() == 0 { return Ok(prepared) }
     ro replies = replies_after(prepared.replies, sc.steps[0])?
@@ -444,4 +444,4 @@ export fn prepare_child(machine PortolanMachine, sc Scenario) -> Result[Portolan
 }
 
 /// The reason a scenario of a parent with nested machines cannot be run, or "" when it can (the same as `scenario_problem`, and every `on` names a request).
-export fn nested_scenario_problem(machine PortolanMachine, sc Scenario) -> str => scenario_problem(machine, sc)
+export fn nested_scenario_problem(machine AlulaMachine, sc Scenario) -> str => scenario_problem(machine, sc)

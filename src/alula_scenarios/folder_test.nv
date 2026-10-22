@@ -1,6 +1,6 @@
-// folder_test.nv - task 116: `portolan test` on the folder `src/machine/` (the machines and the scenarios of the product) passes every scenario; `portolan run` passes every scenario
+// folder_test.nv - task 116: `alula test` on the folder `src/machine/` (the machines and the scenarios of the product) passes every scenario; `alula run` passes every scenario
 // of the agent step one by one (the rows are taken by the scenarios: task 109), of the chat, of the small machines; a scenario that is changed is a report.
-module alula.portolan_scenarios
+module alula.alula_scenarios
 
 // ORACLE-WORKAROUND(32): std.fs is imported FIRST in the first file of the unit, or `.join` on a `[]str` resolves to `Path.join` (E_RECV_METHOD_MISMATCH); drop this import when item 32 is fixed
 import std.fs.{Path}
@@ -75,7 +75,7 @@ test "ps run refuses a parent" {
     ro ran = run_with(["run", "/n/caller.alula.json", "/n/nested-call-ok.scenario.test.json"], files)
     assert(ran.code == 1)
     assert(ran.err.contains("calls nested machines"))
-    assert(ran.err.contains("portolan test"))
+    assert(ran.err.contains("alula test"))
 }
 
 test "ps test folder nested changed" {

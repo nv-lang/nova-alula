@@ -8,7 +8,7 @@ module alula.machine_text_eq
 import std.text
 import alula.machine.{scenario_files, standard_registry, chat_machine_text, chat_table_text}
 import alula.engine.{Incoming, Order, StepEnvironment, journal_line}
-import alula.machine_run.{PortolanState, PortolanMachine, Scenario, StepTrace, load_portolan_machine, portolan_step, ScriptedHost, drive_scenario, parse_scenario, scenario_incoming, run_scenario, run_ok, report_text}
+import alula.machine_run.{AlulaState, AlulaMachine, Scenario, StepTrace, load_alula_machine, alula_step, ScriptedHost, drive_scenario, parse_scenario, scenario_incoming, run_scenario, run_ok, report_text}
 import alula.machine_text.{translate, error_text}
 
 fn translated_json() -> str {
@@ -18,16 +18,16 @@ fn translated_json() -> str {
     }
 }
 
-fn machine_from(json str) -> PortolanMachine {
-    match load_portolan_machine(json, standard_registry()) {
+fn machine_from(json str) -> AlulaMachine {
+    match load_alula_machine(json, standard_registry()) {
         Ok(m) => m
         Err(e) => panic("the chat machine does not load: ${e}")
     }
 }
 
-fn translated_machine() -> PortolanMachine => machine_from(translated_json())
+fn translated_machine() -> AlulaMachine => machine_from(translated_json())
 
-fn written_machine() -> PortolanMachine => machine_from(chat_machine_text())
+fn written_machine() -> AlulaMachine => machine_from(chat_machine_text())
 
 fn chat_scenarios() -> []Scenario {
     mut out = []Scenario.new()
@@ -76,9 +76,9 @@ fn trace_diff(ta StepTrace, tb StepTrace) -> str {
 }
 
 // ORACLE-WORKAROUND(12, 13, 26): the type arguments of `drive_scenario` are written out here and in the tests below; infer them when items 12 and 13 are fixed
-fn engine_diff(sc Scenario, first PortolanMachine, second PortolanMachine) -> str {
-    ro ta = drive_scenario[PortolanState, PortolanMachine](first, sc)
-    ro tb = drive_scenario[PortolanState, PortolanMachine](second, sc)
+fn engine_diff(sc Scenario, first AlulaMachine, second AlulaMachine) -> str {
+    ro ta = drive_scenario[AlulaState, AlulaMachine](first, sc)
+    ro tb = drive_scenario[AlulaState, AlulaMachine](second, sc)
     if ta.len() != tb.len() { return "${sc.name}: ${ta.len()} traces / ${tb.len()}" }
     mut i = 0
     while i < ta.len() {
@@ -134,15 +134,15 @@ fn order_text(orders []Order) -> str {
     parts.join(",")
 }
 
-type StepPair { a_state PortolanState, b_state PortolanState, a_text str, b_text str, a_moved bool, b_moved bool }
+type StepPair { a_state AlulaState, b_state AlulaState, a_text str, b_text str, a_moved bool, b_moved bool }
 
-fn step_pair(first PortolanMachine, second PortolanMachine, p StepPair, event Incoming) -> StepPair {
+fn step_pair(first AlulaMachine, second AlulaMachine, p StepPair, event Incoming) -> StepPair {
     mut ae = StepEnvironment.new()
     mut ahost = ScriptedHost { at: event.at, replies: first.replies, ids: 0 }
-    ro at = portolan_step(first, p.a_state, event, ae, ahost)
+    ro at = alula_step(first, p.a_state, event, ae, ahost)
     mut be = StepEnvironment.new()
     mut bhost = ScriptedHost { at: event.at, replies: second.replies, ids: 0 }
-    ro bt = portolan_step(second, p.b_state, event, be, bhost)
+    ro bt = alula_step(second, p.b_state, event, be, bhost)
     ro next_a = match at {
         Go(s) => s
         Stay => p.a_state
@@ -170,7 +170,7 @@ fn events_of(sc Scenario) -> []Incoming {
     out
 }
 
-fn machine_diff(sc Scenario, first PortolanMachine, second PortolanMachine) -> str {
+fn machine_diff(sc Scenario, first AlulaMachine, second AlulaMachine) -> str {
     mut p = StepPair { a_state: first.initial(), b_state: second.initial(), a_text: "", b_text: "", a_moved: false, b_moved: false }
     mut i = 0
     for e in events_of(sc) {

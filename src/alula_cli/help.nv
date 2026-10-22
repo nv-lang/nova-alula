@@ -1,46 +1,46 @@
-// help.nv - the texts of `portolan`: the help of the program, the help of every command, the version.
-module alula.portolan_cli
+// help.nv - the texts of `alula`: the help of the program, the help of every command, the version.
+module alula.alula_cli
 
 import std.text
 import alula.machine_table.{alula_versions, MACHINE_FORMAT}
 
 /// The version of the program.
-export const PROGRAM_VERSION = "0.1.0"
+export const PROGRAM_VERSION = "0.2.0"
 
-/// The line of `portolan version`: the program, the version of the language it reads (2.12 only: there is no transition period), the format of the compiled machine.
+/// The line of `alula version`: the program, the version of the language it reads (2.12 only: there is no transition period), the format of the compiled machine.
 export fn version_text() -> str {
     ro versions = alula_versions()
-    if versions.len() == 1 { return "portolan ${PROGRAM_VERSION} (Portolan ${versions[0]}, ${MACHINE_FORMAT})\n" }
-    "portolan ${PROGRAM_VERSION} (Portolan ${versions[0]} - ${versions[versions.len() - 1]}, ${MACHINE_FORMAT})\n"
+    if versions.len() == 1 { return "alula ${PROGRAM_VERSION} (Alula ${versions[0]}, ${MACHINE_FORMAT})\n" }
+    "alula ${PROGRAM_VERSION} (Alula ${versions[0]} - ${versions[versions.len() - 1]}, ${MACHINE_FORMAT})\n"
 }
 
 /// The help of the program.
-export fn help_text() -> str => `portolan - compile, render, convert, check and run machines of Portolan
+export fn help_text() -> str => `alula - compile, render, convert, check and run machines of Alula
 
 Usage:
-  portolan <command> [arguments]
-  portolan <command> --help
+  alula <command> [arguments]
+  alula <command> --help
 
 Commands:
-  portolan compile <file.alula.md> [-o <file.alula.json>] [--lenient] [--no-check] [--force]
-      Portolan -> the JSON machine/2 (the language of the file is read from its header).
-  portolan render <file.alula.json> [--language ru|en] [-o <file.alula.md>] [--lenient] [--force]
-      the JSON machine/2 -> a file of Portolan in the canonical form (Russian by default).
-  portolan convert <file.alula.md> --language ru|en [-o <file.alula.md>] [--no-check] [--lenient] [--force]
-      a file of Portolan in the other language, through the JSON.
-  portolan check <file.alula.md|file.alula.json> [--no-check]
+  alula compile <file.alula.md> [-o <file.alula.json>] [--lenient] [--no-check] [--force]
+      Alula -> the JSON machine/2 (the language of the file is read from its header).
+  alula render <file.alula.json> [--language ru|en] [-o <file.alula.md>] [--lenient] [--force]
+      the JSON machine/2 -> a file of Alula in the canonical form (Russian by default).
+  alula convert <file.alula.md> --language ru|en [-o <file.alula.md>] [--no-check] [--lenient] [--force]
+      a file of Alula in the other language, through the JSON.
+  alula check <file.alula.md|file.alula.json> [--no-check]
       the translation and the checks of the table; the errors and the warnings.
-  portolan summary <file.alula.md|file.alula.json> [--no-check]
+  alula summary <file.alula.md|file.alula.json> [--no-check]
       the states, the rows, the actions, the data, the parties.
-  portolan run <machine> <scenario.scenario.test.json>
+  alula run <machine> <scenario.scenario.test.json>
       one scenario on a machine: ok, or the report of the difference.
-  portolan test <folder> [-v]
+  alula test <folder> [-v]
       every *.scenario.test.json of the folder on the machines of the folder: "N of M scenarios passed".
-  portolan version
+  alula version
       the version of the program and of the languages it reads.
 
 Files:
-  *.alula.md            a machine written in Portolan (Russian or English; the header says which)
+  *.alula.md            a machine written in Alula (Russian or English; the header says which)
   *.alula.json          the compiled machine (machine/2)
   *.scenario.test.json     a scenario (scenario/0)
 
@@ -51,9 +51,9 @@ Exit codes: 0 success; 1 errors in a file, or a scenario that differs; 2 a wrong
 /// The help of one command; "" when there is no such command.
 export fn command_help(command str) -> str {
     if command == "compile" {
-        return `portolan compile <file.alula.md> [-o <file.alula.json>] [--lenient] [--no-check] [--force]
+        return `alula compile <file.alula.md> [-o <file.alula.json>] [--lenient] [--no-check] [--force]
 
-Portolan -> the JSON machine/2. The language of the file (ru or en) is read from its header; the extension is not looked at.
+Alula -> the JSON machine/2. The language of the file (ru or en) is read from its header; the extension is not looked at.
 The JSON goes to the standard output; with -o it goes to the file (an existing file is not overwritten without --force).
 The errors and the warnings go to the standard error as "file:line:column: kind: message".
 
@@ -64,9 +64,9 @@ The errors and the warnings go to the standard error as "file:line:column: kind:
 `
     }
     if command == "render" {
-        return `portolan render <file.alula.json> [--language ru|en] [-o <file.alula.md>] [--lenient] [--force]
+        return `alula render <file.alula.json> [--language ru|en] [-o <file.alula.md>] [--lenient] [--force]
 
-The JSON machine/2 -> a file of Portolan in the canonical form of the specification (section 1b). Russian by default.
+The JSON machine/2 -> a file of Alula in the canonical form of the specification (section 1b). Russian by default.
 What the file cannot say goes to the standard error and the code is 1.
 
   --language ru|en      the language of the file to write (default ru)
@@ -76,9 +76,9 @@ What the file cannot say goes to the standard error and the code is 1.
 `
     }
     if command == "convert" {
-        return `portolan convert <file.alula.md> --language ru|en [-o <file.alula.md>] [--no-check] [--lenient] [--force]
+        return `alula convert <file.alula.md> --language ru|en [-o <file.alula.md>] [--no-check] [--lenient] [--force]
 
-A file of Portolan in the other language: compile, then render. The meaning is kept; the comments (the paragraphs of free text and the lines
+A file of Alula in the other language: compile, then render. The meaning is kept; the comments (the paragraphs of free text and the lines
 starting with ">" or "//") are not carried over, and the program says so on the standard error.
 
   --language ru|en      the language of the result (needed)
@@ -89,16 +89,16 @@ starting with ">" or "//") are not carried over, and the program says so on the 
 `
     }
     if command == "check" {
-        return `portolan check <file.alula.md|file.alula.json> [--no-check]
+        return `alula check <file.alula.md|file.alula.json> [--no-check]
 
-A file of Portolan: the translation, the checks of the table, the warnings. A file *.json: the decoding of machine/2 and the checks of the table.
+A file of Alula: the translation, the checks of the table, the warnings. A file *.json: the decoding of machine/2 and the checks of the table.
 Prints "ok" and the code 0 when there are no errors; the errors and the warnings go to the standard error.
 
   --no-check            do not check the table against the primitives of the host
 `
     }
     if command == "summary" {
-        return `portolan summary <file.alula.md|file.alula.json> [--no-check]
+        return `alula summary <file.alula.md|file.alula.json> [--no-check]
 
 The summary of a machine: the states, the rows, the actions, the data, the parties; one line per state.
 
@@ -106,14 +106,14 @@ The summary of a machine: the states, the rows, the actions, the data, the parti
 `
     }
     if command == "run" {
-        return `portolan run <machine.alula.json|machine.alula.md> <scenario.scenario.test.json>
+        return `alula run <machine.alula.json|machine.alula.md> <scenario.scenario.test.json>
 
 One scenario (scenario/0) on a machine. Prints "ok" and the code 0, or the report of the first differences and the code 1.
 The scenario names its machine; a machine with another name is an error.
 `
     }
     if command == "test" {
-        return `portolan test <folder> [-v]
+        return `alula test <folder> [-v]
 
 Every *.scenario.test.json of the folder (and of the folders under it) on the machine that the scenario names; the machines are the *.alula.json files
 of the folder, or the *.alula.md files when a machine has no JSON. Prints the report of every scenario that differs and "N of M scenarios passed".
@@ -123,9 +123,9 @@ The code is 1 when a scenario differs.
 `
     }
     if command == "version" {
-        return `portolan version
+        return `alula version
 
-Prints the version of the program, the versions of Portolan it reads and the format of the compiled machine.
+Prints the version of the program, the versions of Alula it reads and the format of the compiled machine.
 `
     }
     ""

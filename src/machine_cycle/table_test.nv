@@ -5,7 +5,7 @@ module alula.machine_cycle
 import std.text
 import alula.machine.{standard_registry, cycle_check_table_text, cycle_check_machine_text, machine_files, table_files, text_of_file}
 import alula.machine_table.{StateKind, AppealKind, ForkKind, EndKind, OperationKind, PartyKind, MachineParty, GatekeeperParty, EnhancedParty}
-import alula.machine_run.{load_portolan_machine}
+import alula.machine_run.{load_alula_machine}
 import alula.machine_text.{translate_checked, translate_report, render_summary, render_machine}
 
 test "cc clean" {
@@ -48,7 +48,7 @@ test "cc loads" {
 }
 
 test "cc builds" {
-    match load_portolan_machine(cycle_check_machine_text(), standard_registry()) {
+    match load_alula_machine(cycle_check_machine_text(), standard_registry()) {
         Ok(m) => {
             assert(m.name() == "cycle_check")
             assert(m.limit == 1)

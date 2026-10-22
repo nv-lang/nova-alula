@@ -8,22 +8,22 @@ import alula.engine.{Incoming, EventKind, Order, StepEnvironment, JournalEvent, 
 
 fn machine_text(name str) -> str => text_of_file(machine_files(), name)
 
-fn build_from(text str) -> PortolanMachine {
-    match load_portolan_machine(text, standard_registry()) {
+fn build_from(text str) -> AlulaMachine {
+    match load_alula_machine(text, standard_registry()) {
         Ok(m) => m
         Err(e) => panic("the machine does not load: ${e}")
     }
 }
 
-fn build(name str) -> PortolanMachine => build_from(machine_text(name))
+fn build(name str) -> AlulaMachine => build_from(machine_text(name))
 
-fn chat() -> PortolanMachine => build("chat.alula.json")
-fn calc() -> PortolanMachine => build("calc.alula.json")
-fn dialog() -> PortolanMachine => build("dialog.alula.json")
-fn actions() -> PortolanMachine => build("actions.alula.json")
+fn chat() -> AlulaMachine => build("chat.alula.json")
+fn calc() -> AlulaMachine => build("calc.alula.json")
+fn dialog() -> AlulaMachine => build("dialog.alula.json")
+fn actions() -> AlulaMachine => build("actions.alula.json")
 
 // The agent step with the answers of its primitives: the reply is valid, closing the turn answers nothing.
-fn agent_step() -> PortolanMachine => with_replies(build("agent_step.alula.json"), [
+fn agent_step() -> AlulaMachine => with_replies(build("agent_step.alula.json"), [
     ScriptedReply { name: "reply_validation", value: enum_value("ReplyCheck", "Valid") },
     ScriptedReply { name: "close_agent_turn", value: Null }
 ])
@@ -42,12 +42,12 @@ fn expired() -> Incoming => stamped(EventKind.Expired, "timeout", Some("agent-1"
 fn cancelled() -> Incoming => stamped(EventKind.Input, "cancel", None, "")
 
 // The result of one step: the state, whether the machine moved (Go), the orders it gave.
-type Out { state PortolanState, moved bool, orders []Order, signals []SignalOrder }
+type Out { state AlulaState, moved bool, orders []Order, signals []SignalOrder }
 
-fn run1(m PortolanMachine, st PortolanState, event Incoming) -> Out {
+fn run1(m AlulaMachine, st AlulaState, event Incoming) -> Out {
     mut environment = StepEnvironment.new()
     mut host = ScriptedHost { at: 1000, replies: m.replies, ids: 0 }
-    ro transition = portolan_step(m, st, event, environment, host)
+    ro transition = alula_step(m, st, event, environment, host)
     match transition {
         Go(next) => Out { state: next, moved: true, orders: environment.orders, signals: environment.signals }
         Stay => Out { state: st, moved: false, orders: environment.orders, signals: environment.signals }
@@ -55,9 +55,9 @@ fn run1(m PortolanMachine, st PortolanState, event Incoming) -> Out {
 }
 
 // The same with a host of the test (to see the calls of the primitives).
-fn run_with(m PortolanMachine, st PortolanState, event Incoming, mut host PrimitiveHost) -> Out {
+fn run_with(m AlulaMachine, st AlulaState, event Incoming, mut host PrimitiveHost) -> Out {
     mut environment = StepEnvironment.new()
-    ro transition = portolan_step(m, st, event, environment, host)
+    ro transition = alula_step(m, st, event, environment, host)
     match transition {
         Go(next) => Out { state: next, moved: true, orders: environment.orders, signals: environment.signals }
         Stay => Out { state: st, moved: false, orders: environment.orders, signals: environment.signals }
@@ -105,7 +105,7 @@ fn signals_text(signals []SignalOrder) -> str {
 }
 
 // A datum of the state (Null when there is none).
-fn datum(st PortolanState, name str) -> Value {
+fn datum(st AlulaState, name str) -> Value {
     match st.data {
         Record { name: record_name, fields } => match record_get(fields, name) {
             Some(v) => v
@@ -115,10 +115,10 @@ fn datum(st PortolanState, name str) -> Value {
     }
 }
 
-fn datum_json(st PortolanState, name str) -> str => value_json(datum(st, name))
+fn datum_json(st AlulaState, name str) -> str => value_json(datum(st, name))
 
 // The states one after another: each event is applied to the state the previous one left; the last Out comes back.
-fn run_all(m PortolanMachine, first PortolanState, events []Incoming) -> Out {
+fn run_all(m AlulaMachine, first AlulaState, events []Incoming) -> Out {
     mut out = Out { state: first, moved: false, orders: []Order.new(), signals: []SignalOrder.new() }
     for e in events { out = run1(m, out.state, e) }
     out

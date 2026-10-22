@@ -2,7 +2,7 @@
 // (the request starts the nested machine, the signals of the parent become events of the nested machine, the end of the nested machine becomes the answer or the refusal of the request)
 // and the runner of a scenario of a parent with its nested machines.
 //
-// A nested machine is one more `Engine[PortolanMachine, PortolanState]` in the same process, with its own journal, snapshot and trace (`<trace of the parent>/<request id>`); its id in the
+// A nested machine is one more `Engine[AlulaMachine, AlulaState]` in the same process, with its own journal, snapshot and trace (`<trace of the parent>/<request id>`); its id in the
 // store is the id of its request, so a restart of the process finds it again. The parent knows nothing of it but the party of the kind `machine`: the order `SendOrder` and the events
 // `Answered` and `Refused` are those of an agent. What passes between them is below; the caller that runs them (the runner of the scenarios here, the session server later) picks the
 // effects of each engine itself.
@@ -20,7 +20,7 @@ import alula.machine.{standard_registry, machine_files, text_of_file}
 import alula.machine_table.{MachineDef, MachineParty, check_nested}
 
 /// NestedEntry: a machine of the registry of a caller: the name the caller's table calls it by (`machine шаг_агента(…)`) and the machine.
-export type NestedEntry { name str, machine PortolanMachine }
+export type NestedEntry { name str, machine AlulaMachine }
 
 /// NestedRegistry: the machines a caller may call, by name (rule 35, `state-machine-call-protocol.md`, J item 6).
 export type NestedRegistry { entries []NestedEntry }
@@ -29,7 +29,7 @@ export type NestedRegistry { entries []NestedEntry }
 export fn NestedRegistry.empty() -> NestedRegistry => { entries: []NestedEntry.new() }
 
 /// The registry with one more machine under a name.
-export fn NestedRegistry @add(name str, machine PortolanMachine) -> NestedRegistry {
+export fn NestedRegistry @add(name str, machine AlulaMachine) -> NestedRegistry {
     mut entries = []NestedEntry.new()
     for e in @entries { entries.push(e) }
     entries.push(NestedEntry { name, machine })
@@ -37,7 +37,7 @@ export fn NestedRegistry @add(name str, machine PortolanMachine) -> NestedRegist
 }
 
 /// The machine of the registry by name.
-export fn NestedRegistry @find(name str) -> Option[PortolanMachine] {
+export fn NestedRegistry @find(name str) -> Option[AlulaMachine] {
     for e in @entries {
         if e.name == name { return Some(e.machine) }
     }
@@ -50,7 +50,7 @@ export fn NestedRegistry @find(name str) -> Option[PortolanMachine] {
 export fn product_registry() -> NestedRegistry {
     mut reg = NestedRegistry.empty()
     for name in ["agent_step", "session_start", "cycle_check"] {
-        match load_portolan_machine(text_of_file(machine_files(), "${name}.alula.json"), standard_registry()) {
+        match load_alula_machine(text_of_file(machine_files(), "${name}.alula.json"), standard_registry()) {
             Ok(m) => { reg = reg.add(m.def.name, m) }
             Err(e) => panic("the machine ${name} of the registry of the product does not load: ${e}")
         }
@@ -58,7 +58,7 @@ export fn product_registry() -> NestedRegistry {
     reg
 }
 
-fn has_machine_party(m PortolanMachine) -> bool {
+fn has_machine_party(m AlulaMachine) -> bool {
     for q in m.def.parties {
         if q.kind == MachineParty { return true }
     }
@@ -69,7 +69,7 @@ fn has_machine_party(m PortolanMachine) -> bool {
 /// party of the parent that the registry does not have. A machine that calls machines itself is checked the same way, level by level (task 123: the runner of the pairs is recursive); a machine
 /// that would call itself again (a cycle of calls) is an issue. A machine that a machine BELOW the parent calls and the registry lacks is not an issue here (it is named by `registry_gaps`;
 /// when a request goes to it the runner stops): the stage of the cycle check that calls the meeting is one the runner never takes. Empty - the pairs are right.
-export fn check_registry(parent PortolanMachine, registry NestedRegistry) -> []str {
+export fn check_registry(parent AlulaMachine, registry NestedRegistry) -> []str {
     mut out = []str.new()
     for q in walk_registry(parent, registry, [parent.def.name]) {
         if !q.starts_with("gap: ") { out.push(q) }
@@ -78,7 +78,7 @@ export fn check_registry(parent PortolanMachine, registry NestedRegistry) -> []s
 }
 
 /// The machines that the machines below the parent call and the registry does not have (`check_registry` does not call them an issue): the names with the machine that calls them. Empty - the whole tree of calls is in the registry.
-export fn registry_gaps(parent PortolanMachine, registry NestedRegistry) -> []str {
+export fn registry_gaps(parent AlulaMachine, registry NestedRegistry) -> []str {
     mut out = []str.new()
     for q in walk_registry(parent, registry, [parent.def.name]) {
         if q.starts_with("gap: ") { out.push(q[5..]) }
@@ -86,7 +86,7 @@ export fn registry_gaps(parent PortolanMachine, registry NestedRegistry) -> []st
     out
 }
 
-fn walk_registry(parent PortolanMachine, registry NestedRegistry, above []str) -> []str {
+fn walk_registry(parent AlulaMachine, registry NestedRegistry, above []str) -> []str {
     mut out = []str.new()
     mut done = []str.new()
     for p in parent.def.parties {
@@ -119,7 +119,7 @@ fn walk_registry(parent PortolanMachine, registry NestedRegistry, above []str) -
 }
 
 /// The nested machine of the party that holds a request, or "" when the request is not one to a nested machine.
-export fn nested_of_request(parent PortolanMachine, request_id str) -> str {
+export fn nested_of_request(parent AlulaMachine, request_id str) -> str {
     ro at = owner_party(parent.def, request_id)
     if at < 0 { return "" }
     if parent.def.parties[at].kind != MachineParty { return "" }
@@ -127,7 +127,7 @@ export fn nested_of_request(parent PortolanMachine, request_id str) -> str {
 }
 
 /// ChildRun: a nested machine that runs for a request: the request, the name in the registry, the engine, and whether its end was told to the parent.
-export type ChildRun { request str, nested str, engine Engine[PortolanMachine, PortolanState], replied bool }
+export type ChildRun { request str, nested str, engine Engine[AlulaMachine, AlulaState], replied bool }
 
 /// The event `start` of a nested machine for a request: its input is the input of the request, its `request` is the id of the request (the request of the call, rule 35 item 1).
 export fn call_start(request PartyRequest[str]) -> Incoming => Incoming.incoming(EventKind.Input, "start", Some(request.id), request.input)
@@ -158,9 +158,9 @@ export fn call_reply(request_id str, response Option[PartyResponse[str]]) -> Opt
 
 /// Start the nested machine for a request: its engine is a new one under the trace `<trace of the request>/<request id>` and the id `<parent id>/<request id>`; it gets the event `start`.
 /// The effects are those of the nested machine (its own journal and store).
-export fn child_start(machine PortolanMachine, parent_id str, nested str, request PartyRequest[str]) Journal Store Link Time -> ChildRun {
+export fn child_start(machine AlulaMachine, parent_id str, nested str, request PartyRequest[str]) Journal Store Link Time -> ChildRun {
     ro trace = "${request.trace}/${request.id}"
-    mut engine = start_engine_in[PortolanState, PortolanMachine](machine, "${parent_id}/${request.id}", trace)
+    mut engine = start_engine_in[AlulaState, AlulaMachine](machine, "${parent_id}/${request.id}", trace)
     engine.feed(call_start(request))
     ChildRun { request: request.id, nested, engine, replied: false }
 }

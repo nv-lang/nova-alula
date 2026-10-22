@@ -1,4 +1,4 @@
-// chain.nv - the chain of a step: where a row leads, the entry of the four kinds of states, the ends, the faults, the start, `portolan_step`.
+// chain.nv - the chain of a step: where a row leads, the entry of the four kinds of states, the ends, the faults, the start, `alula_step`.
 module alula.machine_run
 
 import std.text
@@ -589,7 +589,7 @@ fn start_machine(mut ctx Ctx, event Incoming, mut host PrimitiveHost) -> Result[
 
 // ---- the step ---------------------------------------------------------------------------------------------------------------------
 
-fn new_ctx(machine PortolanMachine, current PortolanState, event Incoming) -> Ctx {
+fn new_ctx(machine AlulaMachine, current AlulaState, event Incoming) -> Ctx {
     Ctx {
         def: machine.def, table: machine.table, name: current.name, started: current.started, input: current.input, data: current.data,
         event: EventVal { kind: EvTimeout, name: "", id: "", request: "", party: "", fields: []RecordField.new(), value: Null, reason: "" },
@@ -914,15 +914,15 @@ fn flush(ctx Ctx, mut environment Environment) -> () {
     if ctx.fired && !ctx.defect { environment.order_save() }
 }
 
-fn result_of(ctx Ctx, current PortolanState) -> Transition[PortolanState] {
+fn result_of(ctx Ctx, current AlulaState) -> Transition[AlulaState] {
     if ctx.defect { return Stay }
     if !ctx.fired { return Stay }
-    Go(PortolanState { name: ctx.name, started: ctx.started, input: ctx.input, data: ctx.data, taken: ctx.taken })
+    Go(AlulaState { name: ctx.name, started: ctx.started, input: ctx.input, data: ctx.data, taken: ctx.taken })
 }
 
 /// One step of a machine that is data (see the top of this file). Reads only its arguments; gives its orders to the environment; the
 /// primitives of the machine go to the host.
-export fn portolan_step(machine PortolanMachine, current PortolanState, event Incoming, mut environment Environment, mut host PrimitiveHost) -> Transition[PortolanState] {
+export fn alula_step(machine AlulaMachine, current AlulaState, event Incoming, mut environment Environment, mut host PrimitiveHost) -> Transition[AlulaState] {
     mut ctx = new_ctx(machine, current, event)
     if !current.started {
         if event.kind == EventKind.Input && event.name == "start" {

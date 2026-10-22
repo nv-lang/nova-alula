@@ -7,9 +7,9 @@ import std.text
 import alula.machine.{Value, Null, Bool, Text, RecordField, make_record, enum_value, value_json, Registry, Primitive, ParamSpec, RecordType, Reading, BoolType, register, standard_registry}
 import alula.engine.{Incoming, EventKind}
 
-fn caller() -> PortolanMachine => build("caller.alula.json")
+fn caller() -> AlulaMachine => build("caller.alula.json")
 
-fn fan() -> PortolanMachine => build("fan.alula.json")
+fn fan() -> AlulaMachine => build("fan.alula.json")
 
 fn child_answer(answer str, score int) -> str => "{\"$record\":\"CallOutput\",\"fields\":{\"answer\":\"${answer}\",\"score\":${score}}}"
 
@@ -320,8 +320,8 @@ fn out_json(answer str) -> str => "{\"$record\":\"Out\",\"fields\":{\"answer\":\
 
 fn out_value(answer str) -> Value => make_record("Out", [RecordField { name: "answer", value: Text(answer) }])
 
-fn fixer_with(replies []ScriptedReply) -> PortolanMachine {
-    match load_portolan_machine(fixer(), fixer_registry()) {
+fn fixer_with(replies []ScriptedReply) -> AlulaMachine {
+    match load_alula_machine(fixer(), fixer_registry()) {
         Ok(m) => with_replies(m, replies)
         Err(e) => panic("the fixer does not load: ${e}")
     }

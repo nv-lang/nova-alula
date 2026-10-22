@@ -1,5 +1,5 @@
-// render_test.nv - task 116: `portolan render` (JSON -> Portolan in the language) and `portolan convert` (a file of one language -> the file of the other, through the JSON).
-module alula.portolan_cli
+// render_test.nv - task 116: `alula render` (JSON -> Alula in the language) and `alula convert` (a file of one language -> the file of the other, through the JSON).
+module alula.alula_cli
 
 import std.text
 import alula.machine.{NamedText, standard_registry}
@@ -69,7 +69,7 @@ test "rc not a json" {
     assert(ran.err.starts_with("/work/tiny.alula.json:1:1: render: "))
 }
 
-test "rc a file of portolan is not a json" {
+test "rc a file of alula is not a json" {
     ro ran = run_with(["render", "/work/tiny.alula.md"], tiny_file())
     assert(ran.code == 1)
     assert(ran.err.contains("not a JSON"))
@@ -123,7 +123,7 @@ test "rc unknown option" {
 }
 
 test "rc rendered file compiles back" {
-    // the rendered file is a file of Portolan: `compile` of it gives the same tree
+    // the rendered file is a file of Alula: `compile` of it gives the same tree
     for language in ["ru", "en"] {
         ro text = render(tiny_json(), language)
         ro ran = run_with(["compile", "/work/back.alula.md"], one("/work/back.alula.md", text))
@@ -152,7 +152,7 @@ test "cv english to russian" {
 
 test "cv says what is not carried" {
     ro ran = run_with(["convert", "/work/tiny.alula.md", "--language", "en"], tiny_file())
-    assert(ran.err.contains("portolan: note: "))
+    assert(ran.err.contains("alula: note: "))
     assert(ran.err.contains("comments"))
     assert(ran.err.contains("not carried over"))
 }

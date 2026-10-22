@@ -1,5 +1,5 @@
-// run_test.nv - task 116: `portolan run` (one scenario on one machine) and `portolan test` (every scenario of a folder on the machines of the folder), on the small machine.
-module alula.portolan_cli
+// run_test.nv - task 116: `alula run` (one scenario on one machine) and `alula test` (every scenario of a folder on the machines of the folder), on the small machine.
+module alula.alula_cli
 
 import std.text
 import alula.machine.{NamedText}
@@ -23,7 +23,7 @@ test "rn json machine" {
     assert(ran.err == "")
 }
 
-test "rn portolan machine" {
+test "rn alula machine" {
     ro ran = run_with(["run", "/work/tiny.alula.md", "/work/tiny.scenario.test.json"], md_run_files())
     assert(ran.code == 0)
     assert(ran.out == "ok\n")
@@ -165,14 +165,14 @@ test "tt machines of the folder by name" {
     assert(ran.out.ends_with("1 of 1 scenarios passed\n"))
 }
 
-test "tt portolan file machine" {
+test "tt alula file machine" {
     ro files = [file("/work/tiny.alula.md", tiny_ru()), file("/work/x.scenario.test.json", tiny_scenario())]
     ro ran = run_with(["test", "/work"], files)
     assert(ran.code == 0)
     assert(ran.out.ends_with("1 of 1 scenarios passed\n"))
 }
 
-test "tt json before portolan" {
+test "tt json before alula" {
     // a machine given twice (the file and its compiled twin) is one machine
     ro files = [file("/work/tiny.alula.md", tiny_ru()), file("/work/tiny.alula.json", tiny_json()), file("/work/x.scenario.test.json", tiny_scenario())]
     ro ran = run_with(["test", "/work"], files)

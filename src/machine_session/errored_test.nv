@@ -7,7 +7,7 @@ module alula.machine_session
 import std.text
 import alula.machine.{standard_registry, session_start_table_text}
 import alula.machine_text.{translate_checked}
-import alula.machine_run.{PortolanMachine, load_portolan_machine, parse_scenario, run_scenario, run_ok, report_text, drive_scenario, StepTrace}
+import alula.machine_run.{AlulaMachine, load_alula_machine, parse_scenario, run_scenario, run_ok, report_text, drive_scenario, StepTrace}
 
 fn broken_text() -> str {
     session_start_table_text()
@@ -15,10 +15,10 @@ fn broken_text() -> str {
         .replace("| 2 | объём == ОбъёмЗапуска.НеПомещается | — | В1 |", "| 2 | ложь | — | В1 |")
 }
 
-fn broken_machine() -> PortolanMachine {
+fn broken_machine() -> AlulaMachine {
     ro report = translate_checked(broken_text(), standard_registry())
     if report.errors.len() > 0 { panic("the changed table does not translate: ${report.errors[0].message}") }
-    match load_portolan_machine(report.json, standard_registry()) {
+    match load_alula_machine(report.json, standard_registry()) {
         Ok(m) => m
         Err(e) => panic("the changed table is not made: ${e}")
     }

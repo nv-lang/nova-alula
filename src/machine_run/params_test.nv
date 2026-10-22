@@ -15,7 +15,7 @@ fn calc_def() -> MachineDef {
 
 fn given(key str, value Value) -> []ProjectValue => [ProjectValue { key, value }]
 
-fn calc_with(params []ProjectValue) -> Result[PortolanMachine, str] => portolan_machine_with(calc_def(), standard_registry(), params)
+fn calc_with(params []ProjectValue) -> Result[AlulaMachine, str] => alula_machine_with(calc_def(), standard_registry(), params)
 
 fn calc_count(params []ProjectValue) -> str {
     match calc_with(params) {
@@ -43,7 +43,7 @@ test "pp override" {
 }
 
 test "pp same machine" {
-    ro plain = portolan_machine(calc_def(), standard_registry())
+    ro plain = alula_machine(calc_def(), standard_registry())
     match plain {
         Ok(m) => assert(datum_json(run1(m, m.initial(), start_with("{\"start\":0,\"label\":\"abc\"}")).state, "count") == "4")
         Err(e) => panic(e)
@@ -74,15 +74,15 @@ test "pp no column" {
         Ok(d) => d
         Err(issues) => panic("calc without a key does not load")
     }
-    match portolan_machine_with(def, standard_registry(), given("проект.calc.step", Int(5))) {
+    match alula_machine_with(def, standard_registry(), given("проект.calc.step", Int(5))) {
         Ok(m) => panic("built")
         Err(e) => assert(e.contains("no parameter has the key проект.calc.step"))
     }
-    match portolan_machine_with(def, standard_registry(), given("проект.STEP", Int(5))) {
+    match alula_machine_with(def, standard_registry(), given("проект.STEP", Int(5))) {
         Ok(m) => panic("built")
         Err(e) => assert(e.contains("no parameter has the key проект.STEP"))
     }
-    match portolan_machine_with(def, standard_registry(), []) {
+    match alula_machine_with(def, standard_registry(), []) {
         Ok(m) => assert(m.name() == "Calc")
         Err(e) => panic(e)
     }
@@ -139,15 +139,15 @@ test "pp agent keys" {
 
 test "pp agent full dict" {
     ro m = build_from(agent_text())
-    match portolan_machine_with(m.def, standard_registry(), given("проект.политика_разрешений", Int(1))) {
+    match alula_machine_with(m.def, standard_registry(), given("проект.политика_разрешений", Int(1))) {
         Ok(b) => panic("built")
         Err(e) => assert(e.contains("the parameter PERMISSION_POLICY"))
     }
-    match portolan_machine_with(m.def, standard_registry(), given("проект.пауза_повтора", Int(5000))) {
+    match alula_machine_with(m.def, standard_registry(), given("проект.пауза_повтора", Int(5000))) {
         Ok(b) => assert(b.name() == "agent_step")
         Err(e) => panic(e)
     }
-    match portolan_machine_with(m.def, standard_registry(), given("проект.пауза_повтора", Int(-1))) {
+    match alula_machine_with(m.def, standard_registry(), given("проект.пауза_повтора", Int(-1))) {
         Ok(b) => panic("built")
         Err(e) => assert(e.contains("the parameter RETRY_PAUSE"))
     }

@@ -7,7 +7,7 @@ import std.text
 import alula.machine.{standard_registry, task_runner_table_text, task_runner_machine_text}
 import alula.machine_table.{MachineDef, NestedProblem, check_nested, load_machine}
 import alula.machine_text.{translate_checked}
-import alula.machine_run.{NestedRegistry, check_registry, registry_gaps, product_registry, load_portolan_machine}
+import alula.machine_run.{NestedRegistry, check_registry, registry_gaps, product_registry, load_alula_machine}
 
 fn problems_text(list []NestedProblem) -> str {
     mut out = []str.new()
@@ -53,7 +53,7 @@ test "ft the registry has the tree of the calls" {
 
 test "ft the registry check is recursive" {
     ro reg = product_registry()
-    match load_portolan_machine(task_runner_machine_text(), standard_registry()) {
+    match load_alula_machine(task_runner_machine_text(), standard_registry()) {
         Ok(m) => {
             // the runner calls the launch, which calls the agent step; and the cycle check, which calls the launch: every level is checked and none is an issue
             ro issues = check_registry(m, reg)
@@ -69,7 +69,7 @@ test "ft the registry check is recursive" {
 }
 
 test "ft the machine of the first level must be in the registry" {
-    match load_portolan_machine(task_runner_machine_text(), standard_registry()) {
+    match load_alula_machine(task_runner_machine_text(), standard_registry()) {
         Ok(m) => {
             ro empty = NestedRegistry.empty()
             ro issues = check_registry(m, empty)

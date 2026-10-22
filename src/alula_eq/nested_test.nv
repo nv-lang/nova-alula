@@ -1,6 +1,6 @@
-// nested_test.nv - task 119: the circles of the program `portolan` on the machines of the nested machines (the parent `caller`, the callee, the set parent `fan`, the chat session `dialog_steps`): `compile` -> `render` -> `compile`
+// nested_test.nv - task 119: the circles of the program `alula` on the machines of the nested machines (the parent `caller`, the callee, the set parent `fan`, the chat session `dialog_steps`): `compile` -> `render` -> `compile`
 // gives an equal JSON in Russian and in English, `convert` ru -> en -> ru gives an equal JSON, and `check` passes them (the words of the party kind `machine`, `Signal`, `State`, the profile, `Предел запросов`).
-module alula.portolan_eq
+module alula.alula_eq
 
 import std.text
 import alula.machine.{machine_files, table_files, text_of_file}
@@ -32,7 +32,7 @@ test "pn convert fan" { assert(convert_circle("fan.alula.json") == "") }
 test "pn convert dialog steps" { assert(convert_circle("dialog_steps.alula.json") == "") }
 
 test "pn the tables compile to the json of the product" {
-    // the file of Portolan of a machine and its JSON in src/machine/machines/ are the same tree
+    // the file of Alula of a machine and its JSON in src/machine/machines/ are the same tree
     for name in probe_names() {
         ro base = name.replace(".alula.json", "")
         ro ran = run_with(["compile", "/m/${base}.alula.md"], one("/m/${base}.alula.md", text_of_file(table_files(), "${base}.alula.md")))

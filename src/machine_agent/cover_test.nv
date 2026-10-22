@@ -6,7 +6,7 @@ import std.text
 import std.encoding.json.{Json}
 import alula.machine.{standard_registry, agent_step_machine_text, scenario_files, NamedText}
 import alula.machine_table.{MachineDef, load_machine, MachineErrorAct, ToNothing}
-import alula.machine_run.{PortolanMachine, Scenario, ScenarioRun, load_portolan_machine, parse_scenario, run_scenario, run_ok, report_text}
+import alula.machine_run.{AlulaMachine, Scenario, ScenarioRun, load_alula_machine, parse_scenario, run_scenario, run_ok, report_text}
 
 fn agent_def() -> MachineDef {
     match load_machine(agent_step_machine_text(), standard_registry()) {
@@ -15,8 +15,8 @@ fn agent_def() -> MachineDef {
     }
 }
 
-fn agent_machine() -> PortolanMachine {
-    match load_portolan_machine(agent_step_machine_text(), standard_registry()) {
+fn agent_machine() -> AlulaMachine {
+    match load_alula_machine(agent_step_machine_text(), standard_registry()) {
         Ok(m) => m
         Err(e) => panic("the agent step is not made: ${e}")
     }
@@ -72,7 +72,7 @@ fn taken_of(encoded str) -> []str {
     out
 }
 
-fn run_with(m PortolanMachine, file NamedText) -> ScenarioRun {
+fn run_with(m AlulaMachine, file NamedText) -> ScenarioRun {
     match parse_scenario(file.text) {
         Ok(sc) => run_scenario(m, sc)
         Err(e) => panic("${file.name}: ${e.path}: ${e.message}")

@@ -1,6 +1,6 @@
-// circle_test.nv - task 116: the circles of the program `portolan` on the machines of the product (the chat, the agent step, the five small ones): `compile` -> `render` -> `compile` gives an
+// circle_test.nv - task 116: the circles of the program `alula` on the machines of the product (the chat, the agent step, the five small ones): `compile` -> `render` -> `compile` gives an
 // equal JSON in Russian and in English, and `convert` ru -> en -> ru gives an equal JSON; the commands give what the functions of the translator give.
-module alula.portolan_eq
+module alula.alula_eq
 
 // ORACLE-WORKAROUND(32): std.fs is imported FIRST in the first file of the unit, or `.join` on a `[]str` resolves to `Path.join` (E_RECV_METHOD_MISMATCH); drop this import when item 32 is fixed
 import std.fs.{Path}
@@ -33,7 +33,7 @@ fn convert_circle(name str) -> str {
     same_tree(json, back.out)
 }
 
-// The same from a file of Portolan that the product keeps (the tables of the chat and of the agent step): convert to the other language and back; the tree is the one of the file.
+// The same from a file of Alula that the product keeps (the tables of the chat and of the agent step): convert to the other language and back; the tree is the one of the file.
 fn file_convert_circle(name str, text str) -> str {
     ro first = run_with(["compile", "/m/${name}"], one("/m/${name}", text))
     if first.code != 0 { return "compile ${name}: ${first.err}" }

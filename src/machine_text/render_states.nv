@@ -430,7 +430,7 @@ fn rn_register(mut cx RnCx, root RJ, dropped RnDropped) -> () {
     }
 }
 
-/// The file of Portolan for a tree `machine/2` in the language (`ru` or `en`); `copy_includes` writes the types, the constants and the definitions of the included files of definitions as the
+/// The file of Alula for a tree `machine/2` in the language (`ru` or `en`); `copy_includes` writes the types, the constants and the definitions of the included files of definitions as the
 /// machine's own (else the line of connection stands and the copies are left out, section 1b (м)).
 export fn render_machine_with(machine_json str, language str, copy_includes bool) -> RenderReport {
     if language != "ru" && language != "en" {
@@ -442,7 +442,7 @@ export fn render_machine_with(machine_json str, language str, copy_includes bool
             if rj_gstr(root, "format") != "machine/2" {
                 return RenderReport { text: "", notes: ["the tree is not `machine/2`: the key `format` is `${rj_gstr(root, "format")}`"] }
             }
-            // the former key of the version (the language was called Portolan before 2.14) is refused by name
+            // the former key of the version (the language was called Alula before 2.14) is refused by name
             if rj_gstr(root, "portolan_version") != "" { // guard-allow(legacy-name): the former key is named here to be refused
                 return RenderReport { text: "", notes: ["the key `portolan_version` is the former name of `alula_version` (the language is called Alula since the format 2.14; there is no transition period)"] } // guard-allow(legacy-name): the message names the former key
             }
@@ -482,7 +482,7 @@ export fn render_machine_with(machine_json str, language str, copy_includes bool
     }
 }
 
-/// The file of Portolan for a tree `machine/2` in the language; the line of connection for an included file of definitions.
+/// The file of Alula for a tree `machine/2` in the language; the line of connection for an included file of definitions.
 export fn render_machine(machine_json str, language str) -> RenderReport => render_machine_with(machine_json, language, false)
 
 /// The text of the file only.

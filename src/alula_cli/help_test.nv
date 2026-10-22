@@ -1,5 +1,5 @@
-// help_test.nv - task 116: the program `portolan` with no arguments, the help, the version, a command that is not one; the codes 0 and 2.
-module alula.portolan_cli
+// help_test.nv - task 116: the program `alula` with no arguments, the help, the version, a command that is not one; the codes 0 and 2.
+module alula.alula_cli
 
 import std.text
 
@@ -9,7 +9,7 @@ test "pc no arguments help" {
     assert(ran.err == "")
     assert(ran.out.contains("Usage:"))
     for command in ["compile", "render", "convert", "check", "summary", "run", "test", "version"] {
-        assert(ran.out.contains("portolan ${command}"))
+        assert(ran.out.contains("alula ${command}"))
     }
 }
 
@@ -24,7 +24,7 @@ test "pc help flag" {
 
 test "pc help first line" {
     ro ran = run0(["--help"])
-    assert(first_line(ran.out).starts_with("portolan - "))
+    assert(first_line(ran.out).starts_with("alula - "))
 }
 
 test "pc help names the formats" {
@@ -39,8 +39,8 @@ test "pc version" {
     ro ran = run0(["version"])
     assert(ran.code == 0)
     assert(ran.err == "")
-    assert(ran.out.starts_with("portolan 0.1.0"))
-    assert(ran.out.contains("Portolan 2.14,"))
+    assert(ran.out.starts_with("alula 0.2.0"))
+    assert(ran.out.contains("Alula 2.14,"))
     assert(!ran.out.contains("2.11"))
     assert(ran.out.contains("machine/2"))
     assert(ran.out.ends_with("\n"))
@@ -54,15 +54,15 @@ test "pc unknown command" {
     ro ran = run0(["frob"])
     assert(ran.code == 2)
     assert(ran.out == "")
-    assert(ran.err.contains("portolan: unknown command `frob`"))
-    assert(ran.err.contains("portolan --help"))
+    assert(ran.err.contains("alula: unknown command `frob`"))
+    assert(ran.err.contains("alula --help"))
 }
 
 test "pc command help" {
     for command in ["compile", "render", "convert", "check", "summary", "run", "test", "version"] {
         ro long = run0([command, "--help"])
         assert(long.code == 0)
-        assert(long.out.starts_with("portolan ${command}"))
+        assert(long.out.starts_with("alula ${command}"))
         assert(run0(["help", command]).out == long.out)
     }
 }
@@ -91,13 +91,13 @@ test "pc help of unknown command" {
 }
 
 test "pc usage errors share one form" {
-    // every wrong use is code 2 and a line `portolan <command>: <reason>` on the standard error
+    // every wrong use is code 2 and a line `alula <command>: <reason>` on the standard error
     // ORACLE-WORKAROUND(52): the list of lists is bound first: `for argv in [["compile"], ...]` does not compile; loop over the list literal when item 52 is fixed
     ro wrong_uses = [["compile"], ["render"], ["convert"], ["check"], ["summary"], ["run"], ["test"], ["run", "a"]]
     for argv in wrong_uses {
         ro ran = run0(argv)
         assert(ran.code == 2)
         assert(ran.out == "")
-        assert(ran.err.starts_with("portolan ${argv[0]}: "))
+        assert(ran.err.starts_with("alula ${argv[0]}: "))
     }
 }

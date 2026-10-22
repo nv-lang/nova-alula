@@ -19,9 +19,9 @@ fn ids_text(second_id str) -> str {
     `{"format":"machine/2","machine":"Ids","version":"1","input":{"fields":[]},"primitives":["new_id"],"data":[${data}],"parties":[${party}],"initial":"Open","states":[${open},${wait},${done}],"ends":${ends}}`
 }
 
-fn ids_machine() -> PortolanMachine => build_from(ids_text(`{"op":"primitive_call","name":"new_id","args":[]}`))
+fn ids_machine() -> AlulaMachine => build_from(ids_text(`{"op":"primitive_call","name":"new_id","args":[]}`))
 
-fn opened_at(m PortolanMachine, at int) -> Out {
+fn opened_at(m AlulaMachine, at int) -> Out {
     mut host = ScriptedHost { at, replies: m.replies, ids: 0 }
     run_with(m, m.initial(), start_with("{}"), host)
 }
@@ -88,7 +88,7 @@ test "v25 bad scripted id" {
 
 // ---- the type id in the input ---------------------------------------------------------------------------------------------------
 
-fn input_ids() -> PortolanMachine {
+fn input_ids() -> AlulaMachine {
     ro data = `{"name":"session","type":"id","initial":{"from_input":"session"}},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}`
     ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","words":[{"name":"go"}]}`
     ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"word","word":"go"},"to":"Done"}]}`
@@ -119,7 +119,7 @@ test "v25 input id bad" {
 
 // ---- an optional field of the input (task 121) ------------------------------------------------------------------------------------
 
-fn input_optional() -> PortolanMachine {
+fn input_optional() -> AlulaMachine {
     ro data = `{"name":"session","type":"text","initial":{"from_input":"session"}},{"name":"note","type":"?text","initial":{"from_input":"note"}},{"name":"level","type":"?int>=0","initial":{"from_input":"level"}},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}`
     ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","words":[{"name":"go"}]}`
     ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"word","word":"go"},"to":"Done"}]}`
@@ -157,7 +157,7 @@ test "v25 input optional given" {
 
 // ---- a set of literals in a word and in the data -------------------------------------------------------------------------------
 
-fn set_machine() -> PortolanMachine {
+fn set_machine() -> AlulaMachine {
     ro data = `{"name":"mode","type":"\"fast\" | \"slow\"","initial":{"expr":{"op":"lit","value":"fast"}}},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}`
     ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","words":[{"name":"pick","fields":[{"name":"kind","type":"\"fast\" | \"slow\""}]}]}`
     ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"word","word":"pick","bind":{"kind":"k"}},"actions":[{"do":"assign","target":"mode","value":{"op":"name","name":"k"}}],"to":"Done"}]}`
@@ -177,7 +177,7 @@ test "v25 word set" {
 }
 
 // A value that is not in the set cannot be written, whatever its way: the write is checked against the type of the datum (a machine error `bound_violation`).
-fn set_write_machine() -> PortolanMachine {
+fn set_write_machine() -> AlulaMachine {
     ro data = `{"name":"mode","type":"\"fast\" | \"slow\"","initial":{"expr":{"op":"lit","value":"fast"}}},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}`
     ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","words":[{"name":"pick","fields":[{"name":"kind","type":"text"}]}]}`
     ro wait = `{"name":"Wait","kind":"appeal","party":"user","rows":[{"n":1,"event":{"kind":"word","word":"pick","bind":{"kind":"k"}},"actions":[{"do":"assign","target":"mode","value":{"op":"name","name":"k"}}],"to":"Done"}]}`

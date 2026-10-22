@@ -7,7 +7,7 @@ import std.text
 import std.encoding.json.{Json, JsonValue, JsonObject}
 import alula.machine.{standard_registry, cycle_check_table_text, cycle_check_machine_text, scenario_files, NamedText}
 import alula.machine_table.{MachineDef, StateDef, TableRow, Target, ToState, ToNothing, ToPrevious, ToSame, ToPrepareReturn, load_machine}
-import alula.machine_run.{PortolanMachine, ScenarioRun, load_portolan_machine, parse_scenario, run_scenario, run_ok, report_text}
+import alula.machine_run.{AlulaMachine, ScenarioRun, load_alula_machine, parse_scenario, run_scenario, run_ok, report_text}
 import alula.machine_text.{translate_checked, TranslateReport, TranslateError, error_text, render_machine}
 
 fn table_report() -> TranslateReport => translate_checked(cycle_check_table_text(), standard_registry())
@@ -25,8 +25,8 @@ fn cycle_def() -> MachineDef {
     }
 }
 
-fn cycle_machine() -> PortolanMachine {
-    match load_portolan_machine(cycle_check_machine_text(), standard_registry()) {
+fn cycle_machine() -> AlulaMachine {
+    match load_alula_machine(cycle_check_machine_text(), standard_registry()) {
         Ok(m) => m
         Err(e) => panic("the cycle check is not made: ${e}")
     }
@@ -74,7 +74,7 @@ fn cycle_scenarios() -> []NamedText {
     out
 }
 
-fn run_with(m PortolanMachine, file NamedText) -> ScenarioRun {
+fn run_with(m AlulaMachine, file NamedText) -> ScenarioRun {
     match parse_scenario(file.text) {
         Ok(sc) => run_scenario(m, sc)
         Err(e) => panic("${file.name}: ${e.path}: ${e.message}")

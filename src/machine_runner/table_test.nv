@@ -5,7 +5,7 @@ module alula.machine_runner
 import std.text
 import alula.machine.{standard_registry, task_runner_table_text, task_runner_machine_text, machine_files, table_files, text_of_file}
 import alula.machine_table.{StateKind, AppealKind, ForkKind, EndKind, OperationKind, MachineParty, GatekeeperParty, EnhancedParty}
-import alula.machine_run.{load_portolan_machine}
+import alula.machine_run.{load_alula_machine}
 import alula.machine_text.{translate_checked, translate_report, render_summary, render_machine}
 
 test "tr clean" {
@@ -44,7 +44,7 @@ test "tr loads" {
 }
 
 test "tr builds" {
-    match load_portolan_machine(task_runner_machine_text(), standard_registry()) {
+    match load_alula_machine(task_runner_machine_text(), standard_registry()) {
         Ok(m) => {
             assert(m.name() == "task_runner")
             assert(m.limit == 1)

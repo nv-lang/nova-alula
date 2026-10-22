@@ -8,7 +8,7 @@ import std.text
 import alula.machine.{standard_registry, cycle_check_table_text, cycle_check_machine_text, spec_text, TypeSpec, FieldDef}
 import alula.machine_table.{MachineDef, MachineParty, PartyDef, NestedProblem, check_nested, load_machine}
 import alula.machine_text.{translate_checked}
-import alula.machine_run.{NestedRegistry, check_registry, registry_gaps, load_portolan_machine}
+import alula.machine_run.{NestedRegistry, check_registry, registry_gaps, load_alula_machine}
 
 fn field_line(f FieldDef) -> str => "${f.name}:${spec_text(f.spec)}"
 
@@ -129,7 +129,7 @@ test "ft parent with a wrong result" {
 test "ft runner routes several levels" {
     // the parent calls the cycle check; the cycle check calls two machines itself: the runner of pairs (task 119) routed one level, task 123 made it recursive: the machines below the first level
     // that the registry lacks are gaps, not issues
-    match load_portolan_machine(parent_json(probe_parent()), standard_registry()) {
+    match load_alula_machine(parent_json(probe_parent()), standard_registry()) {
         Ok(parent) => {
             ro registry = NestedRegistry.empty().add("cycle_check", cycle_machine())
             ro problems = check_registry(parent, registry)

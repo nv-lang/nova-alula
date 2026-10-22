@@ -1,6 +1,6 @@
-// support_test.nv - helpers of the proofs of the program `portolan` (task 116): the program is run over the memory file system with the arguments, the standard output and the
+// support_test.nv - helpers of the proofs of the program `alula` (task 116): the program is run over the memory file system with the arguments, the standard output and the
 // standard error captured; the trees of two JSON are compared as trees (the order of the keys, the spaces and the `title` do not count).
-module alula.portolan_eq
+module alula.alula_eq
 
 import std.fs.{Path, MemFs, mock_fs, write_text, read_text, create_dir_all}
 import std.text
@@ -8,14 +8,14 @@ import std.encoding.json.{Json, JsonValue, JsonObject}
 import std.io.{IoCapture, mock_io}
 import std.os.{MockOs, mock_os}
 import alula.machine.{NamedText, machine_files, table_files, scenario_files, text_of_file}
-import alula.portolan_cli.{execute}
+import alula.alula_cli.{execute}
 
 /// Ran: what a run of the program left.
 type Ran { code int, out str, err str }
 
 fn run_with(argv []str, files []NamedText) -> Ran {
     mut os = MockOs.new()
-    os.push_arg("portolan")
+    os.push_arg("alula")
     for a in argv { os.push_arg(a) }
     mut fs = MemFs.new()
     mut cap = IoCapture.new([]u8.new())

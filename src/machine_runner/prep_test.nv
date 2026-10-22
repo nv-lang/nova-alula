@@ -6,7 +6,7 @@ module alula.machine_runner
 import std.text
 import alula.machine.{standard_registry}
 import alula.machine_text.{translate_checked}
-import alula.machine_run.{PortolanMachine, load_portolan_machine, parse_scenario, run_scenario, run_ok, report_text}
+import alula.machine_run.{AlulaMachine, load_alula_machine, parse_scenario, run_scenario, run_ok, report_text}
 
 fn probe_text() -> str {
     ro head = "# Машина: Проба возврата\n\n- machine: back_probe\n- machine_version: 1\n- format: 2.14\n\n## Вход\n\n| имя | тип | примечание |\n|---|---|---|\n| возврат_подготовки | ?Состояние | куда вернуться |\n\n"
@@ -16,10 +16,10 @@ fn probe_text() -> str {
     "${head}${data}${states}${ends}"
 }
 
-fn probe() -> PortolanMachine {
+fn probe() -> AlulaMachine {
     ro report = translate_checked(probe_text(), standard_registry())
     if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
-    match load_portolan_machine(report.json, standard_registry()) {
+    match load_alula_machine(report.json, standard_registry()) {
         Ok(m) => m
         Err(e) => panic("the probe is not made: ${e}")
     }
