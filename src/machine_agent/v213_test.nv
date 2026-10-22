@@ -51,6 +51,7 @@ fn count_lines_anywhere(text str, prefix str) -> int {
 }
 
 // Is the text a number written with digits (not empty)?
+// ORACLE-WORKAROUND(127): `text.to_int() != None` is true for a text that is no number; the digits are checked one by one; use `text.to_int() != None` when item 127 is fixed
 fn is_number_text(text str) -> bool {
     if text == "" { return false }
     for c in text.chars() {

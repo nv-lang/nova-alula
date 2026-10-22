@@ -34,6 +34,17 @@ tests under Oracle 0.1.0 and the output of a unit must stay under 4 KB:
 The proofs that need the hand-written chat machine on Nova (`machine_chat`: the chat machine as data equals it; `machine_dialog_eq`: the dialog equals it, with the failure injection) import the module `chat` of
 the CrewHarness product and stay in the product repository; they read the machines and the scenarios of this package through `alula.machine`.
 
+## Alula 2.14 in the core (task 149)
+
+The rules AL-38 ... AL-49 of the format 2.13 touch the core as follows (the translator is described in `src/machine_text/README.md`):
+
+| What | Change |
+|---|---|
+| the tree (AL-38, AL-41) | a party has `signals` (`words` is refused by name), the event of a row of the kind `signal` (the kind `word` is refused), an enum has `values` (`words` is refused), the argument of the fragment is `halt_signal` (`halt_word` is refused); the model has `PartyDef.signals`, `EventPat.SignalEv`, `VariantDef.values`; the schema `machine-2.schema.json` says the same keys, its `$id` is the package `nova-alula`. |
+| names (AL-46) | the checks of the tree take a constant, a parameter, a definition and a party of any identifier (they are internal names, written as they are), and only Latin names for a datum, a state, an id of a party, a type and a field (the names that leave the machine). |
+| a call (AL-47, AL-48) | `check_nested`: `int` and `int>=n` fit each other in the fields of the input and of the result at any depth, two bounds fit only when equal; a field of the input of the type `?T` that the request does not give is `none`, the refusal `missing` is for a required field only. |
+| a scenario (AL-38) | the step `word` is gone; the step `signal` has the optional `party` (the party that owns the signal; a party that did not declare the signal is a scenario error); the event kind `word` in a scenario is refused. The engine event is still `Input` and `Incoming.word(...)` is its constructor (code, not format). |
+
 ## Run the tests (Windows, Nova Oracle 0.1.0)
 
 ```powershell
@@ -233,12 +244,12 @@ the types are written as the format writes them (`int>=0`, `?text`, `[]Finding`,
 | Key of the root | Meaning (format section) |
 |---|---|
 | `format`, `machine`, `version`, `title` | the header: `machine/2`, the Latin name (the name in the journal), the version |
-| `types` | `records`, `variants` (an enum is a variant without fields; the key `words` of a variant is the list of the pairs `["Name", "word"]` of its values, format 2.7); `FailCode`, the closed list of the ten failure causes, is built in (2) |
+| `types` | `records`, `variants` (an enum is a variant without fields; the key `values` of a variant is the list of the pairs `["Name", "value"]` of its values, formats 2.7 and 2.13 (AL-41; `words` before, refused by name)); `FailCode`, the closed list of the ten failure causes, is built in (2) |
 | `constants`, `params` | `name`, `type`, `value` / `default` (+ `project_key`: the key after `проект.` of the column "project override", format 2.7); evaluated in order when the machine is built (1, 8) |
 | `input` | `fields`, `invariants` - the input of a call; the event `start` carries it as an object (1) |
 | `data` | `name`, `type`, `initial` (`{"expr": E}` or `{"from_input": "field"}`), `monotonic` (`true`, or `{"bound": E}` for `<= E`), `writes` (`rows`, `mechanics`, `rows_and_mechanics`, `fragment`, `rows_and_fragment`); a name `x[*].f` is a path datum that carries only the marks (2) |
-| `parties` | `name`, `id`, `kind` (`agent`, `human`, `enhanced`, `gatekeeper`, `machine`), `words` (gates), `progress` (parts of an answer), `result` (the type of the answer, required for agent and machine), `counter` (the datum of the attempt counter, required), `profile`, `setting`, `nested` (1) |
-| `signals` | words from outside that belong to no party (stop, cancel) (4.3 `signal`) |
+| `parties` | `name`, `id`, `kind` (`agent`, `human`, `enhanced`, `gatekeeper`, `machine`), `signals` (the signals of the party: `name`, `fields`; `words` before, AL-38, refused by name), `progress` (parts of an answer), `result` (the type of the answer, required for agent and machine), `counter` (the datum of the attempt counter, required), `profile`, `setting`, `nested` (1) |
+| `signals` | signals of the machine that belong to no party (stop, cancel) (4.3 `signal`) |
 | `definitions`, `includes` | pure functions `name(params) -> result = body`; the lines `definitions: <name> version <N> hash <hex12>` (8) |
 | `initial`, `error_end` | the initial state; the end ERROR (A4) |
 | `common_events` | the rows of signals tried before the rows of a state - the fragment "Pause", expanded in the tree (9) |
@@ -251,7 +262,7 @@ an appeal - `party`, `inputs` (the table "Input": `{field, value, reads: party|e
 an operation / a fork - `entry` ("On entry": `bind` and `call`), `rows` (`{"kind":"now"}`; a fork row may have `cond` or `else`);
 an end - `entry` (actions with the journal), `except` (`{field, values}` of the format's "Except").
 A row: `n`, `event`, `cond`, `else`, `actions`, `to` (a state, `@previous`, `@same`, `@prepare_return`; absent when the actions end in `machine_error`), `restart`.
-An event: `answer` (`bind`), `answer_variant` (`variant`, `bind` {field: name}), `failure` (`reasons`, `bind`), `timeout`, `progress` (`name`, `bind`), `word` (`word`, `bind`), `signal` (`name`, `bind`), `now`.
+An event: `answer` (`bind`), `answer_variant` (`variant`, `bind` {field: name}), `failure` (`reasons`, `bind`), `timeout`, `progress` (`name`, `bind`), `signal` (`name`, `bind`: the signal of a party that the party of the appeal declares, or a signal of the machine; the kind `word` of 2.12 is refused by name, AL-38), `now`.
 An action (`do`): `assign`, `add` (`+=`), `journal` (`code`, `params`), `journal_value`, `journal_all`, `for_each`, `let`, `bind`, `if`, `call`, `machine_error`, `cancel_open`, `pass`;
 the target of `assign` and `add` is a datum or `{"name": "x", "path": [{"key": E}, {"field": "f"}]}` (`x[key].f = v` is one path).
 
@@ -301,13 +312,13 @@ The data view is the one both can show: `Awaiting` the message and the reply, `D
 
 ## Decisions where the format is silent or the engine differs
 
-- **Events.** The format has `answer`, `failure(reason)`, `word`, `signal`. The engine of the product also has parts of an answer that keep the request open (`Progress`) and a term made by the executor (`Expired`); both are events of the JSON (`progress`, `timeout`) and a failure row names the refusals of the party only. A word or a
-  signal is the same `Input` event by name: a word is declared by the party of the appeal, a signal in `signals`; a signal may stand in the rows of any appeal (the format keeps signals for the common events and the pause).
+- **Events.** The format has `answer`, `failure(reason)`, `signal` (since 2.13 the word of a party is its signal, AL-38). The engine of the product also has parts of an answer that keep the request open (`Progress`) and a term made by the executor (`Expired`); both are events of the JSON (`progress`, `timeout`) and a failure row names the refusals of the party only. A word or a
+  signal is the same `Input` event by name (the engine event is still called `Input`, `Incoming.word(...)` is its constructor in the code): a signal of a party is declared by the party of the appeal, a signal of the machine in `signals`; a signal may stand in the rows of any appeal (the format keeps signals for the common events and the pause).
 - **Events that no row takes**: `event_ignored` / `event_unknown` / `event_malformed` are written by the interpreter itself (the format: "the executor discards and journals, rule 17"); the label of an ignored event is its name.
 - **Request text**: a request with one field of text is that text, with none is empty, else the JSON of a record of the fields. The identifier of a request is the engine's `<party id>-<attempt>`; the party of an answer is the id without the attempt.
 - **`order_save`** is ordered after a step that took a row (the chat machine on Nova does it at every state change; the engine saves a snapshot at every commit anyway).
 - **A step that fails**: no rollback of the writes made before the error (the format: the ERROR end sees the data as they are); only a defect leaves the state as it was.
-- **Enum words** (format 2.7, P-7): `text(x)` of an enum value is its word from the key `words` of the type; a value without a word is the code word of the case (`StoppedByHuman` - `stopped_by_human`, as before; `FailCode` has the words of the engine). `all_data` is written by section 5 of the format (below, task 110).
+- **Enum values** (format 2.7, P-7; the key `values` since 2.13, AL-41): `text(x)` of an enum value is its value from the key `values` of the type; a value without a word is the code word of the case (`StoppedByHuman` - `stopped_by_human`, as before; `FailCode` has the words of the engine). `all_data` is written by section 5 of the format (below, task 110).
 - **`record_text`** (`text_of_record` of the format) writes the English prefix `event `.
 
 ## Not implemented (and why)
@@ -367,9 +378,9 @@ What the interpreter got for it (decisions are in `doc/tasks/109-agent-step-mach
 Task 110 (`doc/tasks/110-format-27/`) brought the tree, the interpreter and the translator to format 2.7 of the methodology (marks P-1...P-9 of section 0 of the format). The sample of the agent step of the methodology
 (`state-machine-agent-step.alula.md`, 2.7) is translated whole and with no hand edit; the table of the product (`machines/agent_step.alula.txt`) is that sample with the two keys of the project in the column "project override".
 
-- **The tree.** `alula_version` may be `2.7`. A variant that is an enum has the optional key **`words`**, the list of the pairs `["Name", "word"]` in the order of the declaration (only the values that have a word; a
-  word is lower case Latin letters, digits and `_`, once in the enum, the case has no fields): `VariantDef.words` (`EnumWord { name, word }`). The schema [`machine-2.schema.json`](schema/machine-2.schema.json) and
-  a test of the unit `machine_table` say the same keys. `text(x)` takes the word (`enum_word(defs, type, case)`); the core `value_text` does not know the types and stays as it was.
+- **The tree.** `alula_version` may be `2.7`. A variant that is an enum has the optional key **`values`** (it was `words` before 2.13), the list of the pairs `["Name", "word"]` in the order of the declaration (only the values that have a word; a
+  word is lower case Latin letters, digits and `_`, once in the enum, the case has no fields): `VariantDef.values` (`EnumValue { name, value }`). The schema [`machine-2.schema.json`](schema/machine-2.schema.json) and
+  a test of the unit `machine_table` say the same keys. `text(x)` takes the value (`enum_word(defs, type, case)`); the core `value_text` does not know the types and stays as it was.
 - **`все_данные`** (`журнал(все_данные)`, the event `machine_data` with the one parameter `data`, section 5 of the format): `name=value; ...` in the order of the table of data (the data of the fragments first, the paths
   `x[*].f` are not among them). An integer is decimal, a float is `text(x)`, a text and a set of literals are as they are (an empty one is nothing after `=`), a bool is `yes`/`no`, an absent optional value is `none`, an enum value
   is its WORD (without a word - the name of the value as the tree has it, `FailCode` - the word of the engine). A list, a dict, a record, a variant with fields and a tuple are compact JSON (`src/machine_run/encode.nv`:
@@ -379,7 +390,7 @@ Task 110 (`doc/tasks/110-format-27/`) brought the tree, the interpreter and the 
   (the column "project override"). A key that has no such parameter, a key twice, a key not of the form `проект.…` refuse the machine (`Err` before anything is evaluated); the value is checked against the type of the
   parameter like a default (a full dict by the rules of section 2); a parameter that is not named keeps its default. `alula_machine(def, registry)` is `alula_machine_with(def, registry, [])`. A scenario (`scenario/0`)
   carries the same table as `params` (`"params": {"проект.политика_разрешений": {...}}`); a key of another form is a mistake of the file.
-- **P-8, the data of an event of a scenario.** A word or a signal with ONE field has the value of the field as the `input` (a text: `"ivan"`, `"other-1"`), with several fields an object `{field: value}`, with none no `input`
+- **P-8, the data of an event of a scenario.** A signal with ONE field has the value of the field as the `input` (a text: `"ivan"`, `"other-1"`), with several fields an object `{field: value}`, with none no `input`
   (it was so since task 109; the schema `scenario/0` and tests of the unit `machine_run` say it).
 - **Names by the dictionary.** The field `идентификатор_запроса` of a signal is `id` (it was `request_id`, which is not a name of the dictionary); the datum `call_request_id` of the mechanics is the dictionary's `запрос_вызова`.
 - Tests of the task: `nova test src/machine_table` (85 tests), `src/machine_run` (111), `src/machine_agent` (29), `src/machine_text_fmt` (65).

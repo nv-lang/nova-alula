@@ -1,0 +1,11 @@
+module repro_engine.str_to_int_none
+
+// Oracle 0.1.0: `text.to_int()` of a text that is no number is `None` (`?? -1` gives -1), but the comparison `text.to_int() != None` is TRUE: the optional is not compared with `None`
+// by its tag. A check "is the text a number" is written by hand (the digits one by one) or by `?? default`. Task 149 met it in a test that counts the rows of a table by their numbers.
+// Expected: PASS. Actual: FAIL (the assertion).
+
+test "to_int of a word compared with None" {
+    ro word = "abc"
+    assert((word.to_int() ?? -1) == -1)
+    assert(!(word.to_int() != None))
+}

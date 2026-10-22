@@ -4,7 +4,7 @@
 
 Every place of the package that goes round a defect or a limit of Oracle carries a comment `// ORACLE-WORKAROUND(N): what is gone round; how to simplify when item N is fixed`, where N is an item of [README.md](README.md) ("Known problems"). `git grep ORACLE-WORKAROUND` finds them, `python scripts/oracle-workarounds.py --list` prints them by item with the line. When Nova fixes an item, open its places below, simplify the code as the mark says and remove the mark; then rerun `python scripts/oracle-workarounds.py --index`.
 
-Marks: 137 in 92 files. Items with marks: 35. Items without marks: 0 (no workaround in the code).
+Marks: 138 in 93 files. Items with marks: 36. Items without marks: 0 (no workaround in the code).
 
 | Item | What | Places (files; marks in a file if more than one) | Marks |
 |---|---|---|---|
@@ -43,3 +43,4 @@ Marks: 137 in 92 files. Items with marks: 35. Items without marks: 0 (no workaro
 | 55 | `mock_fs_create_dir_all`: `create_dir_all("/a/b/c")` on the memory file system (`mock_fs`) makes only the LAST folder... | `src/alula_cli/support_test.nv`, `src/alula_eq/support_test.nv`, `src/alula_scenarios/support_test.nv` | 3 |
 | 60 | A protocol method that nothing calls is cut from the program, and the C of the program does not build (no small reproduction... | `src/engine/machine.nv` | 1 |
 | 61 | `none_arg_generic_option`: a literal `None` as the argument of a parameter of the type `Option[Wrap[str]]`, where `Wrap` is a... | `src/machine_nested_run/proto_test.nv` | 1 |
+| 127 | `str_to_int_none`: `word.to_int() != None` is TRUE for a text that is no number (`word.to_int() ?? -1` gives -1, so the value is... | `src/machine_agent/v213_test.nv` | 1 |
