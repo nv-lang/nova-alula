@@ -1,0 +1,11 @@
+{
+  "format": "scenario/0",
+  "machine": "Pausable",
+  "name": "Pause: the signal `halt` in the pause ends the machine with the code of the connection",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start"}, "expect": {"state": "Work"}},
+    {"do": "feed", "event": {"kind": "signal", "name": "human_stop", "input": {"human_word": "stop", "author": "ann", "source": "console"}}, "expect": {"state": "Pause"}},
+    {"do": "feed", "event": {"kind": "signal", "name": "halt"}, "expect": {"state": "Halted", "outcome": "refusal:StoppedByHuman", "data": {"stop_reason": "pause_halt"}}}
+  ]
+}

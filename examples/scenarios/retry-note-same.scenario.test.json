@@ -1,0 +1,12 @@
+{
+  "format": "scenario/0",
+  "machine": "Retry",
+  "name": "same: a note is taken, no new request is sent and the gate stays open",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start"}, "expect": {"state": "Ask"}},
+    {"do": "feed", "event": {"kind": "answer", "name": "answer", "request": "agent-1", "input": "draft"}, "expect": {"state": "Review", "sent": ["agent-1"]}},
+    {"do": "feed", "event": {"kind": "signal", "name": "note", "input": "see below"}, "expect": {"state": "Review", "journal": [{"code": "noted", "params": {"text": "see below"}}], "sent": ["agent-1"], "data": {"notes": 1, "rounds": 0}}},
+    {"do": "feed", "event": {"kind": "signal", "name": "note", "input": "and this"}, "expect": {"state": "Review", "journal": [{"code": "noted", "params": {"text": "and this"}}], "sent": ["agent-1"], "data": {"notes": 2, "rounds": 0}}}
+  ]
+}

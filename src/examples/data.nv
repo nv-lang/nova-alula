@@ -1,0 +1,153 @@
+// data.nv - the data of the examples of the package (`examples/`) and of the samples of the specification (`spec/samples/`), compiled into the tests with `embed_str` (a path is read relative to this file):
+// the machines of the examples as JSON and as tables, their scenarios, the registry and the journal of the host "examples" and the registry of the samples. The module is for tests; the program `alula`
+// reads the same files from the disk (`alula test examples`). The lists of the files are written by hand (a new file is a new line); a test of `alula.machine_run` fails when a file of the folder is
+// missing from its list.
+module alula.examples
+
+import alula.machine.{NamedText, Registry, without_journal, load_host}
+
+/// The machines of `examples/` as JSON, by the name of the file (`calc.alula.json`).
+export fn machine_files() -> []NamedText => [
+    NamedText { name: "actions.alula.json", text: embed_str("../../examples/actions.alula.json") },
+    NamedText { name: "batch.alula.json", text: embed_str("../../examples/batch.alula.json") },
+    NamedText { name: "calc.alula.json", text: embed_str("../../examples/calc.alula.json") },
+    NamedText { name: "callee.alula.json", text: embed_str("../../examples/callee.alula.json") },
+    NamedText { name: "caller.alula.json", text: embed_str("../../examples/caller.alula.json") },
+    NamedText { name: "echo.alula.json", text: embed_str("../../examples/echo.alula.json") },
+    NamedText { name: "fan.alula.json", text: embed_str("../../examples/fan.alula.json") },
+    NamedText { name: "gate.alula.json", text: embed_str("../../examples/gate.alula.json") },
+    NamedText { name: "keeper.alula.json", text: embed_str("../../examples/keeper.alula.json") },
+    NamedText { name: "lenses.alula.json", text: embed_str("../../examples/lenses.alula.json") },
+    NamedText { name: "pausable.alula.json", text: embed_str("../../examples/pausable.alula.json") },
+    NamedText { name: "retry.alula.json", text: embed_str("../../examples/retry.alula.json") },
+    NamedText { name: "router.alula.json", text: embed_str("../../examples/router.alula.json") },
+    NamedText { name: "variants.alula.json", text: embed_str("../../examples/variants.alula.json") },
+    NamedText { name: "verdict.alula.json", text: embed_str("../../examples/verdict.alula.json") }
+]
+
+/// The machines of `examples/` written as tables, by the name of the file (`caller.alula.md`).
+export fn table_files() -> []NamedText => [
+    NamedText { name: "batch.alula.md", text: embed_str("../../examples/batch.alula.md") },
+    NamedText { name: "callee.alula.md", text: embed_str("../../examples/callee.alula.md") },
+    NamedText { name: "caller.alula.md", text: embed_str("../../examples/caller.alula.md") },
+    NamedText { name: "echo.alula.md", text: embed_str("../../examples/echo.alula.md") },
+    NamedText { name: "fan.alula.md", text: embed_str("../../examples/fan.alula.md") },
+    NamedText { name: "keeper.alula.md", text: embed_str("../../examples/keeper.alula.md") },
+    NamedText { name: "pausable.alula.md", text: embed_str("../../examples/pausable.alula.md") },
+    NamedText { name: "retry.alula.md", text: embed_str("../../examples/retry.alula.md") },
+    NamedText { name: "router.alula.md", text: embed_str("../../examples/router.alula.md") },
+    NamedText { name: "verdict.alula.md", text: embed_str("../../examples/verdict.alula.md") }
+]
+
+/// The scenarios of `examples/scenarios/`, by the name of the file (`calc-count.scenario.test.json`).
+export fn scenario_files() -> []NamedText => [
+    NamedText { name: "batch-all-answer.scenario.test.json", text: embed_str("../../examples/scenarios/batch-all-answer.scenario.test.json") },
+    NamedText { name: "batch-empty.scenario.test.json", text: embed_str("../../examples/scenarios/batch-empty.scenario.test.json") },
+    NamedText { name: "batch-one-lost.scenario.test.json", text: embed_str("../../examples/scenarios/batch-one-lost.scenario.test.json") },
+    NamedText { name: "calc-before-start.scenario.test.json", text: embed_str("../../examples/scenarios/calc-before-start.scenario.test.json") },
+    NamedText { name: "calc-count-up.scenario.test.json", text: embed_str("../../examples/scenarios/calc-count-up.scenario.test.json") },
+    NamedText { name: "calc-missing-input.scenario.test.json", text: embed_str("../../examples/scenarios/calc-missing-input.scenario.test.json") },
+    NamedText { name: "calc-over-limit.scenario.test.json", text: embed_str("../../examples/scenarios/calc-over-limit.scenario.test.json") },
+    NamedText { name: "echo-close-at-once.scenario.test.json", text: embed_str("../../examples/scenarios/echo-close-at-once.scenario.test.json") },
+    NamedText { name: "echo-close.scenario.test.json", text: embed_str("../../examples/scenarios/echo-close.scenario.test.json") },
+    NamedText { name: "echo-words.scenario.test.json", text: embed_str("../../examples/scenarios/echo-words.scenario.test.json") },
+    NamedText { name: "gate-done.scenario.test.json", text: embed_str("../../examples/scenarios/gate-done.scenario.test.json") },
+    NamedText { name: "gate-failure.scenario.test.json", text: embed_str("../../examples/scenarios/gate-failure.scenario.test.json") },
+    NamedText { name: "gate-ignored.scenario.test.json", text: embed_str("../../examples/scenarios/gate-ignored.scenario.test.json") },
+    NamedText { name: "gate-pause-continue.scenario.test.json", text: embed_str("../../examples/scenarios/gate-pause-continue.scenario.test.json") },
+    NamedText { name: "gate-pause-halt.scenario.test.json", text: embed_str("../../examples/scenarios/gate-pause-halt.scenario.test.json") },
+    NamedText { name: "keeper-allow-twice.scenario.test.json", text: embed_str("../../examples/scenarios/keeper-allow-twice.scenario.test.json") },
+    NamedText { name: "keeper-deny.scenario.test.json", text: embed_str("../../examples/scenarios/keeper-deny.scenario.test.json") },
+    NamedText { name: "keeper-foreign-word.scenario.test.json", text: embed_str("../../examples/scenarios/keeper-foreign-word.scenario.test.json") },
+    NamedText { name: "lenses-all-answer.scenario.test.json", text: embed_str("../../examples/scenarios/lenses-all-answer.scenario.test.json") },
+    NamedText { name: "lenses-empty.scenario.test.json", text: embed_str("../../examples/scenarios/lenses-empty.scenario.test.json") },
+    NamedText { name: "lenses-lost.scenario.test.json", text: embed_str("../../examples/scenarios/lenses-lost.scenario.test.json") },
+    NamedText { name: "nested-call-answer-after-cancel.scenario.test.json", text: embed_str("../../examples/scenarios/nested-call-answer-after-cancel.scenario.test.json") },
+    NamedText { name: "nested-call-cancel.scenario.test.json", text: embed_str("../../examples/scenarios/nested-call-cancel.scenario.test.json") },
+    NamedText { name: "nested-call-death-between.scenario.test.json", text: embed_str("../../examples/scenarios/nested-call-death-between.scenario.test.json") },
+    NamedText { name: "nested-call-duplicate-answer.scenario.test.json", text: embed_str("../../examples/scenarios/nested-call-duplicate-answer.scenario.test.json") },
+    NamedText { name: "nested-call-foreign-cancel.scenario.test.json", text: embed_str("../../examples/scenarios/nested-call-foreign-cancel.scenario.test.json") },
+    NamedText { name: "nested-call-halt.scenario.test.json", text: embed_str("../../examples/scenarios/nested-call-halt.scenario.test.json") },
+    NamedText { name: "nested-call-kid-restart.scenario.test.json", text: embed_str("../../examples/scenarios/nested-call-kid-restart.scenario.test.json") },
+    NamedText { name: "nested-call-late-signal.scenario.test.json", text: embed_str("../../examples/scenarios/nested-call-late-signal.scenario.test.json") },
+    NamedText { name: "nested-call-ok.scenario.test.json", text: embed_str("../../examples/scenarios/nested-call-ok.scenario.test.json") },
+    NamedText { name: "nested-call-pause-continue.scenario.test.json", text: embed_str("../../examples/scenarios/nested-call-pause-continue.scenario.test.json") },
+    NamedText { name: "nested-call-refused.scenario.test.json", text: embed_str("../../examples/scenarios/nested-call-refused.scenario.test.json") },
+    NamedText { name: "nested-call-restart-done.scenario.test.json", text: embed_str("../../examples/scenarios/nested-call-restart-done.scenario.test.json") },
+    NamedText { name: "nested-call-restart-ready.scenario.test.json", text: embed_str("../../examples/scenarios/nested-call-restart-ready.scenario.test.json") },
+    NamedText { name: "nested-call-restart.scenario.test.json", text: embed_str("../../examples/scenarios/nested-call-restart.scenario.test.json") },
+    NamedText { name: "nested-call-silence.scenario.test.json", text: embed_str("../../examples/scenarios/nested-call-silence.scenario.test.json") },
+    NamedText { name: "nested-call-unknown-reply.scenario.test.json", text: embed_str("../../examples/scenarios/nested-call-unknown-reply.scenario.test.json") },
+    NamedText { name: "nested-call-window-stop.scenario.test.json", text: embed_str("../../examples/scenarios/nested-call-window-stop.scenario.test.json") },
+    NamedText { name: "nested-set-all-answer.scenario.test.json", text: embed_str("../../examples/scenarios/nested-set-all-answer.scenario.test.json") },
+    NamedText { name: "nested-set-cancel.scenario.test.json", text: embed_str("../../examples/scenarios/nested-set-cancel.scenario.test.json") },
+    NamedText { name: "nested-set-limit-one.scenario.test.json", text: embed_str("../../examples/scenarios/nested-set-limit-one.scenario.test.json") },
+    NamedText { name: "nested-set-no-limit.scenario.test.json", text: embed_str("../../examples/scenarios/nested-set-no-limit.scenario.test.json") },
+    NamedText { name: "nested-set-one-lost.scenario.test.json", text: embed_str("../../examples/scenarios/nested-set-one-lost.scenario.test.json") },
+    NamedText { name: "nested-set-order-free.scenario.test.json", text: embed_str("../../examples/scenarios/nested-set-order-free.scenario.test.json") },
+    NamedText { name: "nested-set-pause-continue.scenario.test.json", text: embed_str("../../examples/scenarios/nested-set-pause-continue.scenario.test.json") },
+    NamedText { name: "nested-set-restart.scenario.test.json", text: embed_str("../../examples/scenarios/nested-set-restart.scenario.test.json") },
+    NamedText { name: "nested-set-start.scenario.test.json", text: embed_str("../../examples/scenarios/nested-set-start.scenario.test.json") },
+    NamedText { name: "pause-answer.scenario.test.json", text: embed_str("../../examples/scenarios/pause-answer.scenario.test.json") },
+    NamedText { name: "pause-continue.scenario.test.json", text: embed_str("../../examples/scenarios/pause-continue.scenario.test.json") },
+    NamedText { name: "pause-halt.scenario.test.json", text: embed_str("../../examples/scenarios/pause-halt.scenario.test.json") },
+    NamedText { name: "retry-again-rerun.scenario.test.json", text: embed_str("../../examples/scenarios/retry-again-rerun.scenario.test.json") },
+    NamedText { name: "retry-note-same.scenario.test.json", text: embed_str("../../examples/scenarios/retry-note-same.scenario.test.json") },
+    NamedText { name: "retry-reject.scenario.test.json", text: embed_str("../../examples/scenarios/retry-reject.scenario.test.json") },
+    NamedText { name: "retry-silent-rerun.scenario.test.json", text: embed_str("../../examples/scenarios/retry-silent-rerun.scenario.test.json") },
+    NamedText { name: "router-a-small.scenario.test.json", text: embed_str("../../examples/scenarios/router-a-small.scenario.test.json") },
+    NamedText { name: "router-b-large.scenario.test.json", text: embed_str("../../examples/scenarios/router-b-large.scenario.test.json") },
+    NamedText { name: "router-edge.scenario.test.json", text: embed_str("../../examples/scenarios/router-edge.scenario.test.json") },
+    NamedText { name: "router-else-error.scenario.test.json", text: embed_str("../../examples/scenarios/router-else-error.scenario.test.json") },
+    NamedText { name: "variants-fail-case.scenario.test.json", text: embed_str("../../examples/scenarios/variants-fail-case.scenario.test.json") },
+    NamedText { name: "variants-malformed-answer.scenario.test.json", text: embed_str("../../examples/scenarios/variants-malformed-answer.scenario.test.json") },
+    NamedText { name: "variants-retry-then-done.scenario.test.json", text: embed_str("../../examples/scenarios/variants-retry-then-done.scenario.test.json") },
+    NamedText { name: "variants-timeout.scenario.test.json", text: embed_str("../../examples/scenarios/variants-timeout.scenario.test.json") },
+    NamedText { name: "variants-transient-failure.scenario.test.json", text: embed_str("../../examples/scenarios/variants-transient-failure.scenario.test.json") },
+    NamedText { name: "verdict-accepted.scenario.test.json", text: embed_str("../../examples/scenarios/verdict-accepted.scenario.test.json") },
+    NamedText { name: "verdict-rejected.scenario.test.json", text: embed_str("../../examples/scenarios/verdict-rejected.scenario.test.json") },
+    NamedText { name: "verdict-unsure.scenario.test.json", text: embed_str("../../examples/scenarios/verdict-unsure.scenario.test.json") }
+]
+
+/// The names of the files that the folders hold (read at compile time with `embed_dir`): `machines` (the JSON), `tables`, `scenarios`.
+export fn example_dir_names(dir str) -> []str {
+    if dir == "machines" { return only_ending(embed_dir("../../examples").paths(), [".alula.json"]) }
+    if dir == "tables" { return only_ending(embed_dir("../../examples").paths(), [".alula.md", ".alula.txt"]) }
+    if dir == "scenarios" { return embed_dir("../../examples/scenarios").paths() }
+    []str.new()
+}
+
+fn only_ending(names []str, suffixes []str) -> []str {
+    mut out = []str.new()
+    for n in names {
+        for suffix in suffixes {
+            if n.ends_with(suffix) { out.push(n) }
+        }
+    }
+    out
+}
+
+/// The registry of the host "examples": the language and the primitives of `examples/registry.md`, the codes of `examples/journal.md`.
+export fn example_registry_text() -> str => embed_str("../../examples/registry.md")
+
+/// The table of the codes of the host "examples" (`examples/journal.md`).
+export fn example_journal_text() -> str => embed_str("../../examples/journal.md")
+
+/// The registry of the samples of the specification (`spec/samples/registry.md`).
+export fn sample_registry_text() -> str => embed_str("../../spec/samples/registry.md")
+
+/// The registry of the host "examples" (the language, the example primitives, the codes of the language and of the examples).
+export fn example_registry() -> Registry {
+    match load_host(example_registry_text(), example_journal_text()) {
+        Ok(reg) => reg
+        Err(errors) => panic("the registry of the examples is wrong: ${errors.join(" | ")}")
+    }
+}
+
+/// The registry of the samples: the language and the primitives of the pilots (`spec/samples/registry.md`); the codes of the journal are not checked (the samples come with no table of a host).
+export fn sample_registry() -> Registry {
+    match load_host(sample_registry_text(), "") {
+        Ok(reg) => without_journal(reg)
+        Err(errors) => panic("the registry of the samples is wrong: ${errors.join(" | ")}")
+    }
+}

@@ -1,0 +1,10 @@
+{
+  "format": "scenario/0",
+  "machine": "Pausable",
+  "name": "no pause: the answer of the agent ends the work",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start"}, "expect": {"state": "Work"}},
+    {"do": "feed", "event": {"kind": "answer", "name": "answer", "request": "worker-1", "input": "ok"}, "expect": {"state": "Done", "journal": [{"code": "worked", "params": {"text": "ok"}}], "outcome": "answer:ok", "open": []}}
+  ]
+}

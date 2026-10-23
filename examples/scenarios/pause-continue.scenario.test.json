@@ -1,0 +1,12 @@
+{
+  "format": "scenario/0",
+  "machine": "Pausable",
+  "name": "Pause: a human stops the work, the open request is cancelled; `continue` enters Work again with a new request",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start"}, "expect": {"state": "Work", "sent": ["worker-1"], "open": ["worker-1"]}},
+    {"do": "feed", "event": {"kind": "signal", "name": "human_stop", "input": {"human_word": "stop", "author": "ann", "source": "console"}}, "expect": {"state": "Pause", "cancelled": ["worker-1"], "open": [], "journal": [{"code": "human_stop", "params": {"author": "ann", "source": "console", "event": "input-3"}}], "data": {"previous": "Work"}}},
+    {"do": "feed", "event": {"kind": "signal", "name": "continue", "input": {"human_word": "go", "author": "ann", "source": "console"}}, "expect": {"state": "Work", "sent": ["worker-1", "worker-2"], "open": ["worker-2"], "journal": [{"code": "human_continue", "params": {"previous": "Work", "author": "ann", "source": "console", "event": "input-4"}}]}},
+    {"do": "feed", "event": {"kind": "answer", "name": "answer", "request": "worker-2", "input": "done"}, "expect": {"state": "Done", "outcome": "answer:done"}}
+  ]
+}

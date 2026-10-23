@@ -1,0 +1,15 @@
+{
+  "format": "scenario/0",
+  "machine": "Batch",
+  "name": "a set: a request to the callee for every name, the limit is 2 - two at once, the third goes when a place is free; the answer is the number of the answers",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start", "input": {"names": ["a", "b", "c"]}, "request": "up-1"}, "expect": {"state": "Jobs", "open": ["a-1", "b-1"], "data": {"to_send": ["c"]}}},
+    {"do": "feed", "event": {"kind": "answer", "request": "agent-1", "input": "ra"}, "on": "a-1"},
+    {"do": "pump", "expect": {"state": "Jobs", "open": ["b-1", "c-1"], "journal": [{"code": "job_answered", "params": {"party": "a", "answer": "ra"}}], "data": {"to_send": [], "answered": ["a"]}}},
+    {"do": "feed", "event": {"kind": "answer", "request": "agent-1", "input": "rb"}, "on": "b-1"},
+    {"do": "pump", "expect": {"state": "Jobs", "open": ["c-1"], "data": {"answered": ["a", "b"]}}},
+    {"do": "feed", "event": {"kind": "answer", "request": "agent-1", "input": "rc"}, "on": "c-1"},
+    {"do": "pump", "expect": {"state": "Done", "open": [], "outcome": "answer:3"}}
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "format": "scenario/0",
+  "machine": "Retry",
+  "name": "same, rerun: the gate is opened again - the open request is cancelled and a new one is sent; then the word `accept` ends with the reply",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start"}, "expect": {"state": "Ask"}},
+    {"do": "feed", "event": {"kind": "answer", "name": "answer", "request": "agent-1", "input": "draft"}, "expect": {"state": "Review"}},
+    {"do": "feed", "event": {"kind": "signal", "name": "again"}, "expect": {"state": "Review", "journal": [{"code": "review_again", "params": {}}], "data": {"rounds": 1}}},
+    {"do": "feed", "event": {"kind": "signal", "name": "accept"}, "expect": {"state": "Accepted", "journal": [{"code": "accepted", "params": {}}], "outcome": "answer:draft"}}
+  ]
+}
