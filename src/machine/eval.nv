@@ -27,6 +27,9 @@
 // An error is a value with its place in the tree: `EvalError { kind, message, path }`, the path as `$.args[1].body.left`.
 module alula.machine
 
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+
 /// The number of nodes one `eval` may evaluate.
 export const MAX_STEPS = 50000
 
@@ -696,6 +699,20 @@ fn fn_journal_event(args []Value) -> Result[Value, EvalError] {
     Ok(make_record("JournalEvent", [RecordField { name: "code", value: Text(code) }, RecordField { name: "params", value: List(params) }]))
 }
 
+// `concat(a, b, ...)` of the catalog (format 2.19, AL-80): the texts joined in order; two arguments or more, every one a text (a number and the rest go through `text(x)`).
+fn fn_concat(args []Value) -> Result[Value, EvalError] {
+    mut parts = []str.new()
+    mut i = 0
+    for a in args {
+        match a {
+            Text(s) => parts.push(s)
+            _ => return wrong_at("args[${i}]", "text", a)
+        }
+        i += 1
+    }
+    Ok(Text(parts.join("")))
+}
+
 fn fn_remove(items []Value, x Value) -> Value {
     mut out = []Value.new()
     for item in items {
@@ -905,6 +922,11 @@ fn eval_call(name str, args []Expr, mut env Env, mut host PrimitiveHost, depth i
         if args.len() < 1 || args.len() % 2 == 0 { return refuse(BadArity, "journal_event takes a code and pairs of name and value") }
         ro values = eval_args(args, env, host, depth)?
         return fn_journal_event(values)
+    }
+    if name == "concat" && find_def(env.table, name) < 0 {
+        if args.len() < 2 { return refuse(BadArity, "concat takes two arguments or more") }
+        ro values = eval_args(args, env, host, depth)?
+        return fn_concat(values)
     }
     ro at_def = find_def(env.table, name)
     if at_def >= 0 { return call_def(env.table.fns[at_def], args, env, host, depth) }

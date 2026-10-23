@@ -1,0 +1,65 @@
+// v222_test.nv - task 152: what the evaluator owes to Alula 2.22: the catalog function `concat` that the insertions `"${x}"` turn into (AL-80), the width of the number (AL-101: i64, an overflow is the error `overflow`),
+// the range `a..b` and `a..=b` that the translator writes as `range(a, b)` and `range(a, b + 1)` (AL-76).
+module alula.machine
+
+fn c222(parts []str) -> Expr {
+    mut args = []Expr.new()
+    for p in parts { args.push(lit_text(p)) }
+    call("concat", args)
+}
+
+test "ev222 concat joins texts in order" {
+    assert(eis(c222(["a", "b", "c"]), Text("abc")))
+}
+
+test "ev222 concat of two" {
+    assert(eis(c222(["Мир", "!"]), Text("Мир!")))
+}
+
+test "ev222 concat with an empty text" {
+    assert(eis(c222(["", "x", ""]), Text("x")))
+}
+
+test "ev222 concat takes a text conversion" {
+    assert(eis(call("concat", [lit_text("ход "), call("text", [ei(3)])]), Text("ход 3")))
+}
+
+test "ev222 concat of a number is a type mismatch" {
+    assert(eerr(call("concat", [lit_text("a"), ei(1)])).starts_with("type_mismatch"))
+}
+
+test "ev222 concat reads a name of the scope" {
+    assert(eis_in(call("concat", [er("name"), lit_text("!")]), Text("Мир!")))
+}
+
+test "ev222 an addition that passes the end of the width is an overflow" {
+    assert(eerr(en(Add, ei(9223372036854775807), ei(1))).starts_with("overflow"))
+}
+
+test "ev222 a multiplication that passes the end of the width is an overflow" {
+    assert(eerr(en(Mul, ei(4611686018427387904), ei(2))).starts_with("overflow"))
+}
+
+test "ev222 a subtraction that passes the other end is an overflow" {
+    assert(eerr(en(Sub, ei(-9223372036854775807), ei(2))).starts_with("overflow"))
+}
+
+test "ev222 the largest number is a number" {
+    assert(eis(ei(9223372036854775807), Int(9223372036854775807)))
+}
+
+test "ev222 a range is half open" {
+    assert(eis(call("range", [ei(1), ei(4)]), eints([1, 2, 3])))
+}
+
+test "ev222 an inclusive range is the range to the end plus one" {
+    assert(eis(call("range", [ei(1), en(Add, ei(3), ei(1))]), eints([1, 2, 3])))
+}
+
+test "ev222 a range with the end below the start is empty" {
+    assert(eis(call("range", [ei(5), ei(2)]), eints([])))
+}
+
+test "ev222 a range of one step has one number" {
+    assert(eis(call("range", [ei(7), ei(8)]), eints([7])))
+}

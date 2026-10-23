@@ -727,7 +727,14 @@ export fn data_dir_names(dir str) -> []str {
     if dir == "machines" { return machine_json_names(embed_dir("machines").paths()) }
     if dir == "tables" { return table_names(embed_dir("machines").paths()) }
     if dir == "scenarios" { return embed_dir("scenarios").paths() }
-    if dir == "schema" { return embed_dir("schema").paths() }
+    if dir == "schema" {
+        // the folder holds the schemas and a README that describes them: only the schemas are data
+        mut schemas = []str.new()
+        for p in embed_dir("schema").paths() {
+            if p.ends_with(".json") { schemas.push(p) }
+        }
+        return schemas
+    }
     []str.new()
 }
 

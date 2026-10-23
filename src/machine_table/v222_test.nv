@@ -1,0 +1,47 @@
+// v222_test.nv - task 152: the side of the tree and of the checks in Alula 2.22: the version of the tree, the catalog with `concat` (AL-80), the macros that methods call (AL-78), the schema of the tree.
+module alula.machine_table
+
+import std.text
+import alula.machine.{schema_files, text_of_file}
+
+test "t222 the catalog has concat" {
+    assert(catalog_names().contains("concat"))
+}
+
+test "t222 the catalog has range for the ranges" {
+    assert(catalog_names().contains("range"))
+}
+
+test "t222 the macros are the eight of the methods" {
+    assert(macro_names().len() == 8)
+    for m in ["filter", "map", "any", "all", "count", "first_where", "fold", "dict"] {
+        assert(macro_names().contains(m))
+    }
+}
+
+test "t222 a macro is in the catalog" {
+    for m in macro_names() { assert(catalog_names().contains(m)) }
+}
+
+test "t222 the version of the tree" {
+    assert(ALULA_VERSION == "2.22")
+}
+
+test "t222 only 2.22 is read" {
+    assert(alula_versions() == ["2.22"])
+}
+
+test "t222 the schema allows only 2.22" {
+    ro schema = text_of_file(schema_files(), "machine-2.schema.json")
+    assert(schema.contains("\"enum\": [\"2.22\"]") || schema.contains("\"enum\":[\"2.22\"]"))
+}
+
+test "t222 a call of concat is no unknown function" {
+    ro text = tiny().replace(jl(jstr("a")), jcall("concat", "${jl(jstr("x"))}, ${jl(jstr("y"))}"))
+    assert(!says(text, "no function concat"))
+}
+
+test "t222 a call of an unknown function is refused" {
+    ro text = tiny().replace(jl(jstr("a")), jcall("склеить", "${jl(jstr("x"))}, ${jl(jstr("y"))}"))
+    assert(says(text, "no function"))
+}
