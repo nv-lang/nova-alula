@@ -1,85 +1,8 @@
 // load_test.nv - the decoder: the chat machine, the keys of the schema, the refusals with their places.
 module alula.machine_table
 
-import alula.machine.{chat_machine_text, spec_text}
-// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import alula.machine.{spec_text}
 import std.text
-
-test "chat loads" {
-    assert(issues_of(chat_machine_text()).len() == 0)
-    ro def = decoded(chat_machine_text())
-    assert(def.name == "ChatSession")
-    assert(def.version == "1")
-    assert(def.initial == "Idle")
-}
-
-test "chat states" {
-    ro def = decoded(chat_machine_text())
-    assert(def.states.len() == 4)
-    assert(def.states[0].name == "Idle")
-    assert(state_kind_word(def.states[0].kind) == "appeal")
-    assert(state_kind_word(def.states[1].kind) == "appeal")
-    assert(state_kind_word(def.states[2].kind) == "end")
-    assert(def.states[1].rows.len() == 5)
-    assert(def.states[0].rows.len() == 2)
-    assert(def.states[1].inputs.len() == 2)
-    assert(def.states[1].inputs[0].to_party)
-    assert(!def.states[1].inputs[1].to_party)
-    assert(def.states[1].silence.len() == 1)
-    assert(find_state(def, "Failed") == 3)
-    assert(find_state(def, "Nope") == -1)
-}
-
-test "chat parties" {
-    ro def = decoded(chat_machine_text())
-    assert(def.parties.len() == 2)
-    assert(party_kind_word(def.parties[0].kind) == "human")
-    assert(party_kind_word(def.parties[1].kind) == "agent")
-    assert(def.parties[0].signals.len() == 2)
-    assert(def.parties[0].signals[0].fields.len() == 1)
-    assert(def.parties[1].progress.len() == 1)
-    assert(def.parties[1].id == "agent")
-    assert(def.parties[1].counter == "agent_attempt")
-    assert(spec_text(def.parties[1].result_spec[0]) == "text")
-    assert(find_party(def, "agent") == 1)
-}
-
-test "chat data" {
-    ro def = decoded(chat_machine_text())
-    assert(def.data.len() == 6)
-    assert(def.data[2].name == "stop_code")
-    assert(spec_text(def.data[2].spec) == "?FailCode")
-    assert(write_kind_word(def.data[0].writes) == "rows")
-    assert(write_kind_word(def.data[4].writes) == "mechanics")
-    assert(def.data[4].monotonic.on)
-    assert(!def.data[0].monotonic.on)
-    assert(rows_may_write(def.data[0].writes))
-    assert(!rows_may_write(def.data[4].writes))
-    assert(find_data(def, "reply") == 1)
-}
-
-test "chat types" {
-    ro def = decoded(chat_machine_text())
-    // the built-in types: FailCode, Signal, State (the names of the states of the machine)
-    assert(def.types.variants.len() == 3)
-    assert(def.types.variants[0].name == "FailCode")
-    assert(def.types.variants[1].name == "Signal")
-    assert(def.types.variants[1].cases.len() == 4)
-    assert(def.types.variants[2].name == "State")
-    assert(def.types.variants[2].cases.len() == def.states.len())
-    assert(def.types.variants[0].cases.len() == 10)
-    assert(def.types.variants[0].cases.len() == fail_code_names().len())
-    assert(def.constants.len() == 1)
-    assert(def.constants[0].name == "IDLE_TERM")
-}
-
-test "chat ends" {
-    ro def = decoded(chat_machine_text())
-    assert(def.end_rows.len() == 2)
-    assert(def.end_rows[0].state == "Done")
-    assert(spec_text(def.result_spec[0]) == "text")
-    assert(def.error_end == "")
-}
 
 test "parse errors" {
     match parse_machine("not json") {
@@ -92,64 +15,6 @@ test "parse errors" {
     }
     assert(first_issue("{}").contains("format"))
     assert(first_issue("{\"format\":\"machine/1\"}").contains("machine/2"))
-}
-
-test "unknown key" {
-    assert(says(chat_with("\"version\": \"1\",", "\"version\": \"1\", \"bogus\": 1,"), "bogus"))
-    assert(says(chat_with("\"kind\": \"appeal\", \"party\": \"user\"", "\"kind\": \"appeal\", \"party\": \"user\", \"zzz\": 1"), "zzz"))
-    assert(says(chat_with("\"reads\": \"executor\"", "\"reads\": \"executor\", \"extra\": true"), "extra"))
-    assert(says(chat_with("{ \"do\": \"journal\", \"code\": \"agent_done\" }", "{ \"do\": \"journal\", \"code\": \"agent_done\", \"x\": 1 }"), "the key x"))
-}
-
-test "missing keys" {
-    assert(says(chat_with("\"machine\": \"ChatSession\",", ""), "machine"))
-    assert(says(chat_with("\"initial\": \"Idle\",", ""), "initial"))
-    assert(says(chat_with("\"party\": \"user\",", ""), "an appeal needs a party"))
-    assert(says(chat_with("\"ends\": {", "\"endz\": {"), "endz"))
-}
-
-test "bad kinds" {
-    assert(says(chat_with("\"kind\": \"human\"", "\"kind\": \"robot\""), "kind of a party"))
-    assert(says(chat_with("\"kind\": \"appeal\", \"party\": \"user\"", "\"kind\": \"loop\", \"party\": \"user\""), "kind of a state"))
-    assert(says(chat_with("\"kind\": \"signal\", \"name\": \"user_message\"", "\"kind\": \"wish\", \"word\": \"user_message\""), "kind of an event"))
-    assert(says(chat_with("\"do\": \"journal\", \"code\": \"agent_done\"", "\"do\": \"teleport\", \"code\": \"agent_done\""), "unknown action"))
-    assert(says(chat_with("\"writes\": \"rows\"", "\"writes\": \"sometimes\""), "writes must be"))
-    assert(says(chat_with("\"reads\": \"executor\"", "\"reads\": \"nobody\""), "party or executor"))
-    assert(says(chat_with("\"kind\": \"answer\", \"value\"", "\"kind\": \"shout\", \"value\""), "answer of an end"))
-}
-
-test "bad types" {
-    assert(says(chat_with("\"type\": \"?FailCode\"", "\"type\": \"?Nope\""), "not declared"))
-    assert(says(chat_with("\"type\": \"?FailCode\"", "\"type\": \"{text int}\""), "':'"))
-    assert(says(chat_with("\"type\": \"int>=0\", \"value\"", "\"type\": \"int>=\", \"value\""), "number"))
-}
-
-test "bad expr" {
-    assert(says(chat_with("\"op\": \"name\", \"name\": \"message\"", "\"op\": \"wat\", \"name\": \"message\""), "unknown op"))
-    assert(first_issue(chat_with("\"op\": \"lit\", \"value\": 30000", "\"op\": \"lit\"")).contains("constants[0].value"))
-}
-
-test "paths of errors" {
-    assert(first_issue(chat_with("\"kind\": \"human\"", "\"kind\": \"robot\"")).starts_with("$.parties[0].kind"))
-    assert(first_issue(chat_with("\"kind\": \"signal\", \"name\": \"user_message\"", "\"kind\": \"wish\", \"word\": \"user_message\"")).starts_with("$.states[0].rows[0].event.kind"))
-    assert(first_issue(chat_with("\"do\": \"journal\", \"code\": \"agent_done\"", "\"do\": \"teleport\", \"code\": \"agent_done\"")).starts_with("$.states[1].rows[1].actions[0].do"))
-}
-
-test "types section" {
-    ro t = "\"types\": {\"records\": [{\"name\": \"Item\", \"fields\": [{\"name\": \"label\", \"type\": \"text\"}, {\"name\": \"next\", \"type\": \"?Item\"}]}], \"variants\": [{\"name\": \"Mode\", \"cases\": [{\"name\": \"Fast\"}, {\"name\": \"Slow\", \"fields\": [{\"name\": \"by\", \"type\": \"int\"}]}]}]},"
-    ro text = chat_with("\"constants\": [", "${t} \"constants\": [")
-    ro def = decoded(text)
-    assert(def.types.records.len() == 2)
-    assert(def.types.records[0].name == "JournalEvent")
-    assert(def.types.records[1].fields.len() == 2)
-    assert(def.types.variants.len() == 4)
-    assert(def.types.variants[3].cases[1].fields.len() == 1)
-    assert(ok_text(text))
-    assert(says(chat_with("\"constants\": [", "\"types\": {\"records\": [{\"name\": \"FailCode\", \"fields\": []}]}, \"constants\": ["), "repeated or reserved"))
-    assert(says(chat_with("\"constants\": [", "\"types\": {\"records\": [{\"name\": \"JournalEvent\", \"fields\": []}]}, \"constants\": ["), "repeated or reserved"))
-    assert(says(chat_with("\"constants\": [", "\"types\": {\"records\": [{\"name\": \"int\", \"fields\": []}]}, \"constants\": ["), "repeated or reserved"))
-    assert(says(chat_with("\"constants\": [", "\"types\": {\"variants\": [{\"name\": \"Empty\", \"cases\": []}]}, \"constants\": ["), "needs a case"))
-    assert(says(chat_with("\"constants\": [", "\"types\": {\"bogus\": []}, \"constants\": ["), "bogus"))
 }
 
 test "decode details" {

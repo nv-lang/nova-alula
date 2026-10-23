@@ -3,8 +3,8 @@
 module alula.machine_nested
 
 import std.text
-import alula.machine.{standard_registry}
 import alula.machine_text.{translate_checked, render, render_machine}
+import alula.examples.{sample_registry}
 
 test "rn boss ru" {
     assert(circle(json_of(boss_text()), "ru") == "")
@@ -102,7 +102,7 @@ test "rn meeting en" {
 test "rn meeting same" {
     // the generated file is the canonical form: a second pass gives the same file
     ro first = render(meeting_json(), "ru")
-    ro again = translate_checked(first, standard_registry())
+    ro again = translate_checked(first, sample_registry())
     assert(again.errors.len() == 0)
     assert(render(again.json, "ru") == first)
 }

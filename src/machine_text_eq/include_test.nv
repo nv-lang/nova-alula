@@ -2,10 +2,11 @@
 module alula.machine_text_eq
 
 import std.text
-import alula.machine.{standard_registry, NamedText}
+import alula.machine.{NamedText}
 import alula.machine_table.{load_machine}
 import alula.machine_text.{translate_report, translate_checked_with, translate_checked, TranslateReport, defs_file_text}
 import alula.machine_text.{translate_definitions, DefsReport, definitions_hash}
+import alula.examples.{sample_registry}
 
 fn cycle_file() -> NamedText => { name: "арифметика_цикла", text: cycle_text() }
 
@@ -17,7 +18,7 @@ fn registry_files() -> []NamedText => [cycle_file(), meeting_file()]
 
 fn wrapper() -> str => case_text("meeting-wrapper.alula.md")
 
-fn wrapped(text str) -> TranslateReport => translate_checked_with(text, standard_registry(), registry_files())
+fn wrapped(text str) -> TranslateReport => translate_checked_with(text, sample_registry(), registry_files())
 
 fn says_any(report TranslateReport, needle str) -> bool {
     for e in report.errors {
@@ -55,7 +56,7 @@ test "in wrapper" {
 
 test "in wrapper loads" {
     ro report = wrapped(wrapper())
-    match load_machine(report.json, standard_registry()) {
+    match load_machine(report.json, sample_registry()) {
         Ok(def) => {
             assert(def.includes.len() == 2)
             assert(def.definitions.len() == 15)
@@ -114,46 +115,3 @@ test "in defs hash stable" {
 }
 
 // ---- the fragment -------------------------------------------------------------------------------------------------------------------
-
-fn pilot_with(old str, new str) -> TranslateReport => translate_checked(case_text("agent-step.alula.md").replace(old, new), standard_registry())
-
-test "in pause params" {
-    assert(says_any(pilot_with(",\n      право_записи: \"файлы, которые правит агент; пауза их права не трогает\")", ")"), "не назван параметр `право_записи`"))
-    assert(says_any(pilot_with("сигнал_остановки: остановить, ", ""), "не назван параметр `сигнал_остановки`"))
-    assert(says_any(pilot_with("вложенные: [],\n", ""), "не назван параметр `вложенные`"))
-    assert(says_any(pilot_with("код_остановки: \"pause_halt\"", "код_остановки: \"pause_halt\", лишний: \"x\""), "у фрагмента `Пауза` нет параметра `лишний`"))
-}
-
-test "in pause kinds" {
-    assert(says_any(pilot_with("код_остановки: \"pause_halt\"", "код_остановки: pause_halt"), "`код_остановки` — текст в кавычках"))
-    assert(says_any(pilot_with("сигнал_остановки: остановить", "сигнал_остановки: \"остановить\""), "`сигнал_остановки` — сигнал стороны, без кавычек"))
-    assert(says_any(pilot_with("отмена_запросов: прекратить_ход_транспорта", "отмена_запросов: отменять"), "`отмена_запросов`: механика, без_возврата_в_к_отправке, прекратить_ход_транспорта"))
-    assert(says_any(pilot_with("вход_заново: ничего", "вход_заново: никогда"), "`вход_заново`: ничего, запросы_из_к_отправке"))
-    assert(says_any(pilot_with("вложенные: []", "вложенные: ничего"), "`вложенные` — список машин"))
-    assert(says_any(pilot_with("право_записи: \"файлы, которые правит агент; пауза их права не трогает\"", "право_записи: 5"), "ожидается слово"))
-}
-
-test "in pause unknown" {
-    assert(says_any(pilot_with("Пауза(сигнал_остановки", "Остановка(сигнал_остановки"), "фрагмента `Остановка` нет в реестре"))
-    assert(says_any(pilot_with("отмена_запросов: прекратить_ход_транспорта", "отмена_запросов прекратить_ход_транспорта"), "ожидается `:`"))
-}
-
-test "in pause effects" {
-    ro halt = pilot_with("код_остановки: \"pause_halt\"", "код_остановки: \"pause_stop\"")
-    assert(says_any(halt, "\"pause_stop\" is not in"))
-    ro text = case_text("agent-step.alula.md")
-    ro before = text[..text.find("Пауза(сигнал_остановки") ?? 0]
-    ro include_line = before.split("\n").count()
-    mut seen = false
-    for e in halt.errors {
-        if e.message.contains("\"pause_stop\" is not in") && e.line == include_line { seen = true }
-    }
-    assert(seen)
-}
-
-test "in pause removed" {
-    ro without = case_text("agent-step.alula.md").replace("```\nПауза(сигнал_остановки: остановить, код_остановки: \"pause_halt\", вложенные: [],\n      отмена_запросов: прекратить_ход_транспорта, вход_заново: ничего,\n      право_записи: \"файлы, которые правит агент; пауза их права не трогает\")\n```", "")
-    ro report = translate_checked(without, standard_registry())
-    assert(report.json.contains("\"common_events\"") == false)
-    assert(report.json.contains("\"name\":\"Pause\"") == false)
-}

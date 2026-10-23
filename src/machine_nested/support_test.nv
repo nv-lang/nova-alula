@@ -4,9 +4,10 @@ module alula.machine_nested
 
 import std.text
 import std.encoding.json.{Json, JsonValue, JsonObject}
-import alula.machine.{standard_registry, Registry, Primitive, ParamSpec, TextType, RecordType, Reading, register}
+import alula.machine.{Registry, Primitive, ParamSpec, TextType, RecordType, Reading, register}
 import alula.machine_text.{translate_checked, translate_report, TranslateReport, TranslateError, error_text, render_machine, RenderReport}
 import alula.machine_table.{load_machine, parse_machine, MachineDef, LoadError, issue_text}
+import alula.examples.{sample_registry}
 
 // Three backticks: a block of code. A raw string cannot hold them, so they are put in.
 // ORACLE-WORKAROUND(43): the helper is `ticks`, not `fence`: a user function `fence` clashes with the C function of the runtime; rename to `fence` when item 43 is fixed
@@ -86,7 +87,7 @@ fn with_prims(text str, names []str) -> str {
 // The same machine with a piece replaced.
 fn boss_with(old str, new str) -> str => boss_text().replace(old, new)
 
-fn checked(text str) -> TranslateReport => translate_checked(text, standard_registry())
+fn checked(text str) -> TranslateReport => translate_checked(text, sample_registry())
 
 fn notes_of(report TranslateReport) -> []str {
     mut out = []str.new()
@@ -101,12 +102,6 @@ fn note_says(text str, needle str) -> bool {
         if line.contains(needle) { return true }
     }
     false
-}
-
-fn first_note(text str) -> str {
-    ro all = notes(text)
-    if all.len() == 0 { return "ok" }
-    all[0]
 }
 
 fn count_kind(text str, kind str) -> int {
@@ -135,7 +130,7 @@ fn def_of(text str) -> MachineDef {
 // The issues of the checks of a JSON tree, as lines.
 fn issues_of(json str) -> []str {
     mut out = []str.new()
-    match load_machine(json, standard_registry()) {
+    match load_machine(json, sample_registry()) {
         Ok(def) => ()
         Err(list) => {
             for e in list { out.push(issue_text(e)) }
@@ -241,14 +236,14 @@ fn tree_diff(a str, b str) -> str {
 fn circle(json str, lang str) -> str {
     ro made = render_machine(json, lang)
     if made.notes.len() > 0 { return "render: ${made.notes.join(" ## ")}" }
-    ro again = translate_checked(made.text, standard_registry())
+    ro again = translate_checked(made.text, sample_registry())
     if again.errors.len() > 0 { return "translate: ${notes_of(again).join(" ## ")}" }
     tree_diff(json, again.json)
 }
 
 // The standard registry with two parses of the type CallOutput of the small parent: `parse_call` takes the answer, `parse_call_role` the answer and the role.
 fn parse_registry() -> Registry {
-    mut reg = standard_registry()
+    mut reg = sample_registry()
     ro answer = ParamSpec { name: "answer", spec: RecordType("CallOutput") }
     ro role = ParamSpec { name: "role", spec: TextType }
     ro plain = Primitive { name: "parse_call", params: [answer], result: RecordType("CallOutput"), class: Reading, reads: []str.new(), writes: []str.new() }

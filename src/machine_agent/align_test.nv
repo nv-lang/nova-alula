@@ -3,16 +3,8 @@
 module alula.machine_agent
 
 import std.text
-import alula.machine.{standard_registry}
 import alula.machine_text.{translate_checked, translate_report, translate_names, JsonName, definitions_hash, error_text}
-
-fn labels154(names []JsonName) -> []str {
-    mut out = []str.new()
-    for n in names {
-        if !out.contains(n.where) { out.push(n.where) }
-    }
-    out
-}
+import alula.examples.{sample_registry}
 
 fn count_label154(names []JsonName, label str) -> int {
     mut n = 0
@@ -28,13 +20,6 @@ fn has_path154(names []JsonName, label str, path str, json str) -> bool {
     }
     false
 }
-
-fn first_cell154(line str) -> str {
-    for p in line.split("|") { return p }
-    ""
-}
-
-// ---- the label of a form with fields (AL-110) -------------------------------------------------------------------------------------------------
 
 test "a154 the agent step names its forms with fields by the label формы" {
     ro names = translate_names(ru17s())
@@ -61,43 +46,6 @@ test "a154 the meeting names its forms with fields by the label формы" {
     assert(has_path154(names, "формы", "КонтекстРоли.Свидетель", "WitnessContext"))
     assert(has_path154(names, "формы", "ОтветСвидетеля.Ответил", "Answered"))
 }
-
-test "a154 the labels are the labels of the reference script" {
-    ro want = ["поля входа", "данного", "настройки вратаря", "сигнала", "поля сигнала", "состояния", "примитива", "типа", "элемента перечисления", "формы", "поля"]
-    for name in ["ru", "en", "meeting"] {
-        for line in reference17(name) {
-            ro label = first_cell154(line)
-            assert(want.contains(label))
-        }
-    }
-    for n in translate_names(meeting17s()) { assert(want.contains(n.where)) }
-    for n in translate_names(ru17s()) { assert(want.contains(n.where)) }
-}
-
-test "a154 the files of the reference have the label формы and no label варианта" {
-    for name in ["ru", "en", "meeting"] {
-        ro text = names_file17(name)
-        assert(!text.contains("варианта"))
-        assert(text.contains("\tформы\t"))
-    }
-}
-
-test "a154 the reference counts the forms like the translator" {
-    ro ru = count_reference154("ru")
-    assert(ru == count_label154(translate_names(ru17s()), "формы"))
-    assert(count_reference154("en") == count_label154(translate_names(en17s()), "формы"))
-    assert(count_reference154("meeting") == count_label154(translate_names(meeting17s()), "формы"))
-}
-
-fn count_reference154(name str) -> int {
-    mut n = 0
-    for line in reference17(name) {
-        if line.starts_with("формы|") { n += 1 }
-    }
-    n
-}
-
-// ---- the record of the machine "Meeting" (AL-110) ----------------------------------------------------------------------------------------------
 
 test "a154 the table of the parameters of the meeting has plain defaults" {
     ro text = meeting17s()
@@ -143,7 +91,7 @@ fn ru_new_id154() -> str => ru17s().replace("| time_now | — | число | rea
 fn en_new_id154() -> str => en17s().replace("| time_now | — | int | reading | — | — |", "| time_now | — | int | reading | — | — |\n| new_id | — | id | reading | — | — |")
 
 fn clash154(text str) -> bool {
-    for e in translate_checked(text, standard_registry()).errors {
+    for e in translate_checked(text, sample_registry()).errors {
         if e.message.contains("AL-81") { return true }
     }
     false
@@ -191,7 +139,7 @@ fn line_no154(text str, start str) -> int {
 fn party_clean154(text str, start str) -> bool {
     ro at = line_no154(text, start)
     assert(at > 0)
-    for e in translate_checked(text, standard_registry()).errors {
+    for e in translate_checked(text, sample_registry()).errors {
         if e.line == at { return false }
     }
     true

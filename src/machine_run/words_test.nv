@@ -2,9 +2,9 @@
 // enum, `yes`/`no`, `none`, the composite values as compact JSON.
 module alula.machine_run
 
-// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
-import alula.machine.{Value, Int, Text, TypeDefs, RecordDef, VariantDef, CaseDef, FieldDef, EnumValue, TextType, IntType, DefTable, DefFn, Binding, Lit, call, enum_value, eval_defs, NoHost, Scope, standard_registry, value_text, value_json}
+import alula.machine.{Value, Int, Text, TypeDefs, RecordDef, VariantDef, CaseDef, FieldDef, EnumValue, TextType, IntType, DefTable, DefFn, Binding, Lit, call, enum_value, eval_defs, NoHost, Scope, value_text, value_json}
+import alula.examples.{sample_registry}
 
 fn plain_case(name str) -> CaseDef => { name, fields: []FieldDef.new() }
 
@@ -17,7 +17,7 @@ fn kinds_types() -> TypeDefs {
 }
 
 fn word_text(type_name str, case_name str) -> str {
-    ro table = DefTable { fns: []DefFn.new(), types: kinds_types(), globals: []Binding.new(), registry: standard_registry(), checked: false }
+    ro table = DefTable { fns: []DefFn.new(), types: kinds_types(), globals: []Binding.new(), registry: sample_registry(), checked: false }
     mut host = NoHost { unused: 0 }
     ro scope = Scope { bindings: []Binding.new() }
     ro expr = call("text", [Lit(enum_value(type_name, case_name))])
@@ -52,7 +52,9 @@ test "tw core text" {
 // ---- the data of a machine by section 5 ---------------------------------------------------------------------------------------
 
 fn jlit(json str) -> str => `{"op":"lit","value":${json}}`
+
 fn jvar(type_name str, name str) -> str => `{"op":"variant","type":"${type_name}","name":"${name}"}`
+
 fn dat(name str, type_text str, init str) -> str => `,{"name":"${name}","type":"${type_text}","initial":{"expr":${init}}}`
 
 fn more_types() -> str => `"types":{

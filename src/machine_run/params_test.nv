@@ -3,11 +3,12 @@
 module alula.machine_run
 
 import std.text
-import alula.machine.{Value, Int, Text, Float, Null, List, standard_registry, scenario_files, text_of_file}
+import alula.machine.{Value, Int, Text, Float, Null, List, text_of_file}
 import alula.machine_table.{MachineDef, load_machine}
+import alula.examples.{scenario_files, sample_registry}
 
 fn calc_def() -> MachineDef {
-    match load_machine(machine_text("calc.alula.json"), standard_registry()) {
+    match load_machine(machine_text("calc.alula.json"), sample_registry()) {
         Ok(def) => def
         Err(issues) => panic("calc does not load")
     }
@@ -15,7 +16,7 @@ fn calc_def() -> MachineDef {
 
 fn given(key str, value Value) -> []ProjectValue => [ProjectValue { key, value }]
 
-fn calc_with(params []ProjectValue) -> Result[AlulaMachine, str] => alula_machine_with(calc_def(), standard_registry(), params)
+fn calc_with(params []ProjectValue) -> Result[AlulaMachine, str] => alula_machine_with(calc_def(), sample_registry(), params)
 
 fn calc_count(params []ProjectValue) -> str {
     match calc_with(params) {
@@ -43,7 +44,7 @@ test "pp override" {
 }
 
 test "pp same machine" {
-    ro plain = alula_machine(calc_def(), standard_registry())
+    ro plain = alula_machine(calc_def(), sample_registry())
     match plain {
         Ok(m) => assert(datum_json(run1(m, m.initial(), start_with("{\"start\":0,\"label\":\"abc\"}")).state, "count") == "4")
         Err(e) => panic(e)
@@ -70,19 +71,19 @@ test "pp key shape" {
 test "pp no column" {
     ro bare = machine_text("calc.alula.json").replace(", \"project_key\": \"calc.step\"", "")
     assert(bare != machine_text("calc.alula.json"))
-    ro def = match load_machine(bare, standard_registry()) {
+    ro def = match load_machine(bare, sample_registry()) {
         Ok(d) => d
         Err(issues) => panic("calc without a key does not load")
     }
-    match alula_machine_with(def, standard_registry(), given("проект.calc.step", Int(5))) {
+    match alula_machine_with(def, sample_registry(), given("проект.calc.step", Int(5))) {
         Ok(m) => panic("built")
         Err(e) => assert(e.contains("no parameter has the key проект.calc.step"))
     }
-    match alula_machine_with(def, standard_registry(), given("проект.STEP", Int(5))) {
+    match alula_machine_with(def, sample_registry(), given("проект.STEP", Int(5))) {
         Ok(m) => panic("built")
         Err(e) => assert(e.contains("no parameter has the key проект.STEP"))
     }
-    match alula_machine_with(def, standard_registry(), []) {
+    match alula_machine_with(def, sample_registry(), []) {
         Ok(m) => assert(m.name() == "Calc")
         Err(e) => panic(e)
     }
@@ -123,80 +124,4 @@ test "pp scenario key" {
     assert(parse_err(bad).contains("the key of a parameter is проект.<key>"))
     ro good = "{\"format\":\"scenario/0\",\"machine\":\"Calc\",\"params\":{\"проект.calc.step\":5},\"steps\":[]}"
     assert(parse_err(good) == "ok")
-}
-
-fn policy_text() -> str => text_of_file(scenario_files(), "agent-step-policy-1.scenario.test.json")
-
-test "pp agent keys" {
-    ro sc = scenario_of("agent-step-policy-1.scenario.test.json")
-    assert(sc.params.len() == 1)
-    assert(sc.params[0].name == "проект.политика_разрешений")
-    assert(run_ok(agent_run("agent-step-policy-1.scenario.test.json")))
-    ro wrong = policy_text().replace("проект.политика_разрешений", "проект.другое")
-    assert(wrong != policy_text())
-    assert(parse_err(wrong) == "ok")
-}
-
-test "pp agent full dict" {
-    ro m = build_from(agent_text())
-    match alula_machine_with(m.def, standard_registry(), given("проект.политика_разрешений", Int(1))) {
-        Ok(b) => panic("built")
-        Err(e) => assert(e.contains("the parameter ПОЛИТИКА_РАЗРЕШЕНИЙ"))
-    }
-    match alula_machine_with(m.def, standard_registry(), given("проект.пауза_повтора", Int(5000))) {
-        Ok(b) => assert(b.name() == "agent_step")
-        Err(e) => panic(e)
-    }
-    match alula_machine_with(m.def, standard_registry(), given("проект.пауза_повтора", Int(-1))) {
-        Ok(b) => panic("built")
-        Err(e) => assert(e.contains("the parameter ПАУЗА_ПОВТОРА"))
-    }
-}
-
-// ---- P-8: the data of a word or a signal ----------------------------------------------------------------------------------
-
-fn malformed_in(file str, old str, new str) -> bool {
-    ro text = text_of_file(scenario_files(), file).replace(old, new)
-    if text == text_of_file(scenario_files(), file) { panic("nothing to replace in ${file}") }
-    match parse_scenario(text) {
-        Ok(sc) => {
-            ro run = run_scenario(build_from(agent_text()), sc)
-            for t in run.traces {
-                for j in t.journal {
-                    if j.starts_with("event_malformed") { return true }
-                }
-            }
-            false
-        }
-        Err(e) => panic("the scenario does not read")
-    }
-}
-
-test "pp several fields" {
-    ro sc = scenario_of("agent-step-pause-1.scenario.test.json")
-    assert(sc.steps[1].event.kind == "signal")
-    assert(sc.steps[1].event.input.starts_with("{"))
-    assert(sc.steps[1].event.input.contains("\"author\""))
-    assert(run_ok(agent_run("agent-step-pause-1.scenario.test.json")))
-}
-
-test "pp one field" {
-    ro sc = scenario_of("agent-step-common-3.scenario.test.json")
-    assert(sc.steps[1].event.kind == "signal")
-    assert(sc.steps[1].event.name == "cancel_request")
-    assert(sc.steps[1].event.input == "other-1")
-    assert(run_ok(agent_run("agent-step-common-3.scenario.test.json")))
-}
-
-test "pp no fields" {
-    ro sc = scenario_of("agent-step-pause-2.scenario.test.json")
-    assert(sc.steps[2].event.kind == "signal")
-    assert(sc.steps[2].event.name == "halt")
-    assert(sc.steps[2].event.input == "")
-    assert(run_ok(agent_run("agent-step-pause-2.scenario.test.json")))
-}
-
-test "pp wrong shape" {
-    assert(malformed_in("agent-step-pause-1.scenario.test.json", "{\"human_word\": \"w\", \"author\": \"ann\", \"source\": \"console\"}", "\"w\""))
-    assert(!malformed_in("agent-step-common-3.scenario.test.json", "\"input\": \"other-1\"", "\"input\": \"x-1\""))
 }

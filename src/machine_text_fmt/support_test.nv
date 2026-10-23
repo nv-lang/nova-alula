@@ -3,7 +3,7 @@
 module alula.machine_text_fmt
 
 import std.text
-import alula.machine.{standard_registry}
+import alula.examples.{sample_registry}
 import alula.machine_text.{translate_checked, TranslateReport, TranslateError, error_text}
 
 // Three backticks: a block of code. A raw string cannot hold them, so they are put in.
@@ -107,7 +107,7 @@ ${ticks()}
 | СТОП | 2 | остановка == "b" | Отказ(FailCode.NoResult, "b") |
 `
 
-fn checked(text str) -> TranslateReport => translate_checked(text, standard_registry())
+fn checked(text str) -> TranslateReport => translate_checked(text, sample_registry())
 
 // The JSON of the base machine (a test that compares many texts with it translates it once).
 fn base_json() -> str => checked(base_text()).json

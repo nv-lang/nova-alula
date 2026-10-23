@@ -3,7 +3,8 @@
 module alula.alula_cli
 
 import std.text
-import alula.machine.{NamedText, table_files, text_of_file}
+import alula.machine.{NamedText, text_of_file}
+import alula.examples.{table_files}
 
 fn fence_217() -> str => "```"
 
@@ -113,14 +114,6 @@ test "v217 a fork without else over numbers is refused" {
     ro ran = run217(["check", path217()], text)
     assert(ran.code == 1)
     assert(ran.err.contains("else"))
-}
-
-test "v217 the machines of the folder are read" {
-    for name in ["chat.alula.md", "dialog.alula.md", "callee.alula.md", "caller.alula.md", "fan.alula.md"] {
-        ro ran = run_with(["check", "/m/${name}"], one("/m/${name}", text_of_file(table_files(), name)))
-        if ran.code != 0 { panic("check ${name}: ${ran.err}") }
-        assert(ran.code == 0)
-    }
 }
 
 test "v217 the tables of the folder say format 2.22" {

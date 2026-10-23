@@ -2,8 +2,8 @@
 module alula.machine_text
 
 import std.text
-import alula.machine.{standard_registry}
 import alula.machine_table.{parse_machine, load_machine}
+import alula.examples.{sample_registry}
 
 test "tm clean" {
     ro report = checked(tiny_text())
@@ -15,7 +15,7 @@ test "tm clean" {
 test "tm loads" {
     match translate(tiny_text()) {
         Ok(json) => {
-            match load_machine(json, standard_registry()) {
+            match load_machine(json, sample_registry()) {
                 Ok(def) => {
                     assert(def.name == "Tiny")
                     assert(def.states.len() == 4)
@@ -298,4 +298,3 @@ test "tm summary" {
     assert(render_summary("{}").starts_with("not a machine"))
     assert(render_summary("not json").starts_with("not a machine"))
 }
-

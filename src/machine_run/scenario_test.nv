@@ -3,30 +3,14 @@ module alula.machine_run
 
 import std.text
 import std.encoding.json.{Json}
-import alula.machine.{scenario_files, machine_files, table_files, schema_files, data_dir_names, is_machine_json_name, NamedText, text_of_file}
-
-// The machine a scenario names.
-fn machine_named(name str) -> AlulaMachine {
-    if name == "ChatSession" { return chat() }
-    if name == "DialogSession" { return dialog() }
-    if name == "Calc" { return calc() }
-    if name == "Gate" { return build("gate.alula.json") }
-    if name == "Lenses" { return build("lenses.alula.json") }
-    if name == "Variants" { return build("variants.alula.json") }
-    if name == "agent_step" { return agent_step() }
-    panic("no machine ${name}")
-}
+import alula.machine.{schema_files, data_dir_names, is_machine_json_name, NamedText, text_of_file}
+import alula.examples.{machine_files, scenario_files, table_files, example_dir_names}
 
 fn scenario_of(file str) -> Scenario {
     match parse_scenario(text_of_file(scenario_files(), file)) {
         Ok(sc) => sc
         Err(e) => panic("the scenario ${file} does not parse: ${e.path}: ${e.message}")
     }
-}
-
-fn run_file(file str) -> ScenarioRun {
-    ro sc = scenario_of(file)
-    run_scenario(machine_named(sc.machine), sc)
 }
 
 fn run_text(machine AlulaMachine, text str) -> ScenarioRun {
@@ -43,183 +27,12 @@ fn parse_err(text str) -> str {
     }
 }
 
-fn one_step(step str) -> str => `{"format":"scenario/0","machine":"ChatSession","name":"t","start_at":1000,"steps":[${step}]}`
-
-test "every scenario" {
-    ro files = scenario_files()
-    assert(files.len() >= 56)
-    for f in files {
-        // the scenarios of a parent with its nested machines run in the unit `machine_nested_run`, those of the cycle check (standalone) in the unit `machine_cycle`, those of the session start
-        // together with the agent step it calls in the unit `machine_session` (task 121)
-        if f.name.starts_with("nested-") || f.name.starts_with("cycle-") || f.name.starts_with("session-") || f.name.starts_with("runner-") { continue }
-        ro sc = scenario_of(f.name)
-        ro run = run_scenario(machine_named(sc.machine), sc)
-        if !run_ok(run) { panic(report_text(run)) }
-        assert(run.traces.len() == sc.steps.len())
-        assert(run.name == sc.name)
-    }
-}
-
-test "scenario fields" {
-    ro sc = scenario_of("chat-message-opens-request.scenario.test.json")
-    assert(sc.machine == "ChatSession")
-    assert(sc.start_at == 1000)
-    assert(sc.steps.len() == 1)
-    assert(sc.steps[0].op == "feed")
-    assert(sc.steps[0].event.kind == "signal")
-    assert(sc.steps[0].event.name == "user_message")
-    assert(sc.steps[0].event.input == "hello")
-    assert(sc.steps[0].expect.has_state)
-    assert(sc.steps[0].expect.state == "Awaiting")
-    assert(sc.steps[0].expect.journal.len() == 1)
-    assert(sc.steps[0].expect.journal[0].code == "user_message")
-    assert(sc.steps[0].expect.journal[0].params[0].name == "text")
-    assert(sc.steps[0].expect.data.len() == 2)
-    assert(!sc.steps[0].expect.has_queue)
-    // a step of a machine without nested machines acts on the machine itself and compares it alone
-    assert(sc.steps[0].on == "")
-    assert(sc.steps[0].also.len() == 0)
-}
-
 test "scenario object input" {
     ro sc = scenario_of("calc-count-up.scenario.test.json")
     assert(sc.steps[0].event.kind == "start")
     assert(sc.steps[0].event.input == "{\"start\":0,\"label\":\"abc\"}")
     ro gate = scenario_of("gate-pause-continue.scenario.test.json")
     assert(gate.steps[1].event.input == "{\"author\":\"ann\",\"source\":\"console\"}")
-}
-
-test "scenario refused" {
-    assert(parse_err("not json").contains("not valid JSON"))
-    assert(parse_err("{}").contains("format"))
-    assert(parse_err("{\"format\":\"scenario/1\"}").contains("scenario/0"))
-    assert(parse_err(one_step("{\"do\":\"jump\"}")).contains("operation"))
-    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"dance\"}}")).contains("kind of an event"))
-    assert(parse_err(one_step("{\"do\":\"feed\",\"zzz\":1}")).contains("zzz"))
-    assert(parse_err(one_step("{\"do\":\"advance\",\"expect\":{\"mood\":\"x\"}}")).contains("mood"))
-    assert(parse_err(one_step("{\"do\":\"feed\"}")).contains("event"))
-    assert(parse_err(one_step("{\"do\":\"advance\",\"ms\":-5}")).contains("ms"))
-    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\"}}")).contains("name"))
-    assert(parse_err("{\"format\":\"scenario/0\",\"machine\":\"M\",\"name\":\"t\",\"steps\":{}}").contains("list"))
-    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"a\"},\"expect\":{\"journal\":[{\"params\":{}}]}}")).contains("code"))
-    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"a\"},\"expect\":{\"journal\":[{\"code\":\"x\",\"params\":{\"p\":1}}]}}")).contains("text"))
-    assert(parse_err(one_step("{\"do\":\"advance\",\"ms\":5}")) == "ok")
-}
-
-test "report of a difference" {
-    ro text = text_of_file(scenario_files(), "chat-message-opens-request.scenario.test.json")
-    ro wrong_state = text.replace("\"state\": \"Awaiting\"", "\"state\": \"Idle\"")
-    ro run = run_text(chat(), wrong_state)
-    assert(!run_ok(run))
-    assert(run.mismatches.len() == 1)
-    ro report = report_text(run)
-    assert(report.contains("step 1"))
-    assert(report.contains("state"))
-    assert(report.contains("expected Idle"))
-    assert(report.contains("got Awaiting"))
-    assert(report.contains(run.name))
-    ro wrong_journal = text.replace("\"text\": \"hello\"}}]", "\"text\": \"HELLO\"}}]")
-    ro run2 = run_text(chat(), wrong_journal)
-    assert(!run_ok(run2))
-    assert(report_text(run2).contains("journal"))
-    assert(report_text(run2).contains("text=HELLO"))
-    assert(report_text(run2).contains("text=hello"))
-}
-
-test "report of data" {
-    ro text = text_of_file(scenario_files(), "chat-message-opens-request.scenario.test.json")
-    ro run = run_text(chat(), text.replace("\"user\": \"hello\"", "\"user\": \"bye\""))
-    assert(!run_ok(run))
-    assert(report_text(run).contains("data user"))
-    assert(report_text(run).contains("\"bye\""))
-    ro unknown = run_text(chat(), text.replace("\"user\": \"hello\"", "\"nobody\": 1"))
-    assert(report_text(unknown).contains("nobody"))
-}
-
-test "report of the rest" {
-    ro text = text_of_file(scenario_files(), "chat-message-opens-request.scenario.test.json")
-    ro run = run_text(chat(), text.replace("\"open\": [\"agent-1\"]", "\"open\": [\"agent-2\"]").replace("\"outcome\": \"none\"", "\"outcome\": \"answer:x\"").replace("\"sent\": [\"agent-1\"]", "\"sent\": []"))
-    assert(!run_ok(run))
-    assert(run.mismatches.len() == 3)
-    ro report = report_text(run)
-    assert(report.contains("open"))
-    assert(report.contains("outcome"))
-    assert(report.contains("sent"))
-    assert(report.contains("answer:x"))
-    assert(report.contains("agent-2"))
-    assert(report_text(run_text(chat(), text)) == "")
-}
-
-test "trace parts" {
-    ro sc = scenario_of("chat-restart-before-send.scenario.test.json")
-    ro run = run_scenario(chat(), sc)
-    assert(run_ok(run))
-    assert(run.traces[0].op == "accept")
-    assert(run.traces[0].state == "Awaiting")
-    assert(run.traces[0].queue.len() == 1)
-    assert(run.traces[0].queue[0] == "send agent-1")
-    assert(run.traces[0].sent.len() == 0)
-    assert(run.traces[2].sent.len() == 1)
-    assert(run.traces[2].queue.len() == 0)
-    assert(run.traces[0].outcome == "none")
-    assert(run.traces[0].number == 2)
-    assert(run.traces[0].encoded.contains("Awaiting"))
-}
-
-test "trace journal" {
-    ro sc = scenario_of("chat-chunks-and-done.scenario.test.json")
-    ro run = run_scenario(chat(), sc)
-    assert(run.traces[1].journal.len() == 1)
-    assert(run.traces[1].journal[0] == "agent_chunk(text=Hel)")
-    assert(run.traces[3].journal[0] == "agent_done")
-    assert(run.traces[3].outcome == "answer:Hello")
-    assert(run.traces[3].entries.len() > run.traces[3].journal.len())
-}
-
-test "no expectation" {
-    ro run = run_text(chat(), one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"user_message\",\"input\":\"x\"}}"))
-    assert(run_ok(run))
-    assert(run.traces.len() == 1)
-    assert(report_text(run) == "")
-}
-
-// ORACLE-WORKAROUND(12, 13, 26): the type arguments of `drive_scenario` are written out here and in the tests below; infer them when items 12 and 13 are fixed
-test "drive is generic" {
-    ro sc = scenario_of("chat-silent-agent.scenario.test.json")
-    ro traces = drive_scenario[AlulaState, AlulaMachine](chat(), sc)
-    assert(traces.len() == sc.steps.len())
-    assert(traces[4].state == "Failed")
-    assert(traces[4].cancelled.len() == 1)
-    assert(traces[4].outcome == "refusal:Timeout")
-}
-
-test "gate scenario" {
-    ro run = run_file("gate-pause-continue.scenario.test.json")
-    assert(run_ok(run))
-    assert(run.traces[1].state == "Pause")
-    assert(run.traces[2].sent.len() == 2)
-    assert(run.traces[3].outcome == "answer:1")
-}
-
-test "lenses scenario" {
-    ro run = run_file("lenses-all-answer.scenario.test.json")
-    assert(run_ok(run))
-    assert(run.traces[0].sent.len() == 3)
-    assert(run.traces[0].sent[2] == "c-1")
-    assert(run.traces[3].outcome == "answer:[\"b\",\"a\",\"c\"]")
-}
-
-test "scenario twice" {
-    ro first = run_file("calc-count-up.scenario.test.json")
-    ro second = run_file("calc-count-up.scenario.test.json")
-    assert(first.traces.len() == second.traces.len())
-    assert(first.traces[0].encoded == second.traces[0].encoded)
-    assert(first.traces[0].journal.len() == second.traces[0].journal.len())
-}
-
-test "unstarted machine" {
-    ro run = run_text(calc(), one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"expect\":{\"state\":\"Start\",\"journal\":[{\"code\":\"event_ignored\",\"params\":{\"event\":\"go\",\"state\":\"Start\"}}]}}"))
-    assert(run_ok(run))
 }
 
 fn listed(files []NamedText) -> []str {
@@ -237,16 +50,16 @@ fn same_names(xs []str, ys []str) -> bool {
 }
 
 test "lists of files" {
-    assert(same_names(data_dir_names("scenarios"), listed(scenario_files())))
-    assert(same_names(data_dir_names("machines"), listed(machine_files())))
-    assert(same_names(data_dir_names("tables"), listed(table_files())))
+    assert(same_names(example_dir_names("scenarios"), listed(scenario_files())))
+    assert(same_names(example_dir_names("machines"), listed(machine_files())))
+    assert(same_names(example_dir_names("tables"), listed(table_files())))
     assert(same_names(data_dir_names("schema"), listed(schema_files())))
-    assert(data_dir_names("elsewhere").len() == 0)
+    assert(example_dir_names("elsewhere").len() == 0)
 }
 
 test "names by the Alula" {
     ro scenarios = scenario_files()
-    assert(scenarios.len() == 626)
+    assert(scenarios.len() == 66)
     for f in scenarios { assert(f.name.ends_with(".scenario.test.json")) }
     ro tables = table_files()
     assert(tables.len() == 10)
@@ -258,7 +71,7 @@ test "names by the Alula" {
 test "name of a compiled machine" {
     assert(is_machine_json_name("a.alula.json"))
     for n in ["a.json", "a.alula", "a.alula.md", "a.table.json", "machine.json", "a.scenario.test.json", "a.schema.json", "foo.machine.json", "foo.table.md", "foo.table.txt"] { assert(!is_machine_json_name(n)) }
-    assert(data_dir_names("machines").len() == 15)
+    assert(example_dir_names("machines").len() == 15)
 }
 
 test "scenario schema" {
@@ -274,15 +87,6 @@ test "scenario schema" {
 }
 
 // ---- the key `standalone` (task 122) ---------------------------------------------------------------------------------------------------------------
-
-test "standalone key default" {
-    ro sc = scenario_of("chat-message-opens-request.scenario.test.json")
-    assert(!sc.standalone)
-    match parse_scenario(`{"format":"scenario/0","machine":"M","steps":[]}`) {
-        Ok(x) => assert(!x.standalone)
-        Err(e) => assert(false)
-    }
-}
 
 test "standalone key true and false" {
     match parse_scenario(`{"format":"scenario/0","machine":"M","standalone":true,"steps":[]}`) {
@@ -305,16 +109,4 @@ test "standalone key in the schema" {
         Ok(j) => assert(j.to_str().contains("\"standalone\""))
         Err(e) => assert(false)
     }
-}
-
-test "cycle scenarios are standalone" {
-    mut n = 0
-    for f in scenario_files() {
-        if !f.name.starts_with("cycle-") { continue }
-        ro sc = scenario_of(f.name)
-        assert(sc.standalone)
-        assert(sc.machine == "cycle_check")
-        n += 1
-    }
-    assert(n == 101)
 }

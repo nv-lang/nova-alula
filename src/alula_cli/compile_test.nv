@@ -2,10 +2,9 @@
 module alula.alula_cli
 
 import std.text
-import alula.machine.{NamedText, standard_registry}
+import alula.machine.{NamedText}
 import alula.machine_text.{translate_checked, translate_report}
-
-
+import alula.examples.{sample_registry}
 
 // A line in the header that is no key.
 fn ru_unknown_format() -> str => tiny_ru().replace("- format: 2.22\n", "- format: 9.9\n")
@@ -20,7 +19,7 @@ test "cc json on the standard output" {
 }
 
 test "cc equals the translator" {
-    ro report = translate_checked(tiny_ru(), standard_registry())
+    ro report = translate_checked(tiny_ru(), sample_registry())
     assert(report.errors.len() == 0)
     ro ran = run_with(["compile", "/work/tiny.alula.md"], tiny_file())
     assert(ran.out == "${report.json}\n")
@@ -52,7 +51,7 @@ test "cc errors form and code 1" {
 }
 
 test "cc errors are the translator's" {
-    ro report = translate_checked(broken_ru(), standard_registry())
+    ro report = translate_checked(broken_ru(), sample_registry())
     assert(report.errors.len() > 0)
     ro ran = run_with(["compile", "/work/tiny.alula.md"], one("/work/tiny.alula.md", broken_ru()))
     // the first line of the output is the first note of the translator: file:line:column: kind: message

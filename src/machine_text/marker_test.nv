@@ -3,21 +3,11 @@
 module alula.machine_text
 
 import std.text
-import alula.machine.{chat_table_text}
 
 fn pieces(text str, sep str) -> []str {
     mut out = []str.new()
     for p in text.split(sep) { out.push(p) }
     out
-}
-
-fn first_word(text str) -> str => pieces(text, " ")[0]
-
-fn int_or(text str) -> int {
-    match text.to_int() {
-        Ok(n) => n
-        Err(e) => -1
-    }
 }
 
 // The text with the marker put before the line that starts with the given text.
@@ -95,17 +85,6 @@ fn name_note(text str) -> str {
 test "mk not a key" {
     ro text = tiny_text().replace("\nСторона: вратарь", "\n- Прочее: вратарь\nСторона: вратарь")
     assert(note_says(text, "лишняя строка"))
-}
-
-test "mk chat table" {
-    ro text = chat_table_text()
-    ro plain = json_of(text)
-    mut all = text
-    for key in ["machine: ", "machine_version: ", "format: ", "Начальное состояние: ", "Сторона: ", "Срок тишины: ", "Запрос:", "Читает: ", "При входе:", "При приёме:", "Кроме: ", "Результат: ", "Правит: "] {
-        all = marked(all, key)
-    }
-    assert(all != text)
-    assert(json_of(all) == plain)
 }
 
 test "mk nested list" {

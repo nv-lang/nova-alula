@@ -1,14 +1,11 @@
 // check_test.nv - task 116: `alula check` (a file of Alula or the JSON: the translation, the checks of the table, the warnings P-1) and `alula summary`.
 module alula.alula_cli
 
-// ORACLE-WORKAROUND(32): std.fs is imported FIRST in the first file of the unit, or `.join` on a `[]str` resolves to `Path.join` (E_RECV_METHOD_MISMATCH); drop this import when item 32 is fixed
 import std.fs.{Path}
 import std.text
-import alula.machine.{NamedText, standard_registry, chat_machine_text}
+import alula.machine.{NamedText}
 import alula.machine_text.{translate_checked, render_summary}
-
-
-
+import alula.examples.{sample_registry}
 
 // The tree whose initial state is not there: the decoder takes it, the checks refuse it.
 fn bad_initial_json() -> str => tiny_json().replace("\"initial\":\"Wait\"", "\"initial\":\"Nowhere\"")
@@ -30,13 +27,13 @@ test "ck alula file errors" {
     ro ran = run_with(["check", "/work/tiny.alula.md"], one("/work/tiny.alula.md", broken_ru()))
     assert(ran.code == 1)
     assert(ran.out == "")
-    ro report = translate_checked(broken_ru(), standard_registry())
+    ro report = translate_checked(broken_ru(), sample_registry())
     assert(ran.err.starts_with("/work/tiny.alula.md:${report.errors[0].line}:${report.errors[0].col}: ${report.errors[0].kind}: "))
     assert(ran.err.contains("\n    "))
 }
 
 test "ck all errors are printed" {
-    ro report = translate_checked(broken_ru(), standard_registry())
+    ro report = translate_checked(broken_ru(), sample_registry())
     ro ran = run_with(["check", "/work/tiny.alula.md"], one("/work/tiny.alula.md", broken_ru()))
     assert(count_lines_with(ran.err, "/work/tiny.alula.md:") >= report.errors.len())
 }
@@ -89,12 +86,6 @@ test "ck json other format" {
     ro ran = run_with(["check", "/work/tiny.alula.json"], one("/work/tiny.alula.json", `{"format":"machine/1"}`))
     assert(ran.code == 1)
     assert(ran.err.contains("check: "))
-}
-
-test "ck json machine from the product" {
-    ro ran = run_with(["check", "/work/chat.alula.json"], one("/work/chat.alula.json", chat_machine_text()))
-    assert(ran.code == 0)
-    assert(ran.out == "ok\n")
 }
 
 test "ck missing file" {

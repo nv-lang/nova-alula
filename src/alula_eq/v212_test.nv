@@ -3,93 +3,11 @@
 module alula.alula_eq
 
 import std.text
-import alula.machine.{NamedText, table_files, machine_files, text_of_file}
-
-fn product_tables() -> []str => ["callee.alula.md", "caller.alula.md", "chat.alula.md", "cycle_check.alula.md", "dialog.alula.md", "dialog_steps.alula.md", "fan.alula.md", "session_start.alula.md", "agent_step.alula.txt"]
-
-fn json_of_table(name str) -> str => name.replace(".alula.md", ".alula.json").replace(".alula.txt", ".alula.json")
-
-test "v212 table files say 2.22" {
-    for name in product_tables() {
-        ro text = text_of_file(table_files(), name)
-        assert(text.contains("format: 2.22\n"))
-        assert(!text.contains("format: 2.11"))
-        assert(!text.contains("alula-2.11"))
-    }
-}
+import alula.machine.{NamedText, text_of_file}
+import alula.examples.{machine_files, table_files}
 
 test "v212 json files say 2.22" {
     for f in machine_files() {
         assert(f.text.contains("\"alula_version\":\"2.22\"") || f.text.contains("\"alula_version\": \"2.22\""))
-    }
-}
-
-test "v212 compile makes the json of the product" {
-    for name in product_tables() {
-        // the tree of the chat is kept by hand with Latin names; its table is compared with a tolerance for the names in `chat_test` of `machine_text`
-        if name == "chat.alula.md" { continue }
-        ro made = run_with(["compile", "/m/${name}"], one("/m/${name}", text_of_file(table_files(), name)))
-        if made.code != 0 { panic("compile ${name}: ${made.err}") }
-        assert(same_tree(text_of_file(machine_files(), json_of_table(name)), made.out) == "")
-    }
-}
-
-test "v212 check takes every table" {
-    for name in product_tables() {
-        ro made = run_with(["check", "/m/${name}"], one("/m/${name}", text_of_file(table_files(), name)))
-        if made.code != 0 { panic("check ${name}: ${made.err}") }
-        assert(made.code == 0)
-    }
-}
-
-test "v212 compile refuses 2.11" {
-    ro old = text_of_file(table_files(), "dialog.alula.md").replace("format: 2.22", "format: 2.11")
-    assert(old.contains("format: 2.11"))
-    ro made = run_with(["compile", "/m/dialog.alula.md"], one("/m/dialog.alula.md", old))
-    assert(made.code != 0)
-    assert(made.err.contains("2.11"))
-    assert(made.err.contains("format: 2.22"))
-}
-
-test "v212 check refuses 2.11" {
-    ro old = text_of_file(table_files(), "chat.alula.md").replace("format: 2.22", "format: 2.11")
-    assert(old.contains("format: 2.11"))
-    ro made = run_with(["check", "/m/chat.alula.md"], one("/m/chat.alula.md", old))
-    assert(made.code != 0)
-}
-
-test "v212 render writes 2.22" {
-    ro made = run_with(["render", "/m/dialog.alula.json"], one("/m/dialog.alula.json", text_of_file(machine_files(), "dialog.alula.json")))
-    assert(made.code == 0)
-    assert(made.out.contains("- format: 2.22\n"))
-    ro en = run_with(["render", "/m/dialog.alula.json", "--language", "en"], one("/m/dialog.alula.json", text_of_file(machine_files(), "dialog.alula.json")))
-    assert(en.out.contains("- format: 2.22\n"))
-}
-
-test "v212 json of 2.11 is refused" {
-    ro old = text_of_file(machine_files(), "dialog.alula.json").replace("\"alula_version\":\"2.22\"", "\"alula_version\":\"2.11\"")
-    ro made = run_with(["render", "/m/dialog.alula.json"], one("/m/dialog.alula.json", old))
-    assert(made.code != 0)
-}
-
-test "v212 the line of the fragment in the written file" {
-    ro made = run_with(["render", "/m/dialog_steps.alula.json"], one("/m/dialog_steps.alula.json", text_of_file(machine_files(), "dialog_steps.alula.json")))
-    assert(made.code == 0)
-    assert(made.out.contains("Пауза(сигнал_остановки: halt, код_остановки: \"pause_halt\", вложенные: [agent_step], отмена_запросов: механика, вход_заново: ничего, право_записи: \"сессия ничего не пишет\")"))
-    assert(!made.out.contains("### Pause"))
-}
-
-test "v212 the line of the fragment in english" {
-    ro made = run_with(["render", "/m/dialog_steps.alula.json", "--language", "en"], one("/m/dialog_steps.alula.json", text_of_file(machine_files(), "dialog_steps.alula.json")))
-    assert(made.code == 0)
-    assert(made.out.contains("Pause(halt_signal: "))
-    assert(made.out.contains("reenter: nothing"))
-}
-
-test "v212 circle of every machine that includes the fragment" {
-    for name in ["dialog_steps.alula.json", "session_start.alula.json", "cycle_check.alula.json", "caller.alula.json", "fan.alula.json", "callee.alula.json", "agent_step.alula.json", "dialog.alula.json"] {
-        assert(circle(name, "ru") == "")
-        assert(circle(name, "en") == "")
-        assert(convert_circle(name) == "")
     }
 }

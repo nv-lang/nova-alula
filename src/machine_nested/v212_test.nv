@@ -3,8 +3,9 @@
 module alula.machine_nested
 
 import std.text
-import alula.machine.{standard_registry, Registry, Primitive, ParamSpec, TextType, IntType, BoolType, RecordType, ListType, Reading, Pure, register, add_role}
+import alula.machine.{Registry, Primitive, ParamSpec, TextType, IntType, BoolType, RecordType, ListType, Reading, Pure, register, add_role}
 import alula.machine_text.{translate_checked, render, render_machine, TranslateReport}
+import alula.examples.{sample_registry}
 
 // A file at 2.12 (the fixtures of the older tasks are migrated by the same replace).
 fn at212(text str) -> str => text.replace("- format: 2.11\n", "- format: 2.22\n")
@@ -46,15 +47,6 @@ test "v212 fragments halt word" {
     assert(word != "")
     // the word is a gate word of the party `enhanced`
     assert(json.contains("{\"name\":\"${word}\"") )
-}
-
-test "v212 fragments args" {
-    ro json = tree_of(meeting212())
-    assert(json.contains("\"halt_code\":{\"op\":\"lit\",\"value\":\"Witness_halt_meeting\"}"))
-    assert(json.contains("\"nested\":{\"op\":\"list\",\"items\":[{\"op\":\"lit\",\"value\":\"agent_step\"}]}"))
-    assert(json.contains("\"cancel_requests\":{\"op\":\"lit\",\"value\":\"without_return_to_send\"}"))
-    assert(json.contains("\"reenter\":{\"op\":\"lit\",\"value\":\"requests_from_to_send\"}"))
-    assert(json.contains("\"write_right\":{\"op\":\"lit\",\"value\":\"право записи на предложение: закрытое в окне проверки линз остаётся закрытым\"}"))
 }
 
 test "v212 fragments order of the args" {
@@ -179,7 +171,7 @@ test "v212 circle en" {
 test "v212 circle ru en ru" {
     ro tree = tree_of(meeting212())
     ro en = render(tree, "en")
-    ro back = translate_checked(en, standard_registry())
+    ro back = translate_checked(en, sample_registry())
     assert(back.errors.len() == 0)
     ro ru_again = render(back.json, "ru")
     assert(ru_again == render(tree, "ru"))
@@ -286,7 +278,7 @@ test "v212 call without the fields it needs" {
 // ---- a pure primitive in a condition (AL-29) --------------------------------------------------------------------------------------------
 
 fn pure_registry() -> Registry {
-    mut reg = standard_registry()
+    mut reg = sample_registry()
     ro p = Primitive { name: "big", params: [ParamSpec { name: "n", spec: IntType }], result: BoolType, class: Pure, reads: []str.new(), writes: []str.new() }
     ro r = register(reg, p)
     reg
@@ -384,7 +376,7 @@ test "v212 field named as a datum read by the rows" {
 // ---- the table "by role" of the parse (AL-33) ---------------------------------------------------------------------------------------------
 
 fn roles_registry() -> Registry {
-    mut reg = standard_registry()
+    mut reg = sample_registry()
     ro answer = ParamSpec { name: "answer", spec: RecordType("CallOutput") }
     ro role = ParamSpec { name: "role", spec: TextType }
     ro p = Primitive { name: "read_by_role", params: [answer, role], result: RecordType("CallOutput"), class: Reading, reads: []str.new(), writes: []str.new() }

@@ -3,51 +3,8 @@
 module alula.machine_run
 
 import std.text
-import alula.machine.{machine_files, scenario_files, text_of_file}
-
-fn signal_step(name str, party str, input str) -> str {
-    ro who = if party == "" { "" } else { ",\"party\":\"${party}\"" }
-    ro data = if input == "" { "" } else { ",\"input\":\"${input}\"" }
-    `{"do":"feed","event":{"kind":"signal","name":"${name}"${who}${data}}}`
-}
-
-// ---- the step signal of a scenario ------------------------------------------------------------------------------------------------------------
-
-test "v213 word step refused" {
-    ro text = one_step(`{"do":"feed","event":{"kind":"word","name":"user_message","input":"hi"}}`)
-    ro got = parse_err(text)
-    assert(got != "ok")
-    assert(got.contains("signal"))
-}
-
-test "v213 signal step parses" {
-    assert(parse_err(one_step(signal_step("user_message", "", "hi"))) == "ok")
-}
-
-test "v213 signal step with its party parses" {
-    assert(parse_err(one_step(signal_step("user_message", "user", "hi"))) == "ok")
-}
-
-test "v213 signal step runs on the chat machine" {
-    ro run = run_text(chat(), one_step(signal_step("user_message", "", "hi").replace("}}", "},\"expect\":{\"state\":\"Awaiting\"}}")))
-    assert(run_ok(run))
-}
-
-test "v213 signal step names the party that declared the signal" {
-    ro run = run_text(chat(), one_step(signal_step("user_message", "user", "hi").replace("}}", "},\"expect\":{\"state\":\"Awaiting\"}}")))
-    assert(run_ok(run))
-}
-
-test "v213 signal of another party is a mistake of the scenario" {
-    ro run = run_text(chat(), one_step(signal_step("user_message", "agent", "hi")))
-    assert(!run_ok(run))
-    assert(report_text(run).contains("agent"))
-}
-
-test "v213 party that does not exist" {
-    ro run = run_text(chat(), one_step(signal_step("user_message", "nobody", "hi")))
-    assert(!run_ok(run))
-}
+import alula.machine.{text_of_file}
+import alula.examples.{machine_files, scenario_files}
 
 test "v213 event kinds" {
     assert(!event_kinds().contains("word"))
@@ -62,28 +19,10 @@ test "v213 scenario files use the signal step" {
         if f.text.contains("\"kind\": \"signal\"") { signals += 1 }
     }
     assert(words == 0)
-    assert(signals > 400)
+    assert(signals > 15)
 }
 
 // ---- the question of the hub -------------------------------------------------------------------------------------------------------------------
-
-test "v213 accepts a signal of the table" {
-    ro m = chat()
-    assert(m.accepts_word(m.initial(), "user_message"))
-}
-
-test "v213 does not accept what the table does not declare" {
-    ro m = chat()
-    assert(!m.accepts_word(m.initial(), "no_such_signal"))
-}
-
-test "v213 the chat machine declares its signals at the party" {
-    ro text = machine_text("chat.alula.json")
-    assert(text.contains("\"signals\""))
-    assert(!text.contains("\"words\""))
-}
-
-// ---- AL-48: an optional field of the input -------------------------------------------------------------------------------------------------------------
 
 fn opt13() -> AlulaMachine {
     ro data = `{"name":"session","type":"text","initial":{"from_input":"session"}},{"name":"note","type":"?text","initial":{"from_input":"note"}},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}`

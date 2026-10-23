@@ -2,12 +2,11 @@
 // local variables of the author (the parameters of a definition, `let`, the variables of a lambda and of a loop, the bindings of an event) and the strings of the author.
 module alula.machine_agent_en
 
-// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
 import std.encoding.json.{Json, JsonValue, JsonObject}
-import alula.machine.{standard_registry}
 import alula.machine_agent.{methodology_text, methodology_en_text}
 import alula.machine_text.{translate_checked, TranslateReport}
+import alula.examples.{sample_registry}
 
 fn lf(text str) -> str => text.replace("\r\n", "\n")
 
@@ -15,25 +14,11 @@ fn ru_sample() -> str => lf(methodology_text())
 
 fn en_sample() -> str => lf(methodology_en_text())
 
-fn report_of(text str) -> TranslateReport => translate_checked(text, standard_registry())
+fn report_of(text str) -> TranslateReport => translate_checked(text, sample_registry())
 
 fn en_report() -> TranslateReport => report_of(en_sample())
 
 fn ru_report() -> TranslateReport => report_of(ru_sample())
-
-// The English sample with the keys of the project in the column `project_override` of the two parameters (the sample has `—`: its source names no key); the product's table has the same keys.
-// The product writes the field of the transport usage as `usage` (its scenarios and the engine say so), the sample as `transport_usage`: the field is renamed in the five declarations.
-fn en_keyed() -> str {
-    ro first = en_sample().replace("| RETRY_PAUSE | int>=0 | 2000 | — |", "| RETRY_PAUSE | int>=0 | 2000 | project.пауза_повтора |").replace("transport_usage TransportUsage", "usage TransportUsage").replace("transport_usage: received", "usage: received").replace("| transport_usage | — | executor |", "| usage | transport_usage | executor |")
-    ro at = first.find("| PERMISSION_POLICY | full map[ActionKind, ") ?? -1
-    if at < 0 { panic("the parameter PERMISSION_POLICY is not in the sample") }
-    ro line_end = first[at..].find("\n") ?? -1
-    ro line = first[at..at + line_end]
-    if !line.ends_with("| — |") { panic("the last cell of PERMISSION_POLICY is not a dash") }
-    "${first[..at]}${line[..line.byte_len() - ("| — |").byte_len()]}| project.политика_разрешений |${first[at + line_end..]}"
-}
-
-// ---- trees compared without the names of the locals ----------------------------------------------------------------------------
 
 fn sval(o JsonObject, key str) -> str {
     match o.get(key) {

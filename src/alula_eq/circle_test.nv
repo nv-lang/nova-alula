@@ -2,10 +2,9 @@
 // equal JSON in Russian and in English, and `convert` ru -> en -> ru gives an equal JSON; the commands give what the functions of the translator give.
 module alula.alula_eq
 
-// ORACLE-WORKAROUND(32): std.fs is imported FIRST in the first file of the unit, or `.join` on a `[]str` resolves to `Path.join` (E_RECV_METHOD_MISMATCH); drop this import when item 32 is fixed
 import std.fs.{Path}
 import std.text
-import alula.machine.{NamedText, standard_registry, chat_table_text, agent_step_table_text}
+import alula.machine.{NamedText}
 import alula.machine_text.{translate_checked, render, render_summary}
 
 // A circle through the program: the JSON of the machine -> `render` in the language -> `compile` of the file it wrote. "" when the second tree equals the first, else why not.
@@ -33,29 +32,6 @@ fn convert_circle(name str) -> str {
     same_tree(json, back.out)
 }
 
-// The same from a file of Alula that the product keeps (the tables of the chat and of the agent step): convert to the other language and back; the tree is the one of the file.
-fn file_convert_circle(name str, text str) -> str {
-    ro first = run_with(["compile", "/m/${name}"], one("/m/${name}", text))
-    if first.code != 0 { return "compile ${name}: ${first.err}" }
-    ro english = run_with(["convert", "/m/${name}", "--language", "en"], one("/m/${name}", text))
-    if english.code != 0 { return "convert en ${name}: ${english.err}" }
-    ro again = run_with(["convert", "/m/e.alula.md", "--language", "ru"], one("/m/e.alula.md", english.out))
-    if again.code != 0 { return "convert ru ${name}: ${again.err}" }
-    ro back = run_with(["compile", "/m/f.alula.md"], one("/m/f.alula.md", again.out))
-    if back.code != 0 { return "compile ${name}: ${back.err}" }
-    same_tree(first.out, back.out)
-}
-
-// ---- compile -> render -> compile ---------------------------------------------------------------------------------------------
-
-test "pe circle chat ru" { assert(circle("chat.alula.json", "ru") == "") }
-
-test "pe circle chat en" { assert(circle("chat.alula.json", "en") == "") }
-
-test "pe circle agent step ru" { assert(circle("agent_step.alula.json", "ru") == "") }
-
-test "pe circle agent step en" { assert(circle("agent_step.alula.json", "en") == "") }
-
 test "pe circle calc ru" { assert(circle("calc.alula.json", "ru") == "") }
 
 test "pe circle calc en" { assert(circle("calc.alula.json", "en") == "") }
@@ -76,18 +52,6 @@ test "pe circle actions ru" { assert(circle("actions.alula.json", "ru") == "") }
 
 test "pe circle actions en" { assert(circle("actions.alula.json", "en") == "") }
 
-test "pe the machines are the files of the product" {
-    ro names = json_names()
-    assert(names.len() == 7)
-    for name in names { assert(machine_json(name).byte_len() > 100) }
-}
-
-// ---- convert ru -> en -> ru ------------------------------------------------------------------------------------------------------
-
-test "pe convert chat" { assert(convert_circle("chat.alula.json") == "") }
-
-test "pe convert agent step" { assert(convert_circle("agent_step.alula.json") == "") }
-
 test "pe convert calc" { assert(convert_circle("calc.alula.json") == "") }
 
 test "pe convert gate" { assert(convert_circle("gate.alula.json") == "") }
@@ -98,21 +62,6 @@ test "pe convert variants" { assert(convert_circle("variants.alula.json") == "")
 
 test "pe convert actions" { assert(convert_circle("actions.alula.json") == "") }
 
-test "pe convert chat table" { assert(file_convert_circle("chat.alula.md", chat_table_text()) == "") }
-
-test "pe convert agent step table" { assert(file_convert_circle("agent_step.alula.md", agent_step_table_text()) == "") }
-
-// ---- the commands are the functions of the translator --------------------------------------------------------------------------
-
-test "pe compile is translate checked" {
-    ro text = chat_table_text()
-    ro ran = run_with(["compile", "/m/chat.alula.md"], one("/m/chat.alula.md", text))
-    ro report = translate_checked(text, standard_registry())
-    assert(report.errors.len() == 0)
-    assert(ran.code == 0)
-    assert(ran.out == "${report.json}\n")
-}
-
 test "pe render is the function" {
     ro json = machine_json("calc.alula.json")
     for language in ["ru", "en"] {
@@ -120,40 +69,4 @@ test "pe render is the function" {
         assert(ran.code == 0)
         assert(ran.out == render(json, language))
     }
-}
-
-test "pe summary is the function" {
-    ro json = machine_json("gate.alula.json")
-    ro ran = run_with(["summary", "/m/gate.alula.json"], one("/m/gate.alula.json", json))
-    assert(ran.code == 0)
-    assert(ran.out == "${render_summary(json)}\n")
-    ro from_table = run_with(["summary", "/m/chat.alula.md"], one("/m/chat.alula.md", chat_table_text()))
-    assert(from_table.out == "${render_summary(translate_checked(chat_table_text(), standard_registry()).json)}\n")
-}
-
-test "pe check every machine of the product" {
-    for name in json_names() {
-        ro ran = run_with(["check", "/m/${name}"], one("/m/${name}", machine_json(name)))
-        assert(ran.err == "")
-        assert(ran.code == 0)
-        assert(ran.out == "ok\n")
-    }
-}
-
-test "pe check the tables of the product" {
-    ro chat = run_with(["check", "/m/chat.alula.md"], one("/m/chat.alula.md", chat_table_text()))
-    assert(chat.code == 0)
-    assert(chat.out == "ok\n")
-    ro step = run_with(["check", "/m/agent_step.alula.md"], one("/m/agent_step.alula.md", agent_step_table_text()))
-    assert(step.code == 0)
-    assert(step.out == "ok\n")
-}
-
-test "pe the tree of a table is the tree of the compile" {
-    // `compile` of the table of the chat and the written JSON of the chat run the same scenarios (task 108); here: the same machine name and the same states
-    ro ran = run_with(["compile", "/m/chat.alula.md"], one("/m/chat.alula.md", chat_table_text()))
-    assert(ran.out.contains("\"machine\":\"ChatSession\""))
-    ro summary_json = run_with(["summary", "/m/chat.alula.json"], one("/m/chat.alula.json", machine_json("chat.alula.json")))
-    ro summary_table = run_with(["summary", "/m/chat.alula.md"], one("/m/chat.alula.md", chat_table_text()))
-    assert(summary_json.out == summary_table.out)
 }

@@ -3,7 +3,6 @@ module alula.machine_table
 
 import std.text
 import alula.machine.{schema_files, text_of_file}
-
 fn kind_types(words str) -> str => `"types":{"variants":[{"name":"Kind","cases":[{"name":"Read"},{"name":"Write"},{"name":"Other"}]${words}}]},`
 
 fn with_kind(words str) -> str => tiny().replace("\"data\":[", "${kind_types(words)}\"data\":[")

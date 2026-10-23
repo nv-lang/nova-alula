@@ -6,8 +6,9 @@ import std.fs.{Path, MemFs, mock_fs, write_text, read_text, create_dir_all, try_
 import std.text
 import std.io.{IoCapture, mock_io}
 import std.os.{MockOs, mock_os}
-import alula.machine.{NamedText, standard_registry}
+import alula.machine.{NamedText}
 import alula.machine_text.{translate_checked, translate_report, render_machine, render_summary}
+import alula.examples.{sample_registry}
 
 /// Ran: what a run of the program left: the exit code, the standard output, the standard error, the text of the file `back` (empty when it is not there).
 type Ran { code int, out str, err str, back str, present bool }
@@ -244,9 +245,9 @@ fn tiny_scenario_wrong() -> str => `{"format":"scenario/0","machine":"Tiny","nam
 fn other_scenario() -> str => `{"format":"scenario/0","machine":"Other","name":"other","start_at":1000,"steps":[{"do":"feed","event":{"kind":"start"},"expect":{"state":"Wait"}}]}`
 
 // The JSON of the small machine, translated and checked by the functions of the translator.
-fn tiny_json() -> str => translate_checked(tiny_ru(), standard_registry()).json
+fn tiny_json() -> str => translate_checked(tiny_ru(), sample_registry()).json
 
-fn tiny_json_en() -> str => translate_checked(tiny_en(), standard_registry()).json
+fn tiny_json_en() -> str => translate_checked(tiny_en(), sample_registry()).json
 
 fn tiny_file() -> []NamedText => one("/work/tiny.alula.md", tiny_ru())
 

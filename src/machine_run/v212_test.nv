@@ -3,9 +3,8 @@
 module alula.machine_run
 
 import std.text
-import alula.machine.{Text, scenario_files, machine_files, text_of_file}
-
-// ---- the parse (AL-33) -------------------------------------------------------------------------------------------------------------------
+import alula.machine.{Text, text_of_file}
+import alula.examples.{machine_files, scenario_files}
 
 test "v212 parse value of another type is a defect" {
     ro wrong = ScriptedReply { name: "parse_out", value: Text("not a record") }
@@ -54,64 +53,6 @@ test "v212 parse failure after the returns is the code of the form" {
 }
 
 // ---- the flat input of the nested machine "Agent step" (AL-30) ------------------------------------------------------------------------
-
-fn agent_fields() -> []str => ["kind", "profile", "session", "dialog_kind", "context", "limits", "trace", "step"]
-
-test "v212 agent step input is the eight fields" {
-    ro text = machine_text("agent_step.alula.json")
-    ro at = text.find("\"input\":") ?? -1
-    assert(at >= 0)
-    ro part = text[at..]
-    ro end = part.find("\"data\":") ?? part.byte_len()
-    ro input = part[..end]
-    for f in agent_fields() { assert(input.contains("\"name\":\"${f}\"")) }
-    assert(!input.contains("\"name\":\"agent_request\""))
-}
-
-test "v212 agent step builds the record" {
-    ro text = machine_text("agent_step.alula.json")
-    assert(text.contains("\"op\":\"record\",\"type\":\"AgentRequest\""))
-}
-
-test "v212 callers send the flat record" {
-    for name in ["dialog_steps.alula.json", "session_start.alula.json"] {
-        ro text = machine_text(name)
-        assert(text.contains("\"input_type\":\"AgentRequest\""))
-        assert(!text.contains("StepInput"))
-    }
-}
-
-test "v212 callers give the profile by the column" {
-    for name in ["dialog_steps.alula.json", "session_start.alula.json"] {
-        ro text = machine_text(name)
-        assert(text.contains("\"nested\":\"agent_step\""))
-        assert(text.contains("\"profile\":{"))
-    }
-}
-
-test "v212 scenarios of the agent step start with the flat input" {
-    mut seen = 0
-    for f in scenario_files() {
-        if !f.name.starts_with("agent-step-") { continue }
-        assert(!f.text.contains("\"input\": {\"agent_request\""))
-        assert(!f.text.contains("\"input\":{\"agent_request\""))
-        if f.text.contains("\"kind\": \"start\"") { seen += 1 }
-    }
-    assert(seen > 50)
-}
-
-test "v212 scenarios of the agent step name the fields" {
-    ro text = text_of_scenario("agent-step-flow-happy.scenario.test.json")
-    assert(text.contains("\"input\": {\"kind\": {\"$variant\": \"CallerKind\""))
-    assert(text.contains("\"dialog_kind\": \"main\""))
-}
-
-fn text_of_scenario(name str) -> str => text_of_file(scenario_files(), name)
-
-test "v212 the missing field of the input is named" {
-    ro text = text_of_scenario("agent-step-flow-input-missing.scenario.test.json")
-    assert(!text.contains("\"field\": \"agent_request\""))
-}
 
 test "v212 machines hold no old version" {
     for f in machine_files() {

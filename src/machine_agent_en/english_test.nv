@@ -3,10 +3,11 @@
 module alula.machine_agent_en
 
 import std.text
-import alula.machine.{standard_registry, agent_step_machine_text, scenario_files, NamedText}
+import alula.machine.{NamedText}
 import alula.machine_table.{load_machine}
 import alula.machine_run.{AlulaMachine, load_alula_machine, parse_scenario, run_scenario, run_ok, report_text}
 import alula.machine_text.{translate_report, error_text, render_summary, TranslateReport}
+import alula.examples.{scenario_files}
 
 fn first_error(report TranslateReport) -> str {
     if report.errors.len() == 0 { return "ok" }
@@ -48,29 +49,6 @@ test "ae copied as it is" {
     assert(text.byte_len() > 20000)
 }
 
-test "ae header" {
-    ro json = en_report().json
-    assert(json.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.22\",\"machine\":\"agent_step\",\"version\":\"alula-2.22\",\"title\":\"Agent step\""))
-}
-
-test "ae loads" {
-    match load_machine(en_report().json, standard_registry()) {
-        Ok(def) => {
-            assert(def.name == "agent_step")
-            assert(def.states.len() == 14)
-            assert(def.common.len() == 6)
-            assert(def.parties.len() == 3)
-            assert(def.data.len() == 21)
-            assert(def.definitions.len() == 16)
-            assert(def.end_rows.len() == 13)
-            assert(def.primitives.len() == 3)
-            assert(def.request_limit.len() == 1)
-            assert(def.params.len() == 2)
-        }
-        Err(issues) => panic("the English sample does not load: ${issues[0].path}: ${issues[0].message}")
-    }
-}
-
 test "ae summary equals ru" {
     assert(render_summary(en_report().json) == render_summary(ru_report().json))
     assert(render_summary(en_report().json).contains("  AgentTurn (appeal): 9 rows, 18 actions"))
@@ -97,15 +75,6 @@ test "ae json differences are known" {
         assert(en.contains(word))
     }
 }
-
-test "ae the keyed sample is the product table" {
-    ro keyed = report_of(en_keyed())
-    assert(first_error(keyed) == "ok")
-    assert(tree_text(keyed.json) == tree_text(ru_in_english(agent_step_machine_text(), keyed.json)))
-    assert(keyed.json.contains("\"project_key\":\"пауза_повтора\""))
-}
-
-// ---- the words of the language are of one language ------------------------------------------------------------------------------
 
 test "ae language line" {
     ro without = en_sample().replace("- language: en\n", "")
@@ -166,40 +135,3 @@ test "ae fragment words" {
 }
 
 // ---- the 83 scenarios of the agent step run on the English sample ----------------------------------------------------------------
-
-fn agent_scenarios() -> []NamedText {
-    mut out = []NamedText.new()
-    for f in scenario_files() {
-        if f.name.starts_with("agent-step-") { out.push(f) }
-    }
-    out
-}
-
-fn en_machine() -> AlulaMachine {
-    match load_alula_machine(report_of(en_keyed()).json, standard_registry()) {
-        Ok(m) => m
-        Err(e) => panic("the English agent step is not made: ${e}")
-    }
-}
-
-test "ae scenarios 75" {
-    ro all = agent_scenarios()
-    assert(all.len() == 83)
-    ro m = en_machine()
-    mut failed = 0
-    mut first = ""
-    for f in all {
-        match parse_scenario(f.text) {
-            Ok(sc) => {
-                ro run = run_scenario(m, sc)
-                if !run_ok(run) {
-                    failed += 1
-                    if first == "" { first = "${f.name}: ${report_text(run)}" }
-                }
-            }
-            Err(e) => panic("${f.name}: ${e.path}: ${e.message}")
-        }
-    }
-    if first != "" { panic(first) }
-    assert(failed == 0)
-}

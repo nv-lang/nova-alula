@@ -4,7 +4,8 @@
 module alula.machine_text_lang
 
 import std.text
-import alula.machine.{NamedText, table_files, text_of_file, standard_registry}
+import alula.machine.{NamedText, text_of_file}
+import alula.examples.{table_files, sample_registry}
 import alula.machine_text.{translate_checked_with, definitions_hash, TranslateReport, render}
 
 fn list154() -> str => "{\"op\":\"list\",\"items\":[]}"
@@ -335,7 +336,7 @@ fn colors_file154() -> str => "# Функции: цвета\n\n- functions_versi
 fn with_colors154(text str, file str) -> str =>
     text.replace("## Состояния\n", "## Подключения\n\n${fence222()}\nфункции: цвета версия 1 хеш ${definitions_hash(file)}\n${fence222()}\n\n## Состояния\n").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| фон | Фон | Красный | — | строки |\n")
 
-fn report154(text str, file str) -> TranslateReport => translate_checked_with(text, standard_registry(), [NamedText { name: "цвета", text: file }])
+fn report154(text str, file str) -> TranslateReport => translate_checked_with(text, sample_registry(), [NamedText { name: "цвета", text: file }])
 
 test "b154 a name of an element of a file of functions is found" {
     ro text = with_colors154(tiny_ru(), colors_file154())

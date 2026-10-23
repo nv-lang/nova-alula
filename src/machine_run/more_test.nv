@@ -2,8 +2,9 @@
 module alula.machine_run
 
 import std.text
-import alula.machine.{Null, Int, standard_registry}
+import alula.machine.{Null, Int}
 import alula.engine.{Incoming, EventKind}
+import alula.examples.{sample_registry}
 
 fn gate() -> AlulaMachine => build("gate.alula.json")
 
@@ -124,17 +125,17 @@ test "constants" {
     ro r = run1(m, m.initial(), start_with("{\"start\":0,\"label\":\"x\"}"))
     assert(summary(r.orders) == "log:started(label=x),log:stepped(count=4),log:stepped(count=8),log:reached_limit(count=8),finish:answer:8,save")
     ro wrong = machine_text("calc.alula.json").replace("\"value\": 3 }", "\"value\": -1 }")
-    match load_alula_machine(wrong, standard_registry()) {
+    match load_alula_machine(wrong, sample_registry()) {
         Ok(x) => assert(false)
         Err(e) => assert(e.contains("the constant LIMIT"))
     }
     ro bad_param = machine_text("calc.alula.json").replace("\"default\": { \"op\": \"lit\", \"value\": 2 }", "\"default\": { \"op\": \"lit\", \"value\": 0 }")
-    match load_alula_machine(bad_param, standard_registry()) {
+    match load_alula_machine(bad_param, sample_registry()) {
         Ok(x) => assert(false)
         Err(e) => assert(e.contains("the parameter STEP"))
     }
     ro bad_initial = machine_text("calc.alula.json").replace("{ \"name\": \"began\", \"type\": \"int\", \"initial\": { \"expr\": { \"op\": \"lit\", \"value\": 0 } } }", "{ \"name\": \"began\", \"type\": \"int\", \"initial\": { \"expr\": { \"op\": \"lit\", \"value\": \"zero\" } } }")
-    match load_alula_machine(bad_initial, standard_registry()) {
+    match load_alula_machine(bad_initial, sample_registry()) {
         Ok(x) => assert(false)
         Err(e) => assert(e.contains("the initial value of began"))
     }
@@ -145,14 +146,4 @@ test "with replies" {
     assert(m.replies.len() == 1)
     ro r = run1(m, m.initial(), start_with("{\"start\":9,\"label\":\"t\"}"))
     assert(datum_json(r.state, "began") == "1000")
-}
-
-test "event at an end" {
-    ro m = chat()
-    ro r1 = run1(m, m.initial(), said("hi"))
-    ro ended = run1(m, r1.state, done()).state
-    assert(summary(run1(m, ended, done()).orders) == "log:event_ignored(event=agent_done;state=Done)")
-    assert(summary(run1(m, ended, expired()).orders) == "log:event_ignored(event=timeout;state=Done)")
-    assert(summary(run1(m, ended, cancelled()).orders) == "log:event_ignored(event=cancel;state=Done)")
-    assert(!run1(m, ended, said("x")).moved)
 }

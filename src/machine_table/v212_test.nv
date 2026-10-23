@@ -3,8 +3,9 @@
 module alula.machine_table
 
 import std.text
-import alula.machine.{standard_registry, new_registry, find_role, has_roles, JournalCode, methodology_journal, product_journal, journal_union, journal_find, journal_table_issues}
-import alula.machine.{schema_files, text_of_file, TextType, ListType, RecordType, IntMin, VariantType, machine_files, add_role, register, Primitive, ParamSpec, Reading}
+import alula.machine.{new_registry, find_role, has_roles, JournalCode, journal_find, journal_table_issues}
+import alula.machine.{schema_files, text_of_file, TextType, ListType, RecordType, IntMin, VariantType, add_role, register, Primitive, ParamSpec, Reading}
+import alula.examples.{machine_files, sample_registry, example_registry}
 
 fn with_version(version str) -> str => tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"alula_version\":\"${version}\",")
 
@@ -20,6 +21,27 @@ fn tiny_logging(code str, names []str) -> str {
     ro go = `{"n":1,"event":{"kind":"signal","name":"go"},"actions":[${inc},${jlog(code, names)}],"to":"Decide"}`
     ro halt = `{"n":2,"event":{"kind":"signal","name":"halt"},"actions":[${jassign("stop", jl(jstr("a")))}],"to":"Stopped"}`
     tiny_with("", "", "${go},${halt}", tiny_ends_rows())
+}
+
+// The check of the journal codes needs a table: the registry of the examples (the language and the codes of `examples/journal.md`).
+fn journal_issues(text str) -> []str {
+    mut out = []str.new()
+    match load_machine(text, example_registry()) {
+        Ok(def) => ()
+        Err(list) => {
+            for e in list { out.push(issue_text(e)) }
+        }
+    }
+    out
+}
+
+fn journal_ok(text str) -> bool => journal_issues(text).len() == 0
+
+fn journal_says(text str, needle str) -> bool {
+    for line in journal_issues(text) {
+        if line.contains(needle) { return true }
+    }
+    false
 }
 
 fn with_fragments(call_args str) -> str => tiny().replace("\"initial\":\"Wait\"", "\"fragments\":[{\"name\":\"Pause\",\"args\":{${call_args}}}],\"initial\":\"Wait\"")
@@ -106,102 +128,28 @@ test "v212 fragments behavior word" {
 
 // ---- the journal tables (AL-31) ----------------------------------------------------------------------------------------------------------
 
-test "v212 methodology table" {
-    ro table = methodology_journal()
-    assert(table.len() >= 80)
-    assert(journal_find(table, "signal_passed").is_some())
-    assert(journal_find(table, "human_stop").is_some())
-    assert(journal_find(table, "fork_no_match").is_some())
-    assert(journal_find(table, "machine_error").is_some())
-    assert(journal_find(table, "input_rejected").is_some())
+test "v212 known language code of the format" {
+    assert(journal_ok(tiny_logging("fork_no_match", ["fork"])))
 }
 
-test "v212 methodology parameters" {
-    match journal_find(methodology_journal(), "human_stop") {
-        Some(row) => {
-            assert(row.params.len() == 3)
-            assert(row.params.contains("author") && row.params.contains("source") && row.params.contains("event"))
-        }
-        None => assert(false)
-    }
-    match journal_find(methodology_journal(), "input_rejected") {
-        Some(row) => {
-            assert(row.params == ["reason"])
-            assert(row.optional == ["field", "index"])
-        }
-        None => assert(false)
-    }
-}
-
-test "v212 product table" {
-    ro table = product_journal()
-    for code in ["signal_ordered", "answer_edited", "form_returned", "request_repeated", "event_ignored"] {
-        assert(journal_find(table, code).is_some())
-    }
-    assert(table.len() >= 30)
-}
-
-test "v212 product table is its own" {
-    assert(journal_table_issues(methodology_journal(), product_journal()).len() == 0)
-    for row in product_journal() {
-        assert(journal_find(methodology_journal(), row.code).is_none())
-    }
-}
-
-test "v212 product table cannot repeat" {
-    ro dup = [JournalCode { machine: "x", code: "human_stop", template: "стоп", params: []str.new(), optional: []str.new() }]
-    ro issues = journal_table_issues(methodology_journal(), dup)
-    assert(issues.len() == 1)
-    assert(issues[0].contains("human_stop"))
-}
-
-test "v212 product table cannot replace the format code" {
-    for code in ["signal_passed", "input_rejected", "machine_error", "machine_data"] {
-        ro dup = [JournalCode { machine: "x", code, template: "t", params: []str.new(), optional: []str.new() }]
-        assert(journal_table_issues(methodology_journal(), dup).len() == 1)
-    }
-}
-
-test "v212 product table codes are snake case" {
-    ro bad = [JournalCode { machine: "x", code: "BadCode", template: "t", params: []str.new(), optional: []str.new() }]
-    assert(journal_table_issues(methodology_journal(), bad).len() == 1)
-}
-
-test "v212 union" {
-    ro all = journal_union()
-    assert(all.len() == methodology_journal().len() + product_journal().len())
-    assert(journal_find(all, "signal_passed").is_some())
-    assert(journal_find(all, "signal_ordered").is_some())
-}
-
-test "v212 registry names the tables" {
-    assert(standard_registry().journal.len() == journal_union().len())
-    assert(standard_registry().journal.len() > 100)
-    assert(new_registry().journal.len() == 0)
-}
-
-test "v212 known methodology code" {
-    assert(ok_text(tiny_logging("fork_no_match", ["fork"])))
-}
-
-test "v212 known product code" {
-    assert(ok_text(tiny_logging("answer_edited", ["party", "request"])))
+test "v212 known language code of the engine" {
+    assert(journal_ok(tiny_logging("answer_edited", ["party", "request"])))
 }
 
 test "v212 unknown code" {
-    assert(says(tiny_logging("not_in_any_table", []), "journal tables"))
-    assert(says(tiny_logging("not_in_any_table", []), "not_in_any_table"))
+    assert(journal_says(tiny_logging("not_in_any_table", []), "journal tables"))
+    assert(journal_says(tiny_logging("not_in_any_table", []), "not_in_any_table"))
 }
 
 test "v212 wrong parameters" {
-    assert(says(tiny_logging("fork_no_match", ["place"]), "fork_no_match"))
-    assert(says(tiny_logging("answer_edited", ["party"]), "request"))
+    assert(journal_says(tiny_logging("fork_no_match", ["place"]), "fork_no_match"))
+    assert(journal_says(tiny_logging("answer_edited", ["party"]), "request"))
 }
 
 test "v212 optional parameters" {
-    assert(ok_text(tiny_logging("input_rejected", ["reason"])))
-    assert(ok_text(tiny_logging("input_rejected", ["reason", "field"])))
-    assert(says(tiny_logging("input_rejected", ["reason", "other"]), "other"))
+    assert(journal_ok(tiny_logging("input_rejected", ["reason"])))
+    assert(journal_ok(tiny_logging("input_rejected", ["reason", "field"])))
+    assert(journal_says(tiny_logging("input_rejected", ["reason", "other"]), "other"))
 }
 
 test "v212 empty registry skips the table" {
@@ -220,7 +168,7 @@ test "v212 empty registry skips the table" {
 // ---- the table "by role" of the parse (AL-33) ------------------------------------------------------------------------------------------
 
 test "v212 role table of the host" {
-    ro reg = standard_registry()
+    ro reg = sample_registry()
     assert(has_roles(reg, "parse_agent_reply"))
     assert(find_role(reg, "parse_agent_reply", "witness").is_some())
     assert(find_role(reg, "parse_agent_reply", "author").is_some())
@@ -229,11 +177,11 @@ test "v212 role table of the host" {
 }
 
 test "v212 role result types" {
-    match find_role(standard_registry(), "parse_agent_reply", "witness") {
+    match find_role(sample_registry(), "parse_agent_reply", "witness") {
         Some(row) => assert(row.result == ListType(VariantType("WitnessAnswer")))
         None => assert(false)
     }
-    match find_role(standard_registry(), "parse_agent_reply", "lens") {
+    match find_role(sample_registry(), "parse_agent_reply", "lens") {
         Some(row) => assert(row.result == RecordType("LensResult"))
         None => assert(false)
     }

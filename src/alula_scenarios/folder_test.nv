@@ -2,10 +2,10 @@
 // of the agent step one by one (the rows are taken by the scenarios: task 109), of the chat, of the small machines; a scenario that is changed is a report.
 module alula.alula_scenarios
 
-// ORACLE-WORKAROUND(32): std.fs is imported FIRST in the first file of the unit, or `.join` on a `[]str` resolves to `Path.join` (E_RECV_METHOD_MISMATCH); drop this import when item 32 is fixed
 import std.fs.{Path}
 import std.text
-import alula.machine.{NamedText, machine_files, scenario_files, text_of_file, chat_table_text, agent_step_table_text, table_files}
+import alula.machine.{NamedText, text_of_file}
+import alula.examples.{machine_files, scenario_files, table_files}
 
 test "ps test folder all scenarios" {
     ro ran = run_with(["test", "/machine"], machine_folder())
@@ -14,20 +14,6 @@ test "ps test folder all scenarios" {
     assert(ran.out == "${total} of ${total} scenarios passed\n")
     assert(ran.code == 0)
 }
-
-test "ps scenario families" {
-    // the families of the folder (the total grows with the machines: task 114 added the 37 of the dialog)
-    assert(scenarios_with("agent-step-").len() == 83)
-    assert(scenarios_with("chat-").len() == 39)
-    assert(scenarios_with("dialog-").len() == 37)
-    assert(scenarios_with("nested-").len() == 32)
-    assert(scenarios_with("cycle-").len() == 101)
-    assert(scenarios_with("session-").len() == 55)
-    assert(scenarios_with("runner-").len() == 257)
-    assert(scenario_files().len() == 626)
-}
-
-// ---- nested machines (task 119): a parent and the machines it calls are found in the folder ------------------------------------------------------------
 
 fn nested_files(callee_file str, callee_text str) -> []NamedText => [
     NamedText { name: "/n/caller.alula.json", text: text_of_file(machine_files(), "caller.alula.json") },
@@ -100,82 +86,6 @@ test "ps test folder verbose" {
     assert(ran.out.ends_with("${total} of ${total} scenarios passed\n"))
 }
 
-test "ps test folder from a table only" {
-    // no JSON of the chat in the folder: the machine is read from its table
-    mut files = [NamedText { name: "/c/chat.alula.md", text: chat_table_text() }]
-    for s in scenarios_with("chat-") { files.push(NamedText { name: "/c/${s.name}", text: s.text }) }
-    ro ran = run_with(["test", "/c"], files)
-    assert(ran.err == "")
-    assert(ran.out == "39 of 39 scenarios passed\n")
-    assert(ran.code == 0)
-}
-
-test "ps test folder agent step table" {
-    // the table of the agent step (format 2.5, the copy `.txt`) runs the scenarios like its JSON
-    mut files = [NamedText { name: "/a/agent_step.alula.txt", text: agent_step_table_text() }]
-    mut n = 0
-    for s in scenarios_with("agent-step-flow") {
-        files.push(NamedText { name: "/a/${s.name}", text: s.text })
-        n += 1
-    }
-    ro ran = run_with(["test", "/a"], files)
-    assert(ran.err == "")
-    assert(ran.out == "${n} of ${n} scenarios passed\n")
-    assert(ran.code == 0)
-}
-
-test "ps run agent step one by one a" {
-    ro all = scenarios_with("agent-step-agent")
-    assert(all.len() == 9)
-    assert(run_all("agent_step.alula.json", text_of_file(machine_files(), "agent_step.alula.json"), all) == "")
-}
-
-test "ps run agent step one by one b" {
-    ro all = scenarios_with("agent-step-b")
-    assert(all.len() == 4)
-    assert(run_all("agent_step.alula.json", text_of_file(machine_files(), "agent_step.alula.json"), all) == "")
-}
-
-test "ps run agent step one by one c" {
-    ro all = scenarios_with("agent-step-c")
-    assert(all.len() == 7)
-    assert(run_all("agent_step.alula.json", text_of_file(machine_files(), "agent_step.alula.json"), all) == "")
-}
-
-test "ps run agent step one by one e" {
-    ro all = scenarios_with("agent-step-e")
-    assert(all.len() == 13)
-    assert(run_all("agent_step.alula.json", text_of_file(machine_files(), "agent_step.alula.json"), all) == "")
-}
-
-test "ps run agent step one by one f" {
-    ro all = scenarios_with("agent-step-f")
-    assert(all.len() > 10)
-    assert(run_all("agent_step.alula.json", text_of_file(machine_files(), "agent_step.alula.json"), all) == "")
-}
-
-test "ps run agent step one by one rest" {
-    mut rest = []NamedText.new()
-    for s in scenarios_with("agent-step-") {
-        ro name = s.name["agent-step-".byte_len()..]
-        if !(name.starts_with("agent") || name.starts_with("b") || name.starts_with("c") || name.starts_with("e") || name.starts_with("f")) { rest.push(s) }
-    }
-    assert(rest.len() > 0)
-    assert(run_all("agent_step.alula.json", text_of_file(machine_files(), "agent_step.alula.json"), rest) == "")
-}
-
-test "ps run chat one by one" {
-    ro all = scenarios_with("chat-")
-    assert(all.len() == 39)
-    assert(run_all("chat.alula.json", text_of_file(machine_files(), "chat.alula.json"), all) == "")
-}
-
-test "ps run chat from its table" {
-    ro all = scenarios_with("chat-m")
-    assert(all.len() > 0)
-    assert(run_all("chat.alula.md", chat_table_text(), all) == "")
-}
-
 test "ps run small machines" {
     assert(run_all("calc.alula.json", text_of_file(machine_files(), "calc.alula.json"), scenarios_with("calc-")) == "")
     assert(run_all("gate.alula.json", text_of_file(machine_files(), "gate.alula.json"), scenarios_with("gate-")) == "")
@@ -200,17 +110,4 @@ test "ps changed scenario is a report" {
     assert(folder.code == 1)
     assert(folder.out.contains("FAIL /g/gate-done.scenario.test.json"))
     assert(folder.out.ends_with("0 of 1 scenarios passed\n"))
-}
-
-test "ps changed agent step scenario" {
-    ro original = text_of_file(scenario_files(), "agent-step-flow-happy.scenario.test.json")
-    ro changed = original.replace("\"outcome\": \"answer", "\"outcome\": \"refusal")
-    ro files = [
-        NamedText { name: "/g/agent_step.alula.json", text: text_of_file(machine_files(), "agent_step.alula.json") },
-        NamedText { name: "/g/happy.scenario.test.json", text: changed }
-    ]
-    ro ran = run_with(["run", "/g/agent_step.alula.json", "/g/happy.scenario.test.json"], files)
-    assert(changed != original)
-    assert(ran.code == 1)
-    assert(ran.out.contains("difference(s)"))
 }

@@ -2,7 +2,8 @@
 module alula.machine_text
 
 import std.text
-import alula.machine.{standard_registry, NamedText}
+import alula.machine.{NamedText}
+import alula.examples.{sample_registry}
 
 // A small machine: a gate that waits for a word, a fork, two ends. The names are those of the dictionary of the methodology.
 fn tiny_text() -> str => `# Машина: Малая
@@ -79,7 +80,7 @@ format: 2.22
 `
 
 // The report of a translation of a text with the checks of the table.
-fn checked(text str) -> TranslateReport => translate_checked(text, standard_registry())
+fn checked(text str) -> TranslateReport => translate_checked(text, sample_registry())
 
 // The notes as lines `line:col kind message`.
 fn notes(text str) -> []str {

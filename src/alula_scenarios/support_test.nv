@@ -6,8 +6,9 @@ import std.fs.{Path, MemFs, mock_fs, write_text, read_text, create_dir_all}
 import std.text
 import std.io.{IoCapture, mock_io}
 import std.os.{MockOs, mock_os}
-import alula.machine.{NamedText, machine_files, table_files, scenario_files, text_of_file}
+import alula.machine.{NamedText, text_of_file}
 import alula.alula_cli.{execute}
+import alula.examples.{machine_files, scenario_files, table_files, example_registry_text, example_journal_text}
 
 /// Ran: what a run of the program left.
 type Ran { code int, out str, err str }
@@ -24,9 +25,41 @@ fn run_with(argv []str, files []NamedText) -> Ran {
             make_parents(f.name)
             ro written = write_text(Path.posix(f.name), f.text)
         }
+        // the host of the examples beside the files of every folder that has none (the program reads `registry.md` and `journal.md` from the folder of the file)
+        for dir in host_dirs(files) {
+            ro registry = write_text(Path.posix("${dir}/registry.md"), example_registry_text())
+            ro journal = write_text(Path.posix("${dir}/journal.md"), example_journal_text())
+        }
         code = execute()
     }
     Ran { code, out: cap.out_bytes().to_str_lossy(), err: cap.err_bytes().to_str_lossy() }
+}
+
+// The folders of the files that hold no `registry.md` of their own (a folder `/machine/scenarios` is not the folder of the machines: `test` reads the host from the folder it is given).
+fn host_dirs(files []NamedText) -> []str {
+    mut out = []str.new()
+    mut has_host = []str.new()
+    for f in files {
+        ro at = last_slash(f.name)
+        ro dir = if at <= 0 { "" } else { f.name[..at] }
+        if f.name.ends_with("/registry.md") { has_host.push(dir) }
+    }
+    for f in files {
+        ro at = last_slash(f.name)
+        ro dir = if at <= 0 { "" } else { f.name[..at] }
+        if dir != "" && !has_host.contains(dir) && !out.contains(dir) && !dir.ends_with("/scenarios") && !dir.ends_with("/machines") { out.push(dir) }
+    }
+    out
+}
+
+fn last_slash(name str) -> int {
+    mut at = -1
+    mut i = 0
+    for c in name.chars() {
+        if "${c}" == "/" { at = i }
+        i += "${c}".byte_len()
+    }
+    at
 }
 
 // Every folder above the file is there.
@@ -47,13 +80,14 @@ fn make_parents(path str) Fs -> () {
 
 fn one(name str, text str) -> []NamedText => [NamedText { name, text }]
 
-
 // The folder `src/machine/` as the program sees it: the machines (JSON and the tables of Alula) and the scenarios, each in its folder.
 fn machine_folder() -> []NamedText {
     mut files = []NamedText.new()
     for f in machine_files() { files.push(NamedText { name: "/machine/machines/${f.name}", text: f.text }) }
     for f in table_files() { files.push(NamedText { name: "/machine/machines/${f.name}", text: f.text }) }
     for f in scenario_files() { files.push(NamedText { name: "/machine/scenarios/${f.name}", text: f.text }) }
+    files.push(NamedText { name: "/machine/registry.md", text: example_registry_text() })
+    files.push(NamedText { name: "/machine/journal.md", text: example_journal_text() })
     files
 }
 

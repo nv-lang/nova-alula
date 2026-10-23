@@ -4,7 +4,7 @@ module alula.machine_text_unicode
 
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
-import alula.machine.{standard_registry}
+import alula.examples.{sample_registry}
 import alula.machine_text.{translate_checked, translate_expression_in, translate_actions_in, render_expression_in, render_actions_in, render_machine, TranslateReport, TranslateError, error_text}
 
 // A small machine: a gate that waits for a word, a fork, two ends (Russian, format 2.5).
@@ -81,7 +81,7 @@ fn tiny_ru() -> str => `# Машина: Малая
 | СТОП | 2 | остановка == "b" | Отказ(FailCode.NoResult, "b") |
 `
 
-fn checked(text str) -> TranslateReport => translate_checked(text, standard_registry())
+fn checked(text str) -> TranslateReport => translate_checked(text, sample_registry())
 
 // The machine with its four states renamed: the first waits, the second is the fork, the third and the fourth are the ends.
 fn tiny_named(wait str, decide str, finished str, stopped str) -> str =>

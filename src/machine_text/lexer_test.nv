@@ -3,7 +3,8 @@
 module alula.machine_text
 
 import std.text
-import alula.machine.{table_files, NamedText}
+import alula.machine.{NamedText}
+import alula.examples.{table_files}
 
 // The tokens as `kind:text`, the broken ones as `!text`, the end token left out.
 fn lk(src str) -> str {
@@ -107,15 +108,6 @@ test "lx mutations small files" {
     assert(lx_mutations_hold(embed_str("fragments/pause.fragment.md"), 60, 7))
     assert(lx_mutations_hold(embed_str("defs/cycle-arithmetic.alula.md"), 60, 11))
     assert(lx_mutations_hold(embed_str("defs/cycle-arithmetic.en.alula.md"), 60, 13))
-}
-
-test "lx mutations machines" {
-    mut seed = 3
-    for f in table_files() {
-        seed += 1
-        if f.name == "task_runner.alula.md" || f.name == "cycle_check.alula.md" || f.name == "agent_step.alula.txt" { continue }
-        assert(lx_mutations_hold(f.text, 40, seed))
-    }
 }
 
 test "lx mutations cut at every place of a line" {

@@ -7,8 +7,9 @@ import std.text
 import std.encoding.json.{Json, JsonValue, JsonObject}
 import std.io.{IoCapture, mock_io}
 import std.os.{MockOs, mock_os}
-import alula.machine.{NamedText, machine_files, table_files, scenario_files, text_of_file}
+import alula.machine.{NamedText, text_of_file}
 import alula.alula_cli.{execute}
+import alula.examples.{machine_files, scenario_files, table_files, example_registry_text, example_journal_text}
 
 /// Ran: what a run of the program left.
 type Ran { code int, out str, err str }
@@ -46,12 +47,26 @@ fn make_parents(path str) Fs -> () {
     }
 }
 
-fn one(name str, text str) -> []NamedText => [NamedText { name, text }]
+// The folder of a file name: `/m/a.alula.json` -> `/m`.
+fn dir_of_name(name str) -> str {
+    mut parts = []str.new()
+    for p in name.split("/") { parts.push(p) }
+    mut kept = []str.new()
+    mut i = 0
+    while i + 1 < parts.len() {
+        kept.push(parts[i])
+        i += 1
+    }
+    kept.join("/")
+}
+
+// A file and the files of the host "examples" beside it (the registry and the table of the journal codes): the program takes them from the folder of the file.
+fn one(name str, text str) -> []NamedText {
+    ro dir = dir_of_name(name)
+    [NamedText { name, text }, NamedText { name: "${dir}/registry.md", text: example_registry_text() }, NamedText { name: "${dir}/journal.md", text: example_journal_text() }]
+}
 
 fn machine_json(name str) -> str => text_of_file(machine_files(), name)
-
-// The machines of the product that are JSON: the chat, the agent step and the five small ones.
-fn json_names() -> []str => ["actions.alula.json", "agent_step.alula.json", "calc.alula.json", "chat.alula.json", "gate.alula.json", "lenses.alula.json", "variants.alula.json"]
 
 // The keys that a circle does not keep: the title (the header of the canonical file holds the Latin name of the machine) and the version of the language of the tree.
 fn dropped_keys() -> []str => ["title", "alula_version"]
@@ -134,4 +149,3 @@ fn sval(o JsonObject, key str) -> str {
         None => ""
     }
 }
-

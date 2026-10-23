@@ -3,13 +3,14 @@
 module alula.machine_run
 
 import std.text
-import alula.machine.{standard_registry, text_of_file, machine_files}
+import alula.machine.{text_of_file}
 import alula.engine.{EventKind, StepEnvironment}
+import alula.examples.{machine_files, sample_registry}
 
 fn pm_text() -> str => text_of_file(machine_files(), "calc.alula.json")
 
 fn pm_load() -> AlulaMachine {
-    match load_alula_machine(pm_text(), standard_registry()) {
+    match load_alula_machine(pm_text(), sample_registry()) {
         Ok(m) => m
         Err(e) => panic("calc does not load: ${e}")
     }
@@ -23,7 +24,7 @@ test "pm names" {
 }
 
 test "pm with params" {
-    match alula_machine_with(pm_load().def, standard_registry(), []ProjectValue.new()) {
+    match alula_machine_with(pm_load().def, sample_registry(), []ProjectValue.new()) {
         Ok(m) => assert(m.def.name == "Calc")
         Err(e) => panic("rebuild: ${e}")
     }
@@ -44,19 +45,19 @@ test "pm step" {
 test "pm key" {
     ro versioned = pm_text()
     assert(versioned.contains("\"alula_version\": \"2.22\""))
-    match load_alula_machine(versioned, standard_registry()) {
+    match load_alula_machine(versioned, sample_registry()) {
         Ok(m) => assert(m.def.name == "Calc")
         Err(e) => panic("alula_version: ${e}")
     }
     // a tree of another version is refused
     ro older = pm_text().replace("\"alula_version\": \"2.22\"", "\"alula_version\": \"2.11\"")
-    match load_alula_machine(older, standard_registry()) {
+    match load_alula_machine(older, sample_registry()) {
         Ok(m) => panic("2.11 is accepted")
         Err(e) => assert(e.contains("2.22"))
     }
     // the old name of the key is not accepted
     ro old = pm_text().replace("\"format\": \"machine/2\",", "\"format\": \"machine/2\", \"table_format\": \"2.5\",")
-    match load_alula_machine(old, standard_registry()) {
+    match load_alula_machine(old, sample_registry()) {
         Ok(m) => panic("table_format is accepted")
         Err(e) => assert(e.contains("table_format"))
     }

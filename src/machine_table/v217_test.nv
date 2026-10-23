@@ -4,7 +4,8 @@
 module alula.machine_table
 
 import std.text
-import alula.machine.{standard_registry, schema_files, text_of_file, machine_files}
+import alula.machine.{schema_files, text_of_file}
+import alula.examples.{machine_files, sample_registry}
 
 // The tiny machine of the support file with a party of a free input: no counter at the party, no request fields at the state.
 fn free17() -> str => tiny().replace("\"counter\":\"u_attempt\",", "").replace("\"value\":{\"op\":\"+\",\"left\":{\"op\":\"name\",\"name\":\"n\"},\"right\":{\"op\":\"lit\",\"value\":1}}", "\"value\":{\"op\":\"lit\",\"value\":1}").replace("\"inputs\":[{\"field\":\"n\",\"value\":${jn("n")},\"reads\":\"executor\"}],", "")
@@ -15,7 +16,7 @@ fn warnings17(text str) -> []str {
     mut out = []str.new()
     match parse_machine(text) {
         Ok(def) => {
-            for w in machine_warnings(def, standard_registry()) { out.push(issue_text(w)) }
+            for w in machine_warnings(def, sample_registry()) { out.push(issue_text(w)) }
         }
         Err(e) => out.push("does not decode: ${issue_text(e)}")
     }
@@ -293,7 +294,7 @@ test "v217 the else row is the last one still" {
 test "v217 the machines of the data directory have no warnings of an else" {
     for f in machine_files() {
         match parse_machine(f.text) {
-            Ok(def) => assert(machine_warnings(def, standard_registry()).len() == 0)
+            Ok(def) => assert(machine_warnings(def, sample_registry()).len() == 0)
             Err(e) => assert(false)
         }
     }

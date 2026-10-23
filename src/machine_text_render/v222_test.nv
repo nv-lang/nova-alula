@@ -164,71 +164,12 @@ test "w222 a map type" {
     assert(render_type_in("{text: int}", "ru") == "словарь[строка, число]")
 }
 
-test "w222 the types of the product are declared with the word type" {
-    ro agent = render(machine_json("agent_step.alula.json"), "ru")
-    assert(agent.contains("\nтип AgentModel { id строка, provider строка, variant ?строка }\n"))
-}
-
-test "w222 an enumeration with values is in lines" {
-    ro agent = render(machine_json("agent_step.alula.json"), "ru")
-    assert(agent.contains("\nтип ActionKind перечисление\n  | Read = \"read\"\n"))
-}
-
-test "w222 an enumeration with fields is in lines" {
-    ro agent = render(machine_json("agent_step.alula.json"), "en")
-    assert(agent.contains("\ntype TurnResult enum\n  | Finished { text ?str, artifact ?str, usage TransportUsage }\n"))
-}
-
-test "w222 an enumeration without fields is in a line" {
-    ro agent = render(machine_json("agent_step.alula.json"), "en")
-    assert(agent.contains("\ntype ReplyCheck enum Valid | Violated | Empty\n"))
-}
-
-test "w222 a function has the word fn in English" {
-    ro agent = render(machine_json("agent_step.alula.json"), "en")
-    assert(agent.contains("\nfn сумма_целых("))
-}
-
-test "w222 a function has the word функция in Russian" {
-    ro agent = render(machine_json("agent_step.alula.json"), "ru")
-    assert(agent.contains("\nфункция сумма_целых("))
-}
-
-test "w222 no former word of the language is written" {
-    for lang in ["ru", "en"] {
-        ro agent = render(machine_json("agent_step.alula.json"), lang)
-        assert(!agent.contains("\nопределение "))
-        assert(!agent.contains("\ndefine "))
-        assert(!agent.contains("\nвариант "))
-        assert(!agent.contains("\nvariant "))
-    }
-}
-
-test "w222 the text of the product has no comment sign inside a cell" {
-    ro agent = render(machine_json("agent_step.alula.json"), "ru")
-    for line in agent.split("\n") {
-        if line.starts_with("|") { assert(!line.contains("//")) }
-    }
-}
-
-// ---- the circles --------------------------------------------------------------------------------------------------------------------------------
-
 test "w222 the circle of the calc machine in Russian" {
     assert(circle(machine_json("calc.alula.json"), "ru") == "")
 }
 
 test "w222 the circle of the calc machine in English" {
     assert(circle(machine_json("calc.alula.json"), "en") == "")
-}
-
-test "w222 the circle of the chat machine in both languages" {
-    assert(circle(machine_json("chat.alula.json"), "ru") == "")
-    assert(circle(machine_json("chat.alula.json"), "en") == "")
-}
-
-test "w222 the circle of the agent step in both languages" {
-    assert(circle(machine_json("agent_step.alula.json"), "ru") == "")
-    assert(circle(machine_json("agent_step.alula.json"), "en") == "")
 }
 
 test "w222 a rendered file says 2.22" {

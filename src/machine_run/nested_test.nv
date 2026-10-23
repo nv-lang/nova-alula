@@ -4,8 +4,9 @@
 module alula.machine_run
 
 import std.text
-import alula.machine.{Value, Null, Bool, Text, RecordField, make_record, enum_value, value_json, Registry, Primitive, ParamSpec, RecordType, Reading, BoolType, register, standard_registry}
+import alula.machine.{Value, Null, Bool, Text, RecordField, make_record, enum_value, value_json, Registry, Primitive, ParamSpec, RecordType, Reading, BoolType, register}
 import alula.engine.{Incoming, EventKind}
+import alula.examples.{sample_registry}
 
 fn caller() -> AlulaMachine => build("caller.alula.json")
 
@@ -307,7 +308,7 @@ fn fixer() -> str => `{"format":"machine/2","machine":"Fixer","version":"1",
 
 // The standard registry and the two primitives of the fixer: the parse takes the answer and gives the parsed one, the check says whether the object changed.
 fn fixer_registry() -> Registry {
-    mut reg = standard_registry()
+    mut reg = sample_registry()
     ro out = ParamSpec { name: "out", spec: RecordType("Out") }
     ro parse = Primitive { name: "parse_out", params: [out], result: RecordType("Out"), class: Reading, reads: []str.new(), writes: []str.new() }
     ro changed = Primitive { name: "changed", params: []ParamSpec.new(), result: BoolType, class: Reading, reads: []str.new(), writes: []str.new() }

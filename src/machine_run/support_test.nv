@@ -1,15 +1,15 @@
 // support_test.nv - helpers of the tests of the interpreter: the machines of the data directory, a step with its orders as text.
 module alula.machine_run
 
-// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
-import alula.machine.{Value, PrimitiveHost, EvalError, Null, enum_value, standard_registry, machine_files, text_of_file, record_get, value_json}
+import alula.machine.{Value, PrimitiveHost, EvalError, Null, enum_value, text_of_file, record_get, value_json}
 import alula.engine.{Incoming, EventKind, Order, StepEnvironment, JournalEvent, SignalOrder}
+import alula.examples.{machine_files, sample_registry}
 
 fn machine_text(name str) -> str => text_of_file(machine_files(), name)
 
 fn build_from(text str) -> AlulaMachine {
-    match load_alula_machine(text, standard_registry()) {
+    match load_alula_machine(text, sample_registry()) {
         Ok(m) => m
         Err(e) => panic("the machine does not load: ${e}")
     }
@@ -17,28 +17,21 @@ fn build_from(text str) -> AlulaMachine {
 
 fn build(name str) -> AlulaMachine => build_from(machine_text(name))
 
-fn chat() -> AlulaMachine => build("chat.alula.json")
 fn calc() -> AlulaMachine => build("calc.alula.json")
-fn dialog() -> AlulaMachine => build("dialog.alula.json")
-fn actions() -> AlulaMachine => build("actions.alula.json")
 
-// The agent step with the answers of its primitives: the reply is valid, closing the turn answers nothing.
-fn agent_step() -> AlulaMachine => with_replies(build("agent_step.alula.json"), [
-    ScriptedReply { name: "reply_validation", value: enum_value("ReplyCheck", "Valid") },
-    ScriptedReply { name: "close_agent_turn", value: Null }
-])
+fn actions() -> AlulaMachine => build("actions.alula.json")
 
 // An event as the engine hands it to a machine: the envelope is stamped.
 fn stamped(kind EventKind, name str, request Option[str], input str) -> Incoming => {
     id: "e-1", trace: "t-1", step: 2, kind, name, request, input, at: 1000
 }
 
-fn said(text str) -> Incoming => stamped(EventKind.Input, "user_message", None, text)
 fn word_in(name str, input str) -> Incoming => stamped(EventKind.Input, name, None, input)
-fn chunk(text str) -> Incoming => stamped(EventKind.Progress, "agent_chunk", Some("agent-1"), text)
+
 fn done() -> Incoming => stamped(EventKind.Answered, "agent_done", Some("agent-1"), "")
+
 fn refused(code str) -> Incoming => stamped(EventKind.Refused, "agent_refused", Some("agent-1"), code)
-fn expired() -> Incoming => stamped(EventKind.Expired, "timeout", Some("agent-1"), "")
+
 fn cancelled() -> Incoming => stamped(EventKind.Input, "cancel", None, "")
 
 // The result of one step: the state, whether the machine moved (Go), the orders it gave.

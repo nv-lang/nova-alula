@@ -113,20 +113,3 @@ test "v217 the circle ru en ru of the tree" {
     ro back = json_of(en)
     assert(same_tree(tree17(), back) == "")
 }
-
-test "v217 the circle of the chat machine" {
-    ro json = machine_json("chat.alula.json")
-    assert(circle(json, "ru") == "")
-    assert(circle(json, "en") == "")
-}
-
-test "v217 the chat machine writes its user as a free input" {
-    ro ru = render(machine_json("chat.alula.json"), "ru")
-    assert(ru.contains("| user | user | human(итог ИсходВорот) | — | user_message { content строка }, cancel | — |"))
-}
-
-test "v217 the tree of the chat has no counter for the user" {
-    ro json = machine_json("chat.alula.json")
-    assert(json.contains("\"name\":\"user\"") || json.contains("\"name\": \"user\""))
-    assert(!json.contains("\"counter\": \"user_attempt\"") && !json.contains("\"counter\":\"user_attempt\""))
-}

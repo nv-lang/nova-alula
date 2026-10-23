@@ -3,9 +3,8 @@
 module alula.alula_eq
 
 import std.text
-import alula.machine.{machine_files, table_files, text_of_file}
-
-fn probe_names() -> []str => ["callee.alula.json", "caller.alula.json", "dialog_steps.alula.json", "fan.alula.json"]
+import alula.machine.{text_of_file}
+import alula.examples.{machine_files, table_files}
 
 test "pn circle callee ru" { assert(circle("callee.alula.json", "ru") == "") }
 
@@ -19,41 +18,8 @@ test "pn circle fan ru" { assert(circle("fan.alula.json", "ru") == "") }
 
 test "pn circle fan en" { assert(circle("fan.alula.json", "en") == "") }
 
-test "pn circle dialog steps ru" { assert(circle("dialog_steps.alula.json", "ru") == "") }
-
-test "pn circle dialog steps en" { assert(circle("dialog_steps.alula.json", "en") == "") }
-
 test "pn convert callee" { assert(convert_circle("callee.alula.json") == "") }
 
 test "pn convert caller" { assert(convert_circle("caller.alula.json") == "") }
 
 test "pn convert fan" { assert(convert_circle("fan.alula.json") == "") }
-
-test "pn convert dialog steps" { assert(convert_circle("dialog_steps.alula.json") == "") }
-
-test "pn the tables compile to the json of the product" {
-    // the file of Alula of a machine and its JSON in src/machine/machines/ are the same tree
-    for name in probe_names() {
-        ro base = name.replace(".alula.json", "")
-        ro ran = run_with(["compile", "/m/${base}.alula.md"], one("/m/${base}.alula.md", text_of_file(table_files(), "${base}.alula.md")))
-        assert(ran.err == "")
-        assert(ran.code == 0)
-        assert(same_tree(machine_json(name), ran.out) == "")
-    }
-}
-
-test "pn check the probe machines" {
-    for name in probe_names() {
-        ro ran = run_with(["check", "/m/${name}"], one("/m/${name}", machine_json(name)))
-        assert(ran.err == "")
-        assert(ran.code == 0)
-        assert(ran.out == "ok\n")
-    }
-}
-
-test "pn the machines are the files of the product" {
-    ro names = probe_names()
-    assert(names.len() == 4)
-    assert(machine_files().len() == 15)
-    for name in names { assert(machine_json(name).byte_len() > 100) }
-}

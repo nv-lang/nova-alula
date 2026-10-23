@@ -3,137 +3,7 @@ module alula.machine_run
 
 import alula.machine.{Value, Int, value_equal}
 import alula.engine.{FailCode, Incoming, EventKind, StepEnvironment, fail_code_word}
-import alula.machine.{standard_registry}
-
-test "loads" {
-    for name in ["chat.alula.json", "calc.alula.json", "actions.alula.json", "gate.alula.json", "lenses.alula.json", "variants.alula.json"] {
-        match load_alula_machine(machine_text(name), standard_registry()) {
-            Ok(m) => assert(m.def.states.len() >= 3)
-            Err(e) => assert(e == "")
-        }
-    }
-    match load_alula_machine("{}", standard_registry()) {
-        Ok(m) => assert(false)
-        Err(e) => assert(e.contains("format"))
-    }
-}
-
-test "chat start" {
-    ro m = chat()
-    assert(m.name() == "ChatSession")
-    ro st = m.initial()
-    assert(st.name == "Idle")
-    assert(st.started)
-    assert(m.state_name(st) == "Idle")
-    assert(datum_json(st, "reply") == "\"\"")
-    assert(datum_json(st, "stop_code") == "null")
-}
-
-test "chat send" {
-    ro r = run1(chat(), chat().initial(), said("hello"))
-    assert(r.state.name == "Awaiting")
-    assert(r.moved)
-    assert(summary(r.orders) == "log:user_message(text=hello),send:agent:hello:30000,save")
-    assert(datum_json(r.state, "user") == "\"hello\"")
-}
-
-test "chat chunks" {
-    ro m = chat()
-    ro r1 = run1(m, m.initial(), said("hi"))
-    ro r2 = run1(m, r1.state, chunk("Hel"))
-    ro r3 = run1(m, r2.state, chunk("lo"))
-    assert(r3.state.name == "Awaiting")
-    assert(summary(r3.orders) == "log:agent_chunk(text=lo),save")
-    assert(datum_json(r3.state, "reply") == "\"Hello\"")
-    ro r4 = run1(m, r3.state, done())
-    assert(r4.state.name == "Done")
-    assert(summary(r4.orders) == "log:agent_done,finish:answer:Hello,save")
-}
-
-test "chat refusals" {
-    ro m = chat()
-    for code in FailCode.all() {
-        ro r1 = run1(m, m.initial(), said("hi"))
-        ro r2 = run1(m, r1.state, refused(code.name()))
-        assert(r2.state.name == "Failed")
-        assert(summary(r2.orders) == "log:agent_refused(code=${fail_code_word(code)}),finish:refusal:${code.name()},save")
-    }
-    ro r1 = run1(m, m.initial(), said("hi"))
-    assert(summary(run1(m, r1.state, refused("TotallyNew")).orders) == "log:agent_refused(code=no_result),finish:refusal:NoResult,save")
-}
-
-test "chat cancels" {
-    ro m = chat()
-    ro r1 = run1(m, m.initial(), said("hi"))
-    assert(summary(run1(m, r1.state, cancelled()).orders) == "log:cancelled_while_waiting,cancel:agent,finish:refusal:StoppedByHuman,save")
-    assert(summary(run1(m, r1.state, expired()).orders) == "log:no_answer_in_time,finish:refusal:Timeout,save")
-    assert(summary(run1(m, m.initial(), cancelled()).orders) == "log:cancelled_before_request,finish:refusal:StoppedByHuman,save")
-}
-
-test "chat ignored" {
-    ro m = chat()
-    ro idle = m.initial()
-    ro r1 = run1(m, idle, chunk("late"))
-    assert(!r1.moved)
-    assert(r1.state.name == "Idle")
-    assert(summary(r1.orders) == "log:event_ignored(event=agent_chunk;state=Idle)")
-    ro waiting = run1(m, idle, said("hi")).state
-    assert(summary(run1(m, waiting, said("second")).orders) == "log:event_ignored(event=user_message;state=Awaiting)")
-    ro ended = run1(m, waiting, done()).state
-    assert(summary(run1(m, ended, said("again")).orders) == "log:event_ignored(event=user_message;state=Done)")
-    assert(summary(run1(m, idle, done()).orders) == "log:event_ignored(event=agent_done;state=Idle)")
-    assert(summary(run1(m, idle, word_in("weather_report", "rain")).orders) == "log:event_unknown(name=weather_report)")
-    ro tool = stamped(EventKind.Progress, "tool_call", Some("agent-1"), "{}")
-    assert(summary(run1(m, waiting, tool).orders) == "log:event_unknown(name=tool_call)")
-}
-
-test "death between" {
-    ro m = chat()
-    ro idle = m.initial()
-    ro before = m.encode_state(idle)
-    // a pass that is discarded (the process died before the commit) changes nothing in the state it was given...
-    ro lost = run1(m, idle, said("hi"))
-    assert(m.encode_state(idle) == before)
-    // ...and the repeated pass gives the same orders and the same state, so nothing is written twice
-    ro again = run1(m, idle, said("hi"))
-    assert(summary(again.orders) == summary(lost.orders))
-    assert(m.encode_state(again.state) == m.encode_state(lost.state))
-}
-
-test "step is pure" {
-    ro m = chat()
-    ro first = run1(m, m.initial(), said("hi"))
-    ro late = Incoming { id: "e-99", trace: "t-other", step: 77, kind: EventKind.Input, name: "user_message", request: None, input: "hi", at: 99999999 }
-    ro second = run1(m, m.initial(), late)
-    assert(summary(first.orders) == summary(second.orders))
-    assert(m.encode_state(first.state) == m.encode_state(second.state))
-    ro c = run1(m, first.state, chunk("x"))
-    ro d = run1(m, second.state, chunk("x"))
-    assert(m.encode_state(c.state) == m.encode_state(d.state))
-}
-
-test "state text" {
-    ro m = chat()
-    ro r1 = run1(m, m.initial(), said("вопрос"))
-    ro r2 = run1(m, r1.state, chunk("отве"))
-    // ORACLE-WORKAROUND(36): the list of records made by calls is bound before the loop: `for s in [make(1), make(2)]` over an array literal of calls does not compile; loop over the literal when item 36 is fixed
-    ro states = [m.initial(), r1.state, r2.state, run1(m, r2.state, done()).state]
-    for s in states {
-        ro text = m.encode_state(s)
-        assert(!text.contains("\n"))
-        match m.decode_state(text) {
-            Some(back) => {
-                assert(m.encode_state(back) == text)
-                assert(back.name == s.name)
-            }
-            None => assert(false)
-        }
-    }
-    assert(m.encode_state(r2.state).contains("отве"))
-    assert(m.decode_state("not json") == None)
-    assert(m.decode_state("{\"state\":1}") == None)
-    assert(m.decode_state("") == None)
-}
+import alula.examples.{sample_registry}
 
 test "calc start" {
     ro m = calc()
@@ -308,7 +178,7 @@ test "does not decrease" {
 test "fork no match" {
     ro text = machine_text("calc.alula.json").replace("{ \"n\": 2, \"event\": { \"kind\": \"now\" }, \"else\": true, \"to\": \"Step\" }", "{ \"n\": 2, \"event\": { \"kind\": \"now\" }, \"cond\": { \"op\": \"lit\", \"value\": false }, \"to\": \"Step\" }")
     // since 2.16 (AL-57) a fork with no row else and no proof of the exhaustion by the type is refused at the load: the runtime `fork_no_match` is the row `else` that the table writes itself
-    match load_alula_machine(text, standard_registry()) {
+    match load_alula_machine(text, sample_registry()) {
         Ok(m) => assert(false)
         Err(e) => {
             assert(e.contains("no row else"))

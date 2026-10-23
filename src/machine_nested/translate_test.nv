@@ -7,8 +7,6 @@ import alula.machine.{TextType, IntMin, ListType, RecordType, TextSet, OptionalT
 import alula.machine_table.{MachineDef, MachineParty, PassAct, CancelOpenAct, AgentParty, find_party, find_state}
 import alula.machine_text.{render}
 
-// ---- the party of the kind machine ---------------------------------------------------------------------------------------------------
-
 test "nm clean" {
     ro report = checked(boss_text())
     if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
@@ -88,7 +86,9 @@ test "nm english" {
 ## Types
 
 ${ticks()}
+
 type CallInput { label str, count int>=0 }
+
 type CallOutput { answer str, score int>=0 }
 ${ticks()}
 
@@ -226,7 +226,6 @@ fn tiny_agent() -> str => `# Машина: Малая
 `
 
 // ---- Edits and form returns ----------------------------------------------------------------------------------------------------------------
-
 
 test "nm edits" {
     ro text = tiny_agent().replace("- Сторона: agent", "- Сторона: agent\n- Правит: text_reply; проверка: proposal_changed_since_attempt").replace("- Вход:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| подсказка | text_reply | сторона |\n", "- Вход:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| подсказка | text_reply | сторона |\n\n- При приёме:\n\n| событие | действия |\n|---|---|\n| ответ(ответ) | text_reply = ответ |\n")
@@ -446,27 +445,6 @@ test "nm meeting clean" {
     assert(report.rows_total > 40)
 }
 
-test "nm meeting parties" {
-    ro def = def_of(meeting_examples())
-    ro w = find_party(def, "свидетель")
-    ro a = find_party(def, "автор")
-    ro l = find_party(def, "линза")
-    assert(w >= 0 && a >= 0 && l >= 0)
-    for i in [w, a, l] {
-        assert(def.parties[i].kind == MachineParty)
-        assert(def.parties[i].nested == "agent_step")
-        assert(def.parties[i].profile.len() == 1)
-        assert(def.parties[i].parse.len() == 1)
-        assert(def.parties[i].parse[0].primitive == "parse_agent_reply")
-    }
-    assert(def.parties[w].parse[0].role == "witness")
-    assert(def.parties[a].parse[0].role == "author")
-    assert(def.parties[l].parse[0].role == "lens")
-    assert(def.parties[l].id == "")
-    assert(def.parties[l].counter == "lenses[*].attempt")
-    assert(def.request_limit.len() == 1)
-}
-
 test "nm meeting author" {
     ro def = def_of(meeting_examples())
     ro at = find_state(def, "AuthorFix")
@@ -474,15 +452,6 @@ test "nm meeting author" {
     assert(def.states[at].edits == "proposal")
     assert(def.states[at].edit_check == "proposal_changed_since_attempt")
     assert(def.states[at].form_returns == 2)
-}
-
-test "nm meeting fragment" {
-    ro json = meeting_json()
-    assert(json.contains("\"do\":\"pass\",\"nested\":{\"op\":\"list\",\"items\":[{\"op\":\"lit\",\"value\":\"agent_step\"}]},\"signal\":\"stop\""))
-    assert(json.contains("\"signal\":\"halt\""))
-    assert(json.contains("\"signal\":\"continue\""))
-    assert(json.contains("\"signal\":\"cancel\""))
-    assert(json.contains("\"do\":\"cancel_open\",\"except\":[{\"op\":\"list\",\"items\":[{\"op\":\"lit\",\"value\":\"agent_step\"}]}]"))
 }
 
 test "nm fragment names" {

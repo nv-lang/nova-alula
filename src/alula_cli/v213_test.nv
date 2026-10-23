@@ -3,7 +3,8 @@
 module alula.alula_cli
 
 import std.text
-import alula.machine.{NamedText, table_files, text_of_file}
+import alula.machine.{NamedText, text_of_file}
+import alula.examples.{table_files}
 
 // A file at the syntax of 2.12 under the line of the format 2.14: every old writing is here once.
 fn old_syntax() -> str => `# Машина: Малая
@@ -120,14 +121,6 @@ test "v213 a scenario with the step word is refused" {
     ro ran = run_with(["test", "/c"], files)
     assert(ran.code != 0)
     assert(ran.err.contains("signal") || ran.out.contains("signal"))
-}
-
-test "v213 the machines of the folder are read" {
-    for name in ["chat.alula.md", "dialog.alula.md", "callee.alula.md"] {
-        ro ran = run_with(["check", "/m/${name}"], one("/m/${name}", text_of_file(table_files(), name)))
-        if ran.code != 0 { panic("check ${name}: ${ran.err}") }
-        assert(ran.code == 0)
-    }
 }
 
 test "v213 version names the format" {

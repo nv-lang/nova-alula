@@ -2,8 +2,8 @@
 module alula.machine_agent
 
 import std.text
-import alula.machine.{standard_registry}
 import alula.machine_text.{translate_checked, translate_report}
+import alula.examples.{sample_registry}
 
 fn ru222s() -> str => ru17s()
 
@@ -20,8 +20,8 @@ test "s222 the samples say format 2.22" {
 }
 
 test "s222 the samples are translated without errors" {
-    assert(translate_checked(ru222s(), standard_registry()).errors.len() == 0)
-    assert(translate_checked(en222s(), standard_registry()).errors.len() == 0)
+    assert(translate_checked(ru222s(), sample_registry()).errors.len() == 0)
+    assert(translate_checked(en222s(), sample_registry()).errors.len() == 0)
 }
 
 test "s222 the samples declare types with the word type" {

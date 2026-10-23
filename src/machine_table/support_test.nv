@@ -1,15 +1,21 @@
 // support_test.nv - helpers and fixtures of the tests of the loader and of the checks.
 module alula.machine_table
 
-import alula.machine.{chat_machine_text, standard_registry}
 import std.text
+import alula.examples.{sample_registry}
 
 fn jl(v str) -> str => `{"op":"lit","value":${v}}`
+
 fn jn(name str) -> str => `{"op":"name","name":"${name}"}`
+
 fn jb(op str, l str, r str) -> str => `{"op":"${op}","left":${l},"right":${r}}`
+
 fn jcall(f str, args str) -> str => `{"op":"call","fn":"${f}","args":[${args}]}`
+
 fn jprim(name str, args str) -> str => `{"op":"primitive_call","name":"${name}","args":[${args}]}`
+
 fn jfc(name str) -> str => `{"op":"variant","type":"FailCode","name":"${name}"}`
+
 fn jassign(target str, value str) -> str => `{"do":"assign","target":"${target}","value":${value}}`
 
 // A JSON string literal of a text.
@@ -62,7 +68,7 @@ fn tiny() -> str => tiny_with("", "", tiny_wait_rows(), tiny_ends_rows())
 // The issues of a text as lines `path: message`; a text that does not decode gives one line.
 fn issues_of(text str) -> []str {
     mut out = []str.new()
-    match load_machine(text, standard_registry()) {
+    match load_machine(text, sample_registry()) {
         Ok(def) => ()
         Err(list) => {
             for e in list { out.push(issue_text(e)) }
@@ -86,11 +92,6 @@ fn says(text str, needle str) -> bool {
 }
 
 fn ok_text(text str) -> bool => issues_of(text).len() == 0
-
-// A copy of the chat machine / of the tiny one with a piece changed.
-fn chat_with(old str, new str) -> str => chat_machine_text().replace(old, new)
-
-fn tiny_with_replaced(old str, new str) -> str => tiny().replace(old, new)
 
 fn decoded(text str) -> MachineDef {
     match parse_machine(text) {

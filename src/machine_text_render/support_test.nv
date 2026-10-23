@@ -2,15 +2,15 @@
 // The trees are compared as trees (the order of the keys, the spaces and the `title` do not count).
 module alula.machine_text_render
 
-// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
 import std.encoding.json.{Json, JsonValue, JsonObject}
-import alula.machine.{standard_registry, machine_files, text_of_file}
+import alula.machine.{text_of_file}
 import alula.machine_text.{translate_checked, translate_report, TranslateReport, render_machine, RenderReport, error_text}
+import alula.examples.{machine_files, sample_registry}
 
 fn machine_json(name str) -> str => text_of_file(machine_files(), name)
 
-fn checked(text str) -> TranslateReport => translate_checked(text, standard_registry())
+fn checked(text str) -> TranslateReport => translate_checked(text, sample_registry())
 
 // The keys that a circle does not keep: the title (the header of the canonical file holds the Latin name of the machine, 1b (а)) and the version of the language of the tree.
 fn dropped_keys() -> []str => ["title", "alula_version"]
@@ -120,12 +120,6 @@ fn lines_from(text str, from int, count int) -> str {
     out.join("\n")
 }
 
-fn line_count(text str) -> int {
-    mut n = 0
-    for line in text.split("\n") { n += 1 }
-    n
-}
-
 fn text_has_line(text str, wanted str) -> bool {
     for line in text.split("\n") {
         if line == wanted { return true }
@@ -140,12 +134,4 @@ fn index_of_line(text str, wanted str) -> int {
         if line == wanted { return no }
     }
     -1
-}
-
-// A circle without the checks of the table (for a file that is a piece of a machine).
-fn circle_loose(json str, lang str) -> str {
-    ro made = render_machine(json, lang)
-    ro report = translate_report(made.text)
-    if report.errors.len() > 0 { return "ERROR ${error_text(report.errors[0], "generated")}" }
-    same_tree(json, report.json)
 }

@@ -3,7 +3,7 @@
 module alula.machine_text_lang
 
 import std.text
-import alula.machine.{standard_registry}
+import alula.examples.{sample_registry}
 import alula.machine_text.{translate_checked, TranslateReport, TranslateError, translate_report}
 
 // A small machine: a gate that waits for a word, a fork, two ends (Russian, format 2.5).
@@ -145,7 +145,7 @@ Result: int
 | Stopped | 2 | stop_reason == "b" | Refusal(FailCode.NoResult, "b") |
 `
 
-fn checked(text str) -> TranslateReport => translate_checked(text, standard_registry())
+fn checked(text str) -> TranslateReport => translate_checked(text, sample_registry())
 
 fn json_of(text str) -> str => checked(text).json
 

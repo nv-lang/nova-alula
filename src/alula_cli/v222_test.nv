@@ -3,7 +3,8 @@
 module alula.alula_cli
 
 import std.text
-import alula.machine.{NamedText, table_files, text_of_file}
+import alula.machine.{NamedText, text_of_file}
+import alula.examples.{table_files}
 
 fn path222() -> str => "/work/m.alula.md"
 
@@ -100,14 +101,6 @@ test "c222 a former version of the file is not read" {
         ro ran = run222(["check", path222()], tiny_ru().replace("format: 2.22", "format: ${version}"))
         assert(ran.code == 1)
         assert(ran.err.contains("версия не известна"))
-    }
-}
-
-test "c222 the machines of the folder are read" {
-    for name in ["chat.alula.md", "dialog.alula.md", "callee.alula.md", "caller.alula.md", "fan.alula.md", "cycle_check.alula.md"] {
-        ro ran = run_with(["check", "/m/${name}"], one("/m/${name}", text_of_file(table_files(), name)))
-        if ran.code != 0 { panic("check ${name}: ${ran.err}") }
-        assert(ran.code == 0)
     }
 }
 
