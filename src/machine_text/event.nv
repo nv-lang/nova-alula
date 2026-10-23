@@ -1,7 +1,7 @@
 // event.nv - the events of the rows of an appeal and of "On accept" (format 4.3), the conditions and the "Where" of a row.
 //
-// Events: `ответ`, `ответ(имя)`, `ответ: Вариант(поле, поле: имя)`, `ответ: Тип.Вариант(…)`, `сбой`, `сбой(причина)`, `сбой(причина in {КодСбоя.…})`,
-// `сигнал(сигнал(поле, поле: имя))` (a signal of a party or of the machine, AL-38; the event `слово(…)` of 2.12 is gone), `сразу`. Two events are not in the format (the proposals of its section 14, И-4) and the
+// Events: `ответ`, `ответ(имя)`, `ответ: Вариант { поле, поле: имя }`, `ответ: Тип.Вариант { … }`, `сбой`, `сбой(причина)`, `сбой(причина в [КодСбоя.…])`,
+// `сигнал(сигнал { поле, поле: имя })` (a signal of a party or of the machine, AL-38; the event `слово(…)` of 2.12 is gone), `сразу`. Two events are not in the format (the proposals of its section 14, И-4) and the
 // interpreter has them: `часть(имя(поле: имя))` for a part of an answer that keeps the request open, and `срок` for the term made by the executor.
 module alula.machine_text
 
@@ -74,7 +74,7 @@ fn ev_parse(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxEvent, TranslateErro
     if t_is_kw(t, words, "event", "response") { return ev_answer(p, cx, sc) }
     if t_is_kw(t, words, "event", "failure") { return ev_failure(p, cx, sc) }
     if t.text == "слово" || t.text == "word" {
-        return Err(tx_err(t.line, t.col, "syntax", "событие `${t.text}(…)` в формате 2.17 не бывает: сигнал стороны пишется `${kw(words, "event", "signal")}(…)` (Я-38), сигнал, объявленный в столбце `${kw(words, "column", "signals")}` стороны; переходного периода нет"))
+        return Err(tx_err(t.line, t.col, "syntax", "событие `${t.text}(…)` в формате 2.22 не бывает: сигнал стороны пишется `${kw(words, "event", "signal")}(…)` (Я-38), сигнал, объявленный в столбце `${kw(words, "column", "signals")}` стороны; переходного периода нет"))
     }
     if t_is_kw(t, words, "event", "signal") { return ev_named(p, cx, sc, "signal") }
     if t_is_kw(t, words, "event", "part") { return ev_named(p, cx, sc, "part") }
@@ -88,7 +88,7 @@ fn ev_parse(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxEvent, TranslateErro
 fn ev_answer(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxEvent, TranslateError] {
     if p_eat(p, ":") {
         ro first = p_tok(p)
-        if first.kind != TK_NAME { return Err(p_fail(p, "после `ответ:` ожидается вариант")) }
+        if first.kind != TK_NAME { return Err(p_fail(p, "после `ответ:` ожидается форма")) }
         p_adv(p)
         mut case_en = ""
         mut case_ru = first.text
@@ -140,13 +140,17 @@ fn ev_failure(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxEvent, TranslateEr
     mut reasons = []str.new()
     if is_member_sign(p, cx.words) {
         p_adv(p)
-        p_expect(p, "{")?
+        p_expect(p, "[")?
         while true {
             reasons.push(ev_reason(p, cx)?)
             if p_eat(p, ",") { continue }
             break
         }
-        p_expect(p, "}")?
+        p_expect(p, "]")?
+    }
+    match member_former(p, cx.words) {
+        Some(e) => return Err(e)
+        None => ()
     }
     p_expect(p, ")")?
     mut rest = []TxKV.new()

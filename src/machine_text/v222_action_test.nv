@@ -1,0 +1,102 @@
+// v222_action_test.nv - task 152: the actions of Alula 2.22 (AL-70, AL-73, AL-74, AL-97): blocks in braces, `для x из xs { … }`, a binding in a block, a statement `пусть`, the old forms refused.
+module alula.machine_text
+
+import std.text
+
+fn aq222(s str) -> str => s.replace("'", "\"")
+
+fn ac_same222(text str, json str) -> bool => ac(text) == aq222(json)
+
+fn ac_has222(text str, part str) -> bool => ac(text).contains(aq222(part))
+
+fn ac_says222(text str, part str) -> bool {
+    ro made = ac(text)
+    made.starts_with("ERR") && made.contains(part)
+}
+
+test "a222 a loop over a list" {
+    assert(ac_same222("для х из [1, 2] { число_повторов += х }", "[{'do':'for_each','var':'х','in':{'op':'list','items':[{'op':'lit','value':1},{'op':'lit','value':2}]},'body':[{'do':'add','target':'retry_count','value':{'op':'name','name':'х'}}]}]"))
+}
+
+test "a222 a loop over a range" {
+    assert(ac_has222("для х из 0..3 { число_повторов += х }", "'in':{'op':'call','fn':'range','args':[{'op':'lit','value':0},{'op':'lit','value':3}]}"))
+}
+
+test "a222 a loop has several actions in the block" {
+    assert(ac_has222("для х из [1] { число_повторов += х; ход = \"a\" }", "'body':[{'do':'add'"))
+    assert(ac_has222("для х из [1] { число_повторов += х; ход = \"a\" }", "{'do':'assign','target':'turn'"))
+}
+
+test "a222 a condition with two blocks" {
+    assert(ac_same222("если ход == \"a\" то { число_повторов = 1 } иначе { число_повторов = 2 }", "[{'do':'if','cond':{'op':'==','left':{'op':'name','name':'turn'},'right':{'op':'lit','value':'a'}},'then':[{'do':'assign','target':'retry_count','value':{'op':'lit','value':1}}],'else':[{'do':'assign','target':'retry_count','value':{'op':'lit','value':2}}]}]"))
+}
+
+test "a222 a condition with one block has no else" {
+    assert(!ac("если ход == \"a\" то { число_повторов = 1 }").contains("else"))
+}
+
+test "a222 a block with a binding is the action let with a body" {
+    assert(ac_same222("{ пусть к = 1; число_повторов = к }", "[{'do':'let','name':'к','value':{'op':'lit','value':1},'body':[{'do':'assign','target':'retry_count','value':{'op':'name','name':'к'}}]}]"))
+}
+
+test "a222 a statement let binds for the rest of the list" {
+    assert(ac_same222("пусть к = 1", "[{'do':'bind','name':'к','value':{'op':'lit','value':1}}]"))
+}
+
+test "a222 actions are separated by a semicolon" {
+    assert(ac_same222("число_повторов = 1; ход = \"a\"", "[{'do':'assign','target':'retry_count','value':{'op':'lit','value':1}},{'do':'assign','target':'turn','value':{'op':'lit','value':'a'}}]"))
+}
+
+test "a222 an assignment takes a match with commas" {
+    assert(ac_has222("число_повторов = выбор ход { \"a\" => 1, иначе => 2 }", "'value':{'op':'match'"))
+}
+
+test "a222 an assignment takes a method of a range" {
+    assert(ac_has222("число_повторов = (0..3).количество(х => х > 0)", "'fn':'count','args':[{'op':'call','fn':'range'"))
+}
+
+test "a222 an assignment takes a string with an insertion" {
+    assert(ac_has222("ход = \"n\${число_повторов}\"", "'fn':'concat','args':[{'op':'lit','value':'n'}"))
+}
+
+test "a222 the old loop for each is refused" {
+    assert(ac_says222("для каждого х в [1]: число_повторов = х", "AL-97"))
+}
+
+test "a222 the loop with in is refused" {
+    assert(ac_says222("для х в [1] { число_повторов = х }", "AL-97"))
+}
+
+test "a222 brackets around actions are refused" {
+    assert(ac_says222("если истина то (число_повторов = 1)", "круглые скобки вокруг действий"))
+}
+
+test "a222 a branch without a block says what is expected" {
+    assert(ac_says222("если истина то число_повторов = 1", "ожидается блок"))
+    assert(!ac("если истина то число_повторов = 1").contains("круглые скобки"))
+}
+
+test "a222 the old let in is refused" {
+    assert(ac_says222("пусть к = 1 в (число_повторов = к)", "AL-73"))
+}
+
+test "a222 an empty block is refused" {
+    assert(ac_says222("{}", "пустой блок"))
+    assert(ac_says222("для х из [1, 2] { }", "пустой блок"))
+}
+
+test "a222 a comment is no part of a cell" {
+    assert(ac_says222("число_повторов = 1 // пояснение", "AL-90"))
+}
+
+test "a222 a loop variable is known in the block only" {
+    assert(ac_says222("для х из [1] { число_повторов += х }; число_повторов += х", "не объявлено"))
+}
+
+test "a222 a binding of a block is not known after it" {
+    assert(ac_says222("{ пусть к = 1; число_повторов = к }; число_повторов = к", "не объявлено"))
+}
+
+test "a222 a loop over a method" {
+    assert(ac_has222("для х из [1, 2].фильтр(у => у > 1) { число_повторов += х }", "'in':{'op':'call','fn':'filter'"))
+}

@@ -5,13 +5,13 @@ module alula.machine_text
 import std.text
 
 // The context for a fragment: the names that the piece may use. An entry is `имя`, `имя (json)` (a datum, a constant or a parameter), or with a word before the name: `field имя (json)`, `type имя (json)`,
-// `case имя (json)` (a field, a type, a case of a variant the piece mentions); a name without brackets is its own JSON name (AL-46).
+// `case имя (json)`, `ctype имя (тип)` (a field, a type, a form or an element of an enumeration the piece mentions, the type that owns a case); a name without brackets is its own JSON name (AL-46).
 fn frag_cx(data []str, lang str) -> TxCx {
     mut cx = cx_new_in(lang)
     for entry in data {
         mut kind = "data"
         mut rest = entry
-        for k in ["field", "type", "case"] {
+        for k in ["field", "type", "case", "ctype"] {
             if entry.starts_with("${k} ") {
                 kind = k
                 rest = entry[k.byte_len() + 1..]
@@ -24,7 +24,10 @@ fn frag_cx(data []str, lang str) -> TxCx {
             name = rest[..open]
             json = rest[open + 2..rest.byte_len() - 1]
         }
-        if kind == "field" {
+        if kind == "ctype" {
+            // `ctype Case (Type)`: the case belongs to the type, so its bare name may stand alone (AL-88)
+            pair_add(cx.env.case_types, name, json)
+        } else if kind == "field" {
             pair_add(cx.env.fields, name, json)
         } else if kind == "type" {
             pair_add(cx.env.types, name, json)
@@ -91,7 +94,10 @@ export fn translate_expression_in(text str, data []str, lang str) -> Result[str,
                         Err(e) => return Err(frag_errors(cx, Some(e), text))
                     }
                     if cx.errors.len() > 0 { return Err(frag_errors(cx, None, text)) }
-                    Ok(tx_text(j))
+                    ro done = el_piece(j, "")
+                    for e in el_errors(done) { cx.errors.push(e) }
+                    if cx.errors.len() > 0 { return Err(frag_errors(cx, None, text)) }
+                    Ok(tx_text(done.json))
                 }
                 Err(e) => Err(frag_errors(cx, Some(e), text))
             }
@@ -126,7 +132,10 @@ export fn translate_actions_in(text str, data []str, parties []str, empty_lists 
                         Err(e) => return Err(frag_errors(cx, Some(e), text))
                     }
                     if cx.errors.len() > 0 { return Err(frag_errors(cx, None, text)) }
-                    Ok(tx_text(TxArr(actions)))
+                    ro done = el_piece(TxArr(actions), "")
+                    for e in el_errors(done) { cx.errors.push(e) }
+                    if cx.errors.len() > 0 { return Err(frag_errors(cx, None, text)) }
+                    Ok(tx_text(done.json))
                 }
                 Err(e) => Err(frag_errors(cx, Some(e), text))
             }

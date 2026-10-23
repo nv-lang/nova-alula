@@ -1,8 +1,9 @@
 // action.nv - the actions of a row, of "On accept" and of "On entry" (format section 5) as the actions of the JSON.
 //
-// A list of actions is separated by `;` and every action sees the results of the earlier ones. `пусть имя = выр` binds a name for the actions after it;
-// `пусть имя = выр в действия` binds it for the actions after `в` only. What the format has and this version does not run (`передать` to nested machines, the
-// exceptions of `отменить_открытые`) is a soft error of the kind `unsupported`: it is written down with its place and the translation goes on without it.
+// A list of actions is separated by `;` and every action sees the results of the earlier ones. `пусть имя = выр` binds a name for the actions after it in "On entry" and "On accept";
+// inside a block `{ … }` (AL-73, AL-74) the name lives up to the closing brace: `{ пусть имя = выр; действия }` (the action `пусть … в` is gone). A conditional action and the body of a loop are
+// blocks (AL-70, AL-72). What the format has and this version does not run (`передать` to nested machines, the exceptions of `отменить_открытые`) is a soft error of the kind `unsupported`: it is
+// written down with its place and the translation goes on without it.
 module alula.machine_text
 
 import std.text
@@ -14,12 +15,12 @@ fn cx_unsupported(mut cx TxCx, t TxTok, what str) -> () {
     cx.errors.push(unsupported(t, what))
 }
 
-/// TxStmt: the JSON of an action (none for a construction that is a no-op or not supported) and the name that a `пусть` binds for the next ones.
-type TxStmt { actions []TxJ, bind_ru str, bind_en str }
+/// TxStmt: the JSON of an action (none for a construction that is a no-op or not supported) and the name that a `пусть` binds for the next ones (with its value, for a block).
+type TxStmt { actions []TxJ, bind_ru str, bind_en str, bind_value TxJ }
 
-fn stmt_of(actions []TxJ) -> TxStmt => { actions, bind_ru: "", bind_en: "" }
+fn stmt_of(actions []TxJ) -> TxStmt => { actions, bind_ru: "", bind_en: "", bind_value: x_null() }
 
-fn stmt_none() -> TxStmt => { actions: []TxJ.new(), bind_ru: "", bind_en: "" }
+fn stmt_none() -> TxStmt => { actions: []TxJ.new(), bind_ru: "", bind_en: "", bind_value: x_null() }
 
 fn is_latin_code(w str) -> bool {
     if w.byte_len() == 0 { return false }
@@ -31,15 +32,43 @@ fn is_latin_code(w str) -> bool {
     true
 }
 
-/// A group of actions: `( действия )` or a single action.
-fn ac_body(mut p TxP, mut cx TxCx, sc TxScope) -> Result[[]TxJ, TranslateError] {
-    if p_eat(p, "(") {
-        ro inner = ac_list(p, cx, sc)?
-        p_expect(p, ")")?
-        return Ok(inner)
+/// A block of actions `{ действия }` (AL-74): the actions in order; a `пусть` inside binds its name up to the closing brace (AL-73). The block is not empty.
+fn ac_block(mut p TxP, mut cx TxCx, sc TxScope) -> Result[[]TxJ, TranslateError] {
+    ro open = p_tok(p)
+    p_expect(p, "{")?
+    if p_is(p, "}") { return Err(tx_err(open.line, open.col, "syntax", "пустой блок `{ }` не бывает (AL-70, AL-74): в блоке есть действие")) }
+    ro out = ac_block_items(p, cx, sc)?
+    p_expect(p, "}")?
+    Ok(out)
+}
+
+// The actions of a block up to its closing brace; a `пусть` takes the rest of the block as its body.
+fn ac_block_items(mut p TxP, mut cx TxCx, sc TxScope) -> Result[[]TxJ, TranslateError] {
+    mut out = []TxJ.new()
+    while true {
+        if p_done(p) || p_is(p, "}") { break }
+        ro one = ac_stmt(p, cx, sc)?
+        if one.bind_ru != "" {
+            ro more = p_eat(p, ";")
+            ro rest = ac_block_items(p, cx, sc_with(sc, one.bind_ru, one.bind_en))?
+            if rest.len() == 0 { return Err(p_fail(p, "после `${kw(cx.words, "action", "let")}` в блоке ожидается действие (AL-73)")) }
+            out.push(a_let(one.bind_en, one.bind_value, rest))
+            return Ok(out)
+        }
+        for a in one.actions { out.push(a) }
+        if p_eat(p, ";") { continue }
+        break
     }
-    ro one = ac_stmt(p, cx, sc)?
-    Ok(one.actions)
+    Ok(out)
+}
+
+// The branch of a conditional action: a block; the word before it is `то`/`else` (AL-70).
+fn ac_branch(mut p TxP, mut cx TxCx, sc TxScope, word str) -> Result[[]TxJ, TranslateError] {
+    if !p_is(p, "{") {
+        ro message_tail = if p_is(p, "(") { ": круглые скобки вокруг действий в формате 2.22 не бывают" } else { "" }
+        return Err(p_fail(p, "после `${word}` ожидается блок `{ … }` (AL-70)${message_tail}"))
+    }
+    ac_block(p, cx, sc)
 }
 
 /// TxActList: the actions of a list and the scope after them (the bindings of `пусть` that the rows of the state see).
@@ -72,6 +101,7 @@ fn ac_list_scoped(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxActList, Trans
 
 fn ac_stmt(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError] {
     ro t = p_tok(p)
+    if t_is(t, "{") { return Ok(stmt_of(ac_block(p, cx, sc)?)) }
     if t.kind != TK_NAME { return Err(p_fail(p, "ожидается действие")) }
     ro w = t.text
     ro words = cx.words
@@ -201,49 +231,54 @@ fn ac_call(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError]
     Ok(stmt_of([a_call(en, args)]))
 }
 
-// `для каждого имя в выр: действие`.
+// `для имя из выр { действия }` (AL-72, AL-97; in English `for x in xs { … }`).
 fn ac_for(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError] {
     p_adv(p)
-    p_expect_kw(p, cx.words, "action", "each")?
+    ro head = p_tok(p)
+    if head.kind == TK_NAME {
+        match former_find(cx.words.lang, "word", head.text) {
+            Some(f) => return Err(tx_err(head.line, head.col, "syntax", former_message(f)))
+            None => ()
+        }
+    }
     ro n = p_tok(p)
-    if n.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "action", "for each")}` ожидается имя")) }
+    if n.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "action", "for")}` ожидается имя")) }
     p_adv(p)
+    if p_is_kw(p, cx.words, "operator", "in") && !p_is_kw(p, cx.words, "action", "in") {
+        return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "цикл `${kw(cx.words, "action", "for")} ${n.text} ${p_tok(p).text} …` в формате 2.22 не бывает (AL-97): пишется `${kw(cx.words, "action", "for")} ${n.text} ${kw(cx.words, "action", "in")} выр { … }`; переходного периода нет"))
+    }
     p_expect_kw(p, cx.words, "action", "in")?
     ro list_expr = ex_expr(p, cx, sc)?
-    p_expect(p, ":")?
+    if p_is(p, ":") { return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "двоеточие после списка цикла в формате 2.22 не бывает (AL-72): тело цикла — блок `{ действия }`; переходного периода нет")) }
     ro en = tr_binder(cx, n)
-    ro body = ac_body(p, cx, sc_with(sc, n.text, en))?
+    ro body = ac_branch(p, cx, sc_with(sc, n.text, en), kw(cx.words, "action", "in"))?
     Ok(stmt_of([a_for_each(en, list_expr, body)]))
 }
 
-// `если выр то (действия) иначе (действия)`.
+// `если выр то { действия } иначе { действия }` (AL-70): the branches are blocks, `иначе` is optional.
 fn ac_if(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError] {
     p_adv(p)
     ro cond = ex_expr(p, cx, sc)?
     p_expect_kw(p, cx.words, "action", "then")?
-    ro then_actions = ac_body(p, cx, sc)?
+    ro then_actions = ac_branch(p, cx, sc, kw(cx.words, "action", "then"))?
     mut else_actions = []TxJ.new()
-    if p_eat_kw(p, cx.words, "action", "else") { else_actions = ac_body(p, cx, sc)? }
+    if p_eat_kw(p, cx.words, "action", "else") { else_actions = ac_branch(p, cx, sc, kw(cx.words, "action", "else"))? }
     Ok(stmt_of([a_if(cond, then_actions, else_actions)]))
 }
 
-// `пусть имя = выр` (bound for the next actions) and `пусть имя = выр в действия` (bound for the actions after `в`).
+// `пусть имя = выр`: bound for the next actions (the action `пусть имя = выр в действия` is gone, AL-73).
 fn ac_let(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError] {
     p_adv(p)
     ro n = p_tok(p)
     if n.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "action", "let")}` ожидается имя")) }
     p_adv(p)
     p_expect(p, "=")?
-    ro saved = p.in_let
-    p.in_let = 1
     ro value = ex_expr(p, cx, sc)?
-    p.in_let = saved
-    ro en = tr_binder(cx, n)
-    if p_eat_kw(p, cx.words, "action", "in") {
-        ro body = ac_body(p, cx, sc_with(sc, n.text, en))?
-        return Ok(stmt_of([a_let(en, value, body)]))
+    if p_is_kw(p, cx.words, "action", "in") || p_is_kw(p, cx.words, "operator", "in") {
+        return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "действие `${kw(cx.words, "action", "let")} … ${p_tok(p).text} …` в формате 2.22 не бывает (AL-73): локальное имя — блок `{ ${kw(cx.words, "action", "let")} имя = выр; действия }`; переходного периода нет"))
     }
-    Ok(TxStmt { actions: [a_bind(en, value)], bind_ru: n.text, bind_en: en })
+    ro en = tr_binder(cx, n)
+    Ok(TxStmt { actions: [a_bind(en, value)], bind_ru: n.text, bind_en: en, bind_value: value })
 }
 
 // `отменить_открытые`, `отменить_открытые(сторона: имя)`, `отменить_открытые(кроме: вложенные)`.

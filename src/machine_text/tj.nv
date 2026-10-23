@@ -111,6 +111,9 @@ fn x_list(items []TxJ) -> TxJ => jobj([kv("op", js("list")), kv("items", TxArr(i
 
 fn x_tuple(items []TxJ) -> TxJ => jobj([kv("op", js("tuple")), kv("items", TxArr(items))])
 
+/// The mark of an empty `[]` (AL-85): a list or a map by the expected type, which `elab.nv` finds; the place is kept for the error.
+fn x_empty_br(line int, col int) -> TxJ => jobj([kv("op", js("empty_br")), kv("line", jint(line)), kv("col", jint(col))])
+
 fn x_dict(entries []TxJ) -> TxJ => jobj([kv("op", js("dict")), kv("entries", TxArr(entries))])
 
 fn x_entry(key TxJ, value TxJ) -> TxJ => jobj([kv("key", key), kv("value", value)])

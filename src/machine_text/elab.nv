@@ -1,0 +1,733 @@
+// elab.nv - the expected type of an empty `[]` (AL-85) and the checks that need the types of the names: a pass over the finished tree of a machine.
+//
+// The reader of expressions (`parse.nv`) does not know types. It leaves the mark `{"op":"empty_br"}` for `[]`; this pass walks the tree with the types that the tree itself holds (the data, the constants, the
+// parameters, the fields of the input, the fields of the records and of the forms of enumerations, the signatures of the functions) and turns the mark into an empty list or an empty map by the EXPECTED TYPE of its place:
+// the type of a datum (the column "type"), a constant, a parameter, a field, an argument by the signature of a function, the left side of an assignment, the result of a function, a branch of `if`/`match`,
+// the last expression of a block, the other operand of `==`, `!=`, `+`, the start value of `fold` (it is the type of the result of the call). Where no expected type is known the mark is an error (AL-85).
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+
+/// ElTypes: the types the tree holds, by name: the names of the data, of the constants and of the parameters (`name`), the fields of the input (`input.name`), the fields of the records (`Type.field`) and of the variants
+/// (`Type.Case.field`), the results of the functions (`fn name`) and their parameters (`name#0`, `name#1`).
+type ElTypes { names []TxPair }
+
+/// ElErr: a place where the type was needed and not known.
+type ElErr { line int, col int, message str }
+
+/// ElOut: the tree with the marks resolved and the errors of the places that stay unresolved.
+type ElOut { json TxJ, errors []ElErr }
+
+fn el_get(j TxJ, key str) -> Option[TxJ] {
+    match j {
+        TxObj(pairs) => {
+            for q in pairs {
+                if q.key == key { return Some(q.value) }
+            }
+            None
+        }
+        _ => None
+    }
+}
+
+fn el_str(j TxJ, key str) -> str {
+    match el_get(j, key) {
+        Some(v) => {
+            match v {
+                TxStr(s) => s
+                _ => ""
+            }
+        }
+        None => ""
+    }
+}
+
+fn el_items(j TxJ, key str) -> []TxJ {
+    match el_get(j, key) {
+        Some(v) => {
+            match v {
+                TxArr(items) => items
+                _ => []TxJ.new()
+            }
+        }
+        None => []TxJ.new()
+    }
+}
+
+fn el_num(j TxJ, key str) -> int {
+    match el_get(j, key) {
+        Some(v) => {
+            match v {
+                TxRaw(r) => r.to_int() ?? 0
+                _ => 0
+            }
+        }
+        None => 0
+    }
+}
+
+// ---- the type strings of the tree -------------------------------------------------------------------------------------------------
+
+/// The type without the `?` in front, "" when there is none.
+fn el_opt_inner(t str) -> str => if t.starts_with("?") { t[1..] } else { "" }
+
+/// The element type of a list type (`[]T`), "" when the type is no list. A literal set under `[]` is in brackets: they are taken off.
+fn el_list_elem(t str) -> str {
+    if !t.starts_with("[]") { return "" }
+    ro rest = t[2..]
+    if rest.starts_with("(") && rest.ends_with(")") { return rest[1..rest.byte_len() - 1] }
+    rest
+}
+
+/// The key and value types of a map type (`{K: V}` or `full {K: V}`): both "" when the type is no map.
+fn el_map_parts(t str) -> (str, str) {
+    mut s = t
+    if s.starts_with("full ") { s = s[5..] }
+    if !s.starts_with("{") || !s.ends_with("}") { return ("", "") }
+    ro inner = s[1..s.byte_len() - 1]
+    mut depth = 0
+    mut in_str = false
+    mut at = -1
+    mut k = 0
+    for c in inner.chars() {
+        if c == '"' { in_str = !in_str }
+        if !in_str {
+            if c == '{' || c == '[' || c == '(' { depth += 1 }
+            if c == '}' || c == ']' || c == ')' { depth -= 1 }
+            if c == ':' && depth == 0 && at < 0 { at = k }
+        }
+        k += c.len_utf8()
+    }
+    if at < 0 { return ("", "") }
+    (inner[..at].trim_ascii(), inner[at + 1..].trim_ascii())
+}
+
+fn el_is_list(t str) -> bool => el_list_elem(t) != ""
+
+fn el_is_map(t str) -> bool {
+    ro (k, v) = el_map_parts(t)
+    k != "" && v != ""
+}
+
+fn el_lookup(ty ElTypes, key str) -> str {
+    match pair_get(ty.names, key) {
+        Some(t) => t
+        None => ""
+    }
+}
+
+// ---- the types of the names ---------------------------------------------------------------------------------------------------------
+
+fn el_collect(root TxJ) -> ElTypes {
+    mut names = []TxPair.new()
+    for d in el_items(root, "data") { names.push(TxPair { ru: el_str(d, "name"), en: el_str(d, "type") }) }
+    for c in el_items(root, "constants") { names.push(TxPair { ru: el_str(c, "name"), en: el_str(c, "type") }) }
+    for c in el_items(root, "params") { names.push(TxPair { ru: el_str(c, "name"), en: el_str(c, "type") }) }
+    match el_get(root, "input") {
+        Some(inp) => {
+            for f in el_items(inp, "fields") { names.push(TxPair { ru: "input.${el_str(f, "name")}", en: el_str(f, "type") }) }
+        }
+        None => ()
+    }
+    match el_get(root, "types") {
+        Some(tp) => {
+            for t in el_items(tp, "records") { el_collect_type(t, names) }
+            for t in el_items(tp, "variants") { el_collect_type(t, names) }
+        }
+        None => ()
+    }
+    for d in el_items(root, "definitions") {
+        ro name = el_str(d, "name")
+        names.push(TxPair { ru: "fn ${name}", en: el_str(d, "result") })
+        mut i = 0
+        for p in el_items(d, "params") {
+            names.push(TxPair { ru: "${name}#${i}", en: el_str(p, "type") })
+            i += 1
+        }
+    }
+    ElTypes { names }
+}
+
+fn el_collect_type(t TxJ, mut names []TxPair) -> () {
+    ro type_name = el_str(t, "name")
+    for f in el_items(t, "fields") { names.push(TxPair { ru: "${type_name}.${el_str(f, "name")}", en: el_str(f, "type") }) }
+    for c in el_items(t, "cases") {
+        for f in el_items(c, "fields") { names.push(TxPair { ru: "${type_name}.${el_str(c, "name")}.${el_str(f, "name")}", en: el_str(f, "type") }) }
+    }
+}
+
+// The type of an expression, as far as it is known without inference: names, fields, indexes, literals, calls of functions. "" when it is not known. `locals` are the names bound in the place with their types.
+fn el_type_of(ty ElTypes, j TxJ, locals []TxPair) -> str {
+    ro op = el_str(j, "op")
+    if op == "name" {
+        ro name = el_str(j, "name")
+        match pair_get(locals, name) {
+            Some(t) => return t
+            None => ()
+        }
+        return el_lookup(ty, name)
+    }
+    if op == "lit" {
+        match el_get(j, "value") {
+            Some(v) => {
+                match v {
+                    TxRaw(r) => return if r.contains(".") || r.contains("e") || r.contains("E") { "float" } else { "int" }
+                    TxStr(s) => return "text"
+                    TxBool(b) => return "bool"
+                    _ => return ""
+                }
+            }
+            None => return ""
+        }
+    }
+    if op == "field" {
+        ro base = match el_get(j, "of") {
+            Some(b) => b
+            None => TxNull
+        }
+        ro name = el_str(j, "name")
+        if el_str(base, "op") == "name" && el_str(base, "name") == "input" { return el_lookup(ty, "input.${name}") }
+        mut bt = el_type_of(ty, base, locals)
+        if bt.starts_with("?") { bt = bt[1..] }
+        if bt == "" { return "" }
+        return el_lookup(ty, "${bt}.${name}")
+    }
+    if op == "index" {
+        ro base = match el_get(j, "of") {
+            Some(b) => b
+            None => TxNull
+        }
+        ro bt = el_type_of(ty, base, locals)
+        ro (k, v) = el_map_parts(bt)
+        if v != "" { return if bt.starts_with("full ") { v } else { "?${v}" } }
+        ro e = el_list_elem(bt)
+        if e != "" { return "?${e}" }
+        return ""
+    }
+    if op == "call" {
+        ro f = el_str(j, "fn")
+        ro args = el_items(j, "args")
+        if f == "require" && args.len() == 1 {
+            ro inner = el_type_of(ty, args[0], locals)
+            return if inner.starts_with("?") { inner[1..] } else { inner }
+        }
+        if f == "text" || f == "concat" { return "text" }
+        if f == "int" || f == "length" { return "int" }
+        if f == "float" { return "float" }
+        if f == "has" || f == "any" || f == "all" { return "bool" }
+        // the calls that give back their first argument as it is (a list or a map with fewer elements)
+        if (f == "filter" || f == "remove" || f == "without_key") && args.len() > 0 {
+            ro same = el_type_of(ty, args[0], locals)
+            if same != "" { return same }
+        }
+        ro declared = el_lookup(ty, "fn ${f}")
+        return declared
+    }
+    if op == "list" {
+        ro items = el_items(j, "items")
+        if items.len() > 0 {
+            ro first = el_type_of(ty, items[0], locals)
+            if first != "" { return "[]${first}" }
+        }
+        return ""
+    }
+    if op == "+" || op == "-" || op == "*" || op == "/" || op == "%" {
+        ro l = match el_get(j, "left") {
+            Some(x) => el_type_of(ty, x, locals)
+            None => ""
+        }
+        if l != "" { return l }
+        return match el_get(j, "right") {
+            Some(x) => el_type_of(ty, x, locals)
+            None => ""
+        }
+    }
+    if op == "??" {
+        ro r = match el_get(j, "right") {
+            Some(x) => el_type_of(ty, x, locals)
+            None => ""
+        }
+        if r != "" { return r }
+        ro l = match el_get(j, "left") {
+            Some(x) => el_type_of(ty, x, locals)
+            None => ""
+        }
+        return if l.starts_with("?") { l[1..] } else { l }
+    }
+    if op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" || op == "and" || op == "or" || op == "not" { return "bool" }
+    ""
+}
+
+// ---- the pass ---------------------------------------------------------------------------------------------------------------------------
+
+fn el_unknown(mut errs []ElErr, j TxJ) -> () {
+    errs.push(ElErr { line: el_num(j, "line"), col: el_num(j, "col"), message: "пустой `[]` без ожидаемого типа (AL-85): тип известен у данного, поля, параметра, константы, аргумента функции, левой части присваивания, результата функции, ветки; у второго операнда `==`, `!=`, `+`; иначе пишется тип явно (данное с типом) или значение другого вида" })
+}
+
+fn el_copy(locals []TxPair) -> []TxPair {
+    mut out = []TxPair.new()
+    for l in locals { out.push(l) }
+    out
+}
+
+fn el_with_locals(locals []TxPair, name str, t str) -> []TxPair {
+    mut out = []TxPair.new()
+    for l in locals { out.push(l) }
+    out.push(TxPair { ru: name, en: t })
+    out
+}
+
+// Every child of an object or an array that is an object/array: the pass goes in with no expected type.
+fn el_children(ty ElTypes, j TxJ, locals []TxPair, mut errs []ElErr) -> TxJ {
+    match j {
+        TxObj(pairs) => {
+            mut out = []TxKV.new()
+            for q in pairs { out.push(kv(q.key, el_value(ty, q.value, "", locals, errs))) }
+            TxObj(out)
+        }
+        TxArr(items) => {
+            mut out = []TxJ.new()
+            for x in items { out.push(el_value(ty, x, "", locals, errs)) }
+            TxArr(out)
+        }
+        _ => j
+    }
+}
+
+// A value of the tree with the expected type `want` ("" when it is not known).
+fn el_value(ty ElTypes, j TxJ, want str, locals []TxPair, mut errs []ElErr) -> TxJ {
+    match j {
+        TxObj(pairs) => {
+            ro op = el_str(j, "op")
+            if op != "" { return el_expr(ty, j, op, want, locals, errs) }
+            ro act = el_str(j, "do")
+            if act == "assign" || act == "add" { return el_assign(ty, j, locals, errs) }
+            el_children(ty, j, locals, errs)
+        }
+        TxArr(items) => el_children(ty, j, locals, errs)
+        _ => j
+    }
+}
+
+fn el_assign(ty ElTypes, j TxJ, locals []TxPair, mut errs []ElErr) -> TxJ {
+    // the type of the target: a datum, or a datum with a path of keys and fields
+    mut target_type = ""
+    match el_get(j, "target") {
+        Some(t) => {
+            match t {
+                TxStr(root) => { target_type = el_lookup(ty, root) }
+                _ => {
+                    mut cur = el_lookup(ty, el_str(t, "name"))
+                    for step in el_items(t, "path") {
+                        match el_get(step, "field") {
+                            Some(f) => {
+                                ro fname = el_str(step, "field")
+                                ro base = if cur.starts_with("?") { cur[1..] } else { cur }
+                                cur = el_lookup(ty, "${base}.${fname}")
+                            }
+                            None => {
+                                ro (k, v) = el_map_parts(cur)
+                                if v != "" {
+                                    cur = v
+                                } else {
+                                    ro e = el_list_elem(cur)
+                                    cur = e
+                                }
+                            }
+                        }
+                    }
+                    target_type = cur
+                }
+            }
+        }
+        None => ()
+    }
+    match j {
+        TxObj(pairs) => {
+            mut out = []TxKV.new()
+            for q in pairs {
+                if q.key == "value" {
+                    out.push(kv(q.key, el_value(ty, q.value, target_type, locals, errs)))
+                } else {
+                    out.push(kv(q.key, el_value(ty, q.value, "", locals, errs)))
+                }
+            }
+            TxObj(out)
+        }
+        _ => j
+    }
+}
+
+fn el_expr(ty ElTypes, j TxJ, op str, want str, locals []TxPair, mut errs []ElErr) -> TxJ {
+    if op == "empty_br" {
+        ro target = if want.starts_with("?") { want[1..] } else { want }
+        if el_is_map(target) { return x_dict([]) }
+        if el_is_list(target) { return x_list([]) }
+        el_unknown(errs, j)
+        return x_list([])
+    }
+    if op == "list" {
+        ro elem = el_list_elem(if want.starts_with("?") { want[1..] } else { want })
+        mut items = []TxJ.new()
+        for x in el_items(j, "items") { items.push(el_value(ty, x, elem, locals, errs)) }
+        return x_list(items)
+    }
+    if op == "dict" {
+        ro (kt, vt) = el_map_parts(if want.starts_with("?") { want[1..] } else { want })
+        mut entries = []TxJ.new()
+        for e in el_items(j, "entries") {
+            ro k = match el_get(e, "key") {
+                Some(x) => el_value(ty, x, kt, locals, errs)
+                None => TxNull
+            }
+            ro v = match el_get(e, "value") {
+                Some(x) => el_value(ty, x, vt, locals, errs)
+                None => TxNull
+            }
+            entries.push(x_entry(k, v))
+        }
+        return x_dict(entries)
+    }
+    if op == "if" {
+        ro c = match el_get(j, "cond") {
+            Some(x) => el_value(ty, x, "bool", locals, errs)
+            None => TxNull
+        }
+        ro a = match el_get(j, "then") {
+            Some(x) => el_value(ty, x, want, locals, errs)
+            None => TxNull
+        }
+        ro b = match el_get(j, "else") {
+            Some(x) => el_value(ty, x, want, locals, errs)
+            None => TxNull
+        }
+        return x_if(c, a, b)
+    }
+    if op == "let" {
+        ro value = match el_get(j, "value") {
+            Some(x) => x
+            None => TxNull
+        }
+        ro vt = el_type_of(ty, value, locals)
+        ro v2 = el_value(ty, value, "", locals, errs)
+        ro body = match el_get(j, "body") {
+            Some(x) => el_value(ty, x, want, el_with_locals(locals, el_str(j, "name"), vt), errs)
+            None => TxNull
+        }
+        return x_let(el_str(j, "name"), v2, body)
+    }
+    if op == "match" {
+        ro on = match el_get(j, "on") {
+            Some(x) => el_value(ty, x, "", locals, errs)
+            None => TxNull
+        }
+        mut arms = []TxJ.new()
+        for arm in el_items(j, "arms") {
+            mut pairs = []TxKV.new()
+            match arm {
+                TxObj(ps) => {
+                    for q in ps {
+                        if q.key == "body" {
+                            pairs.push(kv("body", el_value(ty, q.value, want, locals, errs)))
+                        } else {
+                            pairs.push(kv(q.key, el_value(ty, q.value, "", locals, errs)))
+                        }
+                    }
+                }
+                _ => ()
+            }
+            arms.push(jobj(pairs))
+        }
+        return x_match(on, arms)
+    }
+    if op == "??" {
+        // the right side has the type of the left one without `?` when the place gives no type (an extension of AL-85, reported to the methodology)
+        ro left_type = match el_get(j, "left") {
+            Some(x) => el_type_of(ty, x, locals)
+            None => ""
+        }
+        ro from_left = if left_type.starts_with("?") { left_type[1..] } else { left_type }
+        ro rt = if want == "" { from_left } else if want.starts_with("?") { want[1..] } else { want }
+        ro l = match el_get(j, "left") {
+            Some(x) => el_value(ty, x, if want == "" { "" } else { "?${rt}" }, locals, errs)
+            None => TxNull
+        }
+        ro r = match el_get(j, "right") {
+            Some(x) => el_value(ty, x, rt, locals, errs)
+            None => TxNull
+        }
+        return x_bin("??", l, r)
+    }
+    if op == "==" || op == "!=" || op == "+" {
+        ro lx = match el_get(j, "left") {
+            Some(x) => x
+            None => TxNull
+        }
+        ro rx = match el_get(j, "right") {
+            Some(x) => x
+            None => TxNull
+        }
+        ro lt = el_type_of(ty, lx, locals)
+        ro rt = el_type_of(ty, rx, locals)
+        ro for_plus = op == "+" && want != ""
+        ro lw = if for_plus { want } else { rt }
+        ro rw = if for_plus { want } else { lt }
+        return x_bin(op, el_value(ty, lx, lw, locals, errs), el_value(ty, rx, rw, locals, errs))
+    }
+    if op == "call" {
+        ro f = el_str(j, "fn")
+        ro args = el_items(j, "args")
+        mut out = []TxJ.new()
+        if f == "fold" && args.len() == 3 {
+            // the start value and the result of the lambda are the type of the result of the call
+            ro xs_type = el_type_of(ty, args[0], locals)
+            ro acc = if want != "" { want } else { el_type_of(ty, args[1], locals) }
+            out.push(el_value(ty, args[0], "", locals, errs))
+            out.push(el_value(ty, args[1], acc, locals, errs))
+            out.push(el_lambda(ty, args[2], acc, el_list_elem(xs_type), want, locals, errs))
+            return x_call(f, out)
+        }
+        if f == "filter" || f == "map" || f == "any" || f == "all" || f == "count" || f == "first_where" || f == "dict" {
+            ro xs_type = if args.len() > 0 { el_type_of(ty, args[0], locals) } else { "" }
+            mut i = 0
+            for a in args {
+                if i == 0 {
+                    out.push(el_value(ty, a, "", locals, errs))
+                } else {
+                    out.push(el_lambda(ty, a, el_list_elem(xs_type), "", "", locals, errs))
+                }
+                i += 1
+            }
+            return x_call(f, out)
+        }
+        mut i = 0
+        for a in args {
+            ro pt = el_lookup(ty, "${f}#${i}")
+            out.push(el_value(ty, a, pt, locals, errs))
+            i += 1
+        }
+        return x_call(f, out)
+    }
+    if op == "record" {
+        ro type_name = el_str(j, "type")
+        return el_fields_of(ty, j, "fields", "${type_name}.", locals, errs, op)
+    }
+    if op == "variant" {
+        ro type_name = el_str(j, "type")
+        return el_fields_of(ty, j, "fields", "${type_name}.${el_str(j, "name")}.", locals, errs, op)
+    }
+    if op == "with_field" {
+        ro base_type = match el_get(j, "of") {
+            Some(x) => el_type_of(ty, x, locals)
+            None => ""
+        }
+        return el_fields_of(ty, j, "fields", "${base_type}.", locals, errs, op)
+    }
+    el_children(ty, j, locals, errs)
+}
+
+// The fields of a record, of a form of an enumeration or of a copy of a record: every value with the type of its field (the prefix is the type's name with a dot).
+fn el_fields_of(ty ElTypes, j TxJ, key str, prefix str, locals []TxPair, mut errs []ElErr, op str) -> TxJ {
+    match j {
+        TxObj(pairs) => {
+            mut out = []TxKV.new()
+            for q in pairs {
+                if q.key == key {
+                    match q.value {
+                        TxObj(fs) => {
+                            mut fields = []TxKV.new()
+                            for f in fs { fields.push(kv(f.key, el_value(ty, f.value, el_lookup(ty, "${prefix}${f.key}"), locals, errs))) }
+                            out.push(kv(q.key, TxObj(fields)))
+                        }
+                        _ => out.push(kv(q.key, el_value(ty, q.value, "", locals, errs)))
+                    }
+                } else {
+                    out.push(kv(q.key, el_value(ty, q.value, "", locals, errs)))
+                }
+            }
+            TxObj(out)
+        }
+        _ => j
+    }
+}
+
+// A lambda: the first parameter has the type `first`, the second (of `fold`) the element type `second`; the body is expected to give `body_want`.
+fn el_lambda(ty ElTypes, lam TxJ, first str, second str, body_want str, locals []TxPair, mut errs []ElErr) -> TxJ {
+    if el_str(lam, "op") != "lambda" { return el_value(ty, lam, "", locals, errs) }
+    ro params = el_items(lam, "params")
+    mut inner = el_copy(locals)
+    if params.len() == 1 {
+        match params[0] {
+            TxStr(n) => { inner = el_with_locals(inner, n, first) }
+            _ => ()
+        }
+    } else if params.len() == 2 {
+        match params[0] {
+            TxStr(n) => { inner = el_with_locals(inner, n, first) }
+            _ => ()
+        }
+        match params[1] {
+            TxStr(n) => { inner = el_with_locals(inner, n, second) }
+            _ => ()
+        }
+    }
+    ro body = match el_get(lam, "body") {
+        Some(b) => el_value(ty, b, body_want, inner, errs)
+        None => TxNull
+    }
+    mut names = []str.new()
+    for p in params {
+        match p {
+            TxStr(n) => names.push(n)
+            _ => ()
+        }
+    }
+    x_lambda(names, body)
+}
+
+/// The tree of a machine with every `[]` turned into an empty list or an empty map by its expected type (AL-85); the places that have none are the errors.
+fn el_root(root TxJ) -> ElOut {
+    ro ty = el_collect(root)
+    mut errs = []ElErr.new()
+    match root {
+        TxObj(pairs) => {
+            mut out = []TxKV.new()
+            for q in pairs {
+                if q.key == "data" {
+                    mut data = []TxJ.new()
+                    for d in el_items(root, "data") { data.push(el_datum(ty, d, errs)) }
+                    out.push(kv(q.key, TxArr(data)))
+                } else if q.key == "constants" || q.key == "params" {
+                    mut rows = []TxJ.new()
+                    for c in el_items(root, q.key) { rows.push(el_row_value(ty, c, if q.key == "constants" { "value" } else { "default" }, errs)) }
+                    out.push(kv(q.key, TxArr(rows)))
+                } else if q.key == "definitions" {
+                    mut defs = []TxJ.new()
+                    for d in el_items(root, "definitions") { defs.push(el_definition(ty, d, errs)) }
+                    out.push(kv(q.key, TxArr(defs)))
+                } else if q.key == "states" {
+                    mut sts = []TxJ.new()
+                    for st in el_items(root, "states") { sts.push(el_state(ty, root, st, errs)) }
+                    out.push(kv(q.key, TxArr(sts)))
+                } else {
+                    out.push(kv(q.key, el_value(ty, q.value, "", []TxPair.new(), errs)))
+                }
+            }
+            ElOut { json: TxObj(out), errors: errs }
+        }
+        _ => ElOut { json: root, errors: errs }
+    }
+}
+
+// A state: the expressions of the fields of its request have the types of the fields of the input of the called machine (the party of the kind `machine`), else the type of the datum of the same name.
+fn el_state(ty ElTypes, root TxJ, st TxJ, mut errs []ElErr) -> TxJ {
+    ro party = el_str(st, "party")
+    mut input_type = ""
+    for p in el_items(root, "parties") {
+        if el_str(p, "name") == party { input_type = el_str(p, "input_type") }
+    }
+    match st {
+        TxObj(pairs) => {
+            mut out = []TxKV.new()
+            for q in pairs {
+                if q.key == "inputs" {
+                    mut rows = []TxJ.new()
+                    for r in el_items(st, "inputs") {
+                        ro field = el_str(r, "field")
+                        mut want = if input_type != "" { el_lookup(ty, "${input_type}.${field}") } else { "" }
+                        if want == "" { want = el_lookup(ty, field) }
+                        match r {
+                            TxObj(rp) => {
+                                mut one = []TxKV.new()
+                                for x in rp {
+                                    if x.key == "value" { one.push(kv(x.key, el_value(ty, x.value, want, []TxPair.new(), errs))) } else { one.push(kv(x.key, el_value(ty, x.value, "", []TxPair.new(), errs))) }
+                                }
+                                rows.push(TxObj(one))
+                            }
+                            _ => rows.push(r)
+                        }
+                    }
+                    out.push(kv(q.key, TxArr(rows)))
+                } else {
+                    out.push(kv(q.key, el_value(ty, q.value, "", []TxPair.new(), errs)))
+                }
+            }
+            TxObj(out)
+        }
+        _ => st
+    }
+}
+
+fn el_datum(ty ElTypes, d TxJ, mut errs []ElErr) -> TxJ {
+    ro want = el_str(d, "type")
+    match d {
+        TxObj(pairs) => {
+            mut out = []TxKV.new()
+            for q in pairs {
+                if q.key == "initial" {
+                    match q.value {
+                        TxObj(ip) => {
+                            mut inner = []TxKV.new()
+                            for r in ip {
+                                if r.key == "expr" { inner.push(kv(r.key, el_value(ty, r.value, want, []TxPair.new(), errs))) } else { inner.push(r) }
+                            }
+                            out.push(kv(q.key, TxObj(inner)))
+                        }
+                        _ => out.push(q)
+                    }
+                } else if q.key == "monotonic" {
+                    out.push(kv(q.key, el_value(ty, q.value, "", []TxPair.new(), errs)))
+                } else {
+                    out.push(q)
+                }
+            }
+            TxObj(out)
+        }
+        _ => d
+    }
+}
+
+fn el_row_value(ty ElTypes, row TxJ, key str, mut errs []ElErr) -> TxJ {
+    ro want = el_str(row, "type")
+    match row {
+        TxObj(pairs) => {
+            mut out = []TxKV.new()
+            for q in pairs {
+                if q.key == key { out.push(kv(q.key, el_value(ty, q.value, want, []TxPair.new(), errs))) } else { out.push(q) }
+            }
+            TxObj(out)
+        }
+        _ => row
+    }
+}
+
+fn el_definition(ty ElTypes, d TxJ, mut errs []ElErr) -> TxJ {
+    ro want = el_str(d, "result")
+    mut locals = []TxPair.new()
+    for p in el_items(d, "params") { locals.push(TxPair { ru: el_str(p, "name"), en: el_str(p, "type") }) }
+    match d {
+        TxObj(pairs) => {
+            mut out = []TxKV.new()
+            for q in pairs {
+                if q.key == "body" { out.push(kv(q.key, el_value(ty, q.value, want, locals, errs))) } else { out.push(q) }
+            }
+            TxObj(out)
+        }
+        _ => d
+    }
+}
+
+/// The errors of the unresolved marks as the errors of the translation.
+fn el_errors(out ElOut) -> []TranslateError {
+    mut found = []TranslateError.new()
+    for e in out.errors { found.push(tx_err(e.line, e.col, "type", e.message)) }
+    found
+}
+
+/// An expression alone (a piece of a table): the mark of `[]` that has no expected type is an error.
+fn el_piece(j TxJ, want str) -> ElOut {
+    mut errs = []ElErr.new()
+    ro done = el_value(ElTypes { names: []TxPair.new() }, j, want, []TxPair.new(), errs)
+    ElOut { json: done, errors: errs }
+}

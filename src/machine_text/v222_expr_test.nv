@@ -1,0 +1,275 @@
+// v222_expr_test.nv - task 152: the expressions of Alula 2.22 (AL-71 ... AL-100): blocks, ranges, methods of the macros, insertions, the literal of a map, `in […]`, `выбор` with commas and lines, bare names, numbers and
+// strings. Every test reads a text with the translator (`ex`, support of expr_test.nv) and looks at the JSON of the tree or at the message.
+module alula.machine_text
+
+import std.text
+
+// The JSON of the tests is written with single quotes: `'op'` is the key "op".
+fn jq222(s str) -> str => s.replace("'", "\"")
+
+fn same222(text str, json str) -> bool => ex(text) == jq222(json)
+
+fn has222(text str, part str) -> bool => ex(text).contains(jq222(part))
+
+fn says222(text str, part str) -> bool {
+    ro made = ex(text)
+    made.starts_with("ERR") && made.contains(part)
+}
+
+// ---- ranges (AL-76) ---------------------------------------------------------------------------------------------------------------------------
+
+test "x222 a range is the call range with two arguments" {
+    assert(same222("1..5", "{'op':'call','fn':'range','args':[{'op':'lit','value':1},{'op':'lit','value':5}]}"))
+}
+
+test "x222 an inclusive range adds one to the end" {
+    assert(same222("1..=5", "{'op':'call','fn':'range','args':[{'op':'lit','value':1},{'op':'+','left':{'op':'lit','value':5},'right':{'op':'lit','value':1}}]}"))
+}
+
+test "x222 the end of a range takes the arithmetic after it" {
+    assert(has222("0..число_повторов + 1", "'args':[{'op':'lit','value':0},{'op':'+','left':{'op':'name','name':'retry_count'},'right':{'op':'lit','value':1}}]"))
+}
+
+test "x222 a range is lower than the operator of a missing value" {
+    assert(has222("0..число_повторов ?? 0", "'args':[{'op':'lit','value':0},{'op':'??','left':{'op':'name','name':'retry_count'}"))
+}
+
+test "x222 two ranges in a row are an error" {
+    assert(says222("1 .. 2 .. 3", "a..b..c"))
+}
+
+test "x222 the old call of a range is refused with the new way" {
+    assert(says222("диапазон(1, 2)", "a..b"))
+    assert(says222("диапазон(1, 2)", "AL-76"))
+}
+
+test "x222 a method on a range is written with brackets" {
+    assert(has222("(1..5).количество(х => х > 1)", "'fn':'count','args':[{'op':'call','fn':'range'"))
+}
+
+test "x222 an inclusive range of names" {
+    assert(has222("число_повторов..=бюджет_токенов", "'fn':'range'"))
+}
+
+// ---- methods of the macros (AL-78) -----------------------------------------------------------------------------------------------------------
+
+test "x222 the method filter is the call of the macro with the list first" {
+    assert(same222("[1, 2, 3].фильтр(х => х > 1)", "{'op':'call','fn':'filter','args':[{'op':'list','items':[{'op':'lit','value':1},{'op':'lit','value':2},{'op':'lit','value':3}]},{'op':'lambda','params':['х'],'body':{'op':'>','left':{'op':'name','name':'х'},'right':{'op':'lit','value':1}}}]}"))
+}
+
+test "x222 the method any" {
+    assert(has222("[1, 2].любой(х => х == 1)", "'fn':'any','args':[{'op':'list'"))
+}
+
+test "x222 the method all" {
+    assert(has222("[1, 2].все(х => х > 0)", "'fn':'all'"))
+}
+
+test "x222 the method map" {
+    assert(has222("[1, 2].отобразить(х => х + 1)", "'fn':'map'"))
+}
+
+test "x222 the method first_where" {
+    assert(has222("[1, 2].первый_где(х => х > 1)", "'fn':'first_where'"))
+}
+
+test "x222 the method fold has the start value after the list" {
+    assert(has222("[1, 2].свёртка(0, (а, б) => а + б)", "'fn':'fold','args':[{'op':'list','items':[{'op':'lit','value':1},{'op':'lit','value':2}]},{'op':'lit','value':0},{'op':'lambda','params':['а','б']"))
+}
+
+test "x222 the method dict has two lambdas" {
+    assert(has222("[\"a\", \"b\"].словарь(х => х, х => 1)", "'fn':'dict','args':[{'op':'list','items':[{'op':'lit','value':'a'},{'op':'lit','value':'b'}]},{'op':'lambda','params':['х'],'body':{'op':'name','name':'х'}},{'op':'lambda','params':['х'],'body':{'op':'lit','value':1}}]"))
+}
+
+test "x222 a method chain is read from the left" {
+    assert(has222("[1, 2, 3].фильтр(х => х > 1).количество(х => х < 3)", "'fn':'count','args':[{'op':'call','fn':'filter'"))
+}
+
+test "x222 a function of the catalog is not a method" {
+    assert(says222("[1, 2].длина()", "только у макросов"))
+}
+
+test "x222 a macro written as a function is refused" {
+    assert(says222("фильтр([1], х => х)", "вызывается как метод списка"))
+}
+
+test "x222 a name after a dot without brackets is a field" {
+    assert(says222("[1].фильтр", "поле `фильтр`"))
+}
+
+// ---- insertions (AL-80) -----------------------------------------------------------------------------------------------------------------------
+
+test "x222 a string with an insertion is the call concat" {
+    assert(same222("\"a\${число_повторов}b\"", "{'op':'call','fn':'concat','args':[{'op':'lit','value':'a'},{'op':'call','fn':'text','args':[{'op':'name','name':'retry_count'}]},{'op':'lit','value':'b'}]}"))
+}
+
+test "x222 an escaped dollar stays in the text" {
+    assert(same222("\"\\\${x}\"", "{'op':'lit','value':'\${x}'}"))
+}
+
+test "x222 an empty insertion is an error" {
+    assert(says222("\"a\${}\"", "пустая вставка"))
+}
+
+test "x222 an insertion inside an insertion" {
+    assert(has222("\"\${\"x\${1}\"}\"", "'fn':'text','args':[{'op':'call','fn':'concat'"))
+}
+
+test "x222 a string without an insertion is a literal" {
+    assert(same222("\"просто\"", "{'op':'lit','value':'просто'}"))
+}
+
+test "x222 two insertions in a row" {
+    assert(has222("\"\${число_повторов}\${число_повторов}\"", "'fn':'concat','args':[{'op':'call','fn':'text'"))
+}
+
+test "x222 the text conversion is written with the word of the language" {
+    assert(same222("строка(число_повторов)", "{'op':'call','fn':'text','args':[{'op':'name','name':'retry_count'}]}"))
+}
+
+// ---- the literal of a map and the empty brackets (AL-85) --------------------------------------------------------------------------------------
+
+test "x222 a map literal has pairs with a colon" {
+    assert(same222("[\"a\": 1, \"b\": 2]", "{'op':'dict','entries':[{'key':{'op':'lit','value':'a'},'value':{'op':'lit','value':1}},{'key':{'op':'lit','value':'b'},'value':{'op':'lit','value':2}}]}"))
+}
+
+test "x222 a list literal has no colon" {
+    assert(same222("[1, 2]", "{'op':'list','items':[{'op':'lit','value':1},{'op':'lit','value':2}]}"))
+}
+
+test "x222 empty brackets without a type are an error" {
+    assert(says222("[]", "без ожидаемого типа"))
+}
+
+test "x222 empty brackets next to a list take its type" {
+    assert(has222("[1] + []", "'op':'+'"))
+}
+
+test "x222 the old empty map is refused" {
+    assert(says222("{}", "пустой"))
+}
+
+test "x222 the old braces of a map are refused" {
+    assert(says222("{\"a\": 1}", "AL-85"))
+}
+
+// ---- in […] and match (AL-79, AL-87) ----------------------------------------------------------------------------------------------------------
+
+test "x222 membership in a list is a chain of equalities" {
+    assert(same222("ход в [\"a\", \"b\"]", "{'op':'or','left':{'op':'==','left':{'op':'name','name':'turn'},'right':{'op':'lit','value':'a'}},'right':{'op':'==','left':{'op':'name','name':'turn'},'right':{'op':'lit','value':'b'}}}"))
+}
+
+test "x222 membership in braces is refused" {
+    assert(says222("ход в {\"a\"}", "в […]"))
+}
+
+test "x222 match branches are separated by commas" {
+    assert(has222("выбор ход { \"a\" => 1, иначе => 2 }", "'arms':[{'patterns':[{'kind':'lit','value':'a'}],'body':{'op':'lit','value':1}},{'patterns':[{'kind':'any'}],'body':{'op':'lit','value':2}}]"))
+}
+
+test "x222 match branches are separated by line breaks" {
+    assert(ex("выбор ход {\n  \"a\" => 1\n  иначе => 2\n}") == ex("выбор ход { \"a\" => 1, иначе => 2 }"))
+}
+
+test "x222 a semicolon between branches is refused" {
+    assert(says222("выбор ход { \"a\" => 1; иначе => 2 }", "AL-87"))
+}
+
+test "x222 a comma after the last branch is refused" {
+    assert(says222("выбор ход { \"a\" => 1, }", "запятая после последней ветки"))
+}
+
+test "x222 the old arrow of a branch is refused" {
+    assert(says222("выбор ход { \"a\" -> 1, иначе -> 2 }", "=>"))
+}
+
+test "x222 two patterns in one branch" {
+    assert(has222("выбор ход { \"a\" | \"b\" => 1, иначе => 2 }", "'patterns':[{'kind':'lit','value':'a'},{'kind':'lit','value':'b'}]"))
+}
+
+// ---- blocks and conditions (AL-71, AL-75) -----------------------------------------------------------------------------------------------------
+
+test "x222 a condition takes blocks" {
+    assert(same222("если истина то { 1 } иначе { 2 }", "{'op':'if','cond':{'op':'lit','value':true},'then':{'op':'lit','value':1},'else':{'op':'lit','value':2}}"))
+}
+
+test "x222 a branch without a block is refused" {
+    assert(says222("если истина то 1 иначе 2", "ожидается блок"))
+}
+
+test "x222 a block binds a name for its last expression" {
+    assert(same222("{ пусть х = 1; х + 1 }", "{'op':'let','name':'х','value':{'op':'lit','value':1},'body':{'op':'+','left':{'op':'name','name':'х'},'right':{'op':'lit','value':1}}}"))
+}
+
+test "x222 a block has two bindings" {
+    assert(has222("{ пусть а = 1; пусть б = 2; а + б }", "'op':'let','name':'а'"))
+}
+
+test "x222 a block with no last expression is an error" {
+    assert(says222("{ пусть х = 1; }", "ожидается выражение"))
+}
+
+test "x222 an empty block is an error" {
+    assert(says222("{}", "AL-71"))
+}
+
+test "x222 the old let in is refused" {
+    assert(says222("пусть х = 1 в х", "AL-75"))
+}
+
+// ---- bare names of the elements (AL-88) and the signs ----------------------------------------------------------------------------------------------
+
+test "x222 a bare name of an element gets its type" {
+    assert(same222("Удаление", "{'op':'variant','type':'ActionKind','name':'Delete'}"))
+}
+
+test "x222 a qualified name is the same as a bare one" {
+    assert(ex("ВидДействия.Удаление") == ex("Удаление"))
+}
+
+test "x222 a bare name as a key of a map" {
+    assert(has222("[Удаление: 1]", "'key':{'op':'variant','type':'ActionKind','name':'Delete'}"))
+}
+
+test "x222 a bare name of a form without fields" {
+    assert(same222("Закончен", "{'op':'variant','type':'TurnResult','name':'Finished'}"))
+}
+
+test "x222 a sign of Unicode is refused with the ASCII one" {
+    assert(says222("число_повторов ≥ 1", ">="))
+    assert(says222("ход ∈ [\"a\"]", "AL-100"))
+}
+
+test "x222 boolean words" {
+    assert(same222("число_повторов == 0 и не ложь", "{'op':'and','left':{'op':'==','left':{'op':'name','name':'retry_count'},'right':{'op':'lit','value':0}},'right':{'op':'not','operand':{'op':'lit','value':false}}}"))
+}
+
+// ---- numbers, strings and comments (AL-91, AL-92, AL-90) --------------------------------------------------------------------------------------
+
+test "x222 an underscore between digits" {
+    assert(same222("1_000", "{'op':'lit','value':1000}"))
+}
+
+test "x222 an exponent with a sign" {
+    assert(same222("1e-7", "{'op':'lit','value':1e-7}"))
+}
+
+test "x222 a doubled underscore is an error" {
+    assert(says222("1__0", "записано неверно"))
+}
+
+test "x222 an exponent without digits is an error" {
+    assert(says222("1e", "записано неверно"))
+}
+
+test "x222 a unicode escape in a string" {
+    assert(same222("\"\\u{1F600}\"", "{'op':'lit','value':'\u{1F600}'}"))
+}
+
+test "x222 an unknown escape is an error" {
+    assert(says222("\"\\q\"", "AL-92"))
+}
+
+test "x222 a comment is no part of an expression" {
+    assert(says222("1 + 2 // комментарий", "AL-90"))
+}

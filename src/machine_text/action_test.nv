@@ -30,7 +30,8 @@ test "ac assign" {
     assert(ac("ход = \"retry\"; число_повторов += 1") == arr([a_assign(tgt("turn"), x_lit(js("retry"))), a_add(tgt("retry_count"), x_lit(jint(1)))]))
     assert(ac("ход = \"a\";") == arr([a_assign(tgt("turn"), x_lit(js("a")))]))
     assert(ac("ход = остановка") == arr([a_assign(tgt("turn"), x_name("stop_reason"))]))
-    assert(ac("к_отправке = [] + к_отправке") == arr([a_assign(tgt("to_send"), x_bin("+", x_list([]), x_name("to_send")))]))
+    assert(ac("к_отправке = к_отправке + [\"a\"]") == arr([a_assign(tgt("to_send"), x_bin("+", x_name("to_send"), x_list([x_lit(js("a"))])))]))
+    assert(ac("к_отправке = []").contains("AL-85"))
 }
 
 test "ac assign paths" {
@@ -39,7 +40,7 @@ test "ac assign paths" {
     ro field = a_target("lenses", [a_step_key(x_name("session")), a_step_field("probes")])
     assert(ac("линзы[сессия].пробы = 0") == arr([a_assign(field, x_lit(jint(0)))]))
     ro tuple_key = a_target("lens_findings", [a_step_key(x_tuple([x_name("session"), x_name("number")]))])
-    assert(ac("находки_линзы[(сессия, номер_захода)] = []") == arr([a_assign(tuple_key, x_list([]))]))
+    assert(ac("находки_линзы[(сессия, номер_захода)] = [1]") == arr([a_assign(tuple_key, x_list([x_lit(jint(1))]))]))
     ro plus = a_target("responded", [])
     assert(ac("ответившие += 1") == arr([a_add(plus, x_lit(jint(1)))]))
 }
@@ -51,7 +52,7 @@ test "ac journal" {
     assert(ac("журнал(все_данные)") == arr([a_journal_all()]))
     assert(ac("журнал(запись_перехода)") == arr([a_journal_value(x_name("transition_note"))]))
     assert(ac("журнал(событие_журнала(\"c\", k: 1))") == arr([a_journal_value(x_call("journal_event", [x_lit(js("c")), x_lit(js("k")), x_lit(jint(1))]))]))
-    assert(ac("журнал(retry_x, retry: текст(число_повторов))") == arr([a_journal("retry_x", [kv("retry", x_call("text", [x_name("retry_count")]))])]))
+    assert(ac("журнал(retry_x, retry: строка(число_повторов))") == arr([a_journal("retry_x", [kv("retry", x_call("text", [x_name("retry_count")]))])]))
 }
 
 test "ac machine error" {
@@ -72,23 +73,23 @@ test "ac let" {
     ro seen = arr([a_bind("момент", x_lit(jint(5))), a_assign(tgt("retry_count"), x_name("момент"))])
     assert(ac("пусть момент = 5; число_повторов = момент") == seen)
     ro local = arr([a_let("момент", x_lit(jint(5)), [a_assign(tgt("retry_count"), x_name("момент"))])])
-    assert(ac("пусть момент = 5 в (число_повторов = момент)") == local)
-    assert(ac("пусть момент = 5 в число_повторов = момент") == local)
-    assert(ac("пусть момент = 5 в (число_повторов = 1); число_повторов = момент").starts_with("ERR name:"))
+    assert(ac("{ пусть момент = 5; число_повторов = момент }") == local)
+    assert(ac("{ пусть момент = 5; число_повторов = момент }") == local)
+    assert(ac("{ пусть момент = 5; число_повторов = 1 }; число_повторов = момент").starts_with("ERR name:"))
 }
 
 test "ac if for" {
     ro cond = x_bin(">", x_name("retry_count"), x_lit(jint(1)))
     ro then_part = [a_assign(tgt("turn"), x_lit(js("a")))]
     ro else_part = [a_assign(tgt("turn"), x_lit(js("b")))]
-    assert(ac("если число_повторов > 1 то (ход = \"a\")") == arr([a_if(cond, then_part, [])]))
-    assert(ac("если число_повторов > 1 то (ход = \"a\") иначе (ход = \"b\")") == arr([a_if(cond, then_part, else_part)]))
-    assert(ac("если число_повторов > 1 то ход = \"a\" иначе ход = \"b\"") == arr([a_if(cond, then_part, else_part)]))
+    assert(ac("если число_повторов > 1 то { ход = \"a\" }") == arr([a_if(cond, then_part, [])]))
+    assert(ac("если число_повторов > 1 то { ход = \"a\" } иначе { ход = \"b\" }") == arr([a_if(cond, then_part, else_part)]))
+    assert(ac("если число_повторов > 1 то { ход = \"a\" } иначе { ход = \"b\" }") == arr([a_if(cond, then_part, else_part)]))
     ro body = [a_journal("x_y", [kv("v", x_name("n"))])]
-    assert(ac("для каждого n в линзы: журнал(x_y, v: n)") == arr([a_for_each("n", x_name("lenses"), body)]))
+    assert(ac("для n из линзы { журнал(x_y, v: n) }") == arr([a_for_each("n", x_name("lenses"), body)]))
     ro two = [a_journal("x_y", []), a_assign(tgt("turn"), x_lit(js("a")))]
-    assert(ac("для каждого n в линзы: (журнал(x_y); ход = \"a\")") == arr([a_for_each("n", x_name("lenses"), two)]))
-    assert(ac("для каждого n в линзы: ход = n") == arr([a_for_each("n", x_name("lenses"), [a_assign(tgt("turn"), x_name("n"))])]))
+    assert(ac("для n из линзы { журнал(x_y); ход = \"a\" }") == arr([a_for_each("n", x_name("lenses"), two)]))
+    assert(ac("для n из линзы { ход = n }") == arr([a_for_each("n", x_name("lenses"), [a_assign(tgt("turn"), x_name("n"))])]))
 }
 
 test "ac cancel" {
@@ -149,14 +150,14 @@ test "ac format examples" {
     ro lens_key = a_target("lenses", [a_step_key(x_name("party"))])
     ro copy = x_with(x_name("l"), [kv("lost", x_lit(jint(0)))])
     ro local = a_let("l", x_call("require", [x_index(x_name("lenses"), x_name("party"))]), [a_assign(lens_key, copy)])
-    assert(ac("пусть l = обязательно(линзы[сторона]) в (линзы[сторона] = { ...l, потери_подряд: 0 })") == arr([local]))
+    assert(ac("{ пусть l = обязательно(линзы[сторона]); линзы[сторона] = { ...l, потери_подряд: 0 } }") == arr([local]))
     ro each_key = a_target("lenses", [a_step_key(x_name("l"))])
     ro each_copy = x_with(x_call("require", [x_index(x_name("lenses"), x_name("l"))]), [kv("probes", x_lit(jint(0)))])
-    assert(ac("для каждого l в порядок_линз: линзы[l] = { ...обязательно(линзы[l]), пробы: 0 }") == arr([a_for_each("l", x_name("lens_order"), [a_assign(each_key, each_copy)])]))
+    assert(ac("для l из порядок_линз { линзы[l] = { ...обязательно(линзы[l]), пробы: 0 } }") == arr([a_for_each("l", x_name("lens_order"), [a_assign(each_key, each_copy)])]))
 }
 
 test "ac conditional" {
     ro cond = x_un("not", x_call("has", [x_name("usage")]))
     ro body = [a_journal_value(x_call("journal_event", [x_lit(js("c")), x_lit(js("k")), x_lit(jint(1))]))]
-    assert(ac("если не есть(использование) то (журнал(событие_журнала(\"c\", k: 1)))") == arr([a_if(cond, body, [])]))
+    assert(ac("если не есть(использование) то { журнал(событие_журнала(\"c\", k: 1)) }") == arr([a_if(cond, body, [])]))
 }

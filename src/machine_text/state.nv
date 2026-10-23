@@ -227,7 +227,7 @@ fn input_row(r TxEntry, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] 
     // written out is a warning, the canonical file writes the dash
     mut value = x_null()
     if r.cells[1].text == "—" {
-        ro same = TxTok { kind: TK_NAME, text: f.text, line: r.line, col: r.cells[1].col }
+        ro same = tk(TK_NAME, f.text, r.line, r.cells[1].col)
         mut sp = p_new([same], r.line, r.cells[1].col + 1)
         value = ex_expr(sp, cx, sc)?
         p_end(sp)?
@@ -361,11 +361,17 @@ fn line_except(kvl TxKv, mut cx TxCx) -> Result[TxJ, TranslateError] {
     if f.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "key", "Except")}:` ожидается имя данного")) }
     p_adv(p)
     ro en = tr_global(cx, f)
-    if !is_member_sign(p, cx.words) { return Err(p_fail(p, "ожидается `in`")) }
+    if !is_member_sign(p, cx.words) {
+        match member_former(p, cx.words) {
+            Some(e) => return Err(e)
+            None => ()
+        }
+        return Err(p_fail(p, "ожидается `${kw(cx.words, "operator", "in")}`"))
+    }
     p_adv(p)
-    p_expect(p, "{")?
+    p_expect(p, "[")?
     mut values = []str.new()
-    while !p_is(p, "}") {
+    while !p_is(p, "]") {
         ro v = p_tok(p)
         if v.kind != TK_STR { return Err(p_fail(p, "ожидается значение в кавычках")) }
         p_adv(p)
@@ -373,7 +379,7 @@ fn line_except(kvl TxKv, mut cx TxCx) -> Result[TxJ, TranslateError] {
         if p_eat(p, ",") { continue }
         break
     }
-    p_expect(p, "}")?
+    p_expect(p, "]")?
     p_end(p)?
     Ok(jobj([kv("field", js(en)), kv("values", jstrs(values))]))
 }
