@@ -25,40 +25,40 @@ test "rn header ru" {
     assert(first[1] == "")
     assert(first[2] == "- machine: Calc")
     assert(first[3] == "- machine_version: 1")
-    assert(first[4] == "- format: 2.17")
+    assert(first[4] == "- format: 2.22")
     assert(first[5] == "- language: ru")
     assert(first[6] == "")
 }
 
 test "rn header en" {
     ro text = render(calc_json(), "en")
-    assert(text.starts_with("# Machine: Calc\n\n- machine: Calc\n- machine_version: 1\n- format: 2.17\n- language: en\n\n"))
+    assert(text.starts_with("# Machine: Calc\n\n- machine: Calc\n- machine_version: 1\n- format: 2.22\n- language: en\n\n"))
 }
 
 test "rn former key and former version refused" {
-    ro former = calc_json().replace("\"alula_version\": \"2.17\"", "\"portolan_version\": \"2.17\"") // guard-allow(legacy-name): the former key of the version is named to be refused
+    ro former = calc_json().replace("\"alula_version\": \"2.22\"", "\"portolan_version\": \"2.22\"") // guard-allow(legacy-name): the former key of the version is named to be refused
     assert(former != calc_json())
     ro report = render_machine(former, "ru")
     assert(report.text == "")
     assert(report.notes.len() == 1 && report.notes[0].contains("the former name of `alula_version`"))
-    ro older = calc_json().replace("\"alula_version\": \"2.17\"", "\"alula_version\": \"2.12\"")
+    ro older = calc_json().replace("\"alula_version\": \"2.22\"", "\"alula_version\": \"2.12\"")
     assert(older != calc_json())
     ro refused = render_machine(older, "en")
     assert(refused.text == "")
-    assert(refused.notes[0].contains("the version 2.17 only is read and written"))
+    assert(refused.notes[0].contains("the version 2.22 only is read and written"))
 }
 
 test "rn eleven sections" {
     ro ru = render(calc_json(), "ru")
     ro en = render(calc_json(), "en")
     mut at = 0
-    for h in ["## Типы", "## Константы", "## Параметры", "## Вход", "## Данные", "## Стороны", "## Определения", "## Подключения", "## Состояния", "## Концы", "## Примитивы"] {
+    for h in ["## Типы", "## Константы", "## Параметры", "## Вход", "## Данные", "## Стороны", "## Функции", "## Подключения", "## Состояния", "## Концы", "## Примитивы"] {
         ro found = index_of_line(ru, h)
         assert(found > at)
         at = found
     }
     mut at_en = 0
-    for h in ["## Types", "## Constants", "## Parameters", "## Input", "## Data", "## Parties", "## Definitions", "## Includes", "## States", "## Ends", "## Primitives"] {
+    for h in ["## Types", "## Constants", "## Parameters", "## Input", "## Data", "## Parties", "## Functions", "## Includes", "## States", "## Ends", "## Primitives"] {
         ro found = index_of_line(en, h)
         assert(found > at_en)
         at_en = found
@@ -147,22 +147,22 @@ test "rn declarations in blocks" {
     ro agent = render(machine_json("agent_step.alula.json"), "en")
     ro at = index_of_line(agent, "## Types")
     assert(lines_from(agent, at + 1, 2) == "\n```")
-    assert(agent.contains("\nenum CallerKind = Lens | CycleSession | ChatTurn | Gatekeeper\n"))
-    assert(agent.contains("\nvariant TurnResult {\n  Finished { text ?text, artifact ?text, usage TransportUsage }\n"))
-    assert(agent.contains("\ndefine сумма_целых(а ?int, б ?int) -> ?int =\n  "))
+    assert(agent.contains("\ntype CallerKind enum Lens | CycleSession | ChatTurn | Gatekeeper\n"))
+    assert(agent.contains("\ntype TurnResult enum\n  | Finished { text ?str, artifact ?str, usage TransportUsage }\n"))
+    assert(agent.contains("\nfn сумма_целых(а ?int, б ?int) -> ?int =>\n  "))
 }
 
 test "rn words of an enum" {
     ro agent = render(machine_json("agent_step.alula.json"), "en")
-    assert(agent.contains("Read \"read\""))
-    assert(agent.contains("SwitchMode \"switch_mode\""))
+    assert(agent.contains("| Read = \"read\""))
+    assert(agent.contains("| SwitchMode = \"switch_mode\""))
 }
 
 fn inc_en(hash str) -> str => `# Machine: Inc
 
 - machine: Inc
 - machine_version: 1
-- format: 2.17
+- format: 2.22
 - language: en
 
 ## Data
@@ -173,7 +173,7 @@ fn inc_en(hash str) -> str => `# Machine: Inc
 
 ## Includes
 
-definitions: cycle_arithmetic version 1 hash ${hash}
+functions: cycle_arithmetic version 1 hash ${hash}
 
 ## States
 
@@ -184,7 +184,7 @@ Initial state: S
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|
-| 1 | immediate | — | n = if ceiling_reached(n, 1, 3) then 0 else n + 1 | F |
+| 1 | immediate | — | n = if ceiling_reached(n, 1, 3) then { 0 } else { n + 1 } | F |
 
 ### F — end
 - Reads: n
@@ -199,22 +199,22 @@ Initial state: S
 `
 
 test "rn includes line by default" {
-    ro first = json_of(inc_en("8a2c2d564899"))
+    ro first = json_of(inc_en("928cd807453a"))
     assert(!first.starts_with("ERROR "))
     ro made = render_machine(first, "en")
     assert(made.notes.len() == 0)
-    assert(made.text.contains("## Includes\n\n```\ndefinitions: cycle_arithmetic version 1 hash 8a2c2d564899\n```\n"))
+    assert(made.text.contains("## Includes\n\n```\nfunctions: cycle_arithmetic version 1 hash 928cd807453a\n```\n"))
     assert(!made.text.contains("define ceiling_reached"))
     assert(same_tree(first, json_of(made.text)) == "")
     ro ru = render(first, "ru")
-    assert(ru.contains("определения: cycle_arithmetic версия 1 хеш 8a2c2d564899"))
+    assert(ru.contains("функции: cycle_arithmetic версия 1 хеш 928cd807453a"))
     assert(same_tree(first, json_of(ru)) == "")
 }
 
 test "rn includes as copy" {
-    ro first = json_of(inc_en("8a2c2d564899"))
+    ro first = json_of(inc_en("928cd807453a"))
     ro made = render_machine_with(first, "en", true)
-    assert(made.text.contains("define ceiling_reached(pass_number int>=1, origin int>=1, limit int>=0) -> bool =\n  pass_number - 1 - origin + 1 >= limit"))
+    assert(made.text.contains("fn ceiling_reached(pass_number int>=1, origin int>=1, limit int>=0) -> bool =>\n  pass_number - 1 - origin + 1 >= limit"))
     assert(made.text.contains("## Includes\n—\n"))
     ro back = json_of(made.text)
     assert(!back.starts_with("ERROR "))
@@ -312,20 +312,20 @@ test "rn render is stable" {
 test "rn types" {
     assert(render_type_in("int", "ru") == "число" && render_type_in("int", "en") == "int")
     assert(render_type_in("int>=0", "ru") == "число>=0" && render_type_in("int>=0", "en") == "int>=0")
-    assert(render_type_in("float", "ru") == "дробное")
-    assert(render_type_in("text", "en") == "text" && render_type_in("text", "ru") == "текст")
-    assert(render_type_in("bool", "ru") == "да/нет" && render_type_in("bool", "en") == "bool")
+    assert(render_type_in("float", "ru") == "вещественное" && render_type_in("float", "en") == "f64")
+    assert(render_type_in("text", "en") == "str" && render_type_in("text", "ru") == "строка")
+    assert(render_type_in("bool", "ru") == "булево" && render_type_in("bool", "en") == "bool")
     assert(render_type_in("id", "en") == "id")
-    assert(render_type_in("?text", "en") == "?text")
+    assert(render_type_in("?text", "en") == "?str")
     assert(render_type_in("[]int", "ru") == "[]число")
-    assert(render_type_in("{text: int}", "en") == "map[text, int]")
-    assert(render_type_in("{text: int}", "ru") == "словарь[текст, число]")
-    assert(render_type_in("full {Kind: text}", "en") == "full map[Kind, text]")
-    assert(render_type_in("(int, text)", "en") == "(int, text)")
+    assert(render_type_in("{text: int}", "en") == "map[str, int]")
+    assert(render_type_in("{text: int}", "ru") == "словарь[строка, число]")
+    assert(render_type_in("full {Kind: text}", "en") == "full map[Kind, str]")
+    assert(render_type_in("(int, text)", "en") == "(int, str)")
     assert(render_type_in("\"a\" | \"b\"", "en") == "\"a\" | \"b\"")
     assert(render_type_in("?(\"a\" | \"b\")", "en") == "?(\"a\" | \"b\")")
-    assert(render_type_in("[]?text", "en") == "[]?text")
-    assert(render_type_in("{text: []int}", "en") == "map[text, []int]")
+    assert(render_type_in("[]?text", "en") == "[]?str")
+    assert(render_type_in("{text: []int}", "en") == "map[str, []int]")
     assert(render_type_in("JournalEvent", "ru") == "СобытиеЖурнала")
 }
 
@@ -373,19 +373,19 @@ test "rn expression precedence" {
 
 test "rn expression forms" {
     ro cond = `{"op":"if","cond":${lit("true")},"then":${lit("1")},"else":${lit("2")}}`
-    assert(render_expression_in(cond, "en", []) == "if true then 1 else 2")
-    assert(render_expression_in(cond, "ru", []) == "если истина то 1 иначе 2")
-    assert(render_expression_in(bin("+", cond, lit("1")), "en", []) == "(if true then 1 else 2) + 1")
+    assert(render_expression_in(cond, "en", []) == "if true then { 1 } else { 2 }")
+    assert(render_expression_in(cond, "ru", []) == "если истина то { 1 } иначе { 2 }")
+    assert(render_expression_in(bin("+", cond, lit("1")), "en", []) == "(if true then { 1 } else { 2 }) + 1")
     ro letx = `{"op":"let","name":"x","value":${lit("1")},"body":${nm("x")}}`
-    assert(render_expression_in(letx, "en", []) == "let x = 1 in x")
-    assert(render_expression_in(letx, "ru", []) == "пусть x = 1 в x")
+    assert(render_expression_in(letx, "en", []) == "{ let x = 1; x }")
+    assert(render_expression_in(letx, "ru", []) == "{ пусть x = 1; x }")
     ro lam = `{"op":"lambda","params":["a","b"],"body":${bin("+", nm("a"), nm("b"))}}`
-    assert(render_expression_in(lam, "en", []) == "(a, b) -> a + b")
-    assert(render_expression_in(lam, "ru", []) == "(a, b) -> a + b")
+    assert(render_expression_in(lam, "en", []) == "(a, b) => a + b")
+    assert(render_expression_in(lam, "ru", []) == "(a, b) => a + b")
     assert(render_expression_in(`{"op":"list","items":[${lit("1")},${lit("2")}]}`, "en", []) == "[1, 2]")
     assert(render_expression_in(`{"op":"tuple","items":[${lit("1")},${lit("2")}]}`, "en", []) == "(1, 2)")
-    assert(render_expression_in(`{"op":"dict","entries":[]}`, "en", []) == "{}")
-    assert(render_expression_in(`{"op":"dict","entries":[{"key":${lit("\"k\"")},"value":${lit("1")}}]}`, "en", []) == "{\"k\": 1}")
+    assert(render_expression_in(`{"op":"dict","entries":[]}`, "en", []) == "[]")
+    assert(render_expression_in(`{"op":"dict","entries":[{"key":${lit("\"k\"")},"value":${lit("1")}}]}`, "en", []) == "[\"k\": 1]")
     assert(render_expression_in(`{"op":"field","of":${nm("x")},"name":"size"}`, "en", ["x"]) == "x.size")
     assert(render_expression_in(`{"op":"index","of":${nm("x")},"index":${lit("1")}}`, "en", ["x"]) == "x[1]")
     assert(render_expression_in(`{"op":"field","of":${bin("+", nm("x"), nm("y"))},"name":"size"}`, "en", ["x", "y"]) == "(x + y).size")
@@ -418,14 +418,14 @@ test "rn expression match" {
     ro arm1 = `{"patterns":[{"kind":"case","type":"Zeta","name":"Alpha"},{"kind":"case","type":"Zeta","name":"Beta"}],"guard":${lit("true")},"body":${lit("1")}}`
     ro arm2 = `{"patterns":[{"kind":"any"}],"body":${lit("2")}}`
     ro m = `{"op":"match","on":${nm("x")},"arms":[${arm1},${arm2}]}`
-    assert(render_expression_in(m, "en", ["x"]) == "match x { Zeta.Alpha | Zeta.Beta if true -> 1; else -> 2 }")
-    assert(render_expression_in(m, "ru", ["x"]) == "выбор x { Zeta.Alpha | Zeta.Beta если истина -> 1; иначе -> 2 }")
+    assert(render_expression_in(m, "en", ["x"]) == "match x { Zeta.Alpha | Zeta.Beta if true => 1, else => 2 }")
+    assert(render_expression_in(m, "ru", ["x"]) == "выбор x { Zeta.Alpha | Zeta.Beta если истина => 1, иначе => 2 }")
     ro lit_arm = `{"patterns":[{"kind":"lit","value":"a"},{"kind":"lit","value":3}],"body":${lit("1")}}`
     ro m2 = `{"op":"match","on":${nm("x")},"arms":[${lit_arm},${arm2}]}`
-    assert(render_expression_in(m2, "en", ["x"]) == "match x { \"a\" | 3 -> 1; else -> 2 }")
+    assert(render_expression_in(m2, "en", ["x"]) == "match x { \"a\" | 3 => 1, else => 2 }")
     ro bound = `{"patterns":[{"kind":"case","name":"Done","bind":{"text":"text","usage":"u"}}],"body":${nm("u")}}`
     ro m3 = `{"op":"match","on":${nm("x")},"arms":[${bound},${arm2}]}`
-    assert(render_expression_in(m3, "en", ["x", "u", "text"]) == "match x { Done(text, usage: u) -> u; else -> 2 }")
+    assert(render_expression_in(m3, "en", ["x", "u", "text"]) == "match x { Done { text, usage: u } => u, else => 2 }")
 }
 
 test "rn cell pipe" {
@@ -433,7 +433,7 @@ test "rn cell pipe" {
     ro arm = `{"patterns":[{"kind":"lit","value":"a"},{"kind":"lit","value":"b"}],"body":${lit("1")}}`
     ro m = `{"op":"match","on":${nm("x")},"arms":[${arm},{"patterns":[{"kind":"any"}],"body":${lit("2")}}]}`
     ro text = render_actions_in(`[{"do":"assign","target":"y","value":${m}}]`, "en", ["x", "y"])
-    assert(text == "y = match x { \"a\" | \"b\" -> 1; else -> 2 }")
+    assert(text == "y = match x { \"a\" | \"b\" => 1, else => 2 }")
 }
 
 fn act(json str) -> str => render_actions_in("[${json}]", "en", ["x", "y"])
@@ -455,13 +455,13 @@ test "rn actions" {
 
 test "rn actions compound" {
     ro body = `[{"do":"assign","target":"y","value":${lit("1")}}]`
-    assert(act(`{"do":"for_each","var":"n","in":${nm("x")},"body":${body}}`) == "for each n in x: y = 1")
-    assert(render_actions_in(`[{"do":"for_each","var":"n","in":${nm("x")},"body":${body}}]`, "ru", ["x", "y"]) == "для каждого n в x: y = 1")
-    assert(act(`{"do":"if","cond":${nm("x")},"then":${body}}`) == "if x then (y = 1)")
-    assert(act(`{"do":"if","cond":${nm("x")},"then":${body},"else":${body}}`) == "if x then (y = 1) else (y = 1)")
-    assert(act(`{"do":"let","name":"k","value":${lit("1")},"body":${body}}`) == "let k = 1 in (y = 1)")
+    assert(act(`{"do":"for_each","var":"n","in":${nm("x")},"body":${body}}`) == "for n in x { y = 1 }")
+    assert(render_actions_in(`[{"do":"for_each","var":"n","in":${nm("x")},"body":${body}}]`, "ru", ["x", "y"]) == "для n из x { y = 1 }")
+    assert(act(`{"do":"if","cond":${nm("x")},"then":${body}}`) == "if x then { y = 1 }")
+    assert(act(`{"do":"if","cond":${nm("x")},"then":${body},"else":${body}}`) == "if x then { y = 1 } else { y = 1 }")
+    assert(act(`{"do":"let","name":"k","value":${lit("1")},"body":${body}}`) == "{ let k = 1; y = 1 }")
     ro two = `[{"do":"assign","target":"y","value":${lit("1")}},{"do":"add","target":"y","value":${lit("2")}}]`
-    assert(act(`{"do":"for_each","var":"n","in":${nm("x")},"body":${two}}`) == "for each n in x: (y = 1; y += 2)")
+    assert(act(`{"do":"for_each","var":"n","in":${nm("x")},"body":${two}}`) == "for n in x { y = 1; y += 2 }")
     assert(render_actions_in(two, "en", ["y"]) == "y = 1; y += 2")
     assert(render_actions_in("[]", "en", []) == "—")
 }
@@ -532,7 +532,7 @@ test "rn english sample has the checked shape" {
     assert(made.contains("### Retry — fork\n- Reads: retry_count, turn\n"))
     assert(made.contains("### Start — operation\n- On entry: let moment = call(time_now)\n"))
     assert(made.contains("### Halted — end\n- Reads: usage, agent_request, stop_reason, transport_usage, started\n- On entry:\n  - let now = call(time_now);\n"))
-    assert(made.contains("- Except: stop_reason in {\"\"}\n"))
-    assert(made.contains("| 9 | failure(reason in {FailCode.ConnectionLost, FailCode.Timeout, FailCode.NoResult}) | — | stop_reason = text(reason); journal(turn_failed, reason: text(reason)) | Accounting |"))
+    assert(made.contains("- Except: stop_reason in [\"\"]\n"))
+    assert(made.contains("| 9 | failure(reason in [FailCode.ConnectionLost, FailCode.Timeout, FailCode.NoResult]) | — | stop_reason = text(reason); journal(turn_failed, reason: text(reason)) | Accounting |"))
     assert(made.contains("| Halted | 11 | stop_reason == \"cancel_request\" | Refusal(FailCode.Cancelled, stop_reason) |"))
 }

@@ -7,7 +7,7 @@ import std.text
 import alula.machine_text.{render, render_machine}
 
 // A small tree of 2.14 written by hand: a Cyrillic constant and party name stay as they are (internal names), the data and the states have Latin JSON names, the party has two signals, one with a field.
-fn tree13() -> str => `{"format":"machine/2","alula_version":"2.17","machine":"Tiny","version":"1","constants":[{"name":"ПРЕДЕЛ","type":"int>=0","value":{"op":"lit","value":5}}],"data":[{"name":"n","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":{"bound":{"op":"name","name":"ПРЕДЕЛ"}},"writes":"rows"},{"name":"stop","type":"\"\" | \"a\" | \"b\"","initial":{"expr":{"op":"lit","value":""}},"writes":"rows"},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}],"parties":[{"name":"пользователь","id":"user","kind":"human","counter":"u_attempt","signals":[{"name":"go","fields":[{"name":"author","type":"text"}]},{"name":"halt"}]}],"initial":"Wait","states":[{"name":"Wait","kind":"appeal","party":"пользователь","inputs":[{"field":"n","value":{"op":"name","name":"n"},"reads":"executor"}],"rows":[{"n":1,"event":{"kind":"signal","name":"go","bind":{"author":"кто"}},"actions":[{"do":"assign","target":"n","value":{"op":"+","left":{"op":"name","name":"n"},"right":{"op":"lit","value":1}}}],"to":"Decide"},{"n":2,"event":{"kind":"signal","name":"halt"},"actions":[{"do":"assign","target":"stop","value":{"op":"lit","value":"a"}}],"to":"Stopped"}]},{"name":"Decide","kind":"fork","reads":["n"],"rows":[{"n":1,"event":{"kind":"now"},"cond":{"op":">=","left":{"op":"name","name":"n"},"right":{"op":"name","name":"ПРЕДЕЛ"}},"to":"Finished"},{"n":2,"event":{"kind":"now"},"else":true,"to":"Wait"}]},{"name":"Finished","kind":"end","reads":["n"]},{"name":"Stopped","kind":"end","reads":["stop"],"except":{"field":"stop","values":[""]}}],"ends":{"result":"int","rows":[{"state":"Finished","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"name","name":"n"}}},{"state":"Stopped","n":1,"when":{"op":"==","left":{"op":"name","name":"stop"},"right":{"op":"lit","value":"a"}},"answer":{"kind":"refusal","code":{"op":"variant","type":"FailCode","name":"StoppedByHuman"},"text":{"op":"lit","value":"stopped"}}},{"state":"Stopped","n":2,"when":{"op":"==","left":{"op":"name","name":"stop"},"right":{"op":"lit","value":"b"}},"answer":{"kind":"refusal","code":{"op":"variant","type":"FailCode","name":"NoResult"},"text":{"op":"lit","value":"b"}}}]}}`
+fn tree13() -> str => `{"format":"machine/2","alula_version":"2.22","machine":"Tiny","version":"1","constants":[{"name":"ПРЕДЕЛ","type":"int>=0","value":{"op":"lit","value":5}}],"data":[{"name":"n","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":{"bound":{"op":"name","name":"ПРЕДЕЛ"}},"writes":"rows"},{"name":"stop","type":"\"\" | \"a\" | \"b\"","initial":{"expr":{"op":"lit","value":""}},"writes":"rows"},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}],"parties":[{"name":"пользователь","id":"user","kind":"human","counter":"u_attempt","signals":[{"name":"go","fields":[{"name":"author","type":"text"}]},{"name":"halt"}]}],"initial":"Wait","states":[{"name":"Wait","kind":"appeal","party":"пользователь","inputs":[{"field":"n","value":{"op":"name","name":"n"},"reads":"executor"}],"rows":[{"n":1,"event":{"kind":"signal","name":"go","bind":{"author":"кто"}},"actions":[{"do":"assign","target":"n","value":{"op":"+","left":{"op":"name","name":"n"},"right":{"op":"lit","value":1}}}],"to":"Decide"},{"n":2,"event":{"kind":"signal","name":"halt"},"actions":[{"do":"assign","target":"stop","value":{"op":"lit","value":"a"}}],"to":"Stopped"}]},{"name":"Decide","kind":"fork","reads":["n"],"rows":[{"n":1,"event":{"kind":"now"},"cond":{"op":">=","left":{"op":"name","name":"n"},"right":{"op":"name","name":"ПРЕДЕЛ"}},"to":"Finished"},{"n":2,"event":{"kind":"now"},"else":true,"to":"Wait"}]},{"name":"Finished","kind":"end","reads":["n"]},{"name":"Stopped","kind":"end","reads":["stop"],"except":{"field":"stop","values":[""]}}],"ends":{"result":"int","rows":[{"state":"Finished","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"name","name":"n"}}},{"state":"Stopped","n":1,"when":{"op":"==","left":{"op":"name","name":"stop"},"right":{"op":"lit","value":"a"}},"answer":{"kind":"refusal","code":{"op":"variant","type":"FailCode","name":"StoppedByHuman"},"text":{"op":"lit","value":"stopped"}}},{"state":"Stopped","n":2,"when":{"op":"==","left":{"op":"name","name":"stop"},"right":{"op":"lit","value":"b"}},"answer":{"kind":"refusal","code":{"op":"variant","type":"FailCode","name":"NoResult"},"text":{"op":"lit","value":"b"}}}]}}`
 
 fn written(lang str) -> str {
     ro made = render_machine(tree13(), lang)
@@ -25,17 +25,17 @@ test "v213 render column signals" {
 }
 
 test "v213 render signals of the party" {
-    assert(written("ru").contains("| пользователь | user | human(итог ИсходВорот) | — | go(author текст), halt | u_attempt |"))
-    assert(written("en").contains("| пользователь | user | human(result GateOutcome) | — | go(author text), halt | u_attempt |"))
+    assert(written("ru").contains("| пользователь | user | human(итог ИсходВорот) | — | go { author строка }, halt | u_attempt |"))
+    assert(written("en").contains("| пользователь | user | human(result GateOutcome) | — | go { author str }, halt | u_attempt |"))
 }
 
 test "v213 render event signal" {
     ro ru = written("ru")
-    assert(ru.contains("| 1 | сигнал(go(author: кто)) | — | n = n + 1 | Decide |"))
+    assert(ru.contains("| 1 | сигнал(go { author: кто }) | — | n = n + 1 | Decide |"))
     assert(ru.contains("| 2 | сигнал(halt) | — | stop = \"a\" | Stopped |"))
     assert(!ru.contains("слово("))
     ro en = written("en")
-    assert(en.contains("| 1 | signal(go(author: кто)) | — | n = n + 1 | Decide |"))
+    assert(en.contains("| 1 | signal(go { author: кто }) | — | n = n + 1 | Decide |"))
     assert(!en.contains("word("))
 }
 
@@ -92,16 +92,16 @@ test "v213 render ascii operators" {
 
 test "v213 render member sign" {
     ro ru = written("ru")
-    assert(ru.contains("- Кроме: stop in {\"\"}"))
+    assert(ru.contains("- Кроме: stop в [\"\"]"))
     ro en = written("en")
-    assert(en.contains("- Except: stop in {\"\"}"))
+    assert(en.contains("- Except: stop in [\"\"]"))
 }
 
 test "v213 render lambda arrow and spread" {
     ro tree = tree13().replace("\"answer\":{\"kind\":\"answer\",\"value\":{\"op\":\"name\",\"name\":\"n\"}}", "\"answer\":{\"kind\":\"answer\",\"value\":{\"op\":\"call\",\"fn\":\"count\",\"args\":[{\"op\":\"list\",\"items\":[{\"op\":\"lit\",\"value\":1}]},{\"op\":\"lambda\",\"params\":[\"х\"],\"body\":{\"op\":\"==\",\"left\":{\"op\":\"name\",\"name\":\"х\"},\"right\":{\"op\":\"lit\",\"value\":1}}}]}}")
     for lang in ["ru", "en"] {
         ro text = render(tree, lang)
-        assert(text.contains("х -> х == 1"))
+        assert(text.contains("х => х == 1"))
         assert(!text.contains("→"))
     }
 }

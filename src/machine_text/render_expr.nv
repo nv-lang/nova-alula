@@ -6,14 +6,15 @@ module alula.machine_text
 import std.text
 
 /// RnCx: the context of one generation: the language, the words, the names of the host, the notes about what the file cannot say. Every name is written as it lies in the tree (section 1b (ж), AL-46).
-type RnCx { lang str, words TxWords, names TxNames, notes []str, catalog []str }
+/// `cell` is true while a cell of a table is written (a `выбор` stands on one line there); `indent` is the indent of the line that the expression stands in (a multi-line `выбор` of a block of code, AL-87).
+type RnCx { lang str, words TxWords, names TxNames, notes []str, catalog []str, cell bool, indent int }
 
 fn rn_cx(lang str) -> RnCx {
     mut catalog = []str.new()
     for r in words_rows() {
         if r.kind == "catalog" { catalog.push(r.en) }
     }
-    RnCx { lang, words: words_load(lang), names: names_load_for(lang), notes: []str.new(), catalog }
+    RnCx { lang, words: words_load(lang), names: names_load_for(lang), notes: []str.new(), catalog, cell: true, indent: 0 }
 }
 
 // ORACLE-WORKAROUND(45): a copy of a `ro` list built by hand in a loop; `mut out = items` when item 45 is fixed (the same in `rn_with`)
@@ -47,29 +48,62 @@ fn rn_case_name(cx RnCx, en str) -> str => en
 
 fn rn_field_name(cx RnCx, en str) -> str => en
 
-fn rn_arrow(cx RnCx) -> str => "->"
+fn rn_arrow(cx RnCx) -> str => "=>"
 
-/// The text of a string literal: double quotes, `"` and `\` escaped, a line feed and a tab as `\n` and `\t`.
-fn rn_quote(s str) -> str {
+/// The content of a text literal as the source writes it (AL-92, the closed list): `"` `\` `$` before `{` and the control signs are escaped.
+fn rn_quote_inner(s str) -> str {
+    ro chars []char = s.chars().collect()
     mut out = []str.new()
-    out.push("\"")
-    for c in s.chars() {
-        ro one = "${c}"
-        if one == "\"" {
+    mut i = 0
+    while i < chars.len() {
+        ro c = chars[i]
+        ro code = c as int
+        if c == '"' {
             out.push("\\\"")
-        } else if one == "\\" {
+        } else if c == '\\' {
             out.push("\\\\")
-        } else if one == "\n" {
+        } else if c == '$' && i + 1 < chars.len() && chars[i + 1] == '{' {
+            out.push("\\$")
+        } else if c == '\n' {
             out.push("\\n")
-        } else if one == "\t" {
+        } else if c == '\t' {
             out.push("\\t")
+        } else if c == '\r' {
+            out.push("\\r")
+        } else if code == 0 {
+            out.push("\\0")
+        } else if code < 32 || code == 127 {
+            out.push("\\u{${rn_hex(code)}}")
         } else {
-            out.push(one)
+            out.push("${c}")
         }
+        i += 1
     }
-    out.push("\"")
     out.join("")
 }
+
+// The upper case hexadecimal digits of a number.
+fn rn_hex(n int) -> str {
+    ro digits = "0123456789ABCDEF"
+    if n == 0 { return "0" }
+    mut v = n
+    mut parts = []str.new()
+    while v > 0 {
+        ro d = v % 16
+        parts.push(digits[d..d + 1])
+        v = v / 16
+    }
+    mut out = []str.new()
+    mut k = parts.len() - 1
+    while k >= 0 {
+        out.push(parts[k])
+        k -= 1
+    }
+    out.join("")
+}
+
+/// The text of a string literal: double quotes and the escapes of the closed list.
+fn rn_quote(s str) -> str => "\"${rn_quote_inner(s)}\""
 
 // ---- the types ---------------------------------------------------------------------------------------------------------------
 
@@ -181,7 +215,9 @@ fn rn_ty_read(cx RnCx, mut t RnTy) -> str {
         }
         return rn_kw(cx, "type", "int")
     }
-    if name == "float" || name == "text" || name == "bool" || name == "id" || name == "JournalEvent" || name == "State" || name == "Signal" { return rn_kw(cx, "type", name) }
+    if name == "float" { return rn_kw(cx, "type", "f64") }
+    if name == "text" { return rn_kw(cx, "type", "str") }
+    if name == "bool" || name == "id" || name == "JournalEvent" || name == "State" || name == "Signal" { return rn_kw(cx, "type", name) }
     if name == "" {
         // a sign that no type starts with: it is stepped over, the whole char
         t.pos += tx_at(t.text, t.pos).len_utf8()
@@ -215,7 +251,8 @@ fn rn_prec(v RJ) -> int {
     if op == "+" || op == "-" { return 6 }
     if op == "*" || op == "/" || op == "%" { return 7 }
     if op == "neg" { return 8 }
-    if op == "if" || op == "let" || op == "match" || op == "lambda" { return 0 }
+    if op == "if" || op == "match" || op == "lambda" { return 0 }
+    if op == "call" && rj_gstr(v, "fn") == "range" && rj_garr(v, "args").len() == 2 { return 0 }
     if op == "lit" {
         match rj_get(v, "value") {
             Some(x) => {
@@ -287,7 +324,7 @@ fn rn_pattern(mut cx RnCx, pat RJ, locals []str) -> str {
                 parts.push(if local == field { field } else { "${field}: ${local}" })
             }
             if parts.len() == 0 { return case_word }
-            "${case_word}(${parts.join(", ")})"
+            "${case_word} { ${parts.join(", ")} }"
         }
         None => case_word
     }
@@ -304,11 +341,29 @@ fn rn_bind_names(pat RJ) -> []str {
     out
 }
 
+// A `выбор` (AL-87): on one line when it fits (the line is not longer than 100 signs and no branch is a block `=> { … }`) or in a table cell; else `{` at the end of the header line, every branch on its own
+// line two signs deeper than the header line, no sign at the end of a branch, the `}` on a line of its own.
 fn rn_match(mut cx RnCx, v RJ, locals []str) -> str {
     ro on = match rj_get(v, "on") {
         Some(x) => rn_sub(cx, x, locals, 1)
         None => "none"
     }
+    ro base = cx.indent
+    ro one = rn_match_text(cx, v, locals, on, false, base)
+    if cx.cell { return one }
+    mut block = false
+    for arm in rj_garr(v, "arms") {
+        match rj_get(arm, "body") {
+            Some(b) => { if rj_gstr(b, "op") == "let" { block = true } }
+            None => ()
+        }
+    }
+    if !block && !one.contains("\n") && base + one.chars().count() <= 100 { return one }
+    rn_match_text(cx, v, locals, on, true, base)
+}
+
+fn rn_match_text(mut cx RnCx, v RJ, locals []str, on str, multi bool, base int) -> str {
+    cx.indent = if multi { base + 2 } else { base }
     mut arms = []str.new()
     for arm in rj_garr(v, "arms") {
         mut inner = rn_copy(locals)
@@ -328,7 +383,81 @@ fn rn_match(mut cx RnCx, v RJ, locals []str) -> str {
         }
         arms.push("${head} ${rn_arrow(cx)} ${body}")
     }
-    "${rn_kw(cx, "expr", "match")} ${on} { ${arms.join("; ")} }"
+    cx.indent = base
+    if !multi { return "${rn_kw(cx, "expr", "match")} ${on} { ${arms.join(", ")} }" }
+    ro pad_in = rn_pad(base + 2)
+    mut lines = []str.new()
+    for a in arms { lines.push("${pad_in}${a}") }
+    "${rn_kw(cx, "expr", "match")} ${on} {\n${lines.join("\n")}\n${rn_pad(base)}}"
+}
+
+fn rn_pad(n int) -> str {
+    mut out = []str.new()
+    mut k = 0
+    while k < n {
+        out.push(" ")
+        k += 1
+    }
+    out.join("")
+}
+
+/// A block expression `{ пусть имя = выр; …; выр }` of a chain of `let` (AL-75) or `{ выр }` of an expression (AL-71): the branches of `если` are always blocks.
+fn rn_block(mut cx RnCx, v RJ, locals []str) -> str {
+    mut parts = []str.new()
+    ro last = rn_let_parts(cx, v, locals, parts)
+    parts.push(last)
+    "{ ${parts.join(" ")} }"
+}
+
+// The bindings of a chain of `let` as `пусть имя = выр;` (pushed into `parts`) and the text of the last expression.
+fn rn_let_parts(mut cx RnCx, v RJ, locals []str, mut parts []str) -> str {
+    if rj_gstr(v, "op") != "let" { return rn_expr(cx, v, locals) }
+    ro name = rj_gstr(v, "name")
+    ro value = match rj_get(v, "value") {
+        Some(x) => rn_expr(cx, x, locals)
+        None => "none"
+    }
+    parts.push("${rn_kw(cx, "expr", "let")} ${name} = ${value};")
+    match rj_get(v, "body") {
+        Some(b) => rn_let_parts(cx, b, rn_with(locals, name), parts)
+        None => "none"
+    }
+}
+
+// A call `concat` of the canonical form as an insertion (AL-80, 1b (и)): non-empty text literals and calls `text(x)` alternate with no two literals in a row; "" when the call is no such.
+fn rn_insertion(mut cx RnCx, args []RJ, locals []str) -> str {
+    if args.len() < 2 { return "" }
+    mut out = []str.new()
+    mut prev_lit = false
+    mut has_code = false
+    for a in args {
+        ro op = rj_gstr(a, "op")
+        if op == "lit" {
+            match rj_get(a, "value") {
+                Some(x) => {
+                    match x {
+                        RStr(s) => {
+                            if s == "" || prev_lit { return "" }
+                            out.push(rn_quote_inner(s))
+                            prev_lit = true
+                        }
+                        _ => return ""
+                    }
+                }
+                None => return ""
+            }
+        } else if op == "call" && rj_gstr(a, "fn") == "text" && rj_garr(a, "args").len() == 1 {
+            ro code = rn_expr(cx, rj_garr(a, "args")[0], locals)
+            if code.contains("\n") || code.trim_ascii() == "" { return "" }
+            out.push("\${${code}}")
+            prev_lit = false
+            has_code = true
+        } else {
+            return ""
+        }
+    }
+    if !has_code { return "" }
+    "\"${out.join("")}\""
 }
 
 fn rn_call(mut cx RnCx, v RJ, locals []str) -> str {
@@ -347,6 +476,22 @@ fn rn_call(mut cx RnCx, v RJ, locals []str) -> str {
             i += 2
         }
         return "${rn_kw(cx, "catalog", "journal_event")}(${parts.join(", ")})"
+    }
+    // a range (AL-76): the call `range(a, b)` is `a..b`
+    if fn_en == "range" && args.len() == 2 { return "${rn_sub(cx, args[0], locals, 1)}..${rn_sub(cx, args[1], locals, 1)}" }
+    // a macro is a method of its first argument (AL-78)
+    if macro_names_en().contains(fn_en) && args.len() >= 1 {
+        mut rest = []str.new()
+        mut k = 1
+        while k < args.len() {
+            rest.push(rn_expr(cx, args[k], locals))
+            k += 1
+        }
+        return "${rn_sub(cx, args[0], locals, 10)}.${rn_kw(cx, "catalog", fn_en)}(${rest.join(", ")})"
+    }
+    if fn_en == "concat" {
+        ro made = rn_insertion(cx, args, locals)
+        if made != "" { return made }
     }
     ro word = if cx.catalog.contains(fn_en) { rn_kw(cx, "catalog", fn_en) } else { fn_en }
     "${word}(${rn_args(cx, args, locals)})"
@@ -406,27 +551,16 @@ fn rn_expr(mut cx RnCx, v RJ, locals []str) -> str {
             None => "none"
         }
         ro then_text = match rj_get(v, "then") {
-            Some(x) => rn_sub(cx, x, locals, 1)
-            None => "none"
+            Some(x) => rn_block(cx, x, locals)
+            None => "{ none }"
         }
         ro else_text = match rj_get(v, "else") {
-            Some(x) => rn_sub(cx, x, locals, 1)
-            None => "none"
+            Some(x) => rn_block(cx, x, locals)
+            None => "{ none }"
         }
         return "${rn_kw(cx, "expr", "if")} ${cond} ${rn_kw(cx, "expr", "then")} ${then_text} ${rn_kw(cx, "expr", "else")} ${else_text}"
     }
-    if op == "let" {
-        ro name = rj_gstr(v, "name")
-        ro value = match rj_get(v, "value") {
-            Some(x) => rn_sub(cx, x, locals, 1)
-            None => "none"
-        }
-        ro body = match rj_get(v, "body") {
-            Some(x) => rn_expr(cx, x, rn_with(locals, name))
-            None => "none"
-        }
-        return "${rn_kw(cx, "expr", "let")} ${name} = ${value} ${rn_kw(cx, "expr", "in")} ${body}"
-    }
+    if op == "let" { return rn_block(cx, v, locals) }
     if op == "lambda" {
         mut names = []str.new()
         mut inner = rn_copy(locals)
@@ -456,8 +590,8 @@ fn rn_expr(mut cx RnCx, v RJ, locals []str) -> str {
             }
             parts.push("${k}: ${val}")
         }
-        if parts.len() == 0 { return "{}" }
-        return "{${parts.join(", ")}}"
+        if parts.len() == 0 { return "[]" }
+        return "[${parts.join(", ")}]"
     }
     if op == "record" {
         ro fields = match rj_get(v, "fields") {
@@ -579,11 +713,10 @@ fn rn_params(mut cx RnCx, v RJ, locals []str) -> str {
     parts.join("")
 }
 
-/// The group of actions as the body of `then`, `else`, `in`, `:`: one action stays as it is after `:`, brackets otherwise.
+/// The group of actions as a block `{ … }`: the body of `то`, `иначе`, the loop (AL-70, AL-72, AL-74).
 fn rn_body(mut cx RnCx, items []RJ, locals []str, always_brackets bool) -> str {
     ro text = rn_actions(cx, items, locals).text
-    if items.len() == 1 && !always_brackets { return text }
-    "(${text})"
+    "{ ${text} }"
 }
 
 /// RnActs: the text of a list of actions and the names that its `let` actions bind for what follows.
@@ -639,7 +772,7 @@ fn rn_action(mut cx RnCx, a RJ, locals []str) -> str {
             None => "none"
         }
         ro body = rn_body(cx, rj_garr(a, "body"), rn_with(locals, var), false)
-        return "${rn_kw(cx, "action", "for each")} ${var} ${rn_kw(cx, "action", "in")} ${items}: ${body}"
+        return "${rn_kw(cx, "action", "for")} ${var} ${rn_kw(cx, "action", "in")} ${items} ${body}"
     }
     if kind == "if" {
         ro cond = match rj_get(a, "cond") {
@@ -657,7 +790,8 @@ fn rn_action(mut cx RnCx, a RJ, locals []str) -> str {
             Some(x) => rn_expr(cx, x, locals)
             None => "none"
         }
-        return "${rn_kw(cx, "action", "let")} ${name} = ${value} ${rn_kw(cx, "action", "in")} ${rn_body(cx, rj_garr(a, "body"), rn_with(locals, name), true)}"
+        ro rest = rn_actions(cx, rj_garr(a, "body"), rn_with(locals, name)).text
+        return "{ ${rn_kw(cx, "action", "let")} ${name} = ${value}; ${rest} }"
     }
     if kind == "bind" {
         ro value = match rj_get(a, "value") {

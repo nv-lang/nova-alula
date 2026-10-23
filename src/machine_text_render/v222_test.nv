@@ -1,0 +1,236 @@
+// v222_test.nv - task 152: the reverse generator writes Alula 2.22: ranges, methods of the macros, insertions, the literal of a map, `in […]`, `выбор` with commas, blocks, `для x из xs`, the declarations of types and of
+// functions, the words of the types in both languages. The circles "tree -> file -> tree" are equal for the machines of the product in both languages.
+module alula.machine_text_render
+
+import std.text
+import alula.machine_text.{render, render_type_in, render_expression_in, render_actions_in}
+
+fn r222(json str, lang str) -> str => render_expression_in(json, lang, ["x", "y", "xs"])
+
+fn call222(f str, args []str) -> str => `{"op":"call","fn":"${f}","args":[${args.join(",")}]}`
+
+fn lam222(params str, body str) -> str => `{"op":"lambda","params":[${params}],"body":${body}}`
+
+// ---- ranges -----------------------------------------------------------------------------------------------------------------------------------
+
+test "w222 a range is written with two dots" {
+    assert(r222(call222("range", [lit("1"), lit("5")]), "ru") == "1..5")
+    assert(r222(call222("range", [lit("1"), lit("5")]), "en") == "1..5")
+}
+
+test "w222 a range of names" {
+    assert(r222(call222("range", [nm("x"), nm("y")]), "en") == "x..y")
+}
+
+test "w222 a range with an addition at the end keeps the sum" {
+    assert(r222(call222("range", [lit("0"), bin("+", nm("x"), lit("1"))]), "en") == "0..x + 1")
+}
+
+test "w222 a method on a range is in brackets" {
+    ro made = r222(call222("count", [call222("range", [lit("0"), lit("3")]), lam222("\"n\"", bin(">", nm("n"), lit("0")))]), "ru")
+    assert(made == "(0..3).количество(n => n > 0)")
+}
+
+// ---- methods -----------------------------------------------------------------------------------------------------------------------------------
+
+test "w222 filter is a method in Russian" {
+    assert(r222(call222("filter", [nm("xs"), lam222("\"n\"", bin(">", nm("n"), lit("1")))]), "ru") == "xs.фильтр(n => n > 1)")
+}
+
+test "w222 filter is a method in English" {
+    assert(r222(call222("filter", [nm("xs"), lam222("\"n\"", bin(">", nm("n"), lit("1")))]), "en") == "xs.filter(n => n > 1)")
+}
+
+test "w222 map any all count first_where" {
+    ro body = lam222("\"n\"", nm("n"))
+    assert(r222(call222("map", [nm("xs"), body]), "en") == "xs.map(n => n)")
+    assert(r222(call222("any", [nm("xs"), body]), "en") == "xs.any(n => n)")
+    assert(r222(call222("all", [nm("xs"), body]), "en") == "xs.all(n => n)")
+    assert(r222(call222("count", [nm("xs"), body]), "en") == "xs.count(n => n)")
+    assert(r222(call222("first_where", [nm("xs"), body]), "en") == "xs.first_where(n => n)")
+}
+
+test "w222 fold has the start value after the receiver" {
+    ro body = lam222("\"a\",\"b\"", bin("+", nm("a"), nm("b")))
+    assert(r222(call222("fold", [nm("xs"), lit("0"), body]), "en") == "xs.fold(0, (a, b) => a + b)")
+    assert(r222(call222("fold", [nm("xs"), lit("0"), body]), "ru") == "xs.свёртка(0, (a, b) => a + b)")
+}
+
+test "w222 dict has two lambdas" {
+    ro key = lam222("\"n\"", nm("n"))
+    assert(r222(call222("dict", [nm("xs"), key, key]), "en") == "xs.dict(n => n, n => n)")
+}
+
+test "w222 a function of the catalog stays a call" {
+    assert(r222(call222("length", [nm("xs")]), "en") == "length(xs)")
+    assert(r222(call222("length", [nm("xs")]), "ru") == "длина(xs)")
+}
+
+test "w222 a method chain" {
+    ro inner = call222("filter", [nm("xs"), lam222("\"n\"", bin(">", nm("n"), lit("1")))])
+    assert(r222(call222("count", [inner, lam222("\"n\"", bin("<", nm("n"), lit("3")))]), "en") == "xs.filter(n => n > 1).count(n => n < 3)")
+}
+
+// ---- insertions ---------------------------------------------------------------------------------------------------------------------------------
+
+test "w222 concat of a text and a conversion is an insertion" {
+    ro tree = call222("concat", [lit("\"ход \""), call222("text", [nm("x")])])
+    assert(r222(tree, "ru") == "\"ход \${x}\"")
+}
+
+test "w222 concat of three parts" {
+    ro tree = call222("concat", [lit("\"a\""), call222("text", [nm("x")]), lit("\"b\"")])
+    assert(r222(tree, "en") == "\"a\${x}b\"")
+}
+
+test "w222 a dollar sign in a literal is escaped" {
+    assert(r222(lit("\"\${x}\""), "en") == "\"\\\${x}\"")
+}
+
+test "w222 a plain text is a plain literal" {
+    assert(r222(lit("\"просто\""), "ru") == "\"просто\"")
+}
+
+// ---- maps and sets -------------------------------------------------------------------------------------------------------------------------------
+
+test "w222 a map with pairs" {
+    ro tree = `{"op":"dict","entries":[{"key":{"op":"lit","value":"a"},"value":{"op":"lit","value":1}}]}`
+    assert(r222(tree, "en") == "[\"a\": 1]")
+}
+
+test "w222 an empty map" {
+    assert(r222(`{"op":"dict","entries":[]}`, "en") == "[]")
+}
+
+test "w222 an empty list" {
+    assert(r222(`{"op":"list","items":[]}`, "en") == "[]")
+}
+
+test "w222 a tuple keeps its brackets" {
+    assert(r222(`{"op":"tuple","items":[{"op":"lit","value":1},{"op":"lit","value":2}]}`, "en") == "(1, 2)")
+}
+
+// ---- match and blocks ---------------------------------------------------------------------------------------------------------------------------
+
+test "w222 match has commas and arrows" {
+    ro arm = `{"patterns":[{"kind":"lit","value":"a"}],"body":${lit("1")}}`
+    ro rest = `{"patterns":[{"kind":"any"}],"body":${lit("2")}}`
+    ro tree = `{"op":"match","on":${nm("x")},"arms":[${arm},${rest}]}`
+    assert(r222(tree, "ru") == "выбор x { \"a\" => 1, иначе => 2 }")
+    assert(r222(tree, "en") == "match x { \"a\" => 1, else => 2 }")
+}
+
+test "w222 a block with a binding" {
+    assert(r222(`{"op":"let","name":"k","value":${lit("1")},"body":${nm("k")}}`, "en") == "{ let k = 1; k }")
+    assert(r222(`{"op":"let","name":"k","value":${lit("1")},"body":${nm("k")}}`, "ru") == "{ пусть k = 1; k }")
+}
+
+test "w222 a condition has blocks" {
+    ro tree = `{"op":"if","cond":${nm("x")},"then":${lit("1")},"else":${lit("2")}}`
+    assert(r222(tree, "en") == "if x then { 1 } else { 2 }")
+}
+
+test "w222 a loop over a range" {
+    ro body = `[{"do":"assign","target":"y","value":${nm("n")}}]`
+    ro tree = `[{"do":"for_each","var":"n","in":${call222("range", [lit("0"), lit("3")])},"body":${body}}]`
+    assert(render_actions_in(tree, "en", ["x", "y"]) == "for n in 0..3 { y = n }")
+    assert(render_actions_in(tree, "ru", ["x", "y"]) == "для n из 0..3 { y = n }")
+}
+
+test "w222 two actions in a loop block" {
+    ro body = `[{"do":"assign","target":"y","value":${lit("1")}},{"do":"add","target":"y","value":${lit("2")}}]`
+    ro tree = `[{"do":"for_each","var":"n","in":${nm("xs")},"body":${body}}]`
+    assert(render_actions_in(tree, "en", ["xs", "y"]) == "for n in xs { y = 1; y += 2 }")
+}
+
+// ---- the declarations and the types -------------------------------------------------------------------------------------------------------------
+
+test "w222 the words of the types in Russian" {
+    assert(render_type_in("text", "ru") == "строка")
+    assert(render_type_in("float", "ru") == "вещественное")
+    assert(render_type_in("bool", "ru") == "булево")
+    assert(render_type_in("int", "ru") == "число")
+}
+
+test "w222 the words of the types in English" {
+    assert(render_type_in("text", "en") == "str")
+    assert(render_type_in("float", "en") == "f64")
+    assert(render_type_in("bool", "en") == "bool")
+    assert(render_type_in("int", "en") == "int")
+}
+
+test "w222 a map type" {
+    assert(render_type_in("{text: int}", "en") == "map[str, int]")
+    assert(render_type_in("{text: int}", "ru") == "словарь[строка, число]")
+}
+
+test "w222 the types of the product are declared with the word type" {
+    ro agent = render(machine_json("agent_step.alula.json"), "ru")
+    assert(agent.contains("\nтип AgentModel { id строка, provider строка, variant ?строка }\n"))
+}
+
+test "w222 an enumeration with values is in lines" {
+    ro agent = render(machine_json("agent_step.alula.json"), "ru")
+    assert(agent.contains("\nтип ActionKind перечисление\n  | Read = \"read\"\n"))
+}
+
+test "w222 an enumeration with fields is in lines" {
+    ro agent = render(machine_json("agent_step.alula.json"), "en")
+    assert(agent.contains("\ntype TurnResult enum\n  | Finished { text ?str, artifact ?str, usage TransportUsage }\n"))
+}
+
+test "w222 an enumeration without fields is in a line" {
+    ro agent = render(machine_json("agent_step.alula.json"), "en")
+    assert(agent.contains("\ntype ReplyCheck enum Valid | Violated | Empty\n"))
+}
+
+test "w222 a function has the word fn in English" {
+    ro agent = render(machine_json("agent_step.alula.json"), "en")
+    assert(agent.contains("\nfn сумма_целых("))
+}
+
+test "w222 a function has the word функция in Russian" {
+    ro agent = render(machine_json("agent_step.alula.json"), "ru")
+    assert(agent.contains("\nфункция сумма_целых("))
+}
+
+test "w222 no former word of the language is written" {
+    for lang in ["ru", "en"] {
+        ro agent = render(machine_json("agent_step.alula.json"), lang)
+        assert(!agent.contains("\nопределение "))
+        assert(!agent.contains("\ndefine "))
+        assert(!agent.contains("\nвариант "))
+        assert(!agent.contains("\nvariant "))
+    }
+}
+
+test "w222 the text of the product has no comment sign inside a cell" {
+    ro agent = render(machine_json("agent_step.alula.json"), "ru")
+    for line in agent.split("\n") {
+        if line.starts_with("|") { assert(!line.contains("//")) }
+    }
+}
+
+// ---- the circles --------------------------------------------------------------------------------------------------------------------------------
+
+test "w222 the circle of the calc machine in Russian" {
+    assert(circle(machine_json("calc.alula.json"), "ru") == "")
+}
+
+test "w222 the circle of the calc machine in English" {
+    assert(circle(machine_json("calc.alula.json"), "en") == "")
+}
+
+test "w222 the circle of the chat machine in both languages" {
+    assert(circle(machine_json("chat.alula.json"), "ru") == "")
+    assert(circle(machine_json("chat.alula.json"), "en") == "")
+}
+
+test "w222 the circle of the agent step in both languages" {
+    assert(circle(machine_json("agent_step.alula.json"), "ru") == "")
+    assert(circle(machine_json("agent_step.alula.json"), "en") == "")
+}
+
+test "w222 a rendered file says 2.22" {
+    assert(render(machine_json("calc.alula.json"), "ru").contains("- format: 2.22"))
+}

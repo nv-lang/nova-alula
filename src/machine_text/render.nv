@@ -91,25 +91,35 @@ fn rn_word_of(v RJ, case_en str) -> str {
     ""
 }
 
-fn rn_enum_line(cx RnCx, v RJ) -> str {
-    mut parts = []str.new()
+// The declaration of an enumeration (AL-99, as D406 of Nova): on one line when every form is a bare name and the line is not longer than 100 signs; else the header and a form on a line with `|`
+// (`| Эл`, `| Эл = "значение"`, `| Вар { поле тип }`).
+fn rn_enum_lines(cx RnCx, v RJ) -> []str {
+    ro head = "${rn_kw(cx, "decl", "type")} ${rn_type_name(cx, rj_gstr(v, "name"))} ${rn_kw(cx, "decl", "enum")}"
+    mut plain = true
+    mut names = []str.new()
+    for c in rj_garr(v, "cases") {
+        ro en = rj_gstr(c, "name")
+        if rn_word_of(v, en) != "" || rj_garr(c, "fields").len() > 0 { plain = false }
+        names.push(rn_case_name(cx, en))
+    }
+    if plain {
+        ro one = "${head} ${names.join(" | ")}"
+        if one.chars().count() <= 100 { return [one] }
+    }
+    mut out = [head]
     for c in rj_garr(v, "cases") {
         ro en = rj_gstr(c, "name")
         ro word = rn_word_of(v, en)
-        parts.push(if word == "" { rn_case_name(cx, en) } else { "${rn_case_name(cx, en)} ${rn_quote(word)}" })
-    }
-    "${rn_kw(cx, "decl", "enum")} ${rn_type_name(cx, rj_gstr(v, "name"))} = ${parts.join(" | ")}"
-}
-
-fn rn_variant_lines(cx RnCx, v RJ) -> []str {
-    mut out = []str.new()
-    out.push("${rn_kw(cx, "decl", "variant")} ${rn_type_name(cx, rj_gstr(v, "name"))} {")
-    for c in rj_garr(v, "cases") {
         ro fields = rj_garr(c, "fields")
-        ro name = rn_case_name(cx, rj_gstr(c, "name"))
-        out.push(if fields.len() == 0 { "  ${name}" } else { "  ${name} { ${rn_fields_text(cx, fields)} }" })
+        ro name = rn_case_name(cx, en)
+        if word != "" {
+            out.push("  | ${name} = ${rn_quote(word)}")
+        } else if fields.len() > 0 {
+            out.push("  | ${name} { ${rn_fields_text(cx, fields)} }")
+        } else {
+            out.push("  | ${name}")
+        }
     }
-    out.push("}")
     out
 }
 
@@ -125,23 +135,13 @@ fn rn_sec_types(cx RnCx, root RJ, dropped []str) -> []str {
         None => RNull
     }
     mut body = []str.new()
-    mut last = ""
     for rec in rj_garr(types, "records") {
         if dropped.contains(rj_gstr(rec, "name")) { continue }
         body.push(rn_record_line(cx, rec))
-        last = "record"
     }
     for v in rj_garr(types, "variants") {
         if dropped.contains(rj_gstr(v, "name")) { continue }
-        if rn_has_fields(v) {
-            if last != "" { body.push("") }
-            rn_add(body, rn_variant_lines(cx, v))
-            last = "variant"
-        } else {
-            if last != "" && last != "enum" { body.push("") }
-            body.push(rn_enum_line(cx, v))
-            last = "enum"
-        }
+        rn_add(body, rn_enum_lines(cx, v))
     }
     if body.len() == 0 { return ["—"] }
     mut out = ["```"]
@@ -289,7 +289,7 @@ fn rn_words_cell(mut cx RnCx, p RJ) -> str {
         ro name = rj_gstr(w, "name")
         ro word = name
         ro fields = rj_garr(w, "fields")
-        parts.push(if fields.len() == 0 { word } else { "${word}(${rn_fields_text(cx, fields)})" })
+        parts.push(if fields.len() == 0 { word } else { "${word} { ${rn_fields_text(cx, fields)} }" })
     }
     if parts.len() == 0 { return "—" }
     parts.join(", ")
@@ -355,6 +355,8 @@ fn rn_extra_sections(mut cx RnCx, root RJ) -> []str {
     out
 }
 
+// The functions (AL-83, AL-84): `функция имя(арг тип) -> тип =>` and the body on the next line, two signs in; a body that is a chain of `let` is a block body without `=>`: `{` at the end of the header, a binding or
+// the last expression per line, `}` on its own line (1b (д)); a record copy as the whole body stands in brackets.
 fn rn_sec_definitions(mut cx RnCx, root RJ, dropped []str) -> []str {
     mut body = []str.new()
     for d in rj_garr(root, "definitions") {
@@ -365,14 +367,30 @@ fn rn_sec_definitions(mut cx RnCx, root RJ, dropped []str) -> []str {
             locals.push(rj_gstr(p, "name"))
             params.push("${rj_gstr(p, "name")} ${rn_type(cx, rj_gstr(p, "type"))}")
         }
-        ro body_text = match rj_get(d, "body") {
-            Some(x) => rn_expr(cx, x, locals)
-            None => "none"
-        }
         if body.len() > 0 { body.push("") }
         ro name = rj_gstr(d, "name")
-        body.push("${rn_kw(cx, "decl", "define")} ${name}(${params.join(", ")}) -> ${rn_type(cx, rj_gstr(d, "result"))} =")
-        body.push("  ${body_text}")
+        ro head = "${rn_kw(cx, "decl", "fn")} ${name}(${params.join(", ")}) -> ${rn_type(cx, rj_gstr(d, "result"))}"
+        ro expr = match rj_get(d, "body") {
+            Some(x) => x
+            None => RNull
+        }
+        cx.cell = false
+        cx.indent = 2
+        if rj_gstr(expr, "op") == "let" {
+            body.push("${head} {")
+            mut lets = []str.new()
+            ro last = rn_let_parts(cx, expr, locals, lets)
+            for l in lets { body.push("  ${l}") }
+            body.push("  ${last}")
+            body.push("}")
+        } else {
+            ro text = rn_expr(cx, expr, locals)
+            ro shown = if rj_gstr(expr, "op") == "with_field" { "(${text})" } else { text }
+            body.push("${head} =>")
+            body.push("  ${shown}")
+        }
+        cx.cell = true
+        cx.indent = 0
     }
     if body.len() == 0 { return ["—"] }
     mut out = ["```"]
@@ -392,7 +410,7 @@ fn rn_sec_includes(mut cx RnCx, root RJ, copy_includes bool) -> []str {
         return only
     }
     for inc in rj_garr(root, "includes") {
-        lines.push("${rn_kw(cx, "key", "definitions")}: ${rj_gstr(inc, "name")} ${rn_kw(cx, "key", "version")} ${rj_gstr(inc, "version")} ${rn_kw(cx, "key", "hash")} ${rj_gstr(inc, "hash")}")
+        lines.push("${rn_kw(cx, "key", "functions")}: ${rj_gstr(inc, "name")} ${rn_kw(cx, "key", "version")} ${rj_gstr(inc, "version")} ${rn_kw(cx, "key", "hash")} ${rj_gstr(inc, "hash")}")
     }
     if lines.len() == 0 { return ["—"] }
     mut out = ["```"]

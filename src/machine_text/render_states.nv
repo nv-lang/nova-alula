@@ -43,7 +43,7 @@ fn rn_event(cx RnCx, ev RJ, locals []str) -> RnEvent {
         if inner == "" { return RnEvent { text: head, locals } }
         mut all = rn_copy(locals)
         for l in rn_bind_locals(bind) { all.push(l) }
-        return RnEvent { text: "${head}(${inner})", locals: all }
+        return RnEvent { text: "${head} { ${inner} }", locals: all }
     }
     if kind == "failure" {
         ro name = if rj_str(bind) == "" && rj_garr(ev, "reasons").len() > 0 { "_" } else { rj_str(bind) }
@@ -52,7 +52,7 @@ fn rn_event(cx RnCx, ev RJ, locals []str) -> RnEvent {
         if reasons.len() == 0 { return RnEvent { text: "${rn_kw(cx, "event", "failure")}(${name})", locals: rn_with(locals, name) } }
         mut codes = []str.new()
         for r in reasons { codes.push("${rn_type_name(cx, "FailCode")}.${rn_case_name(cx, rj_str(r))}") }
-        return RnEvent { text: "${rn_kw(cx, "event", "failure")}(${name} in {${codes.join(", ")}})", locals: rn_with(locals, name) }
+        return RnEvent { text: "${rn_kw(cx, "event", "failure")}(${name} ${rn_kw(cx, "operator", "in")} [${codes.join(", ")}])", locals: rn_with(locals, name) }
     }
     if kind == "signal" || kind == "progress" {
         ro head_key = if kind == "signal" { "signal" } else { "part" }
@@ -60,7 +60,7 @@ fn rn_event(cx RnCx, ev RJ, locals []str) -> RnEvent {
         ro inner = rn_binds(cx, bind)
         mut all = rn_copy(locals)
         for l in rn_bind_locals(bind) { all.push(l) }
-        ro shown = if inner == "" { phrase } else { "${phrase}(${inner})" }
+        ro shown = if inner == "" { phrase } else { "${phrase} { ${inner} }" }
         return RnEvent { text: "${rn_kw(cx, "event", head_key)}(${shown})", locals: all }
     }
     RnEvent { text: "—", locals }
@@ -228,7 +228,7 @@ fn rn_state(mut cx RnCx, st RJ, index int) -> []str {
         Some(e) => {
             mut values = []str.new()
             for v in rj_garr(e, "values") { values.push(rn_quote(rj_str(v))) }
-            out.push("- ${rn_kw(cx, "key", "Except")}: ${rn_global(cx, rj_gstr(e, "field"))} in {${values.join(", ")}}")
+            out.push("- ${rn_kw(cx, "key", "Except")}: ${rn_global(cx, rj_gstr(e, "field"))} ${rn_kw(cx, "operator", "in")} [${values.join(", ")}]")
         }
         None => ()
     }
@@ -416,7 +416,7 @@ export fn render_machine_with(machine_json str, language str, copy_includes bool
             }
             // a tree of another version of the language is not written (no transition period, task 125): the file would say a version that the translator does not read
             if rj_gstr(root, "alula_version") != "" && !format_versions().contains(rj_gstr(root, "alula_version")) {
-                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 2.17 only is read and written (there is no transition period)"] }
+                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 2.22 only is read and written (there is no transition period)"] }
             }
             ro former = rn_former_note(root, "$")
             if former != "" { return RenderReport { text: "", notes: [former] } }
@@ -424,7 +424,7 @@ export fn render_machine_with(machine_json str, language str, copy_includes bool
             ro dropped = rn_dropped(cx, root, copy_includes)
             // what the fragments bring is written by the line of connection, not as the machine's own (1b (m), 2.12, AL-32)
             ro shown = if rj_garr(root, "fragments").len() == 0 { root } else { rn_without_fragments(root) }
-            ro version = if rj_gstr(shown, "alula_version") == "" { "2.17" } else { rj_gstr(shown, "alula_version") }
+            ro version = if rj_gstr(shown, "alula_version") == "" { "2.22" } else { rj_gstr(shown, "alula_version") }
             mut out = []str.new()
             out.push("# ${rn_kw(cx, "header", "Machine")}: ${rj_gstr(shown, "machine")}")
             out.push("")
@@ -440,7 +440,7 @@ export fn render_machine_with(machine_json str, language str, copy_includes bool
             rn_section(out, rn_kw(cx, "section", "Data"), rn_sec_data(cx, shown))
             rn_section(out, rn_kw(cx, "section", "Parties"), rn_sec_parties(cx, shown))
             rn_add(out, rn_extra_sections(cx, shown))
-            rn_section(out, rn_kw(cx, "section", "Definitions"), rn_sec_definitions(cx, shown, dropped.definitions))
+            rn_section(out, rn_kw(cx, "section", "Functions"), rn_sec_definitions(cx, shown, dropped.definitions))
             rn_section(out, rn_kw(cx, "section", "Includes"), rn_sec_includes(cx, shown, copy_includes))
             rn_add(out, rn_sec_common(cx, shown))
             rn_section(out, rn_kw(cx, "section", "States"), rn_sec_states(cx, shown))
