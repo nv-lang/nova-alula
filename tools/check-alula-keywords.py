@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Проверка таблицы ключевых слов Алулы (`alula-keywords.tsv`) и сверка с ней образцов машины.
+"""Проверка таблицы ключевых слов Алулы (`spec/alula-keywords.tsv`) и сверка с ней образцов машины.
 
 Зачем: таблица слов — единый нормативный источник ключевых слов обоих языков Алулы (спецификация, раздел 1а);
-образцы `state-machine-agent-step.alula.md` (русский), `state-machine-agent-step.en.alula.md` (английский) и запись
-«Совещания» `task-runner-meeting.alula.md` (русская) записаны на разных языках, и расхождение слов образца с таблицей
+образцы `spec/samples/agent-step.alula.md` (русский), `spec/samples/agent-step.en.alula.md` (английский) и запись
+«Совещания» `spec/samples/meeting-definitions.alula.md` (русская) записаны на разных языках, и расхождение слов образца с таблицей
 молчит до первой реализации разбора.
 Что проверяет:
   1. таблица: первая строка — заголовок `kind<TAB>ru<TAB>en`; в каждой строке три колонки без пустых ячеек;
@@ -93,7 +93,7 @@
      сигналы сторон в столбце `сигналы` «Сторон» (сигнал и его поля) и имя настройки вратаря в виде стороны
      `human или agent по настройке <имя>`: скобок после имени нет (убраны, AL-60); JSON-имя — строка раздела `## Имена`
      (`| имя | JSON-имя |`; уточнённое имя `Тип.Вариант.поле`, `сторона.сигнал` сильнее простого), иначе автоматическое
-     (латинское имя — оно само; иначе запись словаря методики `state-machine-glossary.md` для всего имени; иначе
+     (латинское имя — оно само; иначе запись словаря методики `state-machine-glossary.md` (файл остался в Методике, путь задаёт `--glossary` или `ALULA_GLOSSARY`) для всего имени; иначе
      транслитерация с правилом регистра; функции `load_glossary`, `auto_name`); итоговое JSON-имя латинское; строка `## Имена`,
      которая ничего не меняет, — ошибка «лишняя строка»; строка для имени, которого среди объявлений файла нет, — ошибка;
      имя повторено в таблице; JSON-имя строки не латинское; JSON-имена одного пространства (состояния, вместе с состоянием
@@ -130,19 +130,24 @@
 не совпадает с названием его типа» (спецификация, раздел 2, AL-54; предупреждение — позже), выражение `—` таблицы
 «Запрос» (AL-56) и исчерпание развилок по типу (AL-57) — это проверки переводчика продукта.
 Функции `load_glossary`, `auto_name`, `declarations`, `json_names` берёт и `check-alula-samples.py` (сверка JSON-имён двух образцов).
-Запуск: из корня репозитория `python state-machines/check-alula-keywords.py` (`--selftest` — с самопроверкой); код возврата 1 при расхождениях.
+Запуск: из корня репозитория `python tools/check-alula-keywords.py [--glossary <путь к state-machine-glossary.md>]` (`--selftest` — с самопроверкой);
+код возврата 1 при расхождениях. Путь к словарю методики задаётся аргументом `--glossary` или переменной среды `ALULA_GLOSSARY`
+(аргумент сильнее); без него проверка хеша словаря и JSON-имён по словарю пропускается с явным сообщением, а код возврата остаётся кодом
+остальных проверок.
 """
 import hashlib, io, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TABLE = 'alula-keywords.tsv'
-GLOSSARY = 'state-machine-glossary.md'
-SPECS = [('state-machine-alula-spec.md', 'хеш словаря'), ('state-machine-alula-spec.en.md', 'glossary hash')]
+ROOT = os.path.dirname(HERE)  # корень пакета: пути ниже считаются от него
+TABLE = 'spec/alula-keywords.tsv'
+GLOSSARY = 'state-machine-glossary.md'  # файл остался в Методике: путь задаёт запускающий (`glossary_path`), в сообщениях — имя файла
+GLOSSARY_SKIPPED = 'проверка имён по глоссарию пропущена: не задан путь к глоссарию (аргумент --glossary <путь> или переменная среды ALULA_GLOSSARY)'
+SPECS = [('spec/alula-spec.md', 'хеш словаря'), ('spec/alula-spec.en.md', 'glossary hash')]
 DICT_HASH = '60383c370415'  # хеш нормативной части словаря, закреплённый форматом 2.16 и тем же в 2.17–2.22 (спецификация, 1а, AL-62)
 GLOSSARY_VERSION = 11  # версия словаря (для людей), при которой закреплён хеш; проверка сверяет хеш, а не номер
 NORMATIVE_TABLES = ['2.%d' % i for i in (1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 16)]  # разделы-таблицы словаря; 2.10 — записи
-SAMPLES = [('state-machine-agent-step.alula.md', 'ru'), ('state-machine-agent-step.en.alula.md', 'en'),
-           ('task-runner-meeting.alula.md', 'ru')]
+SAMPLES = [('spec/samples/agent-step.alula.md', 'ru'), ('spec/samples/agent-step.en.alula.md', 'en'),
+           ('spec/samples/meeting-definitions.alula.md', 'ru')]
 KINDS = ['header', 'section', 'column', 'kind_state', 'key', 'kind_party', 'kind_param', 'event', 'destination', 'decl', 'type',
          'expr', 'action', 'operator', 'readable', 'catalog', 'enum_value']
 # виды параметров фрагмента (раздел 9, AL-63): закрытый перечень вида `kind_param`; из них тип данных — только `текст`
@@ -157,7 +162,23 @@ CONTRACT_DATA = ('предыдущее', 'запрос_вызова', 'откр�
 
 
 def read(name):
-    return io.open(os.path.join(HERE, name), encoding='utf-8', newline='').read().replace('\r\n', '\n')
+    """Файл пакета по пути от его корня (или любой файл по абсолютному пути): текст с LF."""
+    return io.open(os.path.join(ROOT, name), encoding='utf-8', newline='').read().replace('\r\n', '\n')
+
+
+def glossary_path(argv=None, environ=None):
+    """Путь к словарю методики: аргумент `--glossary <путь>` или `--glossary=<путь>`, иначе переменная среды `ALULA_GLOSSARY`;
+    None, если не задан. Словарь остался в Методике, пакет его не хранит."""
+    argv = sys.argv[1:] if argv is None else argv
+    environ = os.environ if environ is None else environ
+    for i, a in enumerate(argv):
+        if a == '--glossary':
+            if i + 1 >= len(argv):
+                raise SystemExit('--glossary: нужен путь к файлу словаря')
+            return argv[i + 1]
+        if a.startswith('--glossary='):
+            return a[len('--glossary='):]
+    return environ.get('ALULA_GLOSSARY') or None
 
 
 def check_table(text):
@@ -1596,7 +1617,8 @@ def check_json_names(text, words, name, lang, gloss, contract=None):
         for w in mixed_words(nm):
             errs.append('%s:%d: в слове `%s` имени %s `%s` смешаны кириллица и латиница: смешивать можно только через `_` '
                         'или пробел (AL-59)' % (name, n, w, where, nm))
-    names, table_errs = json_names(text, lang, gloss, readable)
+    # без словаря (gloss is None) автоматическое JSON-имя не построить: проверки по JSON-именам пропущены (сообщение — в main)
+    names, table_errs = json_names(text, lang, gloss, readable) if gloss is not None else ([], [])
     errs += ['%s:%d: %s' % (name, n, e) for n, e in table_errs]
     for n, key, js in names_table(text, lang):
         for part in key.split('.'):
@@ -1619,7 +1641,7 @@ def check_json_names(text, words, name, lang, gloss, contract=None):
 
 def check_sample(text, words, name, lang, gloss):
     contract = [en for ru, en in words['readable_pairs'] if ru in CONTRACT_DATA] if 'readable_pairs' in words else []
-    errs = check_operators(text, name) + check_v219(text, name, lang) + check_v220(text, name, lang) + check_v221(text, name, lang) + check_v222(text, name, lang) + check_calls(text, words, name, lang, gloss) + check_removed(text, name) + check_json_names(text, words, name, lang, gloss, contract)
+    errs = check_operators(text, name) + check_v219(text, name, lang) + check_v220(text, name, lang) + check_v221(text, name, lang) + check_v222(text, name, lang) + (check_calls(text, words, name, lang, gloss) if gloss is not None else []) + check_removed(text, name) + check_json_names(text, words, name, lang, gloss, contract)
     own = {k: v[0 if lang == 'ru' else 1] for k, v in words.items() if k in KINDS}
     other = {k: v[1 if lang == 'ru' else 0] for k, v in words.items() if k in KINDS}
     declared = re.search(r'^- language: (\w+)\s*$', text, re.M)
@@ -2008,7 +2030,7 @@ CLEAN = {  # порча, которая ошибки давать не долж�
 }
 
 
-MUTATED = {'state-machine-agent-step.alula.md', 'state-machine-agent-step.en.alula.md'}
+MUTATED = {'spec/samples/agent-step.alula.md', 'spec/samples/agent-step.en.alula.md'}
 
 
 def selftest(sample, words, name, lang, gloss):
@@ -2068,23 +2090,39 @@ def main():
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     table = read(TABLE)
     errs, words = check_table(table)
-    gtext = read(GLOSSARY)
-    gloss, version = load_glossary(gtext)
+    gpath = glossary_path()
+    if gpath is None:
+        gtext, gloss, version = None, None, None
+        print(GLOSSARY_SKIPPED)
+    else:
+        if not os.path.isfile(gpath):
+            print('%s: файла словаря нет (--glossary / ALULA_GLOSSARY)' % gpath)
+            return 1
+        gtext = read(os.path.abspath(gpath))
+        gloss, version = load_glossary(gtext)
     specs = [(n, read(n), w) for n, w in SPECS]
-    errs += check_dictionary(gtext, specs)
+    if gtext is not None:
+        errs += check_dictionary(gtext, specs)
     for name, lang in SAMPLES:
         sample = read(name)
         errs += check_sample(sample, words, name, lang, gloss)
-        if '--selftest' in sys.argv:
+        if '--selftest' in sys.argv and gloss is not None:
             errs += selftest(sample, words, name, lang, gloss)
     if '--selftest' in sys.argv:
-        errs += selftest_dictionary(gtext, specs)
+        if gtext is not None:
+            errs += selftest_dictionary(gtext, specs)
+        else:
+            print('самопроверка образцов и словаря пропущена: не задан путь к глоссарию')
         errs += selftest_table(table)
     for e in errs:
         print(e)
     rows = sum(len(words[k][0]) for k in KINDS)
-    print('таблица слов: %d строк, %d видов; словарь версии %s: %d имён, хеш %s; образцов: %d; расхождений: %d' % (
-        rows, len(KINDS), version, len(gloss), dictionary_hash(gtext), len(SAMPLES), len(errs)))
+    if gtext is None:
+        print('таблица слов: %d строк, %d видов; словарь: не проверялся (нет пути к глоссарию); образцов: %d; расхождений: %d' % (
+            rows, len(KINDS), len(SAMPLES), len(errs)))
+    else:
+        print('таблица слов: %d строк, %d видов; словарь версии %s: %d имён, хеш %s; образцов: %d; расхождений: %d' % (
+            rows, len(KINDS), version, len(gloss), dictionary_hash(gtext), len(SAMPLES), len(errs)))
     return 1 if errs else 0
 
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Сверка двух образцов машины «Шаг агента» на Алуле: русского и английского.
 
-Зачем: образцы `state-machine-agent-step.alula.md` (русский) и `state-machine-agent-step.en.alula.md` (английский) — одна машина
+Зачем: образцы `spec/samples/agent-step.alula.md` (русский) и `spec/samples/agent-step.en.alula.md` (английский) — одна машина
 в двух языках файла (спецификация, раздел 1а: дерево JSON `machine/2` одинаково при любом языке); расхождение поведения между ними
 молчит до первой реализации разбора.
 Что проверяет (структура, не смысл выражений):
   1. разделы `##` идут в одном порядке (раздел `## Имена` не сравнивается: он есть только там, где автоматическое имя неверно, AL-60),
-     заголовки соответствуют по таблице слов `alula-keywords.tsv`; в каждой таблице раздела одинаковое
+     заголовки соответствуют по таблице слов `spec/alula-keywords.tsv`; в каждой таблице раздела одинаковое
      число строк (типы — число объявлений и строк в блоке кода; функции — число и порядок объявлений `функция`/`fn`);
   2. состояния: одинаковые виды и порядок; JSON-имя состояния совпадает (строка `## Имена` или автоматическое имя, 1а); число строк переходов у каждого состояния,
      метки `№`, значения «куда» (русские имена состояний переведены в латинские по заголовкам, слова «куда» — по таблице слов),
@@ -24,7 +24,9 @@
 Чего не проверяет: тела выражений и имена внутри выражений (структурные слова и таблицу `## Имена` проверяет `check-alula-keywords.py`); строки фрагмента «Пауза»
 (образцы его не раскрывают, раздел 9 спецификации); значения-строки (тексты отказов, сообщения, текстовые литералы) — автор пишет их
 на своём языке, и дерево JSON одинаково, если они совпадают (спецификация, 1а); поэтому перевод текста отказа и прозы допустим.
-Запуск: из корня репозитория `python state-machines/check-alula-samples.py` (`--selftest` — с самопроверкой); код возврата 1 при расхождениях.
+Запуск: из корня репозитория `python tools/check-alula-samples.py [--glossary <путь к state-machine-glossary.md>]` (`--selftest` — с самопроверкой);
+код возврата 1 при расхождениях. Путь к словарю методики (файл остался в Методике) — аргумент `--glossary` или переменная среды `ALULA_GLOSSARY`;
+без него сверка пропускается с явным сообщением (имена состояний и JSON-имена без словаря не построить), код возврата 0.
 """
 import importlib.util, io, os, re, sys
 
@@ -32,16 +34,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location('check_alula_keywords', os.path.join(HERE, 'check-alula-keywords.py'))
 KW = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(KW)
-RU = 'state-machine-agent-step.alula.md'
-EN = 'state-machine-agent-step.en.alula.md'
-TABLE = 'alula-keywords.tsv'
+RU = 'spec/samples/agent-step.alula.md'
+EN = 'spec/samples/agent-step.en.alula.md'
+TABLE = 'spec/alula-keywords.tsv'
 # состояние, которое приносит фрагмент «Пауза» (в разделе «Состояния» не объявлено)
 FRAGMENT_STATE = ('ПАУЗА', 'Pause')
 NOT_CODES = {'usage_event', 'transition_note', 'all_data'}  # журнал(выражение), а не код события
 
 
 def read(name):
-    return io.open(os.path.join(HERE, name), encoding='utf-8', newline='').read().replace('\r\n', '\n')
+    return KW.read(name)  # путь от корня пакета; текст с LF
 
 
 def load_words():
@@ -283,9 +285,17 @@ def ru_mutations(ru_text):
 def main():
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    gpath = KW.glossary_path()
+    if gpath is None:
+        print(KW.GLOSSARY_SKIPPED)
+        print('сверка образцов пропущена: имена состояний и JSON-имена строятся по словарю; расхождений: 0')
+        return 0
+    if not os.path.isfile(gpath):
+        print('%s: файла словаря нет (--glossary / ALULA_GLOSSARY)' % gpath)
+        return 1
     words = load_words()
     ru_text, en_text = read(RU), read(EN)
-    gloss = KW.load_glossary(KW.read(KW.GLOSSARY))[0]
+    gloss = KW.load_glossary(KW.read(os.path.abspath(gpath)))[0]
     ru = summarize(ru_text, 'ru', words, gloss)
     en = summarize(en_text, 'en', words, gloss)
     errs = compare(ru, en)
