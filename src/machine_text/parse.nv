@@ -269,7 +269,7 @@ fn cx_error(mut cx TxCx, t TxTok, kind str, message str) -> () {
 type TxDeclared { tok TxTok, json str }
 
 /// The JSON name of a name that is being declared (spec 1a, AL-53, AL-60): the row of the section `## Имена`, else the name built by itself (jname.nv); it is recorded for the checks of the end of the file.
-/// `what` is the kind of the declaration (`данного`, `типа`, `поля`, …), `space` the space of the distinctness of the JSON names (AL-58) and `path` the qualified name (`Тип.Вариант.поле`). The brackets
+/// `what` is the kind of the declaration (`данного`, `типа`, `поля`, …), `space` the space of the distinctness of the JSON names (AL-58) and `path` the qualified name (`Тип.Форма.поле`). The brackets
 /// after the name, `число_ходов (turn_count)` of 2.14, are an error: the JSON name is not written at the declaration any more.
 fn decl_json(mut p TxP, mut cx TxCx, t TxTok, what str, space str, path []str) -> Result[str, TranslateError] => decl_json_text(p, cx, t, t.text, what, space, path)
 
@@ -367,7 +367,7 @@ fn tr_binder(mut cx TxCx, t TxTok) -> str {
     }
 }
 
-/// The name of the local that a field of a pattern binds when the pattern gives it none (`Вариант(поле)`): the readable word or the field of a signal of the protocol have their JSON names, any other name is as written.
+/// The name of the local that a field of a pattern binds when the pattern gives it none (`Форма(поле)`): the readable word or the field of a signal of the protocol have their JSON names, any other name is as written.
 fn binder_of_field(cx TxCx, t TxTok) -> str {
     match readable_json(cx.words, t.text) {
         Some(en) => return en
@@ -706,11 +706,11 @@ fn ex_if(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
 
 // ---- `выбор` ------------------------------------------------------------------------------------------------------------------
 
-// The binds of a pattern `Вариант(поле, поле: имя)`: the object {field: local} and the scope with the locals.
+// The binds of a pattern `Форма(поле, поле: имя)`: the object {field: local} and the scope with the locals.
 type TxBinds { pairs []TxKV, scope TxScope }
 
-// The binds of a pattern `Вариант { поле, поле: имя }` (AL-77, AL-82): the object {field: local} and the scope with the locals. A pattern without braces binds nothing; the former record
-// `Вариант(поле)` is an error.
+// The binds of a pattern `Форма { поле, поле: имя }` (AL-77, AL-82): the object {field: local} and the scope with the locals. A pattern without braces binds nothing; the former record
+// `Форма(поле)` is an error.
 fn ex_pattern_binds(mut p TxP, mut cx TxCx, sc TxScope, owner str) -> Result[TxBinds, TranslateError] {
     mut pairs = []TxKV.new()
     mut inner = sc_clone(sc)
@@ -759,7 +759,7 @@ fn ex_literal_pattern(t TxTok, w TxWords) -> Option[TxJ] {
     None
 }
 
-// One alternative of an arm: a literal, `Тип.Значение`, `Вариант`, `Вариант(поле, поле: имя)`. Returns the pattern and the scope for the guard and the body.
+// One alternative of an arm: a literal, `Тип.Значение`, `Форма`, `Форма(поле, поле: имя)`. Returns the pattern and the scope for the guard and the body.
 fn ex_pattern(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxBinds, TranslateError] {
     ro t = p_tok(p)
     match ex_literal_pattern(t, cx.words) {
@@ -1098,8 +1098,16 @@ fn ex_primary(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError]
     if p_is_kw(p, words, "action", "call") && t_is(p_ahead(p, 1), "(") { return ex_primitive_call(p, cx, sc) }
     p_adv(p)
     if p_is(p, "(") { return ex_call(p, cx, sc, t) }
+    if is_bare_use(p, cx, w) && bare_clash(cx, sc, t) { return Ok(ex_name(cx, sc, t)) }
     // a name that looks like a type is a type, unless a binding or a state of the machine has it (an English state `Pause` looks like a type, a Russian `ПАУЗА` does not)
     if looks_like_type(w) && pair_get(sc.names, w) == None && (pair_get(cx.env.states, w) == None || pair_has(cx.env.types, w)) { return ex_typed(p, cx, sc, t) }
+    // a bare name of an element written in capitals (`ВКЛ`, `ON`) does not look like a type, and it is looked up among the elements all the same (AL-104) unless it is a name of the machine
+    if is_bare_use(p, cx, w) && sc_get(sc, w) == None && pair_get(cx.env.globals, w) == None && readable_json(cx.words, w) == None && pair_get(cx.env.states, w) == None {
+        match bare_case(cx, t) {
+            Some(j) => return Ok(j)
+            None => ()
+        }
+    }
     Ok(ex_name(cx, sc, t))
 }
 
@@ -1375,21 +1383,55 @@ fn ex_field_pairs(mut p TxP, mut cx TxCx, sc TxScope, after_base bool, owner str
     Ok(fields)
 }
 
-/// A bare name of an element of an enumeration or of a form without fields (AL-88, D478 of Nova): it is looked up among the declared types. The translator does not know the types of the expressions, so
-/// the name has to belong to ONE type of the machine (and of its files of functions); a name that two types have is an error that asks for the qualification `Тип.Эл`.
-fn bare_case(mut cx TxCx, t TxTok) -> Option[TxJ] {
+/// The name of a type as the author wrote it (the JSON name of the type is looked up in the declared types; a type with no written name keeps the JSON name).
+fn type_shown(cx TxCx, json str) -> str {
+    for t in cx.env.types {
+        if t.en == json { return t.ru }
+    }
+    json
+}
+
+/// The JSON names of the types that declare an element or a form without fields with this name.
+fn case_owners(cx TxCx, name str) -> []str {
     mut owners = []str.new()
     for q in cx.env.case_types {
-        if q.ru == t.text && !owners.contains(q.en) { owners.push(q.en) }
+        if q.ru == name && !owners.contains(q.en) { owners.push(q.en) }
     }
+    owners
+}
+
+/// A bare name of an element of an enumeration or of a form without fields (AL-88, AL-104; D478 of Nova): it is looked up among the enumerations declared in the machine, in the files of functions and in the
+/// fragments, whatever the place expects; the type of the name is the type that declares it. A name that two types declare is an error that asks for the qualification `Тип.Эл`.
+fn bare_case(mut cx TxCx, t TxTok) -> Option[TxJ] {
+    ro owners = case_owners(cx, t.text)
     if owners.len() == 0 { return None }
     if owners.len() > 1 {
-        cx_error(cx, t, "name", "имя `${t.text}` есть в нескольких типах (${owners.join(", ")}): без ожидаемого типа нужна квалификация `Тип.${t.text}` (AL-88)")
+        mut shown = []str.new()
+        mut ways = []str.new()
+        for o in owners {
+            shown.push(type_shown(cx, o))
+            ways.push("`${type_shown(cx, o)}.${t.text}`")
+        }
+        cx_error(cx, t, "name", "имя `${t.text}` объявлено в нескольких типах (${shown.join(", ")}): нужна квалификация ${ways.join(" или ")} (AL-88, AL-104)")
     }
     Some(x_variant(owners[0], tr_case_name(cx, t), []))
 }
 
-/// A name that looks like a type: `Тип { поле: выр }`, `Тип.Вариант`, `Тип.Вариант { поле: выр }`.
+/// Is the name written alone, as a value: no `.Имя` and no `{` after it, and it is no type.
+fn is_bare_use(p TxP, cx TxCx, w str) -> bool => !(p_is(p, ".") && p_ahead(p, 1).kind == TK_NAME) && !p_is(p, "{") && !pair_has(cx.env.types, w)
+
+/// AL-104: a bare name that an enumeration declares and that is also a binding, a datum, a constant or a parameter is an error of the check (the translator does not guess which one is meant); the element is
+/// written `Тип.Эл`.
+fn bare_clash(mut cx TxCx, sc TxScope, t TxTok) -> bool {
+    ro owners = case_owners(cx, t.text)
+    if owners.len() == 0 { return false }
+    if !(pair_has(sc.names, t.text) || pair_has(cx.env.globals, t.text)) { return false }
+    ro message_what = if pair_has(sc.names, t.text) { "привязка" } else { "данное, константа, параметр" }
+    cx_error(cx, t, "name", "имя `${t.text}` — и элемент перечисления (`${type_shown(cx, owners[0])}.${t.text}`), и ${message_what}: голое имя неоднозначно (AL-88, AL-104); элемент пишется с именем типа, как `${type_shown(cx, owners[0])}.${t.text}`")
+    true
+}
+
+/// A name that looks like a type: `Тип { поле: выр }`, `Тип.Форма`, `Тип.Форма { поле: выр }`.
 fn ex_typed(mut p TxP, mut cx TxCx, sc TxScope, t TxTok) -> Result[TxJ, TranslateError] {
     // a bare name of an element of an enumeration or of a form without fields (AL-88): no `.` and no `{` after a name that is no type
     if !(p_is(p, ".") && p_ahead(p, 1).kind == TK_NAME) && !p_is(p, "{") && !pair_has(cx.env.types, t.text) {
@@ -1418,5 +1460,5 @@ fn ex_typed(mut p TxP, mut cx TxCx, sc TxScope, t TxTok) -> Result[TxJ, Translat
         p_expect(p, "}")?
         return Ok(x_record(type_en, fields))
     }
-    Err(tx_err(t.line, t.col, "syntax", "тип `${t.text}` использован как значение: пишется `${t.text}.Вариант` или `${t.text} { поле: выр }`"))
+    Err(tx_err(t.line, t.col, "syntax", "тип `${t.text}` использован как значение: пишется `${t.text}.Эл` (элемент или форма) или `${t.text} { поле: выр }`"))
 }

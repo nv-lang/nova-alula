@@ -1,0 +1,596 @@
+// align_test.nv - task 154: the whole file by the clarified text of the specification (the commit c0b8f68 of the methodology: AL-104 ... AL-111): the places of the empty `[]` (AL-105, a positive and a negative
+// test for every place), the bare names of the elements (AL-88, AL-104: a name of two enumerations, a name that is a datum, a constant, a parameter or a binding is an error), the primitive `новый_ид` (AL-107),
+// the result of an agent (AL-109), the label "формы" in the messages (AL-110), `то же, запуск заново` (AL-111).
+module alula.machine_text_lang
+
+import std.text
+import alula.machine.{NamedText, table_files, text_of_file, standard_registry}
+import alula.machine_text.{translate_checked_with, definitions_hash, TranslateReport}
+
+fn list154() -> str => "{\"op\":\"list\",\"items\":[]}"
+
+fn dict154() -> str => "{\"op\":\"dict\",\"entries\":[]}"
+
+fn has154(text str, part str) -> bool => tree222(text).contains(part)
+
+fn act_ru154() -> str => "| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |"
+
+fn act_en154() -> str => "| 1 | signal(allow) | — | turn_count += 1 | Decide |"
+
+// The action of the first row of the gate; `names` are the data that the action reads (a request row each: the step reads only its request).
+fn act154(text str, action str, names []str) -> str {
+    mut rows = "| turn | число_ходов | исполнитель |"
+    for n in names { rows = "${rows}\n| ${n} | ${n} | исполнитель |" }
+    text.replace("| turn | число_ходов | исполнитель |", rows).replace(act_ru154(), "| 1 | сигнал(разрешить) | — | ${action} | РЕШИТЬ |")
+}
+
+fn act_en154_text(text str, action str, names []str) -> str {
+    mut rows = "| turn | turn_count | executor |"
+    for n in names { rows = "${rows}\n| ${n} | ${n} | executor |" }
+    text.replace("| turn | turn_count | executor |", rows).replace(act_en154(), "| 1 | signal(allow) | — | ${action} | Decide |")
+}
+
+// The condition of the first row of the fork; `names` are the data that the fork reads.
+fn cond154(text str, cond str, names str) -> str =>
+    text.replace("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | ${cond} | — | КОНЕЦ |").replace("Читает: число_ходов\n\n| № | Условие", "Читает: число_ходов${names}\n\n| № | Условие")
+
+fn cond_en154(text str, cond str, names str) -> str =>
+    text.replace("| 1 | turn_count >= 2 | — | Finished |", "| 1 | ${cond} | — | Finished |").replace("Reads: turn_count\n\n| № | Condition", "Reads: turn_count${names}\n\n| № | Condition")
+
+fn list_row154() -> str => "| список | []число | [1] | — | строки |"
+
+fn with_consts154(text str, rows str) -> str => text.replace("## Данные\n", "## Константы\n\n| имя | тип | значение |\n|---|---|---|\n${rows}\n\n## Данные\n")
+
+fn with_params154(text str, rows str) -> str => text.replace("## Данные\n", "## Параметры\n\n| имя | тип | по умолчанию | переопределение проектом |\n|---|---|---|---|\n${rows}\n\n## Данные\n")
+
+fn rec154() -> str => ru222_types("тип Заметка { теги []число }").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| заметка | Заметка | Заметка { теги: [1] } | — | строки |\n")
+
+// ---- the places of the empty [] (AL-105): the positive tests -------------------------------------------------------------------------------------
+
+test "p154 a datum gives the type" {
+    ro text = ru222_data("| список | []число | [] | — | строки |")
+    assert(is_clean(text))
+    assert(has154(text, "\"initial\":{\"expr\":${list154()}}"))
+}
+
+test "p154 a datum of a map gives the type" {
+    ro text = ru222_data("| таблица | словарь[строка, число] | [] | — | строки |")
+    assert(is_clean(text))
+    assert(has154(text, "\"initial\":{\"expr\":${dict154()}}"))
+}
+
+test "p154 a constant gives the type" {
+    ro text = with_consts154(tiny_ru(), "| ПУСТО | []число | [] |")
+    assert(is_clean(text))
+    assert(has154(text, "\"constants\":[{\"name\":\"ПУСТО\",\"type\":\"[]int\",\"value\":${list154()}"))
+}
+
+test "p154 a parameter gives the type" {
+    ro text = with_params154(tiny_ru(), "| ПРЕДЕЛЫ | []число | [] | — |")
+    assert(is_clean(text))
+    assert(has154(text, "\"params\":[{\"name\":\"ПРЕДЕЛЫ\",\"type\":\"[]int\",\"default\":${list154()}"))
+}
+
+test "p154 a field of a record literal gives the type" {
+    ro text = act154(rec154(), "заметка = Заметка { теги: [] }", ["заметка"])
+    assert(is_clean(text))
+    assert(has154(text, "\"fields\":{\"tegi\":${list154()}}"))
+}
+
+test "p154 a field of a form literal gives the type" {
+    ro text = act154(ru222_types("тип Итог перечисление\n  | Готово { теги []число }\n  | Пусто").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| итог | Итог | Итог.Пусто | — | строки |\n"), "итог = Итог.Готово { теги: [] }", ["итог"])
+    assert(is_clean(text))
+    assert(has154(text, "\"op\":\"variant\",\"type\":\"Itog\",\"name\":\"Done\",\"fields\":{\"tegi\":${list154()}}"))
+}
+
+test "p154 a field in the copy of a record gives the type" {
+    ro text = act154(rec154(), "заметка = { ...заметка, теги: [] }", ["заметка"])
+    assert(is_clean(text))
+    assert(has154(text, "\"op\":\"with_field\""))
+    assert(has154(text, "\"fields\":{\"tegi\":${list154()}}"))
+}
+
+test "p154 the cell expression of the request has the type of the datum of the same name" {
+    ro text = ru222_data(list_row154()).replace("| turn | число_ходов | исполнитель |", "| turn | число_ходов | исполнитель |\n| список | [] | сторона |")
+    assert(is_clean(text))
+    assert(has154(text, "{\"field\":\"spisok\",\"value\":${list154()}"))
+}
+
+test "p154 the cell expression of the request has the type of the field of the input of the called machine" {
+    ro caller = text_of_file(table_files(), "caller.alula.md")
+    ro text = caller.replace("тип CallInput { label строка, count число>=0, profile строка }", "тип CallInput { label строка, count число>=0, profile строка, tags []число }").replace("| count | 3 | сторона |", "| count | 3 | сторона |\n| tags | [] | сторона |")
+    assert(text != caller)
+    assert(!note_says(text, "AL-85"))
+    assert(has154(text, "{\"field\":\"tags\",\"value\":${list154()}"))
+}
+
+test "p154 a name of neither the input nor a datum gives no type to the cell of the request" {
+    ro caller = text_of_file(table_files(), "caller.alula.md")
+    ro text = caller.replace("| count | 3 | сторона |", "| count | 3 | сторона |\n| лишнее | [] | сторона |")
+    assert(note_says(text, "AL-85"))
+}
+
+test "p154 the result of a function gives the type" {
+    ro text = ru222_defs("функция пустой() -> []число => []")
+    assert(is_clean(text))
+    assert(has154(text, "\"result\":\"[]int\",\"body\":${list154()}"))
+}
+
+test "p154 the argument of a function with a declared signature gives the type" {
+    ro text = act154(ru222_data(list_row154()).replace("## Состояния\n", "## Функции\n\n```\nфункция есть_что(а []число) -> булево => длина(а) > 0\n```\n\n## Состояния\n"), "список = если есть_что([]) то { [1] } иначе { [] }", ["список"])
+    assert(is_clean(text))
+    assert(has154(text, "\"fn\":\"есть_что\",\"args\":[${list154()}]"))
+}
+
+test "p154 the left side of an assignment gives the type" {
+    ro text = act154(ru222_data(list_row154()), "список = []", [])
+    assert(is_clean(text))
+    assert(has154(text, "\"do\":\"assign\",\"target\":\"spisok\",\"value\":${list154()}"))
+}
+
+test "p154 the other operand of equality gives the type" {
+    ro text = cond154(ru222_data(list_row154()), "список == []", ", список")
+    assert(is_clean(text))
+    assert(has154(text, "\"op\":\"==\",\"left\":{\"op\":\"name\",\"name\":\"spisok\"},\"right\":${list154()}"))
+}
+
+test "p154 the other operand of equality gives the type from the left" {
+    ro text = cond154(ru222_data(list_row154()), "[] == список", ", список")
+    assert(is_clean(text))
+    assert(has154(text, "\"op\":\"==\",\"left\":${list154()},\"right\":{\"op\":\"name\",\"name\":\"spisok\"}"))
+}
+
+test "p154 the other operand of inequality gives the type" {
+    ro text = cond154(ru222_data(list_row154()), "список != []", ", список")
+    assert(is_clean(text))
+    assert(has154(text, "\"op\":\"!=\",\"left\":{\"op\":\"name\",\"name\":\"spisok\"},\"right\":${list154()}"))
+}
+
+test "p154 the other operand of a sum gives the type" {
+    ro text = act154(ru222_data(list_row154()), "список = список + []", ["список"])
+    assert(is_clean(text))
+    assert(has154(text, "\"op\":\"+\",\"left\":{\"op\":\"name\",\"name\":\"spisok\"},\"right\":${list154()}"))
+}
+
+test "p154 the other operand of a sum on the left gives the type" {
+    ro text = act154(ru222_data(list_row154()), "список = [] + список", ["список"])
+    assert(is_clean(text))
+    assert(has154(text, "\"op\":\"+\",\"left\":${list154()},\"right\":{\"op\":\"name\",\"name\":\"spisok\"}"))
+}
+
+test "p154 the right operand of the missing-value sign takes the type of the place" {
+    ro text = act154(ru222_data(list_row154()).replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| слова | словарь[число, []число] | [1: [2]] | — | строки |\n"), "список = слова[1] ?? []", ["слова"])
+    assert(is_clean(text))
+    assert(has154(text, "\"op\":\"??\",\"left\":{\"op\":\"index\""))
+    assert(has154(text, "\"right\":${list154()}"))
+}
+
+test "p154 the right operand of the missing-value sign takes the type of the left one without a place" {
+    ro data = "| попытка_вратаря | число>=0 | 0 | да | механика |\n| слова | словарь[число, []число] | [1: [2]] | — | строки |\n"
+    ro text = act154(tiny_ru().replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", data), "число_ходов += длина(слова[1] ?? [])", ["слова"])
+    assert(is_clean(text))
+    assert(has154(text, "\"op\":\"??\",\"left\":{\"op\":\"index\""))
+}
+
+test "p154 the start value of a fold takes the type of the result" {
+    ro text = act154(ru222_data(list_row154()), "список = (1..3).свёртка([], (н, х) => н + [х])", [])
+    assert(is_clean(text))
+    assert(has154(text, "\"fn\":\"fold\""))
+    assert(has154(text, "${list154()},{\"op\":\"lambda\""))
+}
+
+test "p154 the call of a filter has the type of its first argument" {
+    ro text = cond154(ru222_data(list_row154()), "список.фильтр(х => х > 0) == []", ", список")
+    assert(is_clean(text))
+    assert(has154(text, "\"right\":${list154()}"))
+}
+
+test "p154 the call of remove has the type of its first argument" {
+    ro text = cond154(ru222_data(list_row154()), "убрать(список, 1) == []", ", список")
+    assert(is_clean(text))
+    assert(has154(text, "\"fn\":\"remove\""))
+    assert(has154(text, "\"right\":${list154()}"))
+}
+
+test "p154 the call of without_key has the type of its first argument" {
+    ro text = cond154(ru222_data("| слова | словарь[число, число] | [1: 2] | — | строки |"), "без_ключа(слова, 1) == []", ", слова")
+    assert(is_clean(text))
+    assert(has154(text, "\"fn\":\"without_key\""))
+    assert(has154(text, "\"right\":${dict154()}"))
+}
+
+test "p154 a branch of if gives the type of the place" {
+    ro text = act154(ru222_data(list_row154()), "список = если число_ходов > 0 то { [] } иначе { список }", ["список"])
+    assert(is_clean(text))
+    assert(has154(text, "\"then\":${list154()}"))
+}
+
+test "p154 a branch of match gives the type of the place" {
+    ro text = act154(ru222_data(list_row154()), "список = выбор число_ходов { 0 => [], иначе => список }", ["список"])
+    assert(is_clean(text))
+    assert(has154(text, "\"body\":${list154()}"))
+}
+
+test "p154 the last expression of a block gives the type of the place" {
+    ro text = act154(ru222_data(list_row154()), "список = { пусть к = 1; [] }", [])
+    assert(is_clean(text))
+    assert(has154(text, "\"op\":\"let\",\"name\":\"к\",\"value\":{\"op\":\"lit\",\"value\":1},\"body\":${list154()}"))
+}
+
+test "p154 the list of nested machines of a fragment is an empty list of machines" {
+    ro callee = text_of_file(table_files(), "callee.alula.md")
+    assert(callee.contains("вложенные: []"))
+    assert(is_clean(callee))
+    ro other = callee.replace("вложенные: []", "вложенные: [callee]")
+    assert(tree222(callee) != tree222(other))
+}
+
+test "p154 the places in English" {
+    ro data = en222_data("| items | []int | [] | — | rows |")
+    assert(is_clean(data))
+    assert(has154(data, "\"initial\":{\"expr\":${list154()}}"))
+    ro assign = act_en154_text(en222_data("| items | []int | [1] | — | rows |"), "items = []", [])
+    assert(is_clean(assign))
+    assert(has154(assign, "\"do\":\"assign\",\"target\":\"items\",\"value\":${list154()}"))
+    ro eq = cond_en154(en222_data("| items | []int | [1] | — | rows |"), "items == []", ", items")
+    assert(is_clean(eq))
+    assert(has154(eq, "\"right\":${list154()}"))
+    ro coalesce = act_en154_text(en222_data("| items | []int | [1] | — | rows |").replace("| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n", "| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n| table | map[int, []int] | [1: [2]] | — | rows |\n"), "items = table[1] ?? []", ["table"])
+    assert(is_clean(coalesce))
+}
+
+// ---- the places of the empty [] (AL-105): the negative tests ---------------------------------------------------------------------------------------
+
+test "n154 two empty brackets in a comparison have no type" {
+    ro text = cond154(tiny_ru(), "[] == []", "")
+    assert(note_says(text, "AL-85"))
+    assert(note_says(text, "без ожидаемого типа"))
+}
+
+test "n154 the parameter of a function of the catalog is no place" {
+    ro text = act154(tiny_ru(), "число_ходов += длина([])", [])
+    assert(note_says(text, "без ожидаемого типа"))
+}
+
+test "n154 the left operand of the missing-value sign with no place has no type" {
+    ro text = act154(tiny_ru(), "число_ходов += длина([] ?? [])", [])
+    assert(note_says(text, "без ожидаемого типа"))
+}
+
+test "n154 a binding has no type of its own" {
+    ro text = act154(tiny_ru(), "{ пусть к = []; число_ходов += 1 }", [])
+    assert(note_says(text, "без ожидаемого типа"))
+}
+
+test "n154 brackets next to a number are no list" {
+    ro text = cond154(tiny_ru(), "число_ходов == []", "")
+    assert(note_says(text, "AL-85"))
+}
+
+test "n154 a map of the old braces and the empty braces are refused" {
+    assert(note_says(act154(tiny_ru(), "число_ходов += длина({})", []), "AL-85"))
+}
+
+test "n154 the message names the places" {
+    ro text = cond154(tiny_ru(), "[] == []", "")
+    assert(note_says(text, "данного"))
+    assert(note_says(text, "левой части присваивания") || note_says(text, "присваивания"))
+}
+
+// ---- bare names of the elements (AL-88, AL-104) ----------------------------------------------------------------------------------------------
+
+fn two154() -> str => ru222_types("тип Цвет перечисление Красный | Синий\nтип Флаг перечисление Красный | Белый").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| цвет | Цвет | Цвет.Красный | — | строки |\n")
+
+test "b154 a name of two enumerations asks for the type and names both" {
+    ro text = cond154(two154(), "цвет == Красный", ", цвет")
+    assert(!is_clean(text))
+    assert(note_says(text, "объявлено в нескольких типах (Цвет, Флаг)"))
+    assert(note_says(text, "`Цвет.Красный`"))
+    assert(note_says(text, "`Флаг.Красный`"))
+    assert(note_says(text, "AL-104"))
+}
+
+test "b154 the qualified form settles the name of two enumerations" {
+    ro text = cond154(two154(), "цвет == Цвет.Красный", ", цвет")
+    assert(is_clean(text))
+    ro other = cond154(two154(), "цвет == Флаг.Красный", ", цвет")
+    assert(is_clean(other))
+}
+
+test "b154 a name of two enumerations is an error in every place" {
+    assert(note_says(act154(two154(), "цвет = Красный", ["цвет"]), "AL-104"))
+    assert(note_says(cond154(two154(), "цвет в [Красный, Синий]", ", цвет"), "AL-104"))
+    assert(note_says(act154(two154(), "число_ходов += длина([Красный])", []), "AL-104"))
+}
+
+test "b154 a name of one enumeration needs no place" {
+    ro text = act154(ru222_color(), "число_ходов += длина([Красный])", [])
+    assert(is_clean(text))
+    assert(has154(text, "{\"op\":\"variant\",\"type\":\"Tsvet\",\"name\":\"Krasnyy\"}"))
+}
+
+test "b154 a name of a form without fields is found like an element" {
+    ro text = ru222_types("тип Итог перечисление\n  | Готово { число число }\n  | Пусто").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| итог | Итог | Пусто | — | строки |\n")
+    assert(is_clean(text))
+    assert(has154(text, "\"initial\":{\"expr\":{\"op\":\"variant\",\"type\":\"Itog\",\"name\":\"Pusto\"}}"))
+}
+
+test "b154 a name of an element written in capitals is found" {
+    ro text = ru222_types("тип Режим перечисление ВКЛ | ВЫКЛ").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| режим | Режим | ВКЛ | — | строки |\n")
+    ro cond = cond154(text, "режим == ВЫКЛ", ", режим")
+    assert(is_clean(cond))
+    assert(has154(cond, "\"initial\":{\"expr\":{\"op\":\"variant\",\"type\":\"Rezhim\",\"name\":\"Vkl\"}}"))
+    assert(has154(cond, "\"right\":{\"op\":\"variant\",\"type\":\"Rezhim\",\"name\":\"Vykl\"}"))
+}
+
+test "b154 a name of an element written in capitals in English is found" {
+    ro text = en222_types("type Mode enum ON | OFF").replace("| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n", "| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n| mode | Mode | ON | — | rows |\n")
+    ro cond = cond_en154(text, "mode == OFF", ", mode")
+    assert(is_clean(cond))
+    assert(has154(cond, "\"right\":{\"op\":\"variant\",\"type\":\"Mode\",\"name\":\"OFF\"}"))
+}
+
+fn colors_file154() -> str => "# Функции: цвета\n\n- functions_version: 1\n- format: 2.22\n\n## Типы\n\n${fence222()}\nтип Фон перечисление Красный | Синий\n${fence222()}\n\n## Константы\n\n—\n\n## Функции\n\n—\n"
+
+fn with_colors154(text str, file str) -> str =>
+    text.replace("## Состояния\n", "## Подключения\n\n${fence222()}\nфункции: цвета версия 1 хеш ${definitions_hash(file)}\n${fence222()}\n\n## Состояния\n").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| фон | Фон | Красный | — | строки |\n")
+
+fn report154(text str, file str) -> TranslateReport => translate_checked_with(text, standard_registry(), [NamedText { name: "цвета", text: file }])
+
+test "b154 a name of an element of a file of functions is found" {
+    ro text = with_colors154(tiny_ru(), colors_file154())
+    ro report = report154(text, colors_file154())
+    assert(report.errors.len() == 0)
+    assert(report.json.contains("\"initial\":{\"expr\":{\"op\":\"variant\",\"type\":\"Fon\",\"name\":\"Krasnyy\"}}"))
+}
+
+test "b154 a name of an element of a file of functions and of the machine asks for the type" {
+    ro text = with_colors154(ru222_types("тип Цвет перечисление Красный | Белый"), colors_file154())
+    ro report = report154(text, colors_file154())
+    mut found = false
+    for e in report.errors {
+        if e.message.contains("объявлено в нескольких типах") && e.message.contains("AL-104") { found = true }
+    }
+    assert(found)
+}
+
+// The divergence 10: a bare name that is also a datum, a constant, a parameter or a binding is an error of the check (AL-88, AL-104); the translator no longer reads it as that name.
+fn color_data154() -> str => ru222_types("тип Цвет перечисление Красный | Синий").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| Красный | число | 0 | — | строки |\n")
+
+test "b154 a datum named as an element is an error when the bare name is read" {
+    ro text = cond154(color_data154(), "Красный == 0", ", Красный")
+    assert(!is_clean(text))
+    assert(note_says(text, "AL-104"))
+    assert(note_says(text, "`Красный`"))
+    assert(note_says(text, "`Цвет.Красный`"))
+}
+
+test "b154 a datum named as an element is no error while the bare name is not read" {
+    assert(is_clean(color_data154()))
+}
+
+test "b154 a qualified name is not the datum" {
+    ro text = cond154(color_data154(), "Цвет.Красный == Цвет.Синий", "")
+    assert(is_clean(text))
+}
+
+test "b154 a constant named as an element is an error when the bare name is read" {
+    ro text = cond154(with_consts154(ru222_types("тип Цвет перечисление Красный | Синий"), "| Красный | число | 1 |"), "Красный == 1", "")
+    assert(note_says(text, "AL-104"))
+    assert(note_says(text, "константой") || note_says(text, "константа"))
+}
+
+test "b154 a parameter named as an element is an error when the bare name is read" {
+    ro text = cond154(with_params154(ru222_types("тип Цвет перечисление Красный | Синий"), "| Красный | число>=0 | 1 | — |"), "Красный == 1", "")
+    assert(note_says(text, "AL-104"))
+}
+
+test "b154 a binding of a lambda named as an element is an error" {
+    ro text = act154(ru222_color(), "число_ходов += длина([1, 2].фильтр(Красный => Красный > 1))", [])
+    assert(note_says(text, "AL-104"))
+}
+
+test "b154 a binding of let named as an element is an error" {
+    ro text = act154(ru222_color(), "{ пусть Красный = 1; число_ходов += Красный }", [])
+    assert(note_says(text, "AL-104"))
+}
+
+test "b154 a name of no enumeration is read as the datum or the binding as before" {
+    ro text = act154(ru222_color(), "число_ходов += длина([1, 2].фильтр(х => х > 1))", [])
+    assert(is_clean(text))
+    ro datum = cond154(ru222_data("| итого | число | 0 | — | строки |"), "итого == 0", ", итого")
+    assert(is_clean(datum))
+}
+
+test "b154 in English a datum named as an element is an error" {
+    ro text = en222_types("type Color enum Red | Blue").replace("| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n", "| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n| Red | int | 0 | — | rows |\n")
+    ro cond = cond_en154(text, "Red == 0", ", Red")
+    assert(note_says(cond, "AL-104"))
+}
+
+// ---- a field named as a macro (AL-106) ---------------------------------------------------------------------------------------------------------
+
+test "m154 the warning names AL-106 and the file is clean" {
+    ro text = ru222_types("тип Заметка { количество число }")
+    assert(is_clean(text))
+    assert(warn_says222(text, "AL-106"))
+    assert(warn_says222(text, "предупреждение") || warn_says222(text, "`количество`"))
+}
+
+test "m154 a field of a form named as a macro is a warning too" {
+    ro text = ru222_types("тип Итог перечисление\n  | Готово { фильтр число }\n  | Пусто")
+    assert(is_clean(text))
+    assert(warn_says222(text, "AL-106"))
+}
+
+test "m154 a field named as a macro in English is a warning" {
+    ro text = en222_types("type Note { count int }")
+    assert(is_clean(text))
+    assert(warn_says222(text, "AL-106"))
+}
+
+test "m154 the field is read after a dot without brackets and the macro with them" {
+    ro text = act154(ru222_types("тип Заметка { количество число }").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| заметка | Заметка | Заметка { количество: 3 } | — | строки |\n"), "число_ходов += заметка.количество + [1].количество(х => х > 0)", ["заметка"])
+    assert(is_clean(text))
+    assert(has154(text, "\"op\":\"field\""))
+    assert(has154(text, "\"fn\":\"count\""))
+}
+
+// ---- the primitive new_id (AL-107) -----------------------------------------------------------------------------------------------------------------
+
+test "i154 a function named новый_ид is no clash with the catalog" {
+    assert(!note_says(ru222_defs("функция новый_ид(а число) -> число => а"), "AL-81"))
+}
+
+test "i154 a function named new_id in English is no clash with the catalog" {
+    assert(!note_says(en222_defs("fn new_id(a int) -> int => a"), "AL-81"))
+}
+
+test "i154 a function named новый_ид with another JSON name is no clash either" {
+    ro text = ru222_defs("функция новый_ид(а число) -> число => а").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| новый_ид | fresh_id |\n")
+    assert(text != ru222_defs("функция новый_ид(а число) -> число => а"))
+    assert(!note_says(text, "AL-81"))
+}
+
+test "i154 the other names of the catalog are still refused" {
+    assert(note_says(ru222_defs("функция склеить(а число) -> число => а"), "AL-81"))
+    assert(note_says(en222_defs("fn count(a int) -> int => a"), "AL-81"))
+}
+
+// ---- the result of an agent (AL-109) ---------------------------------------------------------------------------------------------------------------
+
+fn party_line154(text str, needle str) -> int => line_of(text, needle)
+
+fn party_clean154(text str, needle str) -> bool {
+    ro at = party_line154(text, needle)
+    assert(at > 0)
+    for e in checked(text).errors {
+        if e.line == at { return false }
+    }
+    true
+}
+
+test "r154 the result of an agent may be a built-in type" {
+    ro callee = text_of_file(table_files(), "callee.alula.md")
+    for ty in ["строка", "число", "булево", "вещественное", "ид", "[]строка", "?число"] {
+        ro text = callee.replace("agent(итог строка)", "agent(итог ${ty})")
+        assert(text != callee || ty == "строка")
+        assert(party_clean154(text, "| agent | agent | agent(итог "))
+    }
+}
+
+test "r154 the result of an agent may be a type of the section of types" {
+    ro callee = text_of_file(table_files(), "callee.alula.md")
+    ro text = callee.replace("agent(итог строка)", "agent(итог CallOutput)")
+    assert(party_clean154(text, "| agent | agent | agent(итог "))
+}
+
+test "r154 the result of an agent that no type declares is an error" {
+    ro callee = text_of_file(table_files(), "callee.alula.md")
+    ro text = callee.replace("agent(итог строка)", "agent(итог Чужой)")
+    assert(!party_clean154(text, "| agent | agent | agent(итог "))
+}
+
+test "r154 an agent without a result is an error" {
+    ro callee = text_of_file(table_files(), "callee.alula.md")
+    ro text = callee.replace("agent(итог строка)", "agent()")
+    assert(!party_clean154(text, "| agent | agent | agent("))
+}
+
+// ---- the label of the messages (AL-110) ---------------------------------------------------------------------------------------------------------
+
+test "f154 a bracket after the name of a form is refused with the word формы" {
+    ro text = ru222_types("тип Итог перечисление\n  | Готово (done) { n число }\n  | Пусто")
+    assert(note_says(text, "после имени формы `Готово`"))
+    assert(!note_says(text, "после имени варианта"))
+}
+
+test "f154 a mix of the alphabets in the name of a form is refused with the word формы" {
+    ro text = ru222_types("тип Итог перечисление\n  | Готовоdone { n число }\n  | Пусто")
+    assert(note_says(text, "имени формы `Готовоdone`"))
+}
+
+test "f154 a JSON name of a form that is not Latin is refused with the word формы" {
+    ro text = ru222_types("тип Итог перечисление\n  | 形式 { n число }\n  | Пусто")
+    assert(note_says(text, "у формы `形式`"))
+    assert(note_says(text, "не латинское"))
+}
+
+test "f154 a collision of the JSON names of two forms is refused with the word формы" {
+    ro text = ru222_types("тип Итог перечисление\n  | Готово { n число }\n  | Готов { n число }").replace("| имя | JSON-имя |\n|---|---|\n", "| имя | JSON-имя |\n|---|---|\n| Итог.Готов | Done |\n| Итог.Готово | Done |\n")
+    assert(note_says(text, "у формы `Итог.Готов`") || note_says(text, "у формы `Итог.Готово`"))
+    assert(note_says(text, "коллизия в одном пространстве"))
+    assert(!note_says(text, "варианта"))
+}
+
+test "f154 a type used as a value is told to be written with a form" {
+    ro text = act154(ru222_color(), "число_ходов += длина([Цвет])", [])
+    assert(note_says(text, "Цвет.Эл"))
+    assert(!note_says(text, "Вариант"))
+}
+
+// ---- то же and the rerun (AL-111) -------------------------------------------------------------------------------------------------------------------
+
+fn third_ru154(destination str) -> str =>
+    tiny_ru().replace("разрешить, отказать", "разрешить, отказать, повторить").replace("| 2 | сигнал(отказать) | — | остановка = \"a\" | СТОП |", "| 2 | сигнал(отказать) | — | остановка = \"a\" | СТОП |\n| 3 | сигнал(повторить) | — | число_ходов += 1 | ${destination} |")
+
+fn third_en154(destination str) -> str =>
+    tiny_en().replace("allow, deny", "allow, deny, repeat").replace("| 2 | signal(deny) | — | stop_reason = \"a\" | Stopped |", "| 2 | signal(deny) | — | stop_reason = \"a\" | Stopped |\n| 3 | signal(repeat) | — | turn_count += 1 | ${destination} |")
+
+test "s154 the word of the rerun in Russian is запуск заново" {
+    ro text = third_ru154("то же, запуск заново")
+    assert(is_clean(text))
+    assert(has154(text, "\"n\":3,\"event\":{\"kind\":\"signal\",\"name\":\"repeat\"}"))
+    assert(has154(text, "\"to\":\"@same\",\"restart\":true"))
+}
+
+test "s154 the word of the rerun in English is rerun" {
+    ro text = third_en154("same, rerun")
+    assert(is_clean(text))
+    assert(has154(text, "\"to\":\"@same\",\"restart\":true"))
+}
+
+test "s154 the two languages give the same tree for the rerun" {
+    ro ru = tree222(third_ru154("то же, запуск заново"))
+    ro en = tree222(third_en154("same, rerun"))
+    assert(ru.contains("\"to\":\"@same\",\"restart\":true"))
+    assert(en.contains("\"to\":\"@same\",\"restart\":true"))
+}
+
+test "s154 то же without the rerun only stays" {
+    ro text = third_ru154("то же")
+    assert(is_clean(text))
+    assert(has154(text, "\"name\":\"repeat\"},\"actions\":[{\"do\":\"add\",\"target\":\"turn_count\",\"value\":{\"op\":\"lit\",\"value\":1}}],\"to\":\"@same\"}"))
+    assert(!has154(text, "\"to\":\"@same\",\"restart\":true"))
+}
+
+test "s154 the same word in English without the rerun only stays" {
+    ro text = third_en154("same")
+    assert(is_clean(text))
+    assert(!has154(text, "\"restart\":true"))
+}
+
+test "s154 the rerun of a state by its name is the same restart" {
+    ro text = third_ru154("ЖДАТЬ, запуск заново")
+    assert(is_clean(text))
+    assert(has154(text, "\"to\":\"Wait\",\"restart\":true"))
+}
+
+test "s154 a row of a fork may not stay" {
+    ro text = tiny_ru().replace("| 2 | иначе | — | ЖДАТЬ |", "| 2 | иначе | — | то же, запуск заново |")
+    assert(note_says(text, "@same is for the rows of an appeal and the common events"))
+    ro plain = tiny_ru().replace("| 2 | иначе | — | ЖДАТЬ |", "| 2 | иначе | — | то же |")
+    assert(note_says(plain, "@same is for the rows of an appeal"))
+}
+
+test "s154 the old words of the rerun are refused" {
+    assert(!is_clean(third_ru154("то же, перезапуск")))
+    assert(!is_clean(third_ru154("то же запуск заново")))
+    assert(!is_clean(third_ru154("то же, rerun")))
+    assert(!is_clean(third_en154("same, запуск заново")))
+}
+
+test "s154 the check says nothing about a rerun at a state that has no appeal" {
+    ro text = tiny_ru().replace("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | число_ходов >= 2 | — | КОНЕЦ, запуск заново |")
+    assert(is_clean(text))
+}

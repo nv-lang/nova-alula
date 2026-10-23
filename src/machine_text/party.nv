@@ -407,9 +407,10 @@ fn def_segs(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxSeg {
 fn call_clash(mut cx TxCx, n TxTok, json str) -> () {
     ro ru_words = words_load("ru")
     ro en_words = words_load("en")
-    // `новый_ид` is the built-in primitive of the host and stands in the table of words under the kind `catalog` (section 12 of the specification): it is no function of the catalog
-    if json == "new_id" { return }
+    // AL-107: `new_id` (`новый_ид`) is the built-in primitive of the host; it stands in the table of words under the kind `catalog` (section 12) but is no function of the catalog, so the name, as written and as JSON, is not checked
+    ro ru_new_id = kw(ru_words, "catalog", "new_id")
     for cand in [n.text, json] {
+        if cand == "new_id" || cand == ru_new_id { continue }
         if cand == "range" || kw_has(ru_words, "catalog", cand) || kw_has(en_words, "catalog", cand) {
             cx_error(cx, n, "check", "имя `${cand}` совпадает с функцией каталога (AL-81): определение и примитив называются иначе, чем `фильтр`/`filter`, `склеить`/`concat`, `range` и другие функции каталога")
             return

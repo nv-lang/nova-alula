@@ -1,0 +1,81 @@
+// align_test.nv - task 154: the bare names of the elements of enumerations (AL-88, AL-104) in a piece of an expression: the name is looked up among the declared enumerations with no expected type; a name of two
+// enumerations, and a name that is also a datum, a constant, a parameter or a binding, is an error that asks for `Тип.Эл`.
+module alula.machine_text
+
+import std.text
+
+fn pe154(text str, entries []str) -> str {
+    match translate_expression(text, entries) {
+        Ok(j) => j
+        Err(problems) => "ERR ${problems[0].kind}: ${problems[0].message}"
+    }
+}
+
+fn color154() -> []str => ["type Цвет (Color)", "ctype Красный (Color)", "ctype Синий (Color)", "case Красный (Red)", "case Синий (Blue)"]
+
+fn with154(base []str, more []str) -> []str {
+    mut out = []str.new()
+    for b in base { out.push(b) }
+    for m in more { out.push(m) }
+    out
+}
+
+test "pe154 a bare name is found with no expected type" {
+    assert(pe154("Красный", color154()) == "{\"op\":\"variant\",\"type\":\"Color\",\"name\":\"Red\"}")
+}
+
+test "pe154 a bare name equals the qualified one" {
+    assert(pe154("Цвет.Красный", color154()) == pe154("Красный", color154()))
+}
+
+test "pe154 a bare name written in capitals is found" {
+    ro entries = ["ctype ВКЛ (Mode)", "case ВКЛ (ON)"]
+    assert(pe154("ВКЛ", entries) == "{\"op\":\"variant\",\"type\":\"Mode\",\"name\":\"ON\"}")
+}
+
+test "pe154 a bare name of two enumerations is an error that asks for the type" {
+    ro entries = with154(color154(), ["type Флаг (Flag)", "ctype Красный (Flag)"])
+    ro made = pe154("Красный", entries)
+    assert(made.starts_with("ERR"))
+    assert(made.contains("AL-104"))
+    assert(made.contains("нужна квалификация"))
+}
+
+test "pe154 the qualified name of two enumerations is found" {
+    ro entries = with154(color154(), ["type Флаг (Flag)", "ctype Красный (Flag)", "case Красный (Red)"])
+    assert(pe154("Флаг.Красный", entries) == "{\"op\":\"variant\",\"type\":\"Flag\",\"name\":\"Red\"}")
+    assert(pe154("Цвет.Красный", entries) == "{\"op\":\"variant\",\"type\":\"Color\",\"name\":\"Red\"}")
+}
+
+test "pe154 a bare name that is also a datum is an error" {
+    ro entries = with154(color154(), ["Красный (red_count)"])
+    ro made = pe154("Красный", entries)
+    assert(made.starts_with("ERR"))
+    assert(made.contains("AL-104"))
+    assert(made.contains("`Цвет.Красный`") || made.contains("`Color.Красный`"))
+}
+
+test "pe154 a bare name that is also a datum is an error inside an expression" {
+    ro entries = with154(color154(), ["Красный (red_count)"])
+    assert(pe154("Красный + 1", entries).starts_with("ERR"))
+    assert(pe154("не Красный", entries).starts_with("ERR"))
+}
+
+test "pe154 a bare name that is also a binding is an error" {
+    assert(pe154("[1].фильтр(Красный => Красный > 0)", color154()).starts_with("ERR"))
+    assert(pe154("[1].фильтр(Красный => Красный > 0)", color154()).contains("AL-104"))
+}
+
+test "pe154 the qualified name is not the datum of the same name" {
+    ro entries = with154(color154(), ["Красный (red_count)"])
+    assert(pe154("Цвет.Красный", entries) == "{\"op\":\"variant\",\"type\":\"Color\",\"name\":\"Red\"}")
+}
+
+test "pe154 a datum with a name that no enumeration has is read as before" {
+    ro entries = with154(color154(), ["итого (total)"])
+    assert(pe154("итого", entries) == "{\"op\":\"name\",\"name\":\"total\"}")
+}
+
+test "pe154 a name that looks like a type but is none and is no element is not found" {
+    assert(pe154("Зелёный", color154()).starts_with("ERR"))
+}
