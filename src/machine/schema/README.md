@@ -2,7 +2,7 @@
 
 > The schemas of the package `alula` at the language **Alula 2.22**, the state of the specification of the methodology `c0b8f68`. The text was
 > written by the methodology and finished with the package: every tree below was compiled and run by the program `alula` of the
-> package (version 0.3.0), the questions that were left to the package are answered at the end ("Answered and open points").
+> package (version 0.3.1), the questions that were left to the package are answered at the end ("Answered and open points").
 
 ## What is here
 
@@ -29,7 +29,7 @@ Who is the authority for what:
 | tree format | `machine/2` | the root key `format` of the tree (a constant; it does not change with the language version, spec AL-19) |
 | scenario format | `scenario/0` | the root key `format` of a scenario (does not change with the language version, spec AL-50) |
 | language version | **2.22** | `- format: 2.22` in the header of a machine file, a functions file and a fragment file; the root key `alula_version` of the tree (the schema accepts only `"2.22"`); the recommended `- machine_version: alula-2.22` (spec 1), which becomes the root key `version` |
-| package `alula` | `0.3.0` | `alula version` prints `alula 0.3.0 (Alula 2.22, machine/2)` |
+| package `alula` | `0.3.1` | `alula version` prints `alula 0.3.1 (Alula 2.22, machine/2)` |
 | glossary of automatic names | hash **`60383c370415`** | pinned by the format (spec AL-62); the translator recomputes it from its copy of the normative part of the glossary |
 | word table | `alula-keywords.tsv` of 2.22 (218 rows, 17 kinds) | the words of both file languages; the tree does not hold them |
 
@@ -491,7 +491,7 @@ them and also writes every section, an empty one as `—`). The journal codes `c
 The tree of the English file is the same except the internal names: `"name": "agent"` of the party and `"party": "agent"` of the
 state, `"bind": "t"` and `{"op": "name", "name": "t"}` instead of `т`. `title` is the text of the header line `# Машина: ask`; the `concat`/`text` unfolding and `60_000` → `60000` follow spec AL-80 and AL-91.
 
-Check it (run with the program `alula 0.3.0`: the two files compile to the two trees, the converted English file gives the English tree, both trees pass the scenario below):
+Check it (run with the program `alula 0.3.1`: the two files compile to the two trees, the converted English file gives the English tree, both trees pass the scenario below):
 
 ```
 alula compile ask.alula.md -o ask.alula.json
