@@ -233,12 +233,12 @@ source key into `Incoming.id` (`Incoming.from_source(key, event)`; the engine st
 that keeps what it handed out (the ACP client, with its inbox file) hands out again after a restart exactly what was not
 acknowledged: an event is taken once. An event without a key is never acknowledged. The memory handler remembers the keys
 (`MemoryWorld.acked`) and the number of saved snapshots at each ack (`saves_at_ack`, for the test of the order). Details and
-tests: [`src/acp/README.md`](../acp/README.md), "How an event is acknowledged".
+tests: [`src/acp/README.md`](https://github.com/unitcraft/crew-harness/blob/main/src/acp/README.md), "How an event is acknowledged".
 
 ## Where it goes next
 
 1. (done in task 095) `src/acp/` and `src/storage/`.
-2. (done in task 099) The session server (`src/server/`, [README](../server/README.md)): HTTP and WebSocket on Polaris, one `Engine` per session, restart of the
+2. (done in task 099) The session server (`src/server/`, [README](https://github.com/unitcraft/crew-harness/blob/main/src/server/README.md)): HTTP and WebSocket on Polaris, one `Engine` per session, restart of the
    service by `resume_engine` for every session with a snapshot.
 3. From the "not in the MVP" list in the order the product needs it: stop/continue of a human (rules 23-24), a set of parties,
    nested machines.

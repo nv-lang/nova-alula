@@ -1,8 +1,8 @@
 # The schemas of the Alula tree: `machine/2` and `scenario/0`
 
-> The schemas of the package `alula` at the language **Alula 2.22**, the state of the specification of the methodology `c0b8f68`. The text was
+> The schemas of the package `alula` at the language **Alula 2.22**, the state of the specification `spec/alula-spec.md` (the methodology commit `0d95919`). The text was
 > written by the methodology and finished with the package: every tree below was compiled and run by the program `alula` of the
-> package (version 0.3.1), the questions that were left to the package are answered at the end ("Answered and open points").
+> package (version 0.3.2), the questions that were left to the package are answered at the end ("Answered and open points").
 
 ## What is here
 
@@ -17,7 +17,7 @@ Who is the authority for what:
   **reference** is the decoder `src/machine_table/json.nv`: a key the schema does not list is refused, and a test compares the key lists
   of the schema with the decoder's.
 - **The rules of the record and the correspondence "word of the file → key of the tree"** — the specification of the language (sections
-  1–12) and its word table `alula-keywords.tsv`.
+  1–12) and its word table `spec/alula-keywords.tsv`.
 - **What a schema cannot say** (reads against `Request`/`Reads`, writes against the data, reachability, the classes of the primitives, the
   exhaustiveness of the ends, the namespaces of JSON names) — the checks of `src/machine_table/check.nv` (spec, section 10).
 - Expressions are validated by the decoder, not by the schema: the schema requires only the key `op` of a node.
@@ -29,9 +29,9 @@ Who is the authority for what:
 | tree format | `machine/2` | the root key `format` of the tree (a constant; it does not change with the language version, spec AL-19) |
 | scenario format | `scenario/0` | the root key `format` of a scenario (does not change with the language version, spec AL-50) |
 | language version | **2.22** | `- format: 2.22` in the header of a machine file, a functions file and a fragment file; the root key `alula_version` of the tree (the schema accepts only `"2.22"`); the recommended `- machine_version: alula-2.22` (spec 1), which becomes the root key `version` |
-| package `alula` | `0.3.1` | `alula version` prints `alula 0.3.1 (Alula 2.22, machine/2)` |
+| package `alula` | `0.3.2` | `alula version` prints `alula 0.3.2 (Alula 2.22, machine/2)` |
 | glossary of automatic names | hash **`60383c370415`** | pinned by the format (spec AL-62); the translator recomputes it from its copy of the normative part of the glossary |
-| word table | `alula-keywords.tsv` of 2.22 (218 rows, 17 kinds) | the words of both file languages; the tree does not hold them |
+| word table | `spec/alula-keywords.tsv` of 2.22 (218 rows, 17 kinds) | the words of both file languages; the tree does not hold them |
 
 One package version reads exactly one language version: there is no transition period (the owner's word, 2026-10-20). A file with
 `format` other than 2.22 and a tree with another `alula_version` are refused with a message that names the version. The versions 2.15–2.22
@@ -491,7 +491,7 @@ them and also writes every section, an empty one as `—`). The journal codes `c
 The tree of the English file is the same except the internal names: `"name": "agent"` of the party and `"party": "agent"` of the
 state, `"bind": "t"` and `{"op": "name", "name": "t"}` instead of `т`. `title` is the text of the header line `# Машина: ask`; the `concat`/`text` unfolding and `60_000` → `60000` follow spec AL-80 and AL-91.
 
-Check it (run with the program `alula 0.3.1`: the two files compile to the two trees, the converted English file gives the English tree, both trees pass the scenario below):
+Check it (run with the program `alula 0.3.2`: the two files compile to the two trees, the converted English file gives the English tree, both trees pass the scenario below):
 
 ```
 alula compile ask.alula.md -o ask.alula.json
@@ -532,7 +532,7 @@ the package; what only the methodology can decide is marked **open**. The number
 | 2 | Is `x in [a, b]` unfolded into `==` and `or`? | Yes, left-nested; `failure(reason in […])` is `event.reasons`, `Except: f in […]` is `state.except`; an empty set is `false` | solved (`machine_text/v222_expr_test.nv`) |
 | 3 | Is `type` always filled at a bare element name? | The `variant` node and the `case` pattern of `match` always carry `type`; `answer_variant` has the key `variant` only (the type is the result type of the party). The translator finds the type of a bare name by the declared types, with no expected type (AL-88, AL-104): a name that two types have, and a name that is also a datum, a constant, a parameter or a binding, is an error that asks for `Type.El` | solved (AL-104) |
 | 4 | `alula_version` or `table_format`? | The package keeps `alula_version` (the schema, the decoder, `alula version`, the scenarios of the product); the specification says so since AL-108: the key is optional, its value is `"2.22"`, another version is an error that names it, there is no `table_format` | solved (AL-108) |
-| 5 | The sections `## Сигналы`, `## Части ответа`, the events `срок` (`timeout`), `часть` (`progress`), the key `party` of `cancel_open`, the end `Errored`, `*.alula.txt` | Product extensions of the package, kept in `keywords_product.tsv` (the words) and not in `alula-keywords.tsv` of the methodology; the tree keys `signals`, `progress`, the event kinds `timeout`, `progress`, `cancel_open.party`, `error_end` are marked so in the schema | **open** (the methodology may take them into the table of words or leave them to the product) |
+| 5 | The sections `## Сигналы`, `## Части ответа`, the events `срок` (`timeout`), `часть` (`progress`), the key `party` of `cancel_open`, the end `Errored`, `*.alula.txt` | Product extensions of the package, kept in `keywords_product.tsv` (the words) and not in `spec/alula-keywords.tsv`; the tree keys `signals`, `progress`, the event kinds `timeout`, `progress`, `cancel_open.party`, `error_end` are marked so in the schema | **open** (the methodology may take them into the table of words or leave them to the product) |
 | 6 | The names `cancel_requests`, `reenter` of the fragment "Pause" against `request_cancel`, `reentry` of the specification | A deliberate tree name of the package (`keywords_product.tsv`, `fragment_param`); the machines and the scenarios of the product use them | **open** |
 | 7 | `event.party` of a scenario is a name, so a scenario of a Russian file does not fit an English one | The runner accepts the name **or the id** of the party (`ScEvent.party`); a scenario that names the id fits both files | solved |
 | 8 | The prefix `проект.` of the scenario `params` | The prefix is one in both languages (`PROJECT_PREFIX`); the English file writes `project.<key>` in the column, the tree holds `project_key` = `<key>` | solved for the package; **open** for the methodology whether an English scenario has its own prefix |
