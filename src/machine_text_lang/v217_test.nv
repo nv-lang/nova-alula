@@ -13,7 +13,7 @@ fn fork17(types_body str, datum_row str, rows str) -> str {
 
 fn color_data() -> str => "| цвет | Цвет | Цвет.Красный | — | строки |\n| знак | Знак | Знак.Плюс | — | строки |\n| метка | \"a\" \\| \"b\" \\| \"c\" | \"a\" | — | строки |\n| узел | Узел | Узел.Лист | — | строки |"
 
-fn color_types() -> str => "перечисление Цвет = Красный | Зелёный | Синий\nвариант Знак {\n  Плюс\n  Минус\n}\nвариант Узел {\n  Лист\n  Ветка { глубина число }\n}"
+fn color_types() -> str => "тип Цвет перечисление Красный | Зелёный | Синий\nтип Знак перечисление Плюс | Минус\nтип Узел перечисление\n  | Лист\n  | Ветка { глубина число }"
 
 fn color_fork(rows str) -> str => fork17(color_types(), color_data(), rows)
 
@@ -101,7 +101,7 @@ test "v217 a duplicated value does not prove the exhaustion" {
 }
 
 test "v217 a fork over an enum in English" {
-    ro text = v217_en().replace("## Data\n", "## Types\n\n${fence17()}\nenum Color = Red | Green\n${fence17()}\n\n## Data\n").replace("| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n", "| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n| color | Color | Color.Red | — | rows |\n").replace("- Reads: turn_count\n\n| № | Condition | Actions | To |\n|---|---|---|---|\n| 1 | turn_count >= 2 | — | Finished |\n| 2 | else | — | Wait |\n", "- Reads: color\n\n| № | Condition | Actions | To |\n|---|---|---|---|\n| 1 | color == Color.Red | — | Finished |\n| 2 | color == Color.Green | — | Wait |\n")
+    ro text = v217_en().replace("## Data\n", "## Types\n\n${fence17()}\ntype Color enum Red | Green\n${fence17()}\n\n## Data\n").replace("| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n", "| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n| color | Color | Color.Red | — | rows |\n").replace("- Reads: turn_count\n\n| № | Condition | Actions | To |\n|---|---|---|---|\n| 1 | turn_count >= 2 | — | Finished |\n| 2 | else | — | Wait |\n", "- Reads: color\n\n| № | Condition | Actions | To |\n|---|---|---|---|\n| 1 | color == Color.Red | — | Finished |\n| 2 | color == Color.Green | — | Wait |\n")
     assert(is_clean(text))
 }
 

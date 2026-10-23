@@ -9,7 +9,7 @@ fn v213_ru() -> str => `# Машина: Малая
 
 - machine: Tiny
 - machine_version: 1
-- format: 2.17
+- format: 2.22
 
 ## Имена
 
@@ -65,7 +65,7 @@ fn v213_ru() -> str => `# Машина: Малая
 
 ### СТОП — конец
 - Читает: остановка
-- Кроме: остановка in {""}
+- Кроме: остановка в [""]
 
 ## Концы
 
@@ -82,7 +82,7 @@ fn v213_en() -> str => `# Machine: Tiny
 
 - machine: Tiny
 - machine_version: 1
-- format: 2.17
+- format: 2.22
 - language: en
 
 ## Data
@@ -129,7 +129,7 @@ Initial state: Wait
 
 ### Stopped — end
 - Reads: stop_reason
-- Except: stop_reason in {""}
+- Except: stop_reason in [""]
 
 ## Ends
 
@@ -155,7 +155,7 @@ fn en13_before_data(section str) -> str => v213_en().replace("## Data\n", "${sec
 
 test "v213 fixture ru is clean" {
     assert(is_clean(v213_ru()))
-    assert(json_of(v213_ru()).starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.17\",\"machine\":\"Tiny\""))
+    assert(json_of(v213_ru()).starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.22\",\"machine\":\"Tiny\""))
 }
 
 test "v213 fixture en is clean" {
@@ -209,7 +209,7 @@ test "v213 old column gate words refused en" {
 }
 
 test "v213 signal with fields" {
-    ro text = ru13("разрешить, отказать", "разрешить(автор текст), отказать").replace("| 1 | сигнал(разрешить) | — | число_ходов += 1", "| 1 | сигнал(разрешить(автор)) | — | число_ходов += 1")
+    ro text = ru13("разрешить, отказать", "разрешить { автор строка }, отказать").replace("| 1 | сигнал(разрешить) | — | число_ходов += 1", "| 1 | сигнал(разрешить { автор }) | — | число_ходов += 1")
     assert(is_clean(text))
     assert(json_of(text).contains("{\"name\":\"allow\",\"fields\":[{\"name\":\"author\",\"type\":\"text\"}]}"))
     assert(json_of(text).contains("\"event\":{\"kind\":\"signal\",\"name\":\"allow\",\"bind\":{\"author\":\"author\"}}"))
@@ -227,7 +227,7 @@ test "v213 signal gets the name of the dictionary" {
 }
 
 test "v213 signal field gets its name by itself" {
-    ro text = ru13("разрешить, отказать", "разрешить(автор текст), отказать")
+    ro text = ru13("разрешить, отказать", "разрешить { автор строка }, отказать")
     assert(json_of(text).contains("{\"name\":\"allow\",\"fields\":[{\"name\":\"author\",\"type\":\"text\"}]}"))
 }
 
@@ -323,7 +323,7 @@ test "v213 true defaults may stay written" {
 
 // ---- AL-41: the values of an enum -----------------------------------------------------------------------------------------------------------------
 
-fn v213_enum_ru() -> str => ru13_before_data("## Типы\n\n```\nперечисление Вид = Один \"one\" | Два \"two\" | Три\n```\n")
+fn v213_enum_ru() -> str => ru13_before_data("## Типы\n\n```\nтип Вид перечисление\n  | Один = \"one\"\n  | Два = \"two\"\n  | Три\n```\n")
 
 test "v213 enum values key" {
     ro j = json_of(v213_enum_ru())
@@ -332,13 +332,13 @@ test "v213 enum values key" {
 }
 
 test "v213 enum value message" {
-    ro text = ru13_before_data("## Типы\n\n```\nперечисление Вид = Один \"Bad Value\"\n```\n")
+    ro text = ru13_before_data("## Типы\n\n```\nтип Вид перечисление\n  | Один = \"Bad Value\"\n```\n")
     assert(note_says(text, "значение"))
     assert(!note_says(text, "слово значения"))
 }
 
 test "v213 enum values en" {
-    ro text = en13_before_data("## Types\n\n```\nenum Kind = One \"one\" | Two \"two\" | Three\n```\n")
+    ro text = en13_before_data("## Types\n\n```\ntype Kind enum\n  | One = \"one\"\n  | Two = \"two\"\n  | Three\n```\n")
     assert(is_clean(text))
     assert(json_of(text).contains("\"values\":[[\"One\",\"one\"],[\"Two\",\"two\"]]"))
 }
@@ -362,14 +362,14 @@ test "v213 unicode signs refused" {
 test "v213 unicode arrow refused" {
     ro text = ru13("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | список(1, х → х) == 1 | — | КОНЕЦ |")
     assert(note_says(text, "знак `→`"))
-    assert(note_says(text, "`->`"))
+    assert(note_says(text, "`=>`"))
 }
 
 test "v213 unicode member refused" {
-    ro text = ru13("- Кроме: остановка in {\"\"}", "- Кроме: остановка ∈ {\"\"}")
+    ro text = ru13("- Кроме: остановка в [\"\"]", "- Кроме: остановка ∈ {\"\"}")
     assert(!is_clean(text))
     assert(note_says(text, "знак `∈`"))
-    assert(note_says(text, "`in`"))
+    assert(note_says(text, "AL-100"))
 }
 
 test "v213 unicode ellipsis refused" {
@@ -419,8 +419,8 @@ test "v213 hashmap refused en" {
 }
 
 test "v213 map is the one writing" {
-    ro ru = ru13("| попытка_вратаря | число>=0 | 0 | да | механика |", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| table | словарь[текст, число] | {} | — | строки |")
-    ro en = en13("| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |", "| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n| table | map[text, int] | {} | — | rows |")
+    ro ru = ru13("| попытка_вратаря | число>=0 | 0 | да | механика |", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| table | словарь[строка, число] | [] | — | строки |")
+    ro en = en13("| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |", "| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n| table | map[str, int] | [] | — | rows |")
     assert(is_clean(ru))
     assert(is_clean(en))
     assert(no_title(json_of(ru)) == no_title(json_of(en)))
@@ -470,11 +470,11 @@ test "v213 type and field names are built by themselves" {
     assert(json_of(good).contains("{\"name\":\"Para\",\"fields\":[{\"name\":\"levaya\",\"type\":\"int\"},{\"name\":\"pravaya\",\"type\":\"int\"}]}"))
 }
 
-test "v213 variant and enum element names are built by themselves" {
-    ro variant = ru13_before_data("## Типы\n\n```\nвариант Итог {\n  Готово\n}\n```\n")
+test "v213 form and enum element names are built by themselves" {
+    ro variant = ru13_before_data("## Типы\n\n```\nтип Итог перечисление Готово\n```\n")
     assert(is_clean(variant))
     assert(json_of(variant).contains("{\"name\":\"Itog\",\"cases\":[{\"name\":\"Done\"}]}"))
-    ro enum_text = ru13_before_data("## Типы\n\n```\nперечисление Вид = Один | Два\n```\n")
+    ro enum_text = ru13_before_data("## Типы\n\n```\nтип Вид перечисление Один | Два\n```\n")
     assert(json_of(enum_text).contains("{\"name\":\"Odin\"},{\"name\":\"Dva\"}"))
 }
 
@@ -502,13 +502,13 @@ test "v213 party name is written as it is" {
 }
 
 test "v213 lambda and let names are written as they are" {
-    ro text = ru13("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | любой([1, 2], х -> х == число_ходов) | — | КОНЕЦ |")
+    ro text = ru13("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | [1, 2].любой(х => х == число_ходов) | — | КОНЕЦ |")
     assert(is_clean(text))
     assert(json_of(text).contains("\"op\":\"lambda\",\"params\":[\"х\"]"))
 }
 
 test "v213 definition name is written as it is" {
-    ro text = ru13("## Состояния\n", "## Определения\n\n```\nопределение удвоить(число_x число) -> число =\n  число_x * 2\n```\n\n## Состояния\n").replace("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | удвоить(число_ходов) >= 2 | — | КОНЕЦ |")
+    ro text = ru13("## Состояния\n", "## Функции\n\n```\nфункция удвоить(число_x число) -> число =>\n  число_x * 2\n```\n\n## Состояния\n").replace("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | удвоить(число_ходов) >= 2 | — | КОНЕЦ |")
     assert(is_clean(text))
     assert(json_of(text).contains("\"definitions\":[{\"name\":\"удвоить\",\"params\":[{\"name\":\"число_x\""))
 }
@@ -534,7 +534,7 @@ test "v213 a field word with two json names is told by its owner" {
 
 // ---- AL-49: the binding причина ------------------------------------------------------------------------------------------------------------------------
 
-fn v213_fail_ru() -> str => ru13("| 2 | сигнал(отказать) | — | остановка = \"a\" | СТОП |", "| 2 | сигнал(отказать) | — | остановка = \"a\" | СТОП |\n| 3 | сбой(причина in {FailCode.NoResult}) | — | остановка = текст(причина) | СТОП |")
+fn v213_fail_ru() -> str => ru13("| 2 | сигнал(отказать) | — | остановка = \"a\" | СТОП |", "| 2 | сигнал(отказать) | — | остановка = \"a\" | СТОП |\n| 3 | сбой(причина в [FailCode.NoResult]) | — | остановка = строка(причина) | СТОП |")
 
 test "v213 reason is a readable name" {
     ro j = json_of(v213_fail_ru())
@@ -543,12 +543,12 @@ test "v213 reason is a readable name" {
 }
 
 test "v213 reason en" {
-    ro text = en13("| 2 | signal(deny) | — | stop_reason = \"a\" | Stopped |", "| 2 | signal(deny) | — | stop_reason = \"a\" | Stopped |\n| 3 | failure(reason in {FailCode.NoResult}) | — | stop_reason = text(reason) | Stopped |")
+    ro text = en13("| 2 | signal(deny) | — | stop_reason = \"a\" | Stopped |", "| 2 | signal(deny) | — | stop_reason = \"a\" | Stopped |\n| 3 | failure(reason in [FailCode.NoResult]) | — | stop_reason = text(reason) | Stopped |")
     assert(json_of(text).contains("\"bind\":\"reason\""))
     assert(no_title(json_of(text)) == no_title(json_of(v213_fail_ru())))
 }
 
 test "v213 other binder is written as it is" {
-    ro text = ru13("| 2 | сигнал(отказать) | — | остановка = \"a\" | СТОП |", "| 2 | сигнал(отказать) | — | остановка = \"a\" | СТОП |\n| 3 | сбой(код in {FailCode.NoResult}) | — | остановка = текст(код) | СТОП |")
+    ro text = ru13("| 2 | сигнал(отказать) | — | остановка = \"a\" | СТОП |", "| 2 | сигнал(отказать) | — | остановка = \"a\" | СТОП |\n| 3 | сбой(код в [FailCode.NoResult]) | — | остановка = строка(код) | СТОП |")
     assert(json_of(text).contains("\"bind\":\"код\""))
 }

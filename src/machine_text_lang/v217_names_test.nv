@@ -7,7 +7,7 @@ import std.text
 
 test "v217 fixture ru is clean" {
     assert(is_clean(v217_ru()))
-    assert(json_of(v217_ru()).starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.17\",\"machine\":\"Tiny\""))
+    assert(json_of(v217_ru()).starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.22\",\"machine\":\"Tiny\""))
 }
 
 test "v217 fixture en is clean" {
@@ -18,15 +18,15 @@ test "v217 fixture ru and en give one tree" {
     assert(no_title(json_of(v217_ru())) == no_title(json_of(v217_en())))
 }
 
-test "v217 format 2.17 is refused" {
-    ro text = ru17("- format: 2.17", "- format: 2.14")
+test "v217 format 2.22 is refused" {
+    ro text = ru17("- format: 2.22", "- format: 2.14")
     assert(!is_clean(text))
     assert(note_says(text, "версия не известна"))
-    assert(note_says(text, "2.17"))
+    assert(note_says(text, "2.22"))
 }
 
 test "v217 format 2.16 is refused" {
-    assert(note_says(ru17("- format: 2.17", "- format: 2.16"), "версия не известна"))
+    assert(note_says(ru17("- format: 2.22", "- format: 2.16"), "версия не известна"))
 }
 
 // ---- AL-53: the JSON name is built by itself -------------------------------------------------------------------------------------------------
@@ -76,13 +76,13 @@ test "v217 a word in capitals keeps only the first capital" {
 }
 
 test "v217 a type name is written in Pascal case" {
-    ro text = ru17_types("тип ВидХвоста { сессия текст }")
+    ro text = ru17_types("тип ВидХвоста { сессия строка }")
     assert(is_clean(text))
     assert(has17(text, "\"name\":\"VidKhvosta\""))
 }
 
 test "v217 a capital letter gives a capital Latin letter" {
-    ro text = ru17_types("тип Жук { сессия текст }\nтип Щука { сессия текст }")
+    ro text = ru17_types("тип Жук { сессия строка }\nтип Щука { сессия строка }")
     assert(has17(text, "\"name\":\"Zhuk\""))
     assert(has17(text, "\"name\":\"Shchuka\""))
 }
@@ -101,7 +101,7 @@ test "v217 a signal of several words is written in snake case" {
 }
 
 test "v217 an element of an enum is written in Pascal case" {
-    ro text = ru17_types("перечисление Цвет = Красный | Зелёный | Синий")
+    ro text = ru17_types("тип Цвет перечисление Красный | Зелёный | Синий")
     assert(is_clean(text))
     assert(has17(text, "{\"name\":\"Krasnyy\"}"))
     assert(has17(text, "{\"name\":\"Zelenyy\"}"))
@@ -126,7 +126,7 @@ test "v217 a Latin word between Cyrillic words is allowed" {
 }
 
 test "v217 a Latin word in a type name stays" {
-    ro text = ru17_types("тип Запрос_Agent { сессия текст }")
+    ro text = ru17_types("тип Запрос_Agent { сессия строка }")
     assert(is_clean(text))
     assert(has17(text, "\"name\":\"ZaprosAgent\""))
 }

@@ -42,13 +42,13 @@ test "v217 the state of the fragment is in the space of the states" {
 }
 
 test "v217 a datum with the JSON name of a datum of the fragment collides" {
-    ro text = callee217().replace("## Данные\n", "## Данные\n\n").replace("| имя | тип | начальное | не убывает | пишет |\n|---|---|---|---|---|\n", "| имя | тип | начальное | не убывает | пишет |\n|---|---|---|---|---|\n| мой_список | []текст | [] | — | строки |\n")
+    ro text = callee217().replace("## Данные\n", "## Данные\n\n").replace("| имя | тип | начальное | не убывает | пишет |\n|---|---|---|---|---|\n", "| имя | тип | начальное | не убывает | пишет |\n|---|---|---|---|---|\n| мой_список | []строка | [] | — | строки |\n")
     ro named = text.replace("## Имена\n\n| имя | JSON-имя |\n|---|---|\n", "## Имена\n\n| имя | JSON-имя |\n|---|---|\n| мой_список | open_requests |\n")
     assert(says217(named, "коллизия"))
 }
 
 test "v217 a datum with the JSON name of a datum of the contract collides" {
-    ro text = callee217().replace("| имя | тип | начальное | не убывает | пишет |\n|---|---|---|---|---|\n", "| имя | тип | начальное | не убывает | пишет |\n|---|---|---|---|---|\n| мой_список | []текст | [] | — | строки |\n").replace("## Имена\n\n| имя | JSON-имя |\n|---|---|\n", "## Имена\n\n| имя | JSON-имя |\n|---|---|\n| мой_список | previous |\n")
+    ro text = callee217().replace("| имя | тип | начальное | не убывает | пишет |\n|---|---|---|---|---|\n", "| имя | тип | начальное | не убывает | пишет |\n|---|---|---|---|---|\n| мой_список | []строка | [] | — | строки |\n").replace("## Имена\n\n| имя | JSON-имя |\n|---|---|\n", "## Имена\n\n| имя | JSON-имя |\n|---|---|\n| мой_список | previous |\n")
     assert(says217(text, "коллизия"))
 }
 
@@ -60,7 +60,7 @@ test "v217 the protocol signals of the fragment are in the space of the machine 
 
 // ---- the file of definitions ----------------------------------------------------------------------------------------------------------------------
 
-fn defs_with_names() -> str => "# Определения: счёт\n\n- definitions_version: 1\n- format: 2.17\n\n## Типы\n\n```\nтип Токены { вход число, выход число }\n```\n\n## Имена\n\n| имя | JSON-имя |\n|---|---|\n| Токены.вход | input_tokens |\n\n## Константы\n—\n\n## Определения\n—\n"
+fn defs_with_names() -> str => "# Функции: счёт\n\n- functions_version: 1\n- format: 2.22\n\n## Типы\n\n```\nтип Токены { вход число, выход число }\n```\n\n## Имена\n\n| имя | JSON-имя |\n|---|---|\n| Токены.вход | input_tokens |\n\n## Константы\n—\n\n## Функции\n—\n"
 
 test "v217 a file of definitions has its section of the names" {
     ro report = translate_definitions(defs_with_names())
@@ -91,22 +91,22 @@ test "v217 a file of definitions refuses the brackets" {
     assert(report.errors[0].message.contains("скобки"))
 }
 
-test "v217 a file of definitions refuses the format 2.17" {
-    ro report = translate_definitions(defs_with_names().replace("format: 2.17", "format: 2.14"))
+test "v217 a file of definitions refuses the format 2.22" {
+    ro report = translate_definitions(defs_with_names().replace("format: 2.22", "format: 2.14"))
     assert(report.errors.len() > 0)
 }
 
-test "v217 the hash of the sample file of definitions is that of 2.17" {
-    assert(definitions_hash(defs_file_text("арифметика_цикла")) == "1e30254f66f9")
+test "v217 the hash of the sample file of definitions is that of 2.22" {
+    assert(definitions_hash(defs_file_text("арифметика_цикла")) == "642e1f78f0f7")
 }
 
-test "v217 the English sample file of definitions has the hash of 2.17" {
+test "v217 the English sample file of definitions has the hash of 2.22" {
     ro text = defs_file_text("cycle_arithmetic")
-    assert(text.contains("format: 2.17"))
+    assert(text.contains("format: 2.22"))
     assert(definitions_hash(text).byte_len() == 12)
-    assert(definitions_hash(text) == "8a2c2d564899")
+    assert(definitions_hash(text) == "928cd807453a")
 }
 
-test "v217 the format line of the file of definitions is 2.17" {
-    assert(defs_file_text("арифметика_цикла").contains("- format: 2.17"))
+test "v217 the format line of the file of definitions is 2.22" {
+    assert(defs_file_text("арифметика_цикла").contains("- format: 2.22"))
 }

@@ -42,8 +42,8 @@ test "v217 the hash of the dictionary is the one of the format" {
     assert(glossary_hash_text(glossary_table_text()) == "60383c370415")
 }
 
-test "v217 the format 2.17 pins the hash 60383c370415" {
-    assert(glossary_pinned_hash("2.17") == "60383c370415")
+test "v217 the format 2.22 pins the hash 60383c370415" {
+    assert(glossary_pinned_hash("2.22") == "60383c370415")
     assert(glossary_pinned_hash("2.14") == "")
 }
 
@@ -65,7 +65,7 @@ test "v217 a changed pair gives another hash" {
 
 test "v217 a changed pair is found by the check" {
     ro text = glossary_table_text().replace("число_повторов\tretry_count", "число_повторов\tretries")
-    assert(glossary_check_text(text, "2.17").contains("словарь изменён без смены формата"))
+    assert(glossary_check_text(text, "2.22").contains("словарь изменён без смены формата"))
 }
 
 test "v217 an added pair gives another hash" {
@@ -94,7 +94,7 @@ test "v217 the hash is the SHA-256 of the lines joined by LF" {
 }
 
 test "v217 the check of the hash is for the version of the format" {
-    assert(glossary_check_text(glossary_table_text(), "2.17") == "")
+    assert(glossary_check_text(glossary_table_text(), "2.22") == "")
     assert(glossary_check_text(glossary_table_text(), "2.99").contains("2.99"))
 }
 
@@ -272,7 +272,7 @@ test "v217 the table of words has the group kind_param" {
 
 test "v217 the kinds of the parameters of a fragment" {
     ro w = words_load("ru")
-    for key in ["signal", "text", "[]machine", "behavior", "note"] {
+    for key in ["signal", "str", "[]machine", "behavior", "note"] {
         assert(kw_has(w, "kind_param", kw(w, "kind_param", key)))
     }
     assert(kw(w, "kind_param", "[]machine") == "[]машина")
@@ -289,8 +289,8 @@ test "v217 the kinds of the parameters are not types" {
 
 test "v217 the word text is in both groups" {
     ro w = words_load("ru")
-    assert(kw_has(w, "type", "текст"))
-    assert(kw_has(w, "kind_param", "текст"))
+    assert(kw_has(w, "type", "строка"))
+    assert(kw_has(w, "kind_param", "строка"))
 }
 
 test "v217 the English kinds of the parameters" {
@@ -321,10 +321,10 @@ test "v217 the table of words has 17 groups" {
     assert(methodology == 17)
 }
 
-test "v217 the table of the methodology has 219 words" {
+test "v217 the table of the methodology has 218 words" {
     mut n = 0
     for line in keywords_text().split("\n") {
         if line != "" && !line.starts_with("kind\t") { n += 1 }
     }
-    assert(n == 219)
+    assert(n == 218)
 }

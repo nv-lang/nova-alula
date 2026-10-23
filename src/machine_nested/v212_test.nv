@@ -7,7 +7,7 @@ import alula.machine.{standard_registry, Registry, Primitive, ParamSpec, TextTyp
 import alula.machine_text.{translate_checked, render, render_machine, TranslateReport}
 
 // A file at 2.12 (the fixtures of the older tasks are migrated by the same replace).
-fn at212(text str) -> str => text.replace("- format: 2.11\n", "- format: 2.17\n")
+fn at212(text str) -> str => text.replace("- format: 2.11\n", "- format: 2.22\n")
 
 fn meeting212() -> str => at212(meeting_examples())
 
@@ -33,7 +33,7 @@ test "v212 meeting reads" {
     ro report = checked(meeting212())
     if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
     assert(report.errors.len() == 0)
-    assert(report.json.contains("\"alula_version\":\"2.17\""))
+    assert(report.json.contains("\"alula_version\":\"2.22\""))
 }
 
 test "v212 fragments key" {
@@ -259,7 +259,7 @@ test "v212 appeal with an empty input" {
 }
 
 test "v212 appeal without a request reads no datum" {
-    assert(note_says(no_request().replace("| 1 | ответ(ответ) | — | text_reply = ответ | DONE |", "| 1 | ответ(ответ) | — | text_reply = текст(text_reply) | DONE |"), "text_reply"))
+    assert(note_says(no_request().replace("| 1 | ответ(ответ) | — | text_reply = ответ | DONE |", "| 1 | ответ(ответ) | — | text_reply = строка(text_reply) | DONE |"), "text_reply"))
 }
 
 test "v212 render writes no key for an appeal without a request" {
@@ -358,7 +358,7 @@ fn note_says_in(report TranslateReport, needle str) -> bool {
 
 // ---- a field of the request that is named as a datum (AL-28) --------------------------------------------------------------------------
 
-fn named_as_datum() -> str => boss212().replace("| reply | ?CallOutput | пусто | — | строки |", "| reply | ?CallOutput | пусто | — | строки |\n| label | текст | \"\" | — | строки |").replace("| label | \"m\" | сторона |", "| label | если reply == пусто то \"first\" иначе \"again\" | сторона |").replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | reply = итог; label = \"seen\" | DONE |")
+fn named_as_datum() -> str => boss212().replace("| reply | ?CallOutput | пусто | — | строки |", "| reply | ?CallOutput | пусто | — | строки |\n| label | строка | \"\" | — | строки |").replace("| label | \"m\" | сторона |", "| label | если reply == пусто то { \"first\" } иначе { \"again\" } | сторона |").replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | reply = итог; label = \"seen\" | DONE |")
 
 test "v212 field named as a datum with an if" {
     ro report = checked(named_as_datum())
@@ -405,7 +405,7 @@ test "v212 role of the table" {
 }
 
 test "v212 role result does not fit" {
-    ro report = checked_roles(role_text("author", "[]текст"))
+    ro report = checked_roles(role_text("author", "[]строка"))
     assert(report.errors.len() > 0)
     assert(note_says_in(report, "author"))
     assert(note_says_in(report, "role"))
@@ -424,8 +424,8 @@ test "v212 role without a literal" {
 
 test "v212 role reads join the input" {
     // the datum `reply` is read by the parse for the role `witness`: the rows of the state read it without a line of the table "Input"
-    ro witness = role_text("witness", "[]текст").replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | seen = reply | DONE |").replace("| reply | ?CallOutput | пусто | — | строки |", "| reply | ?CallOutput | пусто | — | строки |\n| seen | ?CallOutput | пусто | — | строки |")
-    ro author = witness.replace("read_by_role(\"witness\") -> []текст", "read_by_role(\"author\") -> CallOutput")
+    ro witness = role_text("witness", "[]строка").replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | seen = reply | DONE |").replace("| reply | ?CallOutput | пусто | — | строки |", "| reply | ?CallOutput | пусто | — | строки |\n| seen | ?CallOutput | пусто | — | строки |")
+    ro author = witness.replace("read_by_role(\"witness\") -> []строка", "read_by_role(\"author\") -> CallOutput")
     ro good = checked_roles(witness)
     if good.errors.len() > 0 { panic(notes_of(good).join(" ## ")) }
     assert(good.errors.len() == 0)
@@ -443,7 +443,7 @@ test "v212 role circle" {
 
 // ---- the bindings of the rows of the fragment against the data of the machine (AL-26) ---------------------------------------------------------------------
 
-fn meeting_with_datum(name str) -> str => meeting212().replace("| попытка_вратаря | число>=0 | 0 | да | механика |", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| ${name} | текст | \"\" | — | строки |")
+fn meeting_with_datum(name str) -> str => meeting212().replace("| попытка_вратаря | число>=0 | 0 | да | механика |", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| ${name} | строка | \"\" | — | строки |")
 
 test "v212 a datum named as a binding of the fragment" {
     // the rows of the fragment Pause bind `human_word`, `author`, `source`, `id` (the JSON names of the registry): after the fragment is put in they are bindings of the machine, a datum may not have such a JSON name

@@ -5,7 +5,7 @@ module alula.machine_text_fmt
 import std.text
 import alula.machine_text.{translate_types, TranslateReport}
 
-fn enum_line() -> str => "перечисление ВидДействия = Чтение \"read\" | Запись \"write\"\n"
+fn enum_line() -> str => "тип ВидДействия перечисление\n  | Чтение = \"read\"\n  | Запись = \"write\"\n"
 
 // The part of the JSON with the types (up to the constants): the keys `words` of the parties are not among them.
 fn types_part(json str) -> str {
@@ -21,7 +21,7 @@ fn with_enum(line str) -> str => replaced(base_text(), enum_line(), "${line}\n")
 // The report of a text with the enum line, an error stops the test unless `must_be_clean` is false.
 fn enum_report(line str) -> TranslateReport => checked(with_enum(line))
 
-fn fail_words() -> str => "перечисление КодСбоя = НетРезультата \"no_result\" | ОтказМодели \"model_refused\" | СоединениеОборвалось \"connection_lost\"\n  | ФормаНеИсправлена \"form_not_fixed\" | НетОтветаВСрок \"timeout\" | ОстановленоЧеловеком \"stopped_by_human\"\n  | ПотолокЗаходов \"ceiling_reached\" | ОтмененоРодителем \"cancelled\" | ПредельТокенов \"max_tokens\"\n  | ПредельЗапросовХода \"max_turn_requests\"\n"
+fn fail_words() -> str => "тип КодСбоя перечисление\n  | НетРезультата = \"no_result\"\n  | ОтказМодели = \"model_refused\"\n  | СоединениеОборвалось = \"connection_lost\"\n  | ФормаНеИсправлена = \"form_not_fixed\"\n  | НетОтветаВСрок = \"timeout\"\n  | ОстановленоЧеловеком = \"stopped_by_human\"\n  | ПотолокЗаходов = \"ceiling_reached\"\n  | ОтмененоРодителем = \"cancelled\"\n  | ПредельТокенов = \"max_tokens\"\n  | ПредельЗапросовХода = \"max_turn_requests\"\n"
 
 test "wd words key" {
     ro report = checked(base_text())
@@ -31,79 +31,79 @@ test "wd words key" {
 }
 
 test "wd order" {
-    ro report = enum_report("перечисление ВидДействия = Запись \"write\" | Чтение \"read\" | Удаление \"delete\"")
+    ro report = enum_report("тип ВидДействия перечисление\n  | Запись = \"write\"\n  | Чтение = \"read\"\n  | Удаление = \"delete\"")
     assert(report.errors.len() == 0)
     assert(report.json.contains("\"cases\":[{\"name\":\"Write\"},{\"name\":\"Read\"},{\"name\":\"Delete\"}]"))
     assert(report.json.contains("\"values\":[[\"Write\",\"write\"],[\"Read\",\"read\"],[\"Delete\",\"delete\"]]"))
 }
 
 test "wd none" {
-    ro report = enum_report("перечисление ВидВызывающего = Линза | СессияЦикла | ХодЧата | Вратарь")
+    ro report = enum_report("тип ВидВызывающего перечисление Линза | СессияЦикла | ХодЧата | Вратарь")
     assert(report.errors.len() == 0)
     assert(!types_part(report.json).contains("words"))
     assert(types_part(report.json).contains("\"name\":\"CallerKind\""))
 }
 
 test "wd partial" {
-    ro report = enum_report("перечисление ВидДействия = Чтение \"read\" | Запись")
+    ro report = enum_report("тип ВидДействия перечисление\n  | Чтение = \"read\"\n  | Запись")
     assert(report.errors.len() == 0)
     assert(report.json.contains("\"values\":[[\"Read\",\"read\"]]"))
 }
 
 test "wd other word" {
-    ro report = enum_report("перечисление ВидДействия = Чтение \"look\" | Запись \"save\"")
+    ro report = enum_report("тип ВидДействия перечисление\n  | Чтение = \"look\"\n  | Запись = \"save\"")
     if report.errors.len() > 0 { panic(first_error_of(report)) }
     assert(report.json.contains("\"values\":[[\"Read\",\"look\"],[\"Write\",\"save\"]]"))
     assert(!report_says(report, "unsupported"))
 }
 
 test "wd twice" {
-    ro report = enum_report("перечисление ВидДействия = Чтение \"x\" | Запись \"x\"")
+    ro report = enum_report("тип ВидДействия перечисление\n  | Чтение = \"x\"\n  | Запись = \"x\"")
     assert(report.errors.len() > 0)
     assert(report_says(report, "повторено"))
     assert(report_says(report, "`Чтение`"))
 }
 
 test "wd empty word" {
-    ro report = enum_report("перечисление ВидДействия = Чтение \"\" | Запись \"write\"")
+    ro report = enum_report("тип ВидДействия перечисление\n  | Чтение = \"\"\n  | Запись = \"write\"")
     assert(report.errors.len() > 0)
     assert(report_says(report, "не может быть пустым"))
 }
 
 test "wd latin word" {
-    assert(report_says(enum_report("перечисление ВидДействия = Чтение \"чтение\" | Запись \"write\""), "латинский код"))
-    assert(report_says(enum_report("перечисление ВидДействия = Чтение \"Read\" | Запись \"write\""), "латинский код"))
-    assert(report_says(enum_report("перечисление ВидДействия = Чтение \"re ad\" | Запись \"write\""), "латинский код"))
-    assert(enum_report("перечисление ВидДействия = Чтение \"read_2\" | Запись \"write\"").errors.len() == 0)
+    assert(report_says(enum_report("тип ВидДействия перечисление\n  | Чтение = \"чтение\"\n  | Запись = \"write\""), "латинский код"))
+    assert(report_says(enum_report("тип ВидДействия перечисление\n  | Чтение = \"Read\"\n  | Запись = \"write\""), "латинский код"))
+    assert(report_says(enum_report("тип ВидДействия перечисление\n  | Чтение = \"re ad\"\n  | Запись = \"write\""), "латинский код"))
+    assert(enum_report("тип ВидДействия перечисление\n  | Чтение = \"read_2\"\n  | Запись = \"write\"").errors.len() == 0)
 }
 
 test "wd fail code" {
     ro report = enum_report(fail_words())
     if report.errors.len() > 0 { panic(first_error_of(report)) }
     assert(!report.json.contains("\"types\""))
-    ro wrong = enum_report(replaced(fail_words(), "НетРезультата \"no_result\"", "НетРезультата \"nothing\""))
+    ro wrong = enum_report(replaced(fail_words(), "НетРезультата = \"no_result\"", "НетРезультата = \"nothing\""))
     assert(wrong.errors.len() > 0)
     assert(report_says(wrong, "unsupported"))
     assert(report_says(wrong, "значение \"nothing\""))
-    assert(enum_report(replaced(fail_words(), " \"no_result\"", "")).errors.len() == 0)
+    assert(enum_report(replaced(fail_words(), " = \"no_result\"", "")).errors.len() == 0)
 }
 
 test "wd translate types" {
-    match translate_types("перечисление ВидДействия = Чтение \"read\" | Запись \"write\"") {
+    match translate_types("тип ВидДействия перечисление\n  | Чтение = \"read\"\n  | Запись = \"write\"") {
         Ok(json) => {
             assert(json.contains("\"values\":[[\"Read\",\"read\"],[\"Write\",\"write\"]]"))
             assert(json.starts_with("{\"records\":[],\"variants\":[{\"name\":\"ActionKind\""))
         }
         Err(e) => panic("types do not translate")
     }
-    match translate_types("перечисление ВидДействия = Чтение | Запись") {
+    match translate_types("тип ВидДействия перечисление Чтение | Запись") {
         Ok(json) => assert(!json.contains("words"))
         Err(e) => panic("types do not translate")
     }
 }
 
 test "wd variant has none" {
-    ro report = enum_report("вариант ИтогХода {\n  ВременнаяОшибка\n  ПостояннаяОшибка\n}\n")
+    ro report = enum_report("тип ИтогХода перечисление ВременнаяОшибка | ПостояннаяОшибка\n")
     assert(report.errors.len() == 0)
     assert(types_part(report.json).contains("\"cases\""))
     assert(!types_part(report.json).contains("words"))
@@ -112,7 +112,7 @@ test "wd variant has none" {
 test "wd same json twice" {
     ro first = types_part(base_json())
     assert(first == types_part(base_json()))
-    ro bare = types_part(enum_report("перечисление ВидДействия = Чтение | Запись").json)
+    ro bare = types_part(enum_report("тип ВидДействия перечисление Чтение | Запись").json)
     assert(bare != first)
     assert(!bare.contains("words"))
     assert(first.contains("values"))

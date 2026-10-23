@@ -43,16 +43,16 @@ test "pm step" {
 
 test "pm key" {
     ro versioned = pm_text()
-    assert(versioned.contains("\"alula_version\": \"2.17\""))
+    assert(versioned.contains("\"alula_version\": \"2.22\""))
     match load_alula_machine(versioned, standard_registry()) {
         Ok(m) => assert(m.def.name == "Calc")
         Err(e) => panic("alula_version: ${e}")
     }
     // a tree of another version is refused
-    ro older = pm_text().replace("\"alula_version\": \"2.17\"", "\"alula_version\": \"2.11\"")
+    ro older = pm_text().replace("\"alula_version\": \"2.22\"", "\"alula_version\": \"2.11\"")
     match load_alula_machine(older, standard_registry()) {
         Ok(m) => panic("2.11 is accepted")
-        Err(e) => assert(e.contains("2.17"))
+        Err(e) => assert(e.contains("2.22"))
     }
     // the old name of the key is not accepted
     ro old = pm_text().replace("\"format\": \"machine/2\",", "\"format\": \"machine/2\", \"table_format\": \"2.5\",")

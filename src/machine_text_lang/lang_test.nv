@@ -17,7 +17,7 @@ test "ln tiny en equals ru" {
 
 test "ln header default" {
     // no line `language` is Russian; `language: ru` is the same file
-    ro declared = ru_with("- format: 2.17\n", "- format: 2.17\n- language: ru\n")
+    ro declared = ru_with("- format: 2.22\n", "- format: 2.22\n- language: ru\n")
     assert(declared != tiny_ru())
     assert(json_of(declared) == json_of(tiny_ru()))
     assert(is_clean(declared))
@@ -34,7 +34,7 @@ test "ln english header undeclared" {
 }
 
 test "ln russian header english declared" {
-    ro text = ru_with("- format: 2.17\n", "- format: 2.17\n- language: en\n")
+    ro text = ru_with("- format: 2.22\n", "- format: 2.22\n- language: en\n")
     ro all = notes(text)
     assert(all[0].contains("язык шапки русский"))
     assert(all[0].starts_with("${line_of(text, "- language")}:"))
@@ -176,32 +176,32 @@ test "ln operators ge le ne" {
 }
 
 test "ln operators arrow spread" {
-    assert(expr_ru("фильтр([1], x -> x >= 1)") == expr_en("filter([1], x -> x >= 1)"))
-    assert(expr_ru("выбор остановка { \"a\" -> 1; иначе -> 2 }") == expr_en("match stop_reason { \"a\" -> 1; else -> 2 }"))
+    assert(expr_ru("[1].фильтр(x => x >= 1)") == expr_en("[1].filter(x => x >= 1)"))
+    assert(expr_ru("выбор остановка { \"a\" => 1, иначе => 2 }") == expr_en("match stop_reason { \"a\" => 1, else => 2 }"))
     assert(expr_ru("фильтр([1], x → x >= 1)").starts_with("ERR"))
-    assert(expr_ru("фильтр([1], x → x >= 1)").contains("`->`"))
-    assert(expr_en("match stop_reason { \"a\" → 1; else -> 2 }").contains("`->`"))
+    assert(expr_ru("фильтр([1], x → x >= 1)").contains("`=>`"))
+    assert(expr_en("match stop_reason { \"a\" → 1; else -> 2 }").contains("`=>`"))
 }
 
 test "ln membership both" {
-    assert(expr_ru("остановка in {\"a\", \"b\"}") == expr_en("stop_reason in {\"a\", \"b\"}"))
-    assert(!expr_en("stop_reason in {\"a\"}").starts_with("ERR"))
+    assert(expr_ru("остановка в [\"a\", \"b\"]") == expr_en("stop_reason in [\"a\", \"b\"]"))
+    assert(!expr_en("stop_reason in [\"a\"]").starts_with("ERR"))
     assert(expr_ru("остановка ∈ {\"a\", \"b\"}").starts_with("ERR"))
-    assert(expr_ru("остановка ∈ {\"a\", \"b\"}").contains("`in`"))
+    assert(expr_ru("остановка ∈ {\"a\", \"b\"}").contains("AL-100"))
 }
 
 test "ln let and in" {
     // in English `in` ends the value of a `let` and is the membership before a brace: a `let` whose body is a dict is not a membership
-    assert(expr_en("let x = 1 in x + 1") == expr_ru("пусть x = 1 в x + 1"))
-    assert(expr_en("let x = (stop_reason in {\"a\"}) in x").contains("\"op\":\"let\""))
-    assert(!expr_en("let x = stop_reason in { 1: 2 }").starts_with("ERR"))
-    assert(expr_en("let x = stop_reason in { 1: 2 }").contains("\"op\":\"let\""))
+    assert(expr_en("{ let x = 1; x + 1 }") == expr_ru("{ пусть x = 1; x + 1 }"))
+    assert(expr_en("{ let x = (stop_reason in [\"a\"]); x }").contains("\"op\":\"let\""))
+    assert(!expr_en("{ let x = stop_reason in [\"a\"]; x }").starts_with("ERR"))
+    assert(expr_en("{ let x = stop_reason in [\"a\"]; x }").contains("\"op\":\"let\""))
 }
 
 // ---- words of expressions, actions, types ------------------------------------------------------------------------------
 
 test "ln expression words" {
-    assert(expr_en("if true then 1 else 2") == expr_ru("если истина то 1 иначе 2"))
+    assert(expr_en("if true then { 1 } else { 2 }") == expr_ru("если истина то { 1 } иначе { 2 }"))
     assert(expr_en("not false") == expr_ru("не ложь"))
     assert(expr_en("true and false or true") == expr_ru("истина и ложь или истина"))
     assert(expr_en("none") == expr_ru("пусто"))
@@ -209,12 +209,12 @@ test "ln expression words" {
     assert(expr_en("has(none)") == expr_ru("есть(пусто)"))
     assert(expr_en("require(none) ?? 1") == expr_ru("обязательно(пусто) ?? 1"))
     assert(expr_en("length([1, 2])") == expr_ru("длина([1, 2])"))
-    assert(expr_en("fold(range(1, 3), 0, (a, x) -> a + x)").replace("\"a\"", "\"а\"") .byte_len() > 20)
+    assert(expr_en("(1..3).fold(0, (a, x) => a + x)").replace("\"a\"", "\"а\"") .byte_len() > 20)
 }
 
 test "ln expression match en" {
-    ro en = expr_en("match stop_reason { \"a\" | \"b\" if true -> 1; else -> 2 }")
-    ro ru = expr_ru("выбор остановка { \"a\" | \"b\" если истина -> 1; иначе -> 2 }")
+    ro en = expr_en("match stop_reason { \"a\" | \"b\" if true => 1, else => 2 }")
+    ro ru = expr_ru("выбор остановка { \"a\" | \"b\" если истина => 1, иначе => 2 }")
     assert(en == ru)
     assert(en.contains("\"guard\""))
 }
@@ -235,16 +235,16 @@ fn acts_en(text str) -> str {
 
 test "ln action words" {
     assert(acts_en("turn_count = 1; turn_count += 2") == acts_ru("число_ходов = 1; число_ходов += 2"))
-    assert(acts_en("journal(code_x, n: text(turn_count))") == acts_ru("журнал(code_x, n: текст(число_ходов))"))
+    assert(acts_en("journal(code_x, n: text(turn_count))") == acts_ru("журнал(code_x, n: строка(число_ходов))"))
     assert(acts_en("machine_error(\"fork_no_match\", fork: \"A\")") == acts_ru("ошибка_машины(\"fork_no_match\", fork: \"A\")"))
-    assert(acts_en("if turn_count > 1 then (turn_count = 0) else (turn_count = 1)") == acts_ru("если число_ходов > 1 то (число_ходов = 0) иначе (число_ходов = 1)"))
+    assert(acts_en("if turn_count > 1 then { turn_count = 0 } else { turn_count = 1 }") == acts_ru("если число_ходов > 1 то { число_ходов = 0 } иначе { число_ходов = 1 }"))
     assert(acts_en("journal(all_data)") == acts_ru("журнал(все_данные)"))
     assert(acts_en("—") == "[]")
 }
 
 test "ln action for each" {
-    ro en = acts_en("for each n in [1, 2]: turn_count += n")
-    ro ru = acts_ru("для каждого n в [1, 2]: число_ходов += n")
+    ro en = acts_en("for n in [1, 2] { turn_count += n }")
+    ro ru = acts_ru("для n из [1, 2] { число_ходов += n }")
     assert(!en.starts_with("ERR"))
     assert(en.contains("\"do\":\"for_each\""))
     assert(en == ru)
@@ -253,7 +253,7 @@ test "ln action for each" {
 test "ln action let en" {
     ro en = acts_en("let moment = 1; turn_count = moment")
     assert(en.contains("\"do\":\"bind\""))
-    ro nested = acts_en("let k = 1 in (turn_count = k)")
+    ro nested = acts_en("{ let k = 1; turn_count = k }")
     assert(nested.contains("\"do\":\"let\""))
     assert(nested.contains("\"body\""))
 }
@@ -275,15 +275,15 @@ fn type_en(text str) -> str {
 test "ln type words" {
     assert(type_en("int") == type_ru("число") && type_en("int") == "int")
     assert(type_en("int>=0") == type_ru("число>=0") && type_en("int>=0") == "int>=0")
-    assert(type_en("float") == type_ru("дробное"))
-    assert(type_en("text") == type_ru("текст"))
-    assert(type_en("bool") == type_ru("да/нет") && type_en("bool") == "bool")
+    assert(type_en("f64") == type_ru("вещественное"))
+    assert(type_en("str") == type_ru("строка"))
+    assert(type_en("bool") == type_ru("булево") && type_en("bool") == "bool")
     assert(type_en("id") == type_ru("ид"))
-    assert(type_en("?text") == type_ru("?текст"))
-    assert(type_en("[]text") == type_ru("[]текст"))
-    assert(type_en("map[text, int]") == type_ru("словарь[текст, число]") && type_en("map[text, int]") == "{text: int}")
-    assert(type_en("full map[text, int]") == type_ru("полный словарь[текст, число]") && type_en("full map[text, int]") == "full {text: int}")
-    assert(type_en("(int, text)") == type_ru("(число, текст)"))
+    assert(type_en("?str") == type_ru("?строка"))
+    assert(type_en("[]str") == type_ru("[]строка"))
+    assert(type_en("map[str, int]") == type_ru("словарь[строка, число]") && type_en("map[str, int]") == "{text: int}")
+    assert(type_en("full map[str, int]") == type_ru("полный словарь[строка, число]") && type_en("full map[str, int]") == "full {text: int}")
+    assert(type_en("(int, str)") == type_ru("(число, строка)"))
     assert(type_en("\"a\" | \"b\"") == type_ru("\"a\" | \"b\""))
     assert(type_en("State") == type_ru("Состояние"))
     assert(type_en("JournalEvent") == type_ru("СобытиеЖурнала"))
@@ -295,11 +295,11 @@ test "ln type foreign" {
 }
 
 test "ln declarations words" {
-    ro en = match translate_types_in("enum Mode = Fast \"fast\" | Slow\ntype Pair { first int, second ?text }\nvariant Shape {\n  Dot\n  Box { w int }\n}", "en") {
+    ro en = match translate_types_in("type Mode enum\n  | Fast = \"fast\"\n  | Slow\ntype Pair { first int, second ?str }\ntype Shape enum\n  | Dot\n  | Box { w int }", "en") {
         Ok(j) => j
         Err(es) => "ERR ${es[0].message}"
     }
-    ro ru = match translate_types_in("перечисление Mode = Fast \"fast\" | Slow\nтип Pair { first число, second ?текст }\nвариант Shape {\n  Dot\n  Box { w число }\n}", "ru") {
+    ro ru = match translate_types_in("тип Mode перечисление\n  | Fast = \"fast\"\n  | Slow\nтип Pair { first число, second ?строка }\nтип Shape перечисление\n  | Dot\n  | Box { w число }", "ru") {
         Ok(j) => j
         Err(es) => "ERR ${es[0].message}"
     }
@@ -310,12 +310,12 @@ test "ln declarations words" {
 
 test "ln partial words" {
     // the values of an enum may be given for some of the cases (AL-15, `values` since AL-41)
-    ro ru = match translate_types_in("перечисление Mode = Fast \"fast\" | Slow | Mid \"mid_x\"", "ru") {
+    ro ru = match translate_types_in("тип Mode перечисление\n  | Fast = \"fast\"\n  | Slow\n  | Mid = \"mid_x\"", "ru") {
         Ok(j) => j
         Err(es) => "ERR ${es[0].message}"
     }
     assert(ru.contains("\"values\":[[\"Fast\",\"fast\"],[\"Mid\",\"mid_x\"]]"))
-    ro bad = match translate_types_in("enum Mode = Fast \"Fast\"", "en") {
+    ro bad = match translate_types_in("type Mode enum\n  | Fast = \"Fast\"", "en") {
         Ok(j) => "ok"
         Err(es) => es[0].message
     }
@@ -349,7 +349,7 @@ test "ln english cyrillic name" {
 
 test "ln english alias" {
     // a field of a record gets its JSON name by itself in a file of either language: `расход` has two English names in the dictionary, so it is transliterated
-    ro text = translate_types_in("variant R {\n  Done { расход int }\n}", "en")
+    ro text = translate_types_in("type R enum\n  | Done { расход int }", "en")
     match text {
         Ok(j) => assert(j.contains("\"name\":\"raskhod\""))
         Err(es) => assert(false)

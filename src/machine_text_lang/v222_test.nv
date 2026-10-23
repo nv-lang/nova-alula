@@ -1,0 +1,308 @@
+// v222_test.nv - task 152: Alula 2.22 through the whole file, in both languages: the types in a block of code, the functions with the body in a block, the signals and the patterns in braces, the map and the list by the
+// expected type, the insertions, the bare names of the elements, the names of the calls (AL-81) and of the fields (AL-78), the comments in a block of code, the words `строка`/`str`, `для x из xs`/`for x in xs`.
+module alula.machine_text_lang
+
+import std.text
+
+fn fence222() -> str => "```"
+
+fn ru222(old str, new str) -> str => tiny_ru().replace(old, new)
+
+fn en222(old str, new str) -> str => tiny_en().replace(old, new)
+
+// The tiny machine with a section of types in a block of code before the names.
+fn ru222_types(body str) -> str => ru222("## Имена\n", "## Типы\n\n${fence222()}\n${body}\n${fence222()}\n\n## Имена\n")
+
+fn en222_types(body str) -> str => en222("## Data\n", "## Types\n\n${fence222()}\n${body}\n${fence222()}\n\n## Data\n")
+
+// The tiny machine with a section of functions in a block of code before the states.
+fn ru222_defs(body str) -> str => ru222("## Состояния\n", "## Функции\n\n${fence222()}\n${body}\n${fence222()}\n\n## Состояния\n")
+
+fn en222_defs(body str) -> str => en222("## States\n", "## Functions\n\n${fence222()}\n${body}\n${fence222()}\n\n## States\n")
+
+// A datum of text and a datum of a map next to the counter of the gate.
+fn ru222_data(row str) -> str => ru222("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n${row}\n")
+
+fn en222_data(row str) -> str => en222("| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n", "| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |\n${row}\n")
+
+fn tree222(text str) -> str => json_of(text)
+
+// ---- the fixtures -----------------------------------------------------------------------------------------------------------------------------
+
+test "l222 the Russian fixture is clean" {
+    assert(is_clean(tiny_ru()))
+}
+
+test "l222 the English fixture is clean" {
+    assert(is_clean(tiny_en()))
+}
+
+test "l222 the tree says 2.22" {
+    assert(tree222(tiny_ru()).contains("\"alula_version\":\"2.22\""))
+    assert(tree222(tiny_en()).contains("\"alula_version\":\"2.22\""))
+}
+
+test "l222 the set in Кроме is a list in both languages" {
+    assert(tiny_ru().contains("в [\"\"]"))
+    assert(tiny_en().contains("in [\"\"]"))
+}
+
+// ---- enumerations in a block of code -------------------------------------------------------------------------------------------------------
+
+test "l222 an enumeration in a block of code" {
+    ro text = ru222_types("тип Цвет перечисление Красный | Синий")
+    assert(is_clean(text))
+    assert(tree222(text).contains("\"variants\":[{\"name\":\"Tsvet\""))
+}
+
+test "l222 an enumeration in English" {
+    ro text = en222_types("type Color enum Red | Blue")
+    assert(is_clean(text))
+    assert(tree222(text).contains("\"variants\":[{\"name\":\"Color\",\"cases\":[{\"name\":\"Red\"},{\"name\":\"Blue\"}]}]"))
+}
+
+test "l222 an enumeration with values in lines" {
+    ro text = ru222_types("тип Цвет перечисление\n  | Красный = \"red\"\n  | Синий = \"blue\"")
+    assert(is_clean(text))
+    assert(tree222(text).contains("\"values\":[[\"Krasnyy\",\"red\"],[\"Siniy\",\"blue\"]]"))
+}
+
+test "l222 an enumeration with fields in lines" {
+    ro text = ru222_types("тип Итог перечисление\n  | Готово { n число }\n  | Пусто")
+    assert(is_clean(text))
+    assert(tree222(text).contains("\"cases\":[{\"name\":\"Done\",\"fields\":[{\"name\":\"n\",\"type\":\"int\"}]},{\"name\":\"Pusto\"}]"))
+}
+
+test "l222 a record with the types of the words" {
+    ro text = ru222_types("тип Заметка { текст строка, вес вещественное, готово булево }")
+    assert(is_clean(text))
+    assert(tree222(text).contains("\"type\":\"text\"") && tree222(text).contains("\"type\":\"float\"") && tree222(text).contains("\"type\":\"bool\""))
+}
+
+test "l222 the same record in English" {
+    ro text = en222_types("type Note { text str, weight f64, done bool }")
+    assert(is_clean(text))
+    assert(tree222(text).contains("\"type\":\"text\"") && tree222(text).contains("\"type\":\"float\"") && tree222(text).contains("\"type\":\"bool\""))
+}
+
+test "l222 a comment stands in a block of code" {
+    ro text = ru222_types("// пояснение к типу\nтип Цвет перечисление Красный | Синий // и здесь")
+    assert(is_clean(text))
+}
+
+test "l222 an old enumeration in a block of code is refused" {
+    ro text = ru222_types("перечисление Цвет = Красный | Синий")
+    assert(!is_clean(text))
+    assert(note_says(text, "тип Имя перечисление"))
+}
+
+test "l222 an old enumeration in English is refused" {
+    ro text = en222_types("enum Color = Red | Blue")
+    assert(!is_clean(text))
+    assert(note_says(text, "type Name enum"))
+}
+
+// ---- bare names by the expected type (AL-88) ----------------------------------------------------------------------------------------------------
+
+fn ru222_color() -> str {
+    ro with_type = ru222_types("тип Цвет перечисление Красный | Синий")
+    ro with_datum = with_type.replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| цвет | Цвет | Красный | — | строки |\n")
+    with_datum.replace("Читает: число_ходов\n\n| № | Условие", "Читает: число_ходов, цвет\n\n| № | Условие")
+}
+
+test "l222 a bare name is the initial value of a datum" {
+    ro text = ru222_color()
+    assert(is_clean(text))
+    assert(tree222(text).contains("\"initial\":{\"expr\":{\"op\":\"variant\",\"type\":\"Tsvet\",\"name\":\"Krasnyy\"}}"))
+}
+
+test "l222 a bare name is a side of a comparison" {
+    ro text = ru222_color().replace("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | цвет == Синий | — | КОНЕЦ |")
+    assert(is_clean(text))
+    assert(tree222(text).contains("{\"op\":\"variant\",\"type\":\"Tsvet\",\"name\":\"Siniy\"}"))
+}
+
+test "l222 a bare name is an assigned value" {
+    ro text = ru222_color().replace("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить) | — | число_ходов += 1; цвет = Синий | РЕШИТЬ |")
+    assert(is_clean(text))
+    assert(tree222(text).contains("\"do\":\"assign\",\"target\":\"tsvet\""))
+}
+
+test "l222 a qualified name gives the same tree as a bare one" {
+    ro bare = ru222_color().replace("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | цвет == Синий | — | КОНЕЦ |")
+    ro qualified = ru222_color().replace("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | цвет == Цвет.Синий | — | КОНЕЦ |")
+    assert(tree222(bare) == tree222(qualified))
+}
+
+test "l222 a name of two types needs the type" {
+    ro text = ru222_types("тип Цвет перечисление Красный | Синий\nтип Флаг перечисление Красный | Белый").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| цвет | Цвет | Красный | — | строки |\n")
+    assert(!is_clean(text))
+}
+
+// ---- functions with the body in a block, AL-81 --------------------------------------------------------------------------------------------------
+
+test "l222 a function with a body after the arrow" {
+    ro text = ru222_defs("функция двойное(н число) -> число => н * 2")
+    assert(is_clean(text))
+    assert(tree222(text).contains("\"name\":\"двойное\""))
+}
+
+test "l222 a function with a body in a block" {
+    ro text = ru222_defs("функция сумма(а число, б число) -> число {\n  пусть с = а + б;\n  с * 2\n}")
+    assert(is_clean(text))
+    assert(tree222(text).contains("\"op\":\"let\""))
+}
+
+test "l222 a function in English" {
+    ro text = en222_defs("fn double(n int) -> int => n * 2")
+    assert(is_clean(text))
+    assert(tree222(text).contains("\"name\":\"double\""))
+}
+
+test "l222 the old word of a function is refused" {
+    ro text = ru222_defs("определение двойное(н число) -> число =\n  н * 2")
+    assert(!is_clean(text))
+    assert(note_says(text, "функция"))
+}
+
+test "l222 the old word of a function in English is refused" {
+    ro text = en222_defs("define double(n int) -> int =\n  n * 2")
+    assert(!is_clean(text))
+    assert(note_says(text, "fn"))
+}
+
+test "l222 a function named as a function of the catalog is refused" {
+    ro text = ru222_defs("функция фильтр(н число) -> число => н")
+    assert(!is_clean(text))
+    assert(note_says(text, "AL-81"))
+}
+
+test "l222 a function named as a function of the catalog in the other language is refused" {
+    ro text = ru222_defs("функция filter(н число) -> число => н")
+    assert(note_says(text, "AL-81"))
+}
+
+test "l222 a function named concat is refused in English" {
+    ro text = en222_defs("fn concat(n int) -> int => n")
+    assert(note_says(text, "AL-81"))
+}
+
+test "l222 a function named range is refused" {
+    ro text = en222_defs("fn range(n int) -> int => n")
+    assert(note_says(text, "AL-81"))
+}
+
+test "l222 a function with an ordinary name is allowed" {
+    assert(!note_says(ru222_defs("функция потолок(н число) -> число => н"), "AL-81"))
+}
+
+fn warn_says222(text str, needle str) -> bool {
+    for w in checked(text).warnings {
+        if w.message.contains(needle) { return true }
+    }
+    false
+}
+
+test "l222 a record field named as a macro is a warning" {
+    ro text = ru222_types("тип Заметка { фильтр число }")
+    assert(warn_says222(text, "AL-78"))
+    assert(is_clean(text))
+}
+
+test "l222 a record field named as a macro in English is a warning" {
+    ro text = en222_types("type Note { filter int }")
+    assert(warn_says222(text, "AL-78"))
+}
+
+test "l222 a record field named as the function length is allowed" {
+    assert(!warn_says222(ru222_types("тип Заметка { длина число }"), "AL-78"))
+}
+
+// ---- data: maps, lists and insertions ------------------------------------------------------------------------------------------------------------
+
+test "l222 empty brackets are an empty map by the type of the datum" {
+    ro text = ru222_data("| таблица | словарь[строка, число] | [] | — | строки |")
+    assert(is_clean(text))
+    assert(tree222(text).contains("\"initial\":{\"expr\":{\"op\":\"dict\",\"entries\":[]}}"))
+}
+
+test "l222 empty brackets are an empty list by the type of the datum" {
+    ro text = ru222_data("| список | []строка | [] | — | строки |")
+    assert(is_clean(text))
+    assert(tree222(text).contains("\"initial\":{\"expr\":{\"op\":\"list\",\"items\":[]}}"))
+}
+
+test "l222 the empty brackets of both languages give the same trees" {
+    ro ru = ru222_data("| таблица | словарь[строка, число] | [] | — | строки |")
+    ro en = en222_data("| table | map[str, int] | [] | — | rows |")
+    assert(is_clean(ru) && is_clean(en))
+    assert(tree222(en).contains("\"initial\":{\"expr\":{\"op\":\"dict\",\"entries\":[]}}"))
+}
+
+test "l222 a map with pairs is the initial value" {
+    ro text = ru222_data("| таблица | словарь[строка, число] | [\"a\": 1, \"b\": 2] | — | строки |")
+    assert(is_clean(text))
+    assert(tree222(text).contains("\"op\":\"dict\",\"entries\":[{\"key\":{\"op\":\"lit\",\"value\":\"a\"},\"value\":{\"op\":\"lit\",\"value\":1}}"))
+}
+
+test "l222 the old braces of a map are refused" {
+    ro text = ru222_data("| таблица | словарь[строка, число] | {} | — | строки |")
+    assert(!is_clean(text))
+}
+
+test "l222 an insertion in an action" {
+    ro text = ru222_data("| заметка | строка | \"\" | — | строки |").replace("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить) | — | число_ходов += 1; заметка = \"ход \${число_ходов}\" | РЕШИТЬ |")
+    assert(is_clean(text))
+    assert(tree222(text).contains("\"fn\":\"concat\""))
+}
+
+test "l222 an insertion in English" {
+    ro text = en222_data("| note | str | \"\" | — | rows |").replace("| 1 | signal(allow) | — | turn_count += 1 | Decide |", "| 1 | signal(allow) | — | turn_count += 1; note = \"turn \${turn_count}\" | Decide |")
+    assert(is_clean(text))
+    assert(tree222(text).contains("\"fn\":\"concat\""))
+}
+
+test "l222 the trees of an insertion agree in both languages" {
+    ro ru = ru222_data("| заметка | строка | \"\" | — | строки |").replace("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить) | — | число_ходов += 1; заметка = \"ход \${число_ходов}\" | РЕШИТЬ |")
+    ro en = en222_data("| note | str | \"\" | — | rows |").replace("| 1 | signal(allow) | — | turn_count += 1 | Decide |", "| 1 | signal(allow) | — | turn_count += 1; note = \"ход \${turn_count}\" | Decide |")
+    assert(tree222(ru).contains("\"fn\":\"concat\",\"args\":[{\"op\":\"lit\",\"value\":\"ход \"}"))
+    assert(tree222(en).contains("\"fn\":\"concat\",\"args\":[{\"op\":\"lit\",\"value\":\"ход \"}"))
+}
+
+test "l222 a loop in an action in both languages" {
+    ro ru = ru222_data("| сумма | число | 0 | — | строки |").replace("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить) | — | для н из 0..3 { сумма += н } | РЕШИТЬ |")
+    ro en = en222_data("| total | int | 0 | — | rows |").replace("| 1 | signal(allow) | — | turn_count += 1 | Decide |", "| 1 | signal(allow) | — | for n in 0..3 { total += n } | Decide |")
+    assert(tree222(ru).contains("\"do\":\"for_each\""))
+    assert(tree222(en).contains("\"do\":\"for_each\""))
+}
+
+test "l222 a signal with fields in braces" {
+    ro text = ru222("разрешить, отказать", "разрешить { автор строка }, отказать").replace("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить { автор }) | — | число_ходов += 1 | РЕШИТЬ |")
+    assert(is_clean(text))
+    assert(tree222(text).contains("{\"name\":\"allow\",\"fields\":[{\"name\":\"author\",\"type\":\"text\"}]}"))
+}
+
+test "l222 a signal with fields in round brackets is refused" {
+    ro text = ru222("разрешить, отказать", "разрешить(автор строка), отказать")
+    assert(note_says(text, "AL-82"))
+}
+
+test "l222 the old words of a loop are refused in a cell" {
+    ro text = ru222("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить) | — | для каждого н в [1]: число_ходов += н | РЕШИТЬ |")
+    assert(note_says(text, "AL-97"))
+}
+
+test "l222 a comment in a cell is refused" {
+    ro text = ru222("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить) | — | число_ходов += 1 // сложить | РЕШИТЬ |")
+    assert(note_says(text, "AL-90"))
+}
+
+test "l222 an empty block is refused in a cell" {
+    ro text = ru222("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить) | — | если истина то { } | РЕШИТЬ |")
+    assert(!is_clean(text))
+}
+
+test "l222 empty brackets with no type in an action are refused" {
+    ro text = ru222("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить) | — | { пусть к = []; число_ходов += 1 } | РЕШИТЬ |")
+    assert(note_says(text, "без ожидаемого типа"))
+}

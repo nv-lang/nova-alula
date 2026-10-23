@@ -1,0 +1,81 @@
+// v222_test.nv - task 152: the samples of the methodology at the state 845195b of the specification (Alula 2.22): the forms that 2.22 brought are in the samples and no former form is, in both languages.
+module alula.machine_agent
+
+import std.text
+import alula.machine.{standard_registry}
+import alula.machine_text.{translate_checked, translate_report}
+
+fn ru222s() -> str => ru17s()
+
+fn en222s() -> str => en17s()
+
+fn meet222s() -> str => meeting17s()
+
+fn count222(text str, part str) -> int => text.match_indices(part).len()
+
+test "s222 the samples say format 2.22" {
+    assert(ru222s().contains("format: 2.22"))
+    assert(en222s().contains("format: 2.22"))
+    assert(meet222s().contains("format: 2.22"))
+}
+
+test "s222 the samples are translated without errors" {
+    assert(translate_checked(ru222s(), standard_registry()).errors.len() == 0)
+    assert(translate_checked(en222s(), standard_registry()).errors.len() == 0)
+}
+
+test "s222 the samples declare types with the word type" {
+    assert(ru222s().contains("\nтип ВидДействия перечисление\n"))
+    assert(en222s().contains("\ntype ActionKind enum\n"))
+}
+
+test "s222 no sample declares a type the former way" {
+    for text in [ru222s(), en222s(), meet222s()] {
+        assert(!text.contains("\nперечисление "))
+        assert(!text.contains("\nвариант "))
+        assert(!text.contains("\nenum "))
+        assert(!text.contains("\nvariant "))
+    }
+}
+
+test "s222 the samples write functions with the word of 2.22" {
+    assert(ru222s().contains("\nфункция "))
+    assert(en222s().contains("\nfn "))
+    assert(!ru222s().contains("\nопределение "))
+    assert(!en222s().contains("\ndefine "))
+}
+
+test "s222 the samples write the arrow of a lambda and of a branch with equals" {
+    for text in [ru222s(), en222s(), meet222s()] {
+        assert(text.contains(" => "))
+    }
+}
+
+test "s222 the samples have the method of a macro" {
+    assert(meet222s().contains(".все(") && meet222s().contains(".любой("))
+}
+
+test "s222 the samples have no escaped dollar" {
+    for text in [ru222s(), en222s(), meet222s()] { assert(!text.contains("\\\${")) }
+}
+
+test "s222 the samples have the words of the types of 2.22" {
+    assert(ru222s().contains("строка"))
+    assert(!ru222s().contains(" ?текст") && !ru222s().contains(" []текст"))
+    assert(en222s().contains(" str"))
+}
+
+test "s222 the sample of the meeting has the booleans in words of 2.22" {
+    assert(!meet222s().contains("да/нет"))
+}
+
+test "s222 the trees of the two samples have one number of states" {
+    ro ru = translate_report(ru222s()).json
+    ro en = translate_report(en222s()).json
+    assert(count222(ru, "\"kind\":\"appeal\"") == count222(en, "\"kind\":\"appeal\""))
+    assert(count222(ru, "\"kind\":\"fork\"") == count222(en, "\"kind\":\"fork\""))
+}
+
+test "s222 the tree says 2.22" {
+    assert(translate_report(ru222s()).json.contains("\"alula_version\":\"2.22\""))
+}

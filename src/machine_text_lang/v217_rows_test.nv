@@ -173,12 +173,12 @@ test "v217 brackets at a field are refused" {
 }
 
 test "v217 brackets at an element of an enum are refused" {
-    ro text = ru17_types("перечисление Цвет = Красный (Red) | Синий")
+    ro text = ru17_types("тип Цвет перечисление Красный (Red) | Синий")
     assert(note_says(text, "скобки"))
 }
 
 test "v217 brackets at a case of a variant are refused" {
-    ro text = ru17_types("вариант Знак {\n  Плюс (Plus)\n  Минус\n}")
+    ro text = ru17_types("тип Знак перечисление\n  | Плюс (Plus)\n  | Минус")
     assert(note_says(text, "скобки"))
 }
 

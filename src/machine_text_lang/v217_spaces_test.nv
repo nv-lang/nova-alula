@@ -27,7 +27,7 @@ test "v217 two fields of the input collide" {
 }
 
 test "v217 two types collide with a record and an enum" {
-    ro text = ru17_types_names("тип Токены { вход число }\nперечисление Цвет = Красный | Синий", "| Цвет | TokenUsage |")
+    ro text = ru17_types_names("тип Токены { вход число }\nтип Цвет перечисление Красный | Синий", "| Цвет | TokenUsage |")
     assert(note_says(text, "коллизия") || note_says(text, "повторён"))
 }
 
@@ -37,12 +37,12 @@ test "v217 two fields of one record collide" {
 }
 
 test "v217 two cases of one variant collide" {
-    ro text = ru17_types_names("вариант Знак {\n  Плюс\n  Минус\n}", "| Знак.Плюс | Same |\n| Знак.Минус | Same |")
+    ro text = ru17_types_names("тип Знак перечисление Плюс | Минус", "| Знак.Плюс | Same |\n| Знак.Минус | Same |")
     assert(note_says(text, "коллизия"))
 }
 
 test "v217 two elements of one enum collide" {
-    ro text = ru17_types_names("перечисление Цвет = Красный | Синий", "| Цвет.Красный | Same |\n| Цвет.Синий | Same |")
+    ro text = ru17_types_names("тип Цвет перечисление Красный | Синий", "| Цвет.Красный | Same |\n| Цвет.Синий | Same |")
     assert(note_says(text, "коллизия"))
 }
 
@@ -52,7 +52,7 @@ test "v217 two signals of one party collide" {
 }
 
 test "v217 two fields of one signal collide" {
-    ro text = ru17("разрешить, отказать |", "разрешить(автор текст, имя текст), отказать |").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| gatekeeper.разрешить.автор | same |\n| gatekeeper.разрешить.имя | same |\n").replace("сигнал(разрешить)", "сигнал(разрешить(автор, имя: другое))")
+    ro text = ru17("разрешить, отказать |", "разрешить { автор строка, имя строка }, отказать |").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| gatekeeper.разрешить.автор | same |\n| gatekeeper.разрешить.имя | same |\n").replace("сигнал(разрешить)", "сигнал(разрешить { автор, имя: другое })")
     assert(note_says(text, "коллизия"))
 }
 

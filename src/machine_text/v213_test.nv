@@ -16,7 +16,7 @@ fn v213_lines(text str) -> int {
 
 test "v213 table has the rows of the methodology" {
     // the header and 219 rows (the table of the methodology at the state of 2.17)
-    assert(v213_lines(keywords_text()) == 220)
+    assert(v213_lines(keywords_text()) == 219)
 }
 
 test "v213 table signals column" {
@@ -67,7 +67,7 @@ test "v213 table reason is readable" {
 test "v213 table operators are ascii" {
     for lang in ["ru", "en"] {
         ro w = words_load(lang)
-        for sign in [">=", "<=", "!=", "->", "...", "in"] {
+        for sign in [">=", "<=", "!=", "->", "=>", "...", "..", "..="] {
             assert(kw(w, "operator", sign) == sign)
             assert(kw_has(w, "operator", sign))
         }
@@ -112,7 +112,7 @@ test "v213 table words are unique in a kind" {
         seen.push(a)
         seen_en.push(b)
     }
-    assert(seen.len() == 219)
+    assert(seen.len() == 218)
 }
 
 fn words_read_rows(text str) -> []TxWord {
@@ -201,9 +201,9 @@ test "v213 lexer names the ascii sign" {
     assert(v213_lex_texts("a ≥ b")[0].contains("`>=`"))
     assert(v213_lex_texts("a ≤ b")[0].contains("`<=`"))
     assert(v213_lex_texts("a ≠ b")[0].contains("`!=`"))
-    assert(v213_lex_texts("a → b")[0].contains("`->`"))
+    assert(v213_lex_texts("a → b")[0].contains("`=>`"))
     assert(v213_lex_texts("a … b")[0].contains("`...`"))
-    assert(v213_lex_texts("a ∈ b")[0].contains("`in`"))
+    assert(v213_lex_texts("a ∈ b")[0].contains("AL-100"))
 }
 
 test "v213 lexer keeps the dash" {
@@ -211,8 +211,8 @@ test "v213 lexer keeps the dash" {
 }
 
 test "v213 arrow check" {
-    ro arrow = TxTok { kind: TK_SYM, text: "->", line: 1, col: 1 }
-    ro old = TxTok { kind: TK_SYM, text: "→", line: 1, col: 1 }
+    ro arrow = tk(TK_SYM, "->", 1, 1)
+    ro old = tk(TK_SYM, "→", 1, 1)
     assert(tx_arrow(arrow))
     assert(!tx_arrow(old))
 }
@@ -222,10 +222,10 @@ test "v213 arrow check" {
 test "v213 definitions hashes" {
     ro ru = defs_file_text("арифметика_цикла")
     ro en = defs_file_text("cycle_arithmetic")
-    assert(definitions_hash(ru) == "1e30254f66f9")
-    assert(definitions_hash(en) == "8a2c2d564899")
-    assert(translate_definitions(ru).hash == "1e30254f66f9")
-    assert(translate_definitions(en).hash == "8a2c2d564899")
+    assert(definitions_hash(ru) == "642e1f78f0f7")
+    assert(definitions_hash(en) == "928cd807453a")
+    assert(translate_definitions(ru).hash == "642e1f78f0f7")
+    assert(translate_definitions(en).hash == "928cd807453a")
 }
 
 test "v213 definitions files are ascii" {

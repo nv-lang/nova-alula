@@ -82,14 +82,14 @@ test "nm english" {
 
 - machine: Boss
 - machine_version: 1
-- format: 2.17
+- format: 2.22
 - language: en
 
 ## Types
 
 ${ticks()}
-type CallInput { label text, count int>=0 }
-type CallOutput { answer text, score int>=0 }
+type CallInput { label str, count int>=0 }
+type CallOutput { answer str, score int>=0 }
 ${ticks()}
 
 ## Data
@@ -159,7 +159,7 @@ test "nm profile call" {
 
 test "nm profile agent" {
     // a profile of an agent party stands in the table too
-    ro text = tiny_agent().replace("| agent | agent(итог текст) | — |", "| agent | agent(итог текст) | \"p\" |")
+    ro text = tiny_agent().replace("| agent | agent(итог строка) | — |", "| agent | agent(итог строка) | \"p\" |")
     assert(count_kind(text, "unsupported") == 0)
     assert(checked(text).json.contains("\"profile\":{\"op\":\"lit\",\"value\":\"p\"}"))
 }
@@ -181,20 +181,20 @@ fn tiny_agent() -> str => `# Машина: Малая
 
 - machine: TinyAgent
 - machine_version: 1
-- format: 2.17
+- format: 2.22
 
 ## Данные
 
 | имя | тип | начальное | не убывает | пишет |
 |---|---|---|---|---|
-| text_reply | текст | "" | — | строки |
+| text_reply | строка | "" | — | строки |
 | agent_attempt | число>=0 | 0 | да | механика |
 
 ## Стороны
 
 | имя | идентификатор | вид | профиль | сигналы | счётчик |
 |---|---|---|---|---|---|
-| agent | agent | agent(итог текст) | — | — | agent_attempt |
+| agent | agent | agent(итог строка) | — | — | agent_attempt |
 
 ## Состояния
 
@@ -218,7 +218,7 @@ fn tiny_agent() -> str => `# Машина: Малая
 
 ## Концы
 
-- Результат: текст
+- Результат: строка
 
 | конец | № | когда | ответ |
 |---|---|---|---|
@@ -308,13 +308,13 @@ fn fan_text() -> str => `# Машина: Веер
 
 - machine: Fan
 - machine_version: 1
-- format: 2.17
+- format: 2.22
 
 ## Типы
 
 ${ticks()}
-тип Линза { идентификатор текст, попытка число>=0 }
-тип LensInput { label текст }
+тип Линза { идентификатор строка, попытка число>=0 }
+тип LensInput { label строка }
 ${ticks()}
 
 ## Константы
@@ -327,15 +327,15 @@ ${ticks()}
 
 | имя | тип | примечание |
 |---|---|---|
-| order | []текст | идентификаторы |
+| order | []строка | идентификаторы |
 
 ## Данные
 
 | имя | тип | начальное | не убывает | пишет |
 |---|---|---|---|---|
-| order | []текст | вход.order | — | строки |
-| to_send | []текст | [] | — | строки и механика |
-| lenses | словарь[текст, Линза] | словарь(вход.order, л -> л, л -> Линза { идентификатор: л, попытка: 0 }) | — | строки |
+| order | []строка | вход.order | — | строки |
+| to_send | []строка | [] | — | строки и механика |
+| lenses | словарь[строка, Линза] | вход.order.словарь(л => л, л => Линза { идентификатор: л, попытка: 0 }) | — | строки |
 | lenses[*].attempt | число>=0 | — | да | механика |
 | answered | число>=0 | 0 | да | строки |
 
@@ -343,7 +343,7 @@ ${ticks()}
 
 | имя | идентификатор | вид | профиль | сигналы | счётчик |
 |---|---|---|---|---|---|
-| lens | — | machine callee(вход LensInput, итог текст) | — | — | lenses[*].attempt |
+| lens | — | machine callee(вход LensInput, итог строка) | — | — | lenses[*].attempt |
 
 - Предел запросов: LIMIT
 

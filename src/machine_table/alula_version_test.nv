@@ -8,7 +8,7 @@ import alula.machine.{text_of_file, schema_files}
 fn with_key(key str, value str) -> str => tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"${key}\":\"${value}\",")
 
 test "pv key" {
-    assert(ok_text(with_key("alula_version", "2.17")))
+    assert(ok_text(with_key("alula_version", "2.22")))
     assert(!ok_text(with_key("alula_version", "2.11")))
 }
 
@@ -17,39 +17,39 @@ test "pv old key refused" {
     assert(!ok_text(with_key("table_format", "2.10")))
     assert(says(with_key("table_format", "2.5"), "table_format"))
     assert(says(with_key("table_format", "2.5"), "not in the schema"))
-    ro both = tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"alula_version\":\"2.17\",\"table_format\":\"2.10\",")
+    ro both = tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"alula_version\":\"2.22\",\"table_format\":\"2.10\",")
     assert(says(both, "table_format"))
 }
 
 test "pv former key refused" {
     assert(!ok_text(with_key("portolan_version", "2.12")))
-    assert(!ok_text(with_key("portolan_version", "2.17")))
+    assert(!ok_text(with_key("portolan_version", "2.22")))
     assert(says(with_key("portolan_version", "2.12"), "the former name of alula_version"))
     assert(says(with_key("portolan_version", "2.12"), "there is no transition period"))
-    ro both = tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"alula_version\":\"2.17\",\"portolan_version\":\"2.12\",")
+    ro both = tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"alula_version\":\"2.22\",\"portolan_version\":\"2.12\",")
     assert(says(both, "the former name of alula_version"))
     assert(!top_keys().contains("portolan_version"))
 }
 
 test "pv former versions refused" {
-    assert(says(with_key("alula_version", "2.12"), "must be 2.17"))
-    assert(says(with_key("alula_version", "2.13"), "must be 2.17"))
+    assert(says(with_key("alula_version", "2.12"), "must be 2.22"))
+    assert(says(with_key("alula_version", "2.13"), "must be 2.22"))
     assert(says(with_key("alula_version", "2.12"), "there is no transition period"))
 }
 
 test "pv versions" {
     assert(alula_versions().len() == 1)
-    assert(alula_versions().contains("2.17"))
+    assert(alula_versions().contains("2.22"))
     assert(says(with_key("alula_version", "2.13"), "alula_version"))
-    assert(says(with_key("alula_version", "2.4"), "must be 2.17"))
-    ro number = tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"alula_version\":2.17,")
+    assert(says(with_key("alula_version", "2.4"), "must be 2.22"))
+    ro number = tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"alula_version\":2.22,")
     assert(says(number, "alula_version"))
 }
 
 test "pv schema" {
     ro schema = text_of_file(schema_files(), "machine-2.schema.json")
     assert(schema.contains("\"alula_version\""))
-    assert(schema.contains("\"2.17\""))
+    assert(schema.contains("\"2.22\""))
     assert(top_keys().contains("alula_version"))
     assert(!top_keys().contains("table_format"))
     assert(!schema.contains("table_format"))

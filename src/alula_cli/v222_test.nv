@@ -1,0 +1,118 @@
+// v222_test.nv - task 152: the program `alula` and Alula 2.22: the version of the program and of the language, a file with the new forms is checked, compiled, rendered and converted; a file with a former form is refused with
+// the code 1 and the message of the table of the former forms; the whole folder of the machines is read.
+module alula.alula_cli
+
+import std.text
+import alula.machine.{NamedText, table_files, text_of_file}
+
+fn path222() -> str => "/work/m.alula.md"
+
+fn run222(args []str, text str) -> Ran => run_with(args, one(path222(), text))
+
+// A file with a section of functions and a section of types in blocks of code.
+fn file222() -> str {
+    ro fence = "```"
+    tiny_ru().replace("## Имена\n", "## Типы\n\n${fence}\nтип Цвет перечисление Красный | Синий\n${fence}\n\n## Имена\n").replace("## Состояния\n", "## Функции\n\n${fence}\nфункция двойное(н число) -> число => н * 2\n${fence}\n\n## Состояния\n")
+}
+
+test "c222 the version names the program and the language" {
+    ro ran = run0(["version"])
+    assert(ran.code == 0)
+    assert(ran.out.starts_with("alula 0.5.0"))
+    assert(ran.out.contains("Alula 2.22"))
+}
+
+test "c222 the version of the program is a constant" {
+    assert(PROGRAM_VERSION == "0.5.0")
+}
+
+test "c222 the tiny file of the tests is checked" {
+    ro ran = run222(["check", path222()], tiny_ru())
+    assert(ran.code == 0)
+}
+
+test "c222 a file with types and functions is checked" {
+    ro ran = run222(["check", path222()], file222())
+    if ran.code != 0 { panic(ran.err) }
+    assert(ran.code == 0)
+}
+
+test "c222 the compiled tree says 2.22" {
+    ro ran = run222(["compile", path222()], tiny_ru())
+    assert(ran.code == 0)
+    assert(ran.out.contains("\"alula_version\":\"2.22\""))
+}
+
+test "c222 the tree of a file with an enumeration has the variants" {
+    ro ran = run222(["compile", path222()], file222())
+    assert(ran.code == 0)
+    assert(ran.out.contains("\"variants\":[{\"name\":\"Tsvet\""))
+}
+
+test "c222 the rendered file has the word type" {
+    ro compiled = run222(["compile", path222()], file222())
+    ro ran = run_with(["render", "/work/m.alula.json"], one("/work/m.alula.json", compiled.out))
+    assert(ran.code == 0)
+    assert(ran.out.contains("тип Tsvet перечисление Krasnyy | Siniy"))
+    assert(ran.out.contains("функция двойное("))
+}
+
+test "c222 the rendered file in English has fn and enum" {
+    ro compiled = run222(["compile", path222()], file222())
+    ro ran = run_with(["render", "/work/m.alula.json", "--language", "en"], one("/work/m.alula.json", compiled.out))
+    assert(ran.code == 0)
+    assert(ran.out.contains("type Tsvet enum Krasnyy | Siniy"))
+    assert(ran.out.contains("fn двойное("))
+}
+
+test "c222 a conversion to English keeps the tree" {
+    ro first = run222(["compile", path222()], tiny_ru())
+    ro en = run222(["convert", path222(), "--language", "en"], tiny_ru())
+    assert(en.code == 0)
+    ro second = run_with(["compile", "/work/m.en.alula.md"], one("/work/m.en.alula.md", en.out))
+    assert(second.code == 0)
+    assert(no_title(second.out) == no_title(first.out))
+}
+
+test "c222 a former enumeration is refused with code 1" {
+    ro text = file222().replace("тип Цвет перечисление Красный | Синий", "перечисление Цвет = Красный | Синий")
+    ro ran = run222(["check", path222()], text)
+    assert(ran.code == 1)
+    assert(ran.err.contains("тип Имя перечисление"))
+}
+
+test "c222 a former function word is refused" {
+    ro text = file222().replace("функция двойное(н число) -> число => н * 2", "определение двойное(н число) -> число =\n  н * 2")
+    ro ran = run222(["check", path222()], text)
+    assert(ran.code == 1)
+    assert(ran.err.contains("функция"))
+}
+
+test "c222 a former type word is refused" {
+    ro text = file222().replace("функция двойное(н число) -> число => н * 2", "функция двойное(н текст) -> число => 1")
+    ro ran = run222(["check", path222()], text)
+    assert(ran.code == 1)
+    assert(ran.err.contains("строка"))
+}
+
+test "c222 a former version of the file is not read" {
+    for version in ["2.14", "2.17", "2.21"] {
+        ro ran = run222(["check", path222()], tiny_ru().replace("format: 2.22", "format: ${version}"))
+        assert(ran.code == 1)
+        assert(ran.err.contains("версия не известна"))
+    }
+}
+
+test "c222 the machines of the folder are read" {
+    for name in ["chat.alula.md", "dialog.alula.md", "callee.alula.md", "caller.alula.md", "fan.alula.md", "cycle_check.alula.md"] {
+        ro ran = run_with(["check", "/m/${name}"], one("/m/${name}", text_of_file(table_files(), name)))
+        if ran.code != 0 { panic("check ${name}: ${ran.err}") }
+        assert(ran.code == 0)
+    }
+}
+
+test "c222 the help does not name a former form" {
+    ro out = run0([]).out
+    assert(!out.contains("define"))
+    assert(!out.contains("определение"))
+}

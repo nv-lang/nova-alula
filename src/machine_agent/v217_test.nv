@@ -1,7 +1,7 @@
-// v217_test.nv - task 151: the samples of the methodology at the state of the format 2.17 (the illustration of the agent step in both languages and the record of the machine "Meeting"), copied as they
+// v217_test.nv - task 151: the samples of the methodology at the state of the format 2.22 (the illustration of the agent step in both languages and the record of the machine "Meeting"), copied as they
 // are into `cases/`, go through the translator without a hand edit and give the numbers that the methodology gives (the agent step: 13 states, 37 rows of transitions, 13 rows of ends, 16 definitions,
 // 21 codes of the journal, 149 JSON names, 2 rows of `## Имена`; the meeting: 30 states, 67 rows of transitions, 12 rows of ends, 29 data, 22 primitives, 225 JSON names, 14 rows of `## Имена`). The JSON names
-// that the translator builds are the names of the reference script of the methodology (`check-alula-keywords.py`): the files `cases/*-names-217*.tsv` are its output.
+// that the translator builds are the names of the reference script of the methodology (`check-alula-keywords.py`): the files `cases/*-names-222*.tsv` are its output.
 module alula.machine_agent
 
 import std.text
@@ -15,7 +15,7 @@ fn ru17s() -> str => lf17(methodology_text())
 
 fn en17s() -> str => lf17(methodology_en_text())
 
-fn meeting17s() -> str => lf17(meeting_217_text())
+fn meeting17s() -> str => lf17(meeting_text())
 
 // The record of the machine "Meeting" writes a note in brackets after the default of four parameters (`0 (заглушка источника)`: the source does not fix the value); a default is a value, so the translator is
 // given the record without these notes. Nothing else is changed.
@@ -31,9 +31,9 @@ fn first17(report TranslateReport) -> str {
 }
 
 fn names_file17(name str) -> str {
-    if name == "ru" { return lf17(embed_str("cases/agent-step-names-217.tsv")) }
-    if name == "en" { return lf17(embed_str("cases/agent-step-names-217.en.tsv")) }
-    lf17(embed_str("cases/meeting-names-217.tsv"))
+    if name == "ru" { return lf17(embed_str("cases/agent-step-names-222.tsv")) }
+    if name == "en" { return lf17(embed_str("cases/agent-step-names-222.en.tsv")) }
+    lf17(embed_str("cases/meeting-names-222.tsv"))
 }
 
 // The lines of a file of the reference: `kind of the declaration|path|JSON name`.
@@ -170,7 +170,7 @@ test "v217 agent step ru numbers" {
     assert(count_lines_starting17(text, "### ") == 13)
     assert(count_transition_rows17(text) == 37)
     assert(count_table_rows17(text, "## Концы") == 13)
-    assert(count_lines_anywhere17(text, "определение ") == 16)
+    assert(count_lines_anywhere17(text, "функция ") == 16)
     assert(journal_codes17(text).len() == 21)
     assert(count_table_rows17(text, "## Имена") == 2)
 }
@@ -180,7 +180,7 @@ test "v217 agent step en numbers" {
     assert(count_lines_starting17(text, "### ") == 13)
     assert(count_transition_rows17(text) == 37)
     assert(count_table_rows17(text, "## Ends") == 13)
-    assert(count_lines_anywhere17(text, "define ") == 16)
+    assert(count_lines_anywhere17(text, "fn ") == 16)
     assert(journal_codes17(text).len() == 21)
     assert(journal_codes17(text) == journal_codes17(ru17s()))
     assert(!text.contains("\n## Names\n"))
@@ -215,7 +215,7 @@ test "v217 agent step en is clean" {
 
 test "v217 agent step tree numbers" {
     ro j = ru17_report().json
-    assert(j.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.17\",\"machine\":\"agent_step\",\"version\":\"alula-2.17\""))
+    assert(j.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.22\",\"machine\":\"agent_step\",\"version\":\"alula-2.22\""))
     ro o = obj17(j)
     assert(items17(o, "states").len() == 14)
     assert(items17(o, "data").len() == 21)

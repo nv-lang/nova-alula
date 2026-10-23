@@ -34,7 +34,7 @@ test "ag loads" {
     match load_machine(agent_step_machine_text(), standard_registry()) {
         Ok(def) => {
             assert(def.name == "agent_step")
-            assert(def.version == "alula-2.17")
+            assert(def.version == "alula-2.22")
             assert(def.states.len() == 14)
             assert(def.common.len() == 6)
             assert(def.parties.len() == 3)
@@ -63,7 +63,7 @@ test "ag builds" {
 
 test "ag summary" {
     ro text = render_summary(agent_step_machine_text())
-    assert(text.starts_with("machine agent_step (version alula-2.17): 14 states, 47 rows, "))
+    assert(text.starts_with("machine agent_step (version alula-2.22): 14 states, 47 rows, "))
     assert(text.contains("  AgentTurn (appeal): 9 rows, 18 actions"))
     assert(text.contains("common events: 6 rows"))
     assert(text.contains("ends: 13 rows"))
@@ -81,7 +81,7 @@ fn without_markers(text str) -> str {
             lines.push(line)
         }
     }
-    lines.join("\n").replace("format: 2.17", "format: 2.17")
+    lines.join("\n").replace("format: 2.22", "format: 2.22")
 }
 
 test "ag markers optional" {

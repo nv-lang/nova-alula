@@ -17,7 +17,7 @@ fn is_error(json str) -> bool => json.starts_with("ERR")
 // ---- an expression: a lambda with a parameter of any alphabet ------------------------------------------------------------------------
 
 test "uc lambda greek ru" {
-    ro c = ex_circle("фильтр([1, 2], δ -> δ > 1)", [], "ru")
+    ro c = ex_circle("[1, 2].фильтр(δ => δ > 1)", [], "ru")
     assert(!is_error(c[0]))
     assert(c[0].contains("\"δ\""))
     assert(c[2] == c[0])
@@ -25,21 +25,21 @@ test "uc lambda greek ru" {
 }
 
 test "uc lambda greek en" {
-    ro c = ex_circle("filter([1, 2], δ -> δ > 1)", [], "en")
+    ro c = ex_circle("[1, 2].filter(δ => δ > 1)", [], "en")
     assert(!is_error(c[0]))
     assert(c[0].contains("\"δ\""))
     assert(c[2] == c[0])
 }
 
 test "uc lambda german" {
-    ro c = ex_circle("фильтр([1, 2], größe -> größe > 1)", [], "ru")
+    ro c = ex_circle("[1, 2].фильтр(größe => größe > 1)", [], "ru")
     assert(!is_error(c[0]))
     assert(c[0].contains("\"größe\""))
     assert(c[2] == c[0])
 }
 
 test "uc lambda german upper case parameter as written" {
-    ro c = ex_circle("фильтр([1, 2], Größe -> Größe > 1)", [], "ru")
+    ro c = ex_circle("[1, 2].фильтр(Größe => Größe > 1)", [], "ru")
     assert(!is_error(c[0]))
     assert(c[0].contains("\"Größe\""))
     assert(!c[0].contains("\"größe\""))
@@ -47,31 +47,31 @@ test "uc lambda german upper case parameter as written" {
 }
 
 test "uc lambda chinese" {
-    ro c = ex_circle("фильтр([1, 2], 数据 -> 数据 > 1)", [], "ru")
+    ro c = ex_circle("[1, 2].фильтр(数据 => 数据 > 1)", [], "ru")
     assert(!is_error(c[0]))
     assert(c[0].contains("\"数据\""))
     assert(c[2] == c[0])
 }
 
 test "uc lambda four byte letter" {
-    ro c = ex_circle("фильтр([1, 2], 𝒜 -> 𝒜 > 1)", [], "ru")
+    ro c = ex_circle("[1, 2].фильтр(𝒜 => 𝒜 > 1)", [], "ru")
     assert(!is_error(c[0]))
     assert(c[0].contains("\"𝒜\""))
     assert(c[2] == c[0])
 }
 
 test "uc lambda mixed with digits" {
-    ro c = ex_circle("фильтр([1, 2], δ_1 -> δ_1 > 1)", [], "ru")
+    ro c = ex_circle("[1, 2].фильтр(δ_1 => δ_1 > 1)", [], "ru")
     assert(!is_error(c[0]))
     assert(c[0].contains("\"δ_1\""))
     assert(c[2] == c[0])
-    ro d = ex_circle("фильтр([1, 2], größe2 -> größe2 > 1)", [], "ru")
+    ro d = ex_circle("[1, 2].фильтр(größe2 => größe2 > 1)", [], "ru")
     assert(d[0].contains("\"größe2\""))
     assert(d[2] == d[0])
 }
 
 test "uc lambda cyrillic name as written" {
-    ro c = ex_circle("фильтр([1, 2], х -> х > 1)", [], "ru")
+    ro c = ex_circle("[1, 2].фильтр(х => х > 1)", [], "ru")
     assert(c[0].contains("\"х\""))
     assert(c[2] == c[0])
 }
@@ -119,7 +119,7 @@ test "uc datum german upper case" {
 // ---- actions ------------------------------------------------------------------------------------------------------------------------
 
 test "uc actions let greek" {
-    ro c = ac_circle("пусть δ = 5 в (число_повторов = δ)", ["число_повторов"], "ru")
+    ro c = ac_circle("{ пусть δ = 5; число_повторов = δ }", ["число_повторов"], "ru")
     assert(!is_error(c[0]))
     assert(c[0].contains("\"δ\""))
     assert(c[2] == c[0])
@@ -133,7 +133,7 @@ test "uc actions let german" {
 }
 
 test "uc actions let chinese en" {
-    ro c = ac_circle("let 数据 = 5 in (retry_count = 数据)", ["retry_count"], "en")
+    ro c = ac_circle("{ let 数据 = 5; retry_count = 数据 }", ["retry_count"], "en")
     assert(!is_error(c[0]))
     assert(c[0].contains("\"数据\""))
     assert(c[2] == c[0])
@@ -206,7 +206,7 @@ test "uc error column of an unknown state after cyrillic" {
 }
 
 test "uc error column of an unknown state after a four byte letter" {
-    ro text = tiny_named("ΑΝΑΜΟΝΗ", "ΑΠΟΦΑΣΗ", "ΤΕΛΟΣ", "ΣΤΟΠ").replace("| число_ходов += 1 | ΑΠΟΦΑΣΗ |", "| число_ходов += 1 // 😀𝒜 | ΧΧΧΧ |")
+    ro text = tiny_named("ΑΝΑΜΟΝΗ", "ΑΠΟΦΑΣΗ", "ΤΕΛΟΣ", "ΣΤΟΠ").replace("| число_ходов += 1 | ΑΠΟΦΑΣΗ |", "| число_ходов += длина(\"😀𝒜\") | ΧΧΧΧ |")
     ro report = checked(text)
     ro place = place_of(report, "name")
     assert(place[0] > 0)

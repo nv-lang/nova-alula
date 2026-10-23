@@ -10,8 +10,8 @@ fn fence_217() -> str => "```"
 // A file at 2.17: a party of a free input, a fork over an enum with all its values and an `иначе` that cannot be reached.
 fn file217() -> str {
     ro lines = [
-        "# Машина: Малая", "", "- machine: Tiny", "- machine_version: 1", "- format: 2.17", "",
-        "## Типы", "", fence_217(), "перечисление Цвет = Красный | Синий", fence_217(), "",
+        "# Машина: Малая", "", "- machine: Tiny", "- machine_version: 1", "- format: 2.22", "",
+        "## Типы", "", fence_217(), "тип Цвет перечисление Красный | Синий", fence_217(), "",
         "## Данные", "",
         "| имя | тип | начальное | не убывает | пишет |", "|---|---|---|---|---|",
         "| число | число>=0 | 0 | да | строки |", "| цвет | Цвет | Цвет.Красный | — | строки |", "",
@@ -38,7 +38,7 @@ fn path217() -> str => "/work/free.alula.md"
 
 fn run217(args []str, text str) -> Ran => run_with(args, one(path217(), text))
 
-test "v217 a file of 2.17 is checked" {
+test "v217 a file of 2.22 is checked" {
     ro ran = run217(["check", path217()], file217())
     if ran.code != 0 { panic(ran.err) }
     assert(ran.code == 0)
@@ -54,7 +54,7 @@ test "v217 compile gives a tree with no counter at the free party" {
     ro ran = run217(["compile", path217()], file217())
     assert(ran.code == 0)
     assert(!ran.out.contains("\"counter\""))
-    assert(ran.out.contains("\"alula_version\":\"2.17\""))
+    assert(ran.out.contains("\"alula_version\":\"2.22\""))
 }
 
 test "v217 render writes the dash of the free party" {
@@ -62,7 +62,7 @@ test "v217 render writes the dash of the free party" {
     ro ran = run_with(["render", "/work/free.alula.json"], one("/work/free.alula.json", compiled.out))
     assert(ran.code == 0)
     assert(ran.out.contains("| human(итог ИсходВорот) | — |"))
-    assert(ran.out.contains("format: 2.17"))
+    assert(ran.out.contains("format: 2.22"))
 }
 
 test "v217 convert to English and back keeps the tree" {
@@ -76,19 +76,19 @@ test "v217 convert to English and back keeps the tree" {
     assert(!second.out.contains("\"counter\""))
 }
 
-test "v217 version names the format 2.17" {
+test "v217 version names the format 2.22" {
     ro ran = run0(["version"])
-    assert(ran.out.contains("Alula 2.17"))
+    assert(ran.out.contains("Alula 2.22"))
     assert(!ran.out.contains("2.14"))
 }
 
-test "v217 the program is of the version 0.4.0" {
-    assert(PROGRAM_VERSION == "0.4.0")
-    assert(run0(["version"]).out.contains("alula 0.4.0"))
+test "v217 the program is of the version 0.5.0" {
+    assert(PROGRAM_VERSION == "0.5.0")
+    assert(run0(["version"]).out.contains("alula 0.5.0"))
 }
 
-test "v217 a file of 2.17 is not read" {
-    ro ran = run217(["check", path217()], file217().replace("format: 2.17", "format: 2.14"))
+test "v217 a file of 2.22 is not read" {
+    ro ran = run217(["check", path217()], file217().replace("format: 2.22", "format: 2.14"))
     assert(ran.code == 1)
     assert(ran.err.contains("версия не известна"))
 }
@@ -101,7 +101,7 @@ test "v217 brackets after a name are refused with the new way" {
 }
 
 test "v217 a dash for the counter of an agent is refused" {
-    ro text = file217().replace("| собеседник | human | human(итог ИсходВорот) | — | сказать, закрыть | — |", "| агент | agent | agent(итог текст) | — | — | — |")
+    ro text = file217().replace("| собеседник | human | human(итог ИсходВорот) | — | сказать, закрыть | — |", "| агент | agent | agent(итог строка) | — | — | — |")
     ro ran = run217(["check", path217()], text)
     assert(ran.code == 1)
     assert(ran.err.contains("счётчик"))
@@ -123,9 +123,9 @@ test "v217 the machines of the folder are read" {
     }
 }
 
-test "v217 the tables of the folder say format 2.17" {
+test "v217 the tables of the folder say format 2.22" {
     for f in table_files() {
-        assert(f.text.contains("format: 2.17"))
+        assert(f.text.contains("format: 2.22"))
         assert(!f.text.contains("format: 2.14"))
     }
 }
