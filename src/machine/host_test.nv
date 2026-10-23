@@ -280,3 +280,39 @@ test "host the registry of the examples loads and the table of its codes does no
         Err(errors) => panic(errors.join(" | "))
     }
 }
+
+// The text of the subsection 7a of a specification file: from its heading to the heading of section 8.
+fn hst_section_7a(spec str, heading str, next str) -> str {
+    ro from = spec.find(heading) ?? -1
+    if from < 0 { return "" }
+    ro rest = spec[from..]
+    ro to = rest.find(next) ?? -1
+    if to < 0 { return rest }
+    rest[..to]
+}
+
+fn hst_section_names_exactly_the_language(section str) -> bool {
+    if section == "" { return false }
+    // the two standard primitives
+    if !section.contains("`time_now`") || !section.contains("`new_id`") { return false }
+    // every code of the table of the language is named once
+    for row in language_journal() {
+        if !section.contains("`${row.code}`") { return false }
+    }
+    // and no other code of the lists: a name between backticks that is a code in the list of the codes (the text after "Journal codes" / "Коды журнала языка") is in the table
+    mut listed = 0
+    for part in section.split("`") {
+        if part.contains("_") && !part.contains(" ") && !part.contains("(") && !part.contains("-") {
+            listed += 1
+            if part != "time_now" && part != "new_id" && part != "новый_ид" && journal_find(language_journal(), part).is_none() { return false }
+        }
+    }
+    listed >= 35
+}
+
+test "host the section 7a of the specification names the primitives and the codes of the package" {
+    ro ru = hst_section_7a(embed_str("../../spec/alula-spec.md"), "### 7а.", "## 8.")
+    assert(hst_section_names_exactly_the_language(ru))
+    ro en = hst_section_7a(embed_str("../../spec/alula-spec.en.md"), "### 7a.", "## 8.")
+    assert(hst_section_names_exactly_the_language(en))
+}
