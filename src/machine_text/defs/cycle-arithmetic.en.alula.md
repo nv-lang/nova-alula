@@ -1,7 +1,7 @@
-# Definitions: cycle_arithmetic
+# Functions: cycle_arithmetic
 
-- definitions_version: 1
-- format: 2.17
+- functions_version: 1
+- format: 2.22
 - language: en
 
 ## Types
@@ -10,7 +10,7 @@
 ## Constants
 —
 
-## Definitions
+## Functions
 
-define ceiling_reached(pass_number int>=1, origin int>=1, limit int>=0) -> bool =
+fn ceiling_reached(pass_number int>=1, origin int>=1, limit int>=0) -> bool =>
   (pass_number - 1) - origin + 1 >= limit

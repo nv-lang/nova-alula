@@ -1,11 +1,11 @@
 # Machine: Agent step
 
 - machine: agent_step
-- machine_version: alula-2.17
-- format: 2.17
+- machine_version: alula-2.22
+- format: 2.22
 - language: en
 
-This is an **illustration**: the "Agent step" machine in full, written in the Alula format, format version 2.17 ([state-machine-alula-spec.md](state-machine-alula-spec.md); it is the only definition of the notation). It is the English-language twin of [state-machine-agent-step.alula.md](state-machine-agent-step.alula.md): the same machine, row for row, with the English keywords of the [word table](alula-keywords.tsv) (spec, section 1a); the JSON tree `machine/2` is the same for both files up to the internal names (constants, parameters, definitions, party names, bindings). The file lets a reader open and see a real machine: types, data, parties, definitions, all 37 transition rows, the ends with the "end to response" table, the attached "Pause" fragment; what the fragment brings (parameters, common events COMMON 1-6, the Pause state with events PAUSE 1-4) is described in section 9 of the specification.
+This is an **illustration**: the "Agent step" machine in full, written in the Alula format, format version 2.22 ([state-machine-alula-spec.md](state-machine-alula-spec.md); it is the only definition of the notation). It is the English-language twin of [state-machine-agent-step.alula.md](state-machine-agent-step.alula.md): the same machine, row for row, with the English keywords of the [word table](alula-keywords.tsv) (spec, section 1a); the JSON tree `machine/2` is the same for both files up to the internal names (constants, parameters, functions, party names, bindings). The file lets a reader open and see a real machine: types, data, parties, functions, all 37 transition rows, the ends with the "end to response" table, the attached "Pause" fragment; what the fragment brings (parameters, common events COMMON 1-6, the Pause state with events PAUSE 1-4) is described in section 9 of the specification.
 
 **Status.** The equivalence of this notation to the automaton by journal has not been checked: the "Agent step" interpreter was not run, scenarios were not compared. **The first source is this Alula record; the old tables are in the archive and are not updated.** The former notation is the state tables [archive/state-machine-agent-step-states.md](archive/state-machine-agent-step-states.md) and the automaton code [archive/state-machine-agent-step-automaton.md](archive/state-machine-agent-step-automaton.md). The "Pause" fragment is [archive/state-machine-pause-states.md](archive/state-machine-pause-states.md), the journal codes are [state-machine-journal.md](state-machine-journal.md), the names are [state-machine-glossary.md](state-machine-glossary.md). The equivalence of this file with the Russian sample is checked by [check-alula-samples.py](check-alula-samples.py).
 
@@ -14,40 +14,55 @@ This is an **illustration**: the "Agent step" machine in full, written in the Al
 ## Types
 
 ```
-enum CallerKind = Lens | CycleSession | ChatTurn | Gatekeeper
-enum ActionKind = Read "read" | Write "write" | Delete "delete" | Move "move" | Search "search"
-                | Execute "execute" | Network "network" | Think "think" | SwitchMode "switch_mode" | Other "other"
-enum ReplyCheck = Valid | Violated | Empty
-enum FailCode = NoResult "no_result" | ModelRefused "model_refused" | ConnectionLost "connection_lost"
-              | FormNotFixed "form_not_fixed" | Timeout "timeout" | StoppedByHuman "stopped_by_human"
-              | CeilingReached "ceiling_reached" | Cancelled "cancelled" | MaxTokens "max_tokens"
-              | MaxTurnRequests "max_turn_requests"
+type CallerKind enum Lens | CycleSession | ChatTurn | Gatekeeper
+type ActionKind enum
+  | Read = "read"
+  | Write = "write"
+  | Delete = "delete"
+  | Move = "move"
+  | Search = "search"
+  | Execute = "execute"
+  | Network = "network"
+  | Think = "think"
+  | SwitchMode = "switch_mode"
+  | Other = "other"
+type ReplyCheck enum Valid | Violated | Empty
+type FailCode enum
+  | NoResult = "no_result"
+  | ModelRefused = "model_refused"
+  | ConnectionLost = "connection_lost"
+  | FormNotFixed = "form_not_fixed"
+  | Timeout = "timeout"
+  | StoppedByHuman = "stopped_by_human"
+  | CeilingReached = "ceiling_reached"
+  | Cancelled = "cancelled"
+  | MaxTokens = "max_tokens"
+  | MaxTurnRequests = "max_turn_requests"
 
-type AgentModel { id text, provider text, variant ?text }
+type AgentModel { id str, provider str, variant ?str }
 type TokenUsage { input ?int, output ?int, reasoning ?int, cache_read ?int, cache_write ?int }
-type AgentProfile { family text, model text, effort ?text }
-type AgentLimits { silence_term ?int, token_budget ?int, cost_budget ?float, turn_limit ?int }
-type AgentRequest { kind CallerKind, profile AgentProfile, session text, dialog_kind text, context text,
-                    limits AgentLimits, trace text, step int }
-type TransportUsage { model AgentModel, tokens TokenUsage, cost ?float, context_used ?int, request_started int }
-type Usage { session text, result text, family text, model AgentModel, tokens TokenUsage, cost ?float,
-             created int, updated int, context_used ?int, trace text, step int }
-type AgentReply { text ?text, artifact ?text, usage Usage, request_started ?int }
-type PermissionRequest { action ActionKind, description text }
+type AgentProfile { family str, model str, effort ?str }
+type AgentLimits { silence_term ?int, token_budget ?int, cost_budget ?f64, turn_limit ?int }
+type AgentRequest { kind CallerKind, profile AgentProfile, session str, dialog_kind str, context str,
+                    limits AgentLimits, trace str, step int }
+type TransportUsage { model AgentModel, tokens TokenUsage, cost ?f64, context_used ?int, request_started int }
+type Usage { session str, result str, family str, model AgentModel, tokens TokenUsage, cost ?f64,
+             created int, updated int, context_used ?int, trace str, step int }
+type AgentReply { text ?str, artifact ?str, usage Usage, request_started ?int }
+type PermissionRequest { action ActionKind, description str }
 
-variant TurnResult {
-  Finished { text ?text, artifact ?text, transport_usage TransportUsage }
-  Truncated { transport_usage TransportUsage }
-  TurnRequestLimit { transport_usage TransportUsage }
-  ModelRefusal { transport_usage TransportUsage }
-  Stopped { transport_usage TransportUsage }
-  TransientError
-  PermanentError
-  NeedsPermission { permission_request PermissionRequest }
-}
+type TurnResult enum
+  | Finished { text ?str, artifact ?str, transport_usage TransportUsage }
+  | Truncated { transport_usage TransportUsage }
+  | TurnRequestLimit { transport_usage TransportUsage }
+  | ModelRefusal { transport_usage TransportUsage }
+  | Stopped { transport_usage TransportUsage }
+  | TransientError
+  | PermanentError
+  | NeedsPermission { permission_request PermissionRequest }
 ```
 
-The envelope types (request, response, refusal) are not declared: the executor builds them; the machine writes only `Response(value)` and `Refusal(code, text)` (section "Ends"). The source calls "float" non-negative; the format does not express a bound on a float, so the `?float` fields have no bound, as in the code. The values of `ActionKind` and `FailCode` (the texts in quotes) are the texts of the journal and of the wire; `CallerKind` and `ReplyCheck` have no values in the source, in the data they go by the JSON name of the element.
+The envelope types (request, response, refusal) are not declared: the executor builds them; the machine writes only `Response(value)` and `Refusal(code, text)` (section "Ends"). The source calls "float" non-negative; the format does not express a bound on a float, so the `?f64` fields have no bound, as in the code. The values of `ActionKind` and `FailCode` (the texts in quotes) are the texts of the journal and of the wire; `CallerKind` and `ReplyCheck` have no values in the source, in the data they go by the JSON name of the element.
 
 ## Constants
 
@@ -63,7 +78,7 @@ The envelope types (request, response, refusal) are not declared: the executor b
 | name | type | default | project_override |
 |---|---|---|---|
 | RETRY_PAUSE | int>=0 | 2000 | — |
-| PERMISSION_POLICY | full map[ActionKind, "allow" \| "deny" \| "ask"] | {ActionKind.Read: "ask", ActionKind.Write: "ask", ActionKind.Delete: "ask", ActionKind.Move: "ask", ActionKind.Search: "ask", ActionKind.Execute: "ask", ActionKind.Network: "ask", ActionKind.Think: "ask", ActionKind.SwitchMode: "ask", ActionKind.Other: "ask"} | — |
+| PERMISSION_POLICY | full map[ActionKind, "allow" \| "deny" \| "ask"] | [ActionKind.Read: "ask", ActionKind.Write: "ask", ActionKind.Delete: "ask", ActionKind.Move: "ask", ActionKind.Search: "ask", ActionKind.Execute: "ask", ActionKind.Network: "ask", ActionKind.Think: "ask", ActionKind.SwitchMode: "ask", ActionKind.Other: "ask"] | — |
 
 The sources call both values a project parameter but give no project key: the column holds `—`. The value of `RETRY_PAUSE` was accepted by the owner in the source, it is not a stub. The values of `PERMISSION_POLICY` are `"allow"`, `"deny"`, `"ask"`: the set of literals stands in the type argument of the map.
 
@@ -73,11 +88,11 @@ The sources call both values a project parameter but give no project key: the co
 |---|---|---|
 | kind | CallerKind | the caller kind |
 | profile | AgentProfile | the agent profile; at the caller — the column `profile` of its "Parties" |
-| session | text | the agent session |
-| dialog_kind | text | the dialog kind |
-| context | text | the turn context |
+| session | str | the agent session |
+| dialog_kind | str | the dialog kind |
+| context | str | the turn context |
 | limits | AgentLimits | the step limits |
-| trace | text | the trace of the caller |
+| trace | str | the trace of the caller |
 | step | int | the step number of the caller |
 
 The input fields are exactly the fields of `AgentRequest`: the callers name the party `machine agent_step(input AgentRequest, result AgentReply)`, and the fields of their request are the fields of this type (the format, section 1, "The input of a called machine"). The record `agent_request` as a whole is built by `initial` in "Data". The input has no invariant. The call request identifier (`call_request_id`) is not in the input: the executor supplies it.
@@ -96,8 +111,8 @@ The data of the "Pause" fragment (`previous`, `call_request_id`, `open_requests`
 | turn_count | int>=0 | 0 | yes | rows |
 | turn_before_retry | ?("first" \| "retry" \| "continue" \| "fix" \| "permission") | none | — | rows |
 | transport_usage | ?TransportUsage | none | — | rows |
-| reply_text | ?text | none | — | rows |
-| reply_artifact | ?text | none | — | rows |
+| reply_text | ?str | none | — | rows |
+| reply_artifact | ?str | none | — | rows |
 | permission_request | ?PermissionRequest | none | — | rows |
 | permission_decision | ?("allow" \| "deny") | none | — | rows |
 | started | ?int | none | — | rows |
@@ -107,7 +122,7 @@ The data of the "Pause" fragment (`previous`, `call_request_id`, `open_requests`
 | gatekeeper_attempt | int>=0 | 0 | yes | mechanics |
 | enhanced_attempt | int>=0 | 0 | yes | mechanics |
 
-The bound `turn_count <= turn limit` is not written: when the limit is below 1, Start sets 1, and the bound in the source is wrong for part of the values. The machine does not read `turn` to branch (the transport branches on it); `turn_before_retry` keeps the turn that is repeated after a transient error. `stop_reason` is written by the rows of the machine and by the "Pause" fragment (`pause_halt`, `cancel_request`). The name `transport_usage` serves both the data and the field of the `TurnResult` variants (the glossary calls the variant field `usage`, which would clash with the data `usage`).
+The bound `turn_count <= turn limit` is not written: when the limit is below 1, Start sets 1, and the bound in the source is wrong for part of the values. The machine does not read `turn` to branch (the transport branches on it); `turn_before_retry` keeps the turn that is repeated after a transient error. `stop_reason` is written by the rows of the machine and by the "Pause" fragment (`pause_halt`, `cancel_request`). The name `transport_usage` serves both the data and the field of the `TurnResult` forms (the glossary calls the form field `usage`, which would clash with the data `usage`).
 
 ## Parties
 
@@ -115,90 +130,95 @@ The bound `turn_count <= turn limit` is not written: when the limit is below 1, 
 |---|---|---|---|---|---|
 | agent | agent | agent(result TurnResult) | — | — | agent_attempt |
 | gatekeeper | gatekeeper | human or agent by setting elevated_attention_executor(result GateOutcome) | — | allow, deny | gatekeeper_attempt |
-| enhanced | enhanced | enhanced(result GateOutcome) | — | continue(human_word text, author text, source text), halt | enhanced_attempt |
+| enhanced | enhanced | enhanced(result GateOutcome) | — | continue { human_word str, author str, source str }, halt | enhanced_attempt |
 
 - Request limit: 1
 
 The agent profile lies inside `agent_request.profile` and goes to the party as part of that field; the request of the code has no separate field `profile`, so the column holds `—`. The gatekeeper is a human by default, an agent by the project setting `elevated_attention_executor`; the enhanced party is the party of the Pause state (a human by default, an enhanced gatekeeper by the owner's permission).
 
-## Definitions
+## Functions
 
 ```
-define sum_ints(a ?int, b ?int) -> ?int =
-  if has(a) and has(b) then (a ?? 0) + (b ?? 0) else a ?? b
+fn sum_ints(a ?int, b ?int) -> ?int =>
+  if has(a) and has(b) then { (a ?? 0) + (b ?? 0) } else { a ?? b }
 
-define sum_floats(a ?float, b ?float) -> ?float =
-  if has(a) and has(b) then (a ?? 0.0) + (b ?? 0.0) else a ?? b
+fn sum_floats(a ?f64, b ?f64) -> ?f64 =>
+  if has(a) and has(b) then { (a ?? 0.0) + (b ?? 0.0) } else { a ?? b }
 
-define add_tokens(a TokenUsage, b TokenUsage) -> TokenUsage =
+fn add_tokens(a TokenUsage, b TokenUsage) -> TokenUsage =>
   TokenUsage { input: sum_ints(a.input, b.input), output: sum_ints(a.output, b.output),
                reasoning: sum_ints(a.reasoning, b.reasoning),
                cache_read: sum_ints(a.cache_read, b.cache_read), cache_write: sum_ints(a.cache_write, b.cache_write) }
 
-define add_usage(previous ?TransportUsage, new TransportUsage) -> TransportUsage =
+fn add_usage(previous ?TransportUsage, new TransportUsage) -> TransportUsage =>
   if has(previous)
-  then (let p = require(previous) in
+  then { let p = require(previous);
         TransportUsage { model: new.model, tokens: add_tokens(p.tokens, new.tokens),
                          cost: sum_floats(p.cost, new.cost),
-                         context_used: new.context_used, request_started: new.request_started })
-  else new
+                         context_used: new.context_used, request_started: new.request_started } }
+  else { new }
 
-define tokens_spent(tu ?TransportUsage) -> int =
+fn tokens_spent(tu ?TransportUsage) -> int =>
   if has(tu)
-  then (let p = require(tu) in (p.tokens.input ?? 0) + (p.tokens.output ?? 0) + (p.tokens.reasoning ?? 0))
-  else 0
+  then { let p = require(tu); (p.tokens.input ?? 0) + (p.tokens.output ?? 0) + (p.tokens.reasoning ?? 0) }
+  else { 0 }
 
-define cost_spent(tu ?TransportUsage) -> float =
-  if has(tu) then (require(tu).cost ?? 0.0) else 0.0
+fn cost_spent(tu ?TransportUsage) -> f64 =>
+  if has(tu) then { require(tu).cost ?? 0.0 } else { 0.0 }
 
-define token_limit_reached(req AgentRequest, tu ?TransportUsage) -> bool =
+fn token_limit_reached(req AgentRequest, tu ?TransportUsage) -> bool =>
   has(req.limits.token_budget) and tokens_spent(tu) >= (req.limits.token_budget ?? 0)
 
-define cost_limit_reached(req AgentRequest, tu ?TransportUsage) -> bool =
+fn cost_limit_reached(req AgentRequest, tu ?TransportUsage) -> bool =>
   has(req.limits.cost_budget) and cost_spent(tu) >= (req.limits.cost_budget ?? 0.0)
 
-define turn_limit_reached(req AgentRequest, turns int>=0) -> bool =
+fn turn_limit_reached(req AgentRequest, turns int>=0) -> bool =>
   turns >= (req.limits.turn_limit ?? TURN_LIMIT)
 
-define interactive(call_kind CallerKind) -> bool =
+fn interactive(call_kind CallerKind) -> bool =>
   call_kind == CallerKind.CycleSession or call_kind == CallerKind.ChatTurn
 
-define needs_elevated_attention(action ActionKind) -> bool =
-  match action { ActionKind.Delete | ActionKind.Move | ActionKind.Execute | ActionKind.Network | ActionKind.SwitchMode -> true;
-                 else -> false }
+fn needs_elevated_attention(action ActionKind) -> bool =>
+  match action {
+    ActionKind.Delete | ActionKind.Move | ActionKind.Execute | ActionKind.Network | ActionKind.SwitchMode => true
+    else => false
+  }
 
-define decision_by_policy(action ActionKind, call_kind CallerKind) -> "allow" | "deny" | "ask" =
-  let by_table = (if needs_elevated_attention(action) then "ask" else PERMISSION_POLICY[action]) in
-  if by_table == "ask" and not interactive(call_kind) then "deny" else by_table
+fn decision_by_policy(action ActionKind, call_kind CallerKind) -> "allow" | "deny" | "ask" {
+  let by_table = if needs_elevated_attention(action) then { "ask" } else { PERMISSION_POLICY[action] };
+  if by_table == "ask" and not interactive(call_kind) then { "deny" } else { by_table }
+}
 
-define retry_pause(n int>=0) -> int =
-  fold(range(1, n), RETRY_PAUSE, (m, _) -> m * 2)
+fn retry_pause(n int>=0) -> int =>
+  (1..n).fold(RETRY_PAUSE, (m, _) => m * 2)
 
-define turn_term(req AgentRequest, request_turn text, retries int>=0) -> int =
-  let extra = (if request_turn == "retry" then retry_pause(retries) else 0) in
-  let term = req.limits.silence_term in
-  if has(term) then (term ?? 0) + extra else 0
+fn turn_term(req AgentRequest, request_turn str, retries int>=0) -> int {
+  let extra = if request_turn == "retry" then { retry_pause(retries) } else { 0 };
+  let term = req.limits.silence_term;
+  if has(term) then { (term ?? 0) + extra } else { 0 }
+}
 
-define collect_usage(req AgentRequest, stopped text, tu ?TransportUsage, began ?int, updated int) -> Usage =
-  let step_result = (if stopped == "" then "reply" else stopped) in
+fn collect_usage(req AgentRequest, stopped str, tu ?TransportUsage, began ?int, updated int) -> Usage {
+  let step_result = if stopped == "" then { "reply" } else { stopped };
   Usage {
     session: req.session, result: step_result, family: req.profile.family,
-    model: (if has(tu) then require(tu).model
-            else AgentModel { id: req.profile.model, provider: "", variant: req.profile.effort }),
-    tokens: (if has(tu) then require(tu).tokens
-             else TokenUsage { input: none, output: none, reasoning: none, cache_read: none, cache_write: none }),
-    cost: (if has(tu) then require(tu).cost else none),
+    model: (if has(tu) then { require(tu).model }
+            else { AgentModel { id: req.profile.model, provider: "", variant: req.profile.effort } }),
+    tokens: (if has(tu) then { require(tu).tokens }
+             else { TokenUsage { input: none, output: none, reasoning: none, cache_read: none, cache_write: none } }),
+    cost: (if has(tu) then { require(tu).cost } else { none }),
     created: began ?? updated, updated: updated,
-    context_used: (if has(tu) then require(tu).context_used else none),
+    context_used: (if has(tu) then { require(tu).context_used } else { none }),
     trace: req.trace, step: req.step }
+}
 
-define usage_event(u Usage) -> JournalEvent =
+fn usage_event(u Usage) -> JournalEvent =>
   journal_event("agent_usage", session: u.session, result: u.result, model: u.model.id,
                 input: text(u.tokens.input), output: text(u.tokens.output), reasoning: text(u.tokens.reasoning),
                 cache_read: text(u.tokens.cache_read), cache_write: text(u.tokens.cache_write), cost: text(u.cost))
 ```
 
-Correspondence to the automaton code: the names of the definitions are the names of the code (`sum_ints`, `sum_floats`, `add_tokens`, `add_usage`, `tokens_spent`, `cost_spent`, `token_limit_reached`, `cost_limit_reached`, `turn_limit_reached`, `interactive`, `needs_elevated_attention`, `decision_by_policy`, `retry_pause`, `turn_term`, `usage_event`, `collect_usage`); `project_policy` is the parameter `PERMISSION_POLICY`; `action_kind_word` is `text(ActionKind)` (the values are in the enum), `number_word` and `float_word` are `text(x)` (none is `none`). `record_end_usage` and `journal_machine_data` are not functions but actions in the "On entry" of the ends; `reply_validation`, `close_agent_turn`, `time_now` are primitives (section "Primitives").
+Correspondence to the automaton code: the names of the functions are the names of the code (`sum_ints`, `sum_floats`, `add_tokens`, `add_usage`, `tokens_spent`, `cost_spent`, `token_limit_reached`, `cost_limit_reached`, `turn_limit_reached`, `interactive`, `needs_elevated_attention`, `decision_by_policy`, `retry_pause`, `turn_term`, `usage_event`, `collect_usage`); `project_policy` is the parameter `PERMISSION_POLICY`; `action_kind_word` is `text(ActionKind)` (the values are in the enum), `number_word` and `float_word` are `text(x)` (none is `none`). `record_end_usage` and `journal_machine_data` are not functions but actions in the "On entry" of the ends; `reply_validation`, `close_agent_turn`, `time_now` are primitives (section "Primitives").
 
 ## Includes
 
@@ -236,15 +256,15 @@ Initial state: Start
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|
-| 1 | response: Finished(text, artifact, transport_usage: received) | — | transport_usage = add_usage(transport_usage, received); reply_text = text; reply_artifact = artifact | ReplyValidation |
-| 2 | response: Truncated(transport_usage: received) | — | transport_usage = add_usage(transport_usage, received) | Continuation |
-| 3 | response: TurnRequestLimit(transport_usage: received) | — | transport_usage = add_usage(transport_usage, received); stop_reason = "max_turn_requests"; journal(turn_requests_exhausted) | Accounting |
-| 4 | response: ModelRefusal(transport_usage: received) | — | transport_usage = add_usage(transport_usage, received); stop_reason = "model_refused"; journal(model_refused) | Accounting |
-| 5 | response: Stopped(transport_usage: received) | — | transport_usage = add_usage(transport_usage, received); stop_reason = "stopped_by_agent"; journal(turn_cancelled) | Accounting |
+| 1 | response: Finished { text, artifact, transport_usage: received } | — | transport_usage = add_usage(transport_usage, received); reply_text = text; reply_artifact = artifact | ReplyValidation |
+| 2 | response: Truncated { transport_usage: received } | — | transport_usage = add_usage(transport_usage, received) | Continuation |
+| 3 | response: TurnRequestLimit { transport_usage: received } | — | transport_usage = add_usage(transport_usage, received); stop_reason = "max_turn_requests"; journal(turn_requests_exhausted) | Accounting |
+| 4 | response: ModelRefusal { transport_usage: received } | — | transport_usage = add_usage(transport_usage, received); stop_reason = "model_refused"; journal(model_refused) | Accounting |
+| 5 | response: Stopped { transport_usage: received } | — | transport_usage = add_usage(transport_usage, received); stop_reason = "stopped_by_agent"; journal(turn_cancelled) | Accounting |
 | 6 | response: TransientError | — | — | Retry |
 | 7 | response: PermanentError | — | stop_reason = "no_result"; journal(agent_permanent_error) | Accounting |
-| 8 | response: NeedsPermission(permission_request: request) | — | permission_request = request | Policy |
-| 9 | failure(reason in {FailCode.ConnectionLost, FailCode.Timeout, FailCode.NoResult}) | — | stop_reason = text(reason); journal(turn_failed, reason: text(reason)) | Accounting |
+| 8 | response: NeedsPermission { permission_request: request } | — | permission_request = request | Policy |
+| 9 | failure(reason in [FailCode.ConnectionLost, FailCode.Timeout, FailCode.NoResult]) | — | stop_reason = text(reason); journal(turn_failed, reason: text(reason)) | Accounting |
 
 The appeal has no "On accept" (in the code `on_accept` is empty). A form fix goes not as a return within the same request but as a new turn "fix" by the rows of ReplyValidation, hence `Form returns: 0`. A failure code outside the list of row 9 is brought by the executor to `NoResult`, which is in the list.
 
@@ -352,16 +372,16 @@ The Pause state is brought by the "Pause" fragment (section "Includes"); it is n
 - On entry:
   - let now = call(time_now);
   - call(close_agent_turn);
-  - if not has(usage) then (journal(usage_event(collect_usage(agent_request, stop_reason, transport_usage, started, now))));
+  - if not has(usage) then { journal(usage_event(collect_usage(agent_request, stop_reason, transport_usage, started, now))) };
   - journal(agent_step_stopped, reason: stop_reason)
-- Except: stop_reason in {""}
+- Except: stop_reason in [""]
 
 ### Errored — end
 - Reads: all_data
 - On entry:
   - let now = call(time_now);
   - call(close_agent_turn);
-  - if not has(usage) then (journal(usage_event(collect_usage(agent_request, stop_reason, transport_usage, started, now))));
+  - if not has(usage) then { journal(usage_event(collect_usage(agent_request, stop_reason, transport_usage, started, now))) };
   - journal(transition_note);
   - journal(all_data)
 
@@ -373,7 +393,7 @@ Errored is entered from the `else` rows of the forks (`machine_error("fork_no_ma
 
 | end | № | when | response |
 |---|---|---|---|
-| End | 1 | true | Response(AgentReply { text: reply_text, artifact: reply_artifact, usage: require(usage), request_started: if has(transport_usage) then require(transport_usage).request_started else none }) |
+| End | 1 | true | Response(AgentReply { text: reply_text, artifact: reply_artifact, usage: require(usage), request_started: if has(transport_usage) then { require(transport_usage).request_started } else { none } }) |
 | Errored | 1 | true | Refusal(FailCode.NoResult, "agent step defect: " + transition_note.code) |
 | Halted | 1 | stop_reason == "no_result" | Refusal(FailCode.NoResult, stop_reason) |
 | Halted | 2 | stop_reason == "model_refused" | Refusal(FailCode.ModelRefused, stop_reason) |
