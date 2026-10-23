@@ -15,24 +15,33 @@ tests under Oracle 0.1.0 and the output of a unit must stay under 4 KB:
 
 | Folder | Module | What it is |
 |---|---|---|
-| `src/machine/` | `alula.machine` | the core (task 106) and the data files compiled into the binary: `schema/`, `machines/`, `scenarios/` |
+| `src/machine/` | `alula.machine` | the core (task 106), the registry and the journal of the host as data (`host.nv`, `journal_language.md`, task 158), the types syntax `parse_spec` (`spec.nv`) and the schemas `schema/` compiled into the binary |
+| `src/examples/` | `alula.examples` | tests only (task 158): the machines, the tables, the scenarios, the registry and the journal of the host "examples" (`examples/` of the package) and the registry of the samples (`spec/samples/registry.md`) compiled into the tests |
 | `src/machine_table/` | `alula.machine_table` | the model of a machine, the decoder of the JSON tree `machine/2`, the type syntax, the checks of a table |
 | `src/machine_run/` | `alula.machine_run` | the interpreter `AlulaMachine`, the state, the host of the primitives, the scenario runner `scenario/0` |
 | `src/machine_text/` | `alula.machine_text` | the translator of Alula (the tables in Russian or English, format 2.22 only) into the JSON `machine/2` and the reverse generator JSON -> Alula ([README](../machine_text/README.md), tasks 108, 113) |
-| `src/machine_text_eq/` | `alula.machine_text_eq` | tests only: the chat table equals the hand-written chat machine on 39 scenarios; the pilot "Agent step", the examples of the format |
-| `src/machine_agent/` | `alula.machine_agent` | tests only: the agent step of the product (task 109): the table equals its JSON, every row has a scenario, the journal codes are the methodology's; task 110: the sample of the methodology (format 2.7) is translated whole and the product table is that sample with two project keys |
+| `src/machine_text_eq/` | `alula.machine_text_eq` | tests only: the pilot "Agent step" (the sample of the specification), the examples of the format, the definitions of the meeting |
+| `src/machine_agent/` | `alula.machine_agent` | tests only: the samples of the methodology (`spec/samples/`, copies in `cases/`) go through the translator whole, in both languages, with the numbers and the JSON names of the reference (tasks 110, 151, 152, 154); the agent step as a machine of the methodology is tested in the product (task 158) |
 | `src/machine_text_lang/` | `alula.machine_text_lang` | tests only (task 113): the two languages of Alula - an English file gives the JSON of the Russian one, a word of the other language is an error with its line, the news of 2.9 - 2.11 |
 | `src/machine_text_render/` | `alula.machine_text_render` | tests only (task 113): the reverse generator - the canonical form, the circles "tree - file - tree" in both languages on every machine |
-| `src/machine_agent_en/` | `alula.machine_agent_en` | tests only (task 113): the English sample of the agent step of the methodology goes through the translator, equals the Russian one and runs the 75 scenarios |
+| `src/machine_agent_en/` | `alula.machine_agent_en` | tests only (task 113): the English sample of the agent step of the methodology goes through the translator and equals the Russian one (the 75 scenarios are run in the product, task 158) |
 | `src/machine_text_fmt/` | `alula.machine_text_fmt` | tests only (task 110): format 2.7 in the translator - prose and warnings, the expansion of a fragment, sets of literals, separators and `\|`, enum words, the hash of the sample of definitions |
 | `src/machine_nested/` | `alula.machine_nested` | tests only (task 119): the nested machines in the translator, the checks and the reverse generator (the examples of the meeting, the party kind `machine`, `Signal`, `State`, the profile, the edits, the form returns, the set limit) |
-| `src/machine_nested_run/` | `alula.machine_nested_run` | tests only (task 119): the 32 scenarios of the pairs "parent + nested machine" (`nested-*`), the events of the protocol of a call, the registry, the runner |
-| `src/machine_nested_eq/` | `alula.machine_nested_eq` | tests only (task 119): the agent step called by a chat session (`dialog_steps`) leaves what it leaves run alone - 72 of the 75 scenarios of the agent step, compared step by step (two have no nested counterpart: the death between the commit and the send, the stop in the window; one begins with an input the parent cannot give) |
-| `src/machine_cycle/` | `alula.machine_cycle` | tests only (task 122): the machine "Cycle check" of the methodology as a table - it translates, equals the 71 rows of the methodology row by row, writes the codes of the table of the journal, every row has a scenario (`scenarios/cycle-*`), a parent fits it by the types of the methodology |
-| `src/machine_session/` | `alula.machine_session` | tests only (task 121): the machine "Session start" - the table in the tree, the registry of the machines of the product, the 55 scenarios `session-*` with the agent step as the nested machine, every row taken, the journal codes and the hand-written automaton of the methodology, the end ERRORED through a changed table |
+| `src/machine_nested_run/` | `alula.machine_nested_run` | tests only (task 119): the scenarios of the pairs "parent + nested machine" of the examples (`nested-call-*` 17, `nested-set-*` 9, `batch-*` 3), the events of the protocol of a call, the registry, the runner |
+
+Task 158 (`doc/tasks/158-alula-split/`) split the package and the product. The units `machine_runner`, `machine_session`, `machine_cycle`, `machine_dialog`, `machine_nested_eq`, `machine_agent` (the tests of the machine), `machine_registry` and the parts of the other units that run a machine of the product or of the methodology live in the product repository (`src/machine_*`, `src/*_machines`); this package keeps the language, the examples (`examples/`) and the samples of the specification. The sections below that tell the history of the tasks 109-126 keep the names of their time (`standard_registry()`, `standard_types()`, `machines/`, `scenarios/` of this folder): the machines of the product and of the methodology, their scenarios and their registry are in the CrewHarness repository since 0.4.0.
 
 The proofs that need the hand-written chat machine on Nova (`machine_chat`: the chat machine as data equals it; `machine_dialog_eq`: the dialog equals it, with the failure injection) import the module `chat` of
 the CrewHarness product and stay in the product repository; they read the machines and the scenarios of this package through `alula.machine`.
+
+## The registry and the journal of the host are data (task 158, AL-113)
+
+The language names two primitives, `time_now` and `new_id` (`language_registry()`), and 35 journal codes (`journal_language.md`, `language_journal()`; spec 7a): the codes of the format (5), of the fragment "Pause" (8), of the engine and of the executor (22). Everything else a host registers as data in two Markdown files beside its machines:
+
+- `registry.md` (`parse_registry_table`): the table of the primitives `name | parameters | result | class | reads | writes` (spec 7; the names are the JSON names; a parameter is `name: type`, several are separated by `;`, `—` is none; the types are written as the tree `machine/2` writes them, `parse_spec`; a bar inside a cell is `\|`), the table of the roles of a parse primitive `primitive | role | result | reads`, and the tables of the types `type | kind | members` (`record`: `field: type; field: type`, `variant`: `Case; Case(field: type, field: type)`) under `## Types` or `## Types: <set>` (`host_types(data, set)`). The header cell tells the table (`name`/`имя`, `primitive`/`примитив`, `type`/`тип`).
+- `journal.md` (`parse_journal`): the table `Machine | Code | Russian template | Parameters` of the form of `journal_language.md`.
+
+`host_registry(data, journal)` and `load_host(registry_text, journal_text)` join them with the language: a primitive or a code of the host that repeats one of the language, a name twice, a role of a primitive that is not registered are errors (`registry.md:<line>: ...`, `journal.md: ...`), and the check of a table runs against the union. `without_journal(registry)` is the same registry with the codes not checked (the samples of the specification). The program `alula` reads the two files beside the file of its command (in the folder, for `test`) or from `--registry` and `--journal`. The hosts of this package: `examples/` (the example machines; `registry.md`: `close_agent_turn`; `journal.md`: 24 codes of the machines of the examples), `spec/samples/registry.md` (the 20 primitives of the pilots that the samples of the specification call). The registry of the methodology (54 primitives, the roles, the sets of the types) and the journals of the methodology (73 codes) and of the product (10) are the data of their owners (`machines/methodology/`, `machines/product/` of the CrewHarness repository).
 
 ## Alula 2.14 in the core (task 149)
 
@@ -80,9 +89,11 @@ is refused by Oracle 0.1.0 (item 25 there), so the interpreter's units are sibli
 | `types.nv` | `TypeSpec`, `TypeDefs` (named records and variants), `check_value` with the path of the first mismatch |
 | `expr.nv` | `Expr`, the tree of an expression, its JSON form (`expr_from_json`, `expr_to_json`), builders, `expr_depth` |
 | `eval.nv` | `eval(expr, scope)`, `eval_with(expr, scope, host)`, `EvalError`, the protocol `PrimitiveHost` |
-| `registry.nv` | `Primitive`, `Registry` (the primitives, the table of the codes of the journal, the tables "by role" of the parse primitives), the class of a primitive in the position of a call, `standard_registry()` and `standard_types()` |
-| `journal.nv`, `journal_methodology.md`, `journal_product.md` | the codes of the journal that a machine may write (format 5 and 10, 2.12, AL-31): the two tables of the methodology as data, the table of the product beside it, `journal_union()`, `journal_find`, `journal_table_issues` |
-| `data.nv` | the data files of the directories `schema/`, `machines/`, `scenarios/` compiled in (`embed_str`), `machine_files()`, `scenario_files()`, `schema_files()`; the names: a machine in Alula is `*.alula.md` (or `.alula.txt`; `is_table_name` takes these two names only), a compiled machine (the JSON `machine/2`) is `*.alula.json` (`is_machine_json_name` takes this name only), a scenario is `*.scenario.test.json` (task 112; there is no transitional period for the former names, Alula 2.11) |
+| `registry.nv` | `Primitive`, `Registry` (the primitives, the table of the codes of the journal, the tables "by role" of the parse primitives), the class of a primitive in the position of a call, `language_registry()` (the two primitives of the language, `time_now` and `new_id`, and the 35 codes) and `without_journal` |
+| `host.nv` | the registry and the journal of a host as data (task 158): `parse_registry_table` (`registry.md`), `host_registry`, `load_host`, `host_types`; the form of the files is in the section below |
+| `spec.nv` | `parse_spec`: a type as the tree `machine/2` writes it (`int>=0`, `?text`, `[]Finding`, `"a" \| "b"`), the reverse of `spec_text` (it lived in `alula.machine_table` until 0.3.2) |
+| `journal.nv`, `journal_language.md` | the codes of the journal that a machine may write (format 5 and 10, 2.12, AL-31; spec 7a, AL-113): the table of the language as data (35 codes), `parse_journal` for the table of a host, `language_journal()`, `journal_union(host)`, `journal_find`, `journal_table_issues(language, host)` (a code of a host that repeats a code of the language, a bad word, a code twice) |
+| `data.nv` | the schemas `schema/` compiled in (`embed_str`), `schema_files()`, `data_dir_names("schema")`, `text_of_file`; the names: a machine in Alula is `*.alula.md` (or `.alula.txt`; `is_table_name` takes them), the compiled tree is `*.alula.json` (`is_machine_json_name`); the machines and the scenarios of the examples are embedded by `alula.examples` (since 0.4.0) |
 | `*_test.nv` | 173 tests, more than 750 checks (the `assert` lines; loops repeat them) |
 
 ## The value
@@ -176,7 +187,7 @@ allowed in the place (section 7 of the format):
 `check_call_args` and `check_call_result` check the count and the types of the arguments and the type of the result of a call against the signature. `reads` and `writes` name what a primitive reads or writes without an
 argument (rule 11 of the specification): they join the "Input" of the state of the call.
 
-`standard_registry()` is filled with stubs (the name, the types and the class are the methodology's, the body is the host's) - 23 primitives; `standard_types()` declares the records and variants their signatures use.
+The registry of the pilots (23 primitives of the meeting and of the agent step: the name, the types and the class are the methodology's, the body is the host's) was `standard_registry()` until 0.3.2; since 0.4.0 it is data: the 20 primitives that the samples of the specification need are `spec/samples/registry.md`, all 54 of the methodology are `machines/methodology/registry.md` in the CrewHarness repository (section "The registry and the journal of the host are data").
 
 | Primitive | Parameters | Result | Class |
 |---|---|---|---|
@@ -341,7 +352,7 @@ Task 108 (`doc/tasks/108-table-translator/`) brought the interpreter from the fo
 - **A set of literals** `"a" | "b"` replaces `text from {"a", "b"}` (2.5, T-1): two values or more, under `?` and `[]` in parentheses (`?("a" | "b")`); `spec_text` and `parse_spec` follow; a literal outside the set assigned
   to a datum, or an initial value outside it, is an issue of the table; at run time every write is checked against the type (`bound_violation`).
 - **`id`** (`IdType`, 2.5, T-2): a text 8-4-4-4-12 of lower case hexadecimal digits (`is_uuid`); checked in `check_value`, so also for a datum, a word, the input of the machine (`input_rejected`, `reason=type`) and the arguments of a primitive.
-- **`new_id`** (reading, no parameters, result `id`), in `standard_registry()`. The check of the table: it may stand only in a binding of the entry of an operation and the binding must be written to the data by a row of that state.
+- **`new_id`** (reading, no parameters, result `id`), in `language_registry()` (since 0.4.0; before in `standard_registry()`). The check of the table: it may stand only in a binding of the entry of an operation and the binding must be written to the data by a row of that state.
   `ScriptedHost` answers it with `Uuid.v7()` under `with Time = th.fixed_ms(at), Random = th.seeded(...)` (the stamp of the event and the number of the call in the step): the same step gives the same ids; a scripted reply of the host wins.
   The host of the product that wants real random ids is another `PrimitiveHost`.
 - **Tuple fields from zero** (2.3): `t.0`, `t.1`; `make_tuple` names them `0`, `1`, ...; the lossless JSON `{"$tuple": [...]}` is the same.

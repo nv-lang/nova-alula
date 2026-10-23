@@ -35,19 +35,21 @@ One folder under `src/` is one module `alula.<folder>` and one unit of tests (Or
 | Module | What it is |
 |---|---|
 | `alula.engine` | the state machine engine: `Machine[S]`, `Engine`, the effects `Journal`, `Store`, `Link`, the journal line and the snapshot, in-memory handlers ([README](src/engine/README.md)) |
-| `alula.machine` | the core of the machines: the dynamic `Value`, the types, the tree of an expression, the pure evaluator, the registry of the primitives of the host, the table of the journal codes, and the data compiled in: `schema/`, `machines/` (15 machines as JSON, 10 of them also as tables), `scenarios/` (621 scenarios) ([README](src/machine/README.md)) |
+| `alula.machine` | the core of the machines: the dynamic `Value`, the types, the tree of an expression, the pure evaluator, the registry of the primitives of the host and the table of the journal codes (the language names two primitives and 35 codes, a host gives the rest as data: `registry.md`, `journal.md`), and the schemas `schema/` compiled in ([README](src/machine/README.md)) |
+| `alula.examples` | tests only: the examples (`examples/`: 15 machines as JSON, 10 as tables, 66 scenarios, `registry.md`, `journal.md`) and the registry of the samples of the specification, embedded into the tests |
 | `alula.machine_table` | the model of a machine, the decoder of the tree `machine/2`, the type syntax, the checks of a table |
 | `alula.machine_text` | the translator of tables (Russian and English, format 2.22) to the JSON and the reverse generator ([README](src/machine_text/README.md)) |
 | `alula.machine_run` | the interpreter `AlulaMachine`, the state, the host of the primitives, nested machines (`machine` parties), the runner of scenarios |
 | `alula.alula_cli`, program `alula` | the commands `compile`, `render`, `convert`, `check`, `summary`, `run`, `test`, `version` ([README](src/alula_cli/README.md)); `src/alula.nv` is the program |
 | `alula.alula_scenarios`, `alula.alula_eq` | tests only: a folder of scenarios through the program; the circles of the program equal the library |
-| `alula.machine_*` (the rest) | tests only: the proofs that run the machines of `src/machine/machines/` (the agent step, the cycle check, the session start, the task runner, the dialog, the nested pairs) through the translator and the interpreter |
+| `alula.machine_*` (the rest) | tests only: the proofs of the translator, the checks and the interpreter on the examples and on the samples of the specification |
 
 ## The map of the folders
 
 | Folder | What it is |
 |---|---|
 | `spec/` | the source of the language: [alula-spec.md](spec/alula-spec.md) (Russian, normative), [alula-spec.en.md](spec/alula-spec.en.md) (the English translation), [alula-keywords.tsv](spec/alula-keywords.tsv) (the table of the words of both file languages); `spec/samples/` - the samples of the notation: the agent step in Russian and in English, the machine "Meeting" with its notes |
+| `examples/` | the examples of the language: 15 machines as JSON (10 of them also as tables), their 66 scenarios, `registry.md` and `journal.md` of the host "examples" ([README](examples/README.md)) |
 | `tools/` | the checks of the language, plain Python: `check-alula-keywords.py` (the table of words and the samples against it; the dictionary of the methodology is read from `--glossary <path>` or `ALULA_GLOSSARY`, without it that part is skipped with a message), `check-alula-samples.py` (the two samples of the agent step against each other), `check-alula-translation.py` (the English text of the specification against the Russian) |
 | `docs/` | for readers: [overview.md](docs/overview.md), [data-types.md](docs/data-types.md), [debugging.md](docs/debugging.md), [history.md](docs/history.md) (the history of the language and its name), `diagrams/` (five SVG) |
 | `assets/` | `logo/`: the mark, the wordmarks, the social picture ([README](assets/logo/README.md)) |
@@ -61,10 +63,13 @@ The copies that the tests embed (`src/machine_text/alula-keywords.tsv`, `src/mac
 
 ## The samples
 
-The machines that the tests run are the samples of the package, and they live where the compiler can embed them (`embed_str` reads a file relative to its module):
-`src/machine/machines/` (tables `*.alula.md`/`.txt` and the compiled `*.alula.json`) and `src/machine/scenarios/` (`*.scenario.test.json`). The agent step
-(`agent_step`), the caller and the callee (`caller`, `callee`), the pair `dialog_steps`, the chat (`chat`) and the dialog (`dialog`) are the smallest samples to start from;
-`alula test src/machine` runs all 621 scenarios.
+The package holds the language and its own examples. The examples are in [examples/](examples/): the tables `*.alula.md`, the compiled `*.alula.json`, the scenarios `examples/scenarios/*.scenario.test.json`, and the host of the examples, `registry.md` and `journal.md` (the primitive `close_agent_turn` and 24 journal codes). The smallest ones to start from: the caller and the callee (`caller`, `callee`), `echo` (a free input), `retry` (`same` and `same, rerun`), `verdict` (an enumeration with fields), `router` (the exhaustion of a fork), `pausable` (the fragment "Pause"), `keeper` (a gate), `batch` (a set of nested calls). `alula test examples` runs all 66 scenarios.
+
+The samples of the methodology (the agent step and the meeting) stay in `spec/samples/` as texts: the tests translate them, check the hashes and the numbers; the registry of their pilots is `spec/samples/registry.md`.
+
+## What the package does not hold
+
+A host registers its own primitives and journal codes as data (the files `registry.md` and `journal.md` beside its machines, `alula check --registry --journal`); the package knows only the language (spec 7a, AL-113). The machines of the product CrewHarness (`chat`, `dialog`, the hub) and the algorithms of the methodology (`agent_step`, `cycle_check`, `session_start`, `task_runner`, 54 primitives, 73 journal codes) were samples of this package until 0.3.2; since 0.4.0 they are data of their owners and live in the CrewHarness repository (`machines/product/`, `machines/methodology/`; the second moves to the methodology repository by a later task), where `alula test` runs their scenarios on the pinned version of this package. The dependency goes one way: the product depends on this package (the guard `scripts/guards/check-no-product-imports.py`).
 
 ## Build and check
 
@@ -74,7 +79,7 @@ cd C:/work/alula
 
 nova test src --jobs 4 --timeout 600                 # all units (the heavy ones: machine_runner about 7 minutes, alula_scenarios about 3)
 nova test src --jobs 4 --timeout 600 --strict-effects
-powershell -File scripts/build-alula.ps1 -Test    # builds target/alula.exe and runs it on src/machine
+powershell -File scripts/build-alula.ps1 -Test    # builds target/alula.exe and runs it on examples/ (alula test examples)
 sh scripts/guards/run-all.sh                         # the guards: the marks of the Oracle workarounds, the border of the package, the former name, the copies of spec/
 python tools/check-alula-keywords.py --glossary <path>/state-machine-glossary.md   # the table of words, the samples and the dictionary (the glossary stays in the methodology)
 python tools/check-alula-samples.py --glossary <path>/state-machine-glossary.md    # the two samples of the agent step against each other

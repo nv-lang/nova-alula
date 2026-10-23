@@ -83,9 +83,9 @@ test "v217 version names the format 2.22" {
     assert(!ran.out.contains("2.14"))
 }
 
-test "v217 the program is of the version 0.3.2" {
-    assert(PROGRAM_VERSION == "0.3.2")
-    assert(run0(["version"]).out.contains("alula 0.3.2"))
+test "v217 the program is of the version 0.4.0" {
+    assert(PROGRAM_VERSION == "0.4.0")
+    assert(run0(["version"]).out.contains("alula 0.4.0"))
 }
 
 test "v217 a file of 2.22 is not read" {
@@ -120,5 +120,13 @@ test "v217 the tables of the folder say format 2.22" {
     for f in table_files() {
         assert(f.text.contains("format: 2.22"))
         assert(!f.text.contains("format: 2.14"))
+    }
+}
+
+test "v217 the tables of the examples compile" {
+    for name in example_tables() {
+        ro ran = run_with(["compile", "/m/${name}"], one_in_host("/m/${name}", text_of_file(table_files(), name)))
+        if ran.code != 0 { panic("compile ${name}: ${ran.err}") }
+        assert(ran.out.contains("\"format\":\"machine/2\"") || ran.out.contains("\"format\": \"machine/2\""))
     }
 }

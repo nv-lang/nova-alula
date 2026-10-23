@@ -1,7 +1,7 @@
 # build-alula.ps1 - builds the program `alula`: target/alula.exe from src/alula.nv, and prints the path of the file.
 #
 #   powershell -File scripts/build-alula.ps1             build
-#   powershell -File scripts/build-alula.ps1 -Test       build, then run the program on the machines of src/machine (`alula test`)
+#   powershell -File scripts/build-alula.ps1 -Test       build, then run the program on the examples (`alula test examples`)
 #
 # It needs Nova Oracle 0.1.0 and Clang (spikes/env/README.md, part 1): the environment of Nova is set up by its `setup-env.ps1` (NOVA_STD_PATH is set),
 # run it with a leading dot in the same console before this script. The script installs nothing and does not change PATH or any setting of the machine:
@@ -25,7 +25,7 @@ if ($LASTEXITCODE -ne 0) { Write-Error "nova build failed"; exit $LASTEXITCODE }
 if (-not (Test-Path -LiteralPath $exe)) { Write-Error "the build did not leave $exe"; exit 1 }
 
 if ($Test) {
-    & $exe test (Join-Path $root 'src/machine')
+    & $exe test (Join-Path $root 'examples')
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
