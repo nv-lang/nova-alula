@@ -14,7 +14,7 @@ import std.collections.hash_map.{HashMap}
 import std.crypto.sha256.{Sha256}
 
 /// JsonName: a name that leaves the machine with its JSON name: the line of the declaration, the kind of the declaration (`состояния`, `данного`, `типа`, `поля`, `сигнала`, …), the name as written, the path
-/// (`Тип.Вариант.поле`) and the JSON name.
+/// (`Тип.Форма.поле`) and the JSON name.
 export type JsonName { line int, where str, name str, path str, json str }
 
 // ---- the dictionary of the methodology ---------------------------------------------------------------------------------------------------------------
@@ -357,7 +357,7 @@ fn jn_rows_read(entries []TxEntry, sec TxSection, mut cx TxCx) -> () {
 }
 
 /// Is the kind of a declaration one whose JSON name is written in Pascal case?
-fn jn_is_pascal(what str) -> bool => what == "состояния" || what == "типа" || what == "варианта" || what == "элемента перечисления"
+fn jn_is_pascal(what str) -> bool => what == "состояния" || what == "типа" || what == "формы" || what == "элемента перечисления"
 
 /// TxJnPick: the JSON name of a declaration: the name, the automatic name, the row that gave it (-1: none) and what the declaration would have got without that row.
 type TxJnPick { json str, auto str, row int, without str }

@@ -1,0 +1,215 @@
+// align_test.nv - task 154: the samples of the methodology at the commit 87f59cb of the specification (Alula 2.22 with the clarifications AL-104 ... AL-110): the label of a form with fields is "формы" (the reference
+// script says so since AL-110), the record of the machine "Meeting" has plain defaults in the table `## Параметры` (no note in brackets), the primitive `новый_ид` is out of the check of the names of the calls (AL-107).
+module alula.machine_agent
+
+import std.text
+import alula.machine.{standard_registry}
+import alula.machine_text.{translate_checked, translate_report, translate_names, JsonName, definitions_hash, error_text}
+
+fn labels154(names []JsonName) -> []str {
+    mut out = []str.new()
+    for n in names {
+        if !out.contains(n.where) { out.push(n.where) }
+    }
+    out
+}
+
+fn count_label154(names []JsonName, label str) -> int {
+    mut n = 0
+    for x in names {
+        if x.where == label { n += 1 }
+    }
+    n
+}
+
+fn has_path154(names []JsonName, label str, path str, json str) -> bool {
+    for x in names {
+        if x.where == label && x.path == path && x.json == json { return true }
+    }
+    false
+}
+
+fn first_cell154(line str) -> str {
+    for p in line.split("|") { return p }
+    ""
+}
+
+// ---- the label of a form with fields (AL-110) -------------------------------------------------------------------------------------------------
+
+test "a154 the agent step names its forms with fields by the label формы" {
+    ro names = translate_names(ru17s())
+    assert(count_label154(names, "формы") == 8)
+    assert(has_path154(names, "формы", "ИтогХода.Закончен", "Finished"))
+    assert(has_path154(names, "формы", "ИтогХода.Отменён", "Stopped"))
+}
+
+test "a154 no name of the agent step has the label варианта" {
+    assert(count_label154(translate_names(ru17s()), "варианта") == 0)
+    assert(count_label154(translate_names(en17s()), "варианта") == 0)
+    assert(count_label154(translate_names(meeting17s()), "варианта") == 0)
+}
+
+test "a154 the English agent step names the same forms" {
+    ro names = translate_names(en17s())
+    assert(count_label154(names, "формы") == 8)
+    assert(has_path154(names, "формы", "TurnResult.Finished", "Finished"))
+}
+
+test "a154 the meeting names its forms with fields by the label формы" {
+    ro names = translate_names(meeting17s())
+    assert(count_label154(names, "формы") > 0)
+    assert(has_path154(names, "формы", "КонтекстРоли.Свидетель", "WitnessContext"))
+    assert(has_path154(names, "формы", "ОтветСвидетеля.Ответил", "Answered"))
+}
+
+test "a154 the labels are the labels of the reference script" {
+    ro want = ["поля входа", "данного", "настройки вратаря", "сигнала", "поля сигнала", "состояния", "примитива", "типа", "элемента перечисления", "формы", "поля"]
+    for name in ["ru", "en", "meeting"] {
+        for line in reference17(name) {
+            ro label = first_cell154(line)
+            assert(want.contains(label))
+        }
+    }
+    for n in translate_names(meeting17s()) { assert(want.contains(n.where)) }
+    for n in translate_names(ru17s()) { assert(want.contains(n.where)) }
+}
+
+test "a154 the files of the reference have the label формы and no label варианта" {
+    for name in ["ru", "en", "meeting"] {
+        ro text = names_file17(name)
+        assert(!text.contains("варианта"))
+        assert(text.contains("\tформы\t"))
+    }
+}
+
+test "a154 the reference counts the forms like the translator" {
+    ro ru = count_reference154("ru")
+    assert(ru == count_label154(translate_names(ru17s()), "формы"))
+    assert(count_reference154("en") == count_label154(translate_names(en17s()), "формы"))
+    assert(count_reference154("meeting") == count_label154(translate_names(meeting17s()), "формы"))
+}
+
+fn count_reference154(name str) -> int {
+    mut n = 0
+    for line in reference17(name) {
+        if line.starts_with("формы|") { n += 1 }
+    }
+    n
+}
+
+// ---- the record of the machine "Meeting" (AL-110) ----------------------------------------------------------------------------------------------
+
+test "a154 the table of the parameters of the meeting has plain defaults" {
+    ro text = meeting17s()
+    assert(text.contains("| ПОТОЛОК_ЗАХОДОВ | число>=0 | 0 | — |"))
+    assert(text.contains("| ЧИСТЫХ_ПОДРЯД | число>=0 | 0 | — |"))
+    assert(text.contains("| ПРОБ_В_ЧИСТОМ | число>=0 | 0 | — |"))
+    assert(text.contains("| СРОК_БЕЗДЕЙСТВИЯ | число>=0 | 0 | — |"))
+    assert(text.contains("| ПРЕДЕЛ_ЗАПРОСОВ | число>=1 | 1 | — |"))
+}
+
+test "a154 no default of the meeting has a note in brackets" {
+    assert(!meeting17s().contains("(заглушка источника"))
+    assert(!meeting17s().contains(" 0 (заглушка"))
+}
+
+test "a154 the meeting is translated as it is, with no note taken off" {
+    ro report = translate_report(meeting17s())
+    for e in report.errors {
+        if !e.message.contains("разными JSON-именами") { panic(error_text(e, "sample")) }
+    }
+    assert(report.json.contains("\"params\":[{\"name\":\"ПОТОЛОК_ЗАХОДОВ\",\"type\":\"int>=0\",\"default\":{\"op\":\"lit\",\"value\":0}"))
+    assert(report.json.contains("{\"name\":\"СРОК_БЕЗДЕЙСТВИЯ\",\"type\":\"int>=0\",\"default\":{\"op\":\"lit\",\"value\":0}"))
+}
+
+test "a154 the meeting keeps its numbers" {
+    ro o = obj17(translate_report(meeting17s()).json)
+    assert(items17(o, "states").len() == 30)
+    assert(items17(o, "primitives").len() == 22)
+        assert(translate_names(meeting17s()).len() == 225)
+}
+
+// The fingerprint of a sample is the hash of its text by the rule of the hash of a file of functions (section 8): the samples are the files of the commit 87f59cb of the methodology.
+test "a154 the samples are the files of the methodology" {
+    assert(definitions_hash(ru17s()) == "a2812af20cde")
+    assert(definitions_hash(en17s()) == "9652269ab7b7")
+    assert(definitions_hash(meeting17s()) == "126641e835c7")
+}
+
+// ---- the primitive new_id and the names of the calls (AL-107) ---------------------------------------------------------------------------------
+
+fn ru_new_id154() -> str => ru17s().replace("| time_now | — | число | reading | — | — |", "| time_now | — | число | reading | — | — |\n| новый_ид | — | ид | reading | — | — |")
+
+fn en_new_id154() -> str => en17s().replace("| time_now | — | int | reading | — | — |", "| time_now | — | int | reading | — | — |\n| new_id | — | id | reading | — | — |")
+
+fn clash154(text str) -> bool {
+    for e in translate_checked(text, standard_registry()).errors {
+        if e.message.contains("AL-81") { return true }
+    }
+    false
+}
+
+test "a154 the primitive новый_ид in the registry of a machine is no clash with the catalog" {
+    assert(ru_new_id154() != ru17s())
+    assert(!clash154(ru_new_id154()))
+}
+
+test "a154 the primitive new_id in the registry of an English machine is no clash" {
+    assert(en_new_id154() != en17s())
+    assert(!clash154(en_new_id154()))
+}
+
+test "a154 a function named new_id in an English machine is no clash" {
+    ro text = en17s().replace("fn retry_pause(n int>=0) -> int =>", "fn new_id(a int) -> int =>\n  a\n\nfn retry_pause(n int>=0) -> int =>")
+    assert(text != en17s())
+    assert(!clash154(text))
+}
+
+test "a154 a function named as a function of the catalog is still a clash" {
+    ro text = en17s().replace("fn retry_pause(n int>=0) -> int =>", "fn filter(a int) -> int =>\n  a\n\nfn retry_pause(n int>=0) -> int =>")
+    assert(text != en17s())
+    assert(clash154(text))
+}
+
+test "a154 a primitive named as a function of the catalog is still a clash" {
+    ro text = ru17s().replace("| time_now | — | число | reading | — | — |", "| time_now | — | число | reading | — | — |\n| склеить | — | число | reading | — | — |")
+    assert(text != ru17s())
+    assert(clash154(text))
+}
+
+// ---- the result of an agent (AL-109) -------------------------------------------------------------------------------------------------------
+
+fn line_no154(text str, start str) -> int {
+    mut no = 0
+    for line in text.split("\n") {
+        no += 1
+        if line.starts_with(start) { return no }
+    }
+    -1
+}
+
+fn party_clean154(text str, start str) -> bool {
+    ro at = line_no154(text, start)
+    assert(at > 0)
+    for e in translate_checked(text, standard_registry()).errors {
+        if e.line == at { return false }
+    }
+    true
+}
+
+test "a154 the result of an agent in English may be a built-in type" {
+    ro text = en17s().replace("agent(result TurnResult)", "agent(result str)")
+    assert(text != en17s())
+    assert(party_clean154(text, "| agent | agent | agent(result "))
+}
+
+test "a154 the result of an agent in Russian may be a built-in type" {
+    ro text = ru17s().replace("agent(итог ИтогХода)", "agent(итог строка)")
+    assert(text != ru17s())
+    assert(party_clean154(text, "| агент | agent | agent(итог "))
+}
+
+test "a154 the result of an agent that no type declares is an error" {
+    ro text = en17s().replace("agent(result TurnResult)", "agent(result Nowhere)")
+    assert(!party_clean154(text, "| agent | agent | agent(result "))
+}

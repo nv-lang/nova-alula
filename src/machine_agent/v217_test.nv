@@ -17,10 +17,6 @@ fn en17s() -> str => lf17(methodology_en_text())
 
 fn meeting17s() -> str => lf17(meeting_text())
 
-// The record of the machine "Meeting" writes a note in brackets after the default of four parameters (`0 (заглушка источника)`: the source does not fix the value); a default is a value, so the translator is
-// given the record without these notes. Nothing else is changed.
-fn meeting17_text() -> str => meeting17s().replace(" (заглушка источника; 0 — срока тишины нет)", "").replace(" (заглушка источника)", "")
-
 fn ru17_report() -> TranslateReport => translate_checked(ru17s(), standard_registry())
 
 fn en17_report() -> TranslateReport => translate_checked(en17s(), standard_registry())
@@ -298,11 +294,11 @@ test "v217 agent step ru and en have one set of JSON names" {
 }
 
 test "v217 meeting has 225 JSON names" {
-    assert(translate_names(meeting17_text()).len() == 225)
+    assert(translate_names(meeting17s()).len() == 225)
 }
 
 test "v217 meeting names are the names of the reference" {
-    ro left = ours17(translate_names(meeting17_text()))
+    ro left = ours17(translate_names(meeting17s()))
     ro right = reference17("meeting")
     assert(missing17(left, right) == "")
     assert(missing17(right, left) == "")
@@ -323,7 +319,7 @@ test "v217 the dictionary gives the names of the agent step that need no row" {
 }
 
 test "v217 the names of the meeting by the rows" {
-    ro j = translate_report(meeting17_text()).json
+    ro j = translate_report(meeting17s()).json
     assert(j.contains("\"name\":\"Claim\""))
     assert(j.contains("\"name\":\"keep_edit\""))
     assert(j.contains("\"name\":\"restore_copy\""))
@@ -334,7 +330,7 @@ test "v217 the names of the meeting by the rows" {
 }
 
 test "v217 the names of the meeting by the dictionary" {
-    ro j = translate_report(meeting17_text()).json
+    ro j = translate_report(meeting17s()).json
     assert(j.contains("\"name\":\"halt_meeting\""))
     assert(j.contains("\"name\":\"counted\""))
     assert(j.contains("\"name\":\"not_counted\""))
@@ -342,7 +338,7 @@ test "v217 the names of the meeting by the dictionary" {
 }
 
 test "v217 meeting is read but for the fields with two JSON names" {
-    ro report = translate_report(meeting17_text())
+    ro report = translate_report(meeting17s())
     for e in report.errors {
         if !e.message.contains("разными JSON-именами") { panic(error_text(e, "sample")) }
     }
@@ -350,7 +346,7 @@ test "v217 meeting is read but for the fields with two JSON names" {
 }
 
 test "v217 meeting states and primitives in the tree" {
-    ro report = translate_report(meeting17_text())
+    ro report = translate_report(meeting17s())
     ro o = obj17(report.json)
     assert(items17(o, "states").len() == 30)
     assert(items17(o, "primitives").len() == 22)

@@ -48,10 +48,10 @@ fn decl_field(mut p TxP, mut cx TxCx, what str) -> Result[TxJ, TranslateError] {
     p_adv(p)
     if p_is(p, ":") { return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "после имени поля тип пишется без двоеточия (формат 2.3)")) }
     ro en = decl_exported(p, cx, n, what, "${what}:${cx.env.opath.join(".")}", path_under(cx, n.text))?
-    // AL-78: a field named as a macro of the catalog cannot be read after a dot when a call follows (`x.filter(`): a warning, not an error, because the machines of the product have a field `count` that the English file
-    // writes with the same word; the specification says an error of the check of types, the reference script does not check it (reported to the methodology)
+    // AL-78, AL-106: a field named as a macro of the catalog is told apart from the call of the macro by the brackets (`x.count` and `x.count(…)`): a warning, not an error, because the machines of the product have a field `count`
+    // (AL-106 of the specification says so since the commit 87f59cb of the methodology)
     if is_macro_word(cx.words, n.text) {
-        cx.warnings.push(tx_err(n.line, n.col, "warning", "поле `${n.text}` названо как макрос каталога (AL-78): после точки `${n.text}(…)` — вызов метода, поле с таким именем прочитать нельзя"))
+        cx.warnings.push(tx_err(n.line, n.col, "warning", "поле `${n.text}` названо как макрос каталога (AL-78, AL-106): `x.${n.text}` — поле, `x.${n.text}(…)` — вызов макроса, их отличают скобки"))
     }
     if p_is(p, ":") { return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "после имени поля тип пишется без двоеточия (формат 2.3)")) }
     declare_field(cx, n, en)
@@ -136,8 +136,8 @@ fn decl_enum(mut p TxP, mut cx TxCx, n TxTok, header_line int) -> Result[TxTypeD
         if t_is(lt, "{") { fields_ahead = true }
         look += 1
     }
-    // the label of the kind of the declaration is the label of the reference script of the methodology (`check-alula-keywords.py` still says "варианта" for a form with fields): the tests compare the lists of names by it
-    ro form_what = if fields_ahead { "варианта" } else { "элемента перечисления" }
+    // the label of the kind of the declaration is the label of the reference script of the methodology (`check-alula-keywords.py`, AL-110: "формы" for a form with fields): the tests compare the lists of names by it
+    ro form_what = if fields_ahead { "формы" } else { "элемента перечисления" }
     ro form_space = if fields_ahead { "формы:" } else { "элементы:" }
     ro one_line = !p_done(p) && p_tok(p).line == header_line
     if one_line && p_is(p, "|") { return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "в записи перечисления на одной строке `|` перед первым элементом не бывает (AL-99): `тип Имя перечисление Эл | Эл2`; в несколько строк — заголовок и строки `  | Эл`")) }
