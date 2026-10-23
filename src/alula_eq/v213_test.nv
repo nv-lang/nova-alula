@@ -5,7 +5,66 @@ module alula.alula_eq
 
 import std.text
 import alula.machine.{text_of_file}
-import alula.examples.{machine_files, table_files}
+import alula.examples.{table_files, machine_files}
+
+fn all_tables() -> []str => ["callee.alula.md", "caller.alula.md", "fan.alula.md", "echo.alula.md", "retry.alula.md", "verdict.alula.md", "router.alula.md", "pausable.alula.md", "keeper.alula.md", "batch.alula.md"]
+
+fn tree_name(name str) -> str => name.replace(".alula.md", ".alula.json").replace(".alula.txt", ".alula.json")
+
+fn has_line_starting(text str, prefix str) -> bool {
+    for line in text.split("\n") {
+        if line.starts_with(prefix) { return true }
+    }
+    false
+}
+
+test "v213 tables use the new keys" {
+    for name in all_tables() {
+        ro text = text_of_file(table_files(), name)
+        assert(!has_line_starting(text, "- Вход:"))
+        assert(!has_line_starting(text, "Вход:"))
+        assert(!text.contains("| слово("))
+        assert(!text.contains("слова ворот"))
+        assert(!text.contains("Раскрытие фрагмента"))
+    }
+}
+
+test "v213 tables have no unicode signs" {
+    for name in all_tables() {
+        // the rows of the tables are code; a paragraph of prose is a comment for the reader and may use any sign
+        for line in text_of_file(table_files(), name).split("\n") {
+            if !line.starts_with("|") { continue }
+            for sign in ["≥", "≤", "≠", "→", "∈", "…"] {
+                assert(!line.contains(sign))
+            }
+        }
+    }
+}
+
+test "v213 tables write signals" {
+    mut with_signals = 0
+    for name in all_tables() {
+        ro text = text_of_file(table_files(), name)
+        if text.contains("| сигнал(") || text.contains("| signal(") { with_signals += 1 }
+    }
+    assert(with_signals >= 3)
+}
+
+test "v213 tables have no empty keys" {
+    for name in all_tables() {
+        ro text = text_of_file(table_files(), name)
+        for key in ["Запрос", "Читает", "Срок тишины", "При входе"] {
+            assert(!has_line_starting(text, "- ${key}: —"))
+            assert(!has_line_starting(text, "- ${key}: нет"))
+        }
+    }
+}
+
+test "v213 tables say 2.22" {
+    for name in all_tables() {
+        assert(text_of_file(table_files(), name).contains("format: 2.22\n"))
+    }
+}
 
 test "v213 trees hold signals" {
     for f in machine_files() {
@@ -14,3 +73,12 @@ test "v213 trees hold signals" {
         assert(!f.text.contains("\"kind\": \"word\""))
     }
 }
+
+test "v213 check takes every table" {
+    for name in all_tables() {
+        ro made = run_with(["check", "/m/${name}"], one("/m/${name}", text_of_file(table_files(), name)))
+        if made.code != 0 { panic("check ${name}: ${made.err}") }
+        assert(made.code == 0)
+    }
+}
+

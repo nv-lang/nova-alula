@@ -4,8 +4,8 @@ module alula.machine_nested
 
 import std.text
 import alula.machine.{Registry, Primitive, ParamSpec, TextType, IntType, BoolType, RecordType, ListType, Reading, Pure, register, add_role}
-import alula.machine_text.{translate_checked, render, render_machine, TranslateReport}
 import alula.examples.{sample_registry}
+import alula.machine_text.{translate_checked, render, render_machine, TranslateReport}
 
 // A file at 2.12 (the fixtures of the older tasks are migrated by the same replace).
 fn at212(text str) -> str => text.replace("- format: 2.11\n", "- format: 2.22\n")
@@ -47,6 +47,15 @@ test "v212 fragments halt word" {
     assert(word != "")
     // the word is a gate word of the party `enhanced`
     assert(json.contains("{\"name\":\"${word}\"") )
+}
+
+test "v212 fragments args" {
+    ro json = tree_of(meeting212())
+    assert(json.contains("\"halt_code\":{\"op\":\"lit\",\"value\":\"Witness_halt_meeting\"}"))
+    assert(json.contains("\"nested\":{\"op\":\"list\",\"items\":[{\"op\":\"lit\",\"value\":\"agent_step\"}]}"))
+    assert(json.contains("\"cancel_requests\":{\"op\":\"lit\",\"value\":\"without_return_to_send\"}"))
+    assert(json.contains("\"reenter\":{\"op\":\"lit\",\"value\":\"requests_from_to_send\"}"))
+    assert(json.contains("\"write_right\":{\"op\":\"lit\",\"value\":\"право записи на предложение: закрытое в окне проверки линз остаётся закрытым\"}"))
 }
 
 test "v212 fragments order of the args" {

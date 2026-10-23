@@ -6,8 +6,8 @@ module alula.machine_agent
 
 import std.text
 import std.encoding.json.{Json, JsonValue, JsonObject}
-import alula.machine_text.{translate_checked, translate_report, translate_names, TranslateReport, JsonName, error_text, render}
 import alula.examples.{sample_registry}
+import alula.machine_text.{translate_checked, translate_report, translate_names, TranslateReport, JsonName, error_text, render}
 
 fn lf17(text str) -> str => text.replace("\r\n", "\n")
 
@@ -25,6 +25,51 @@ fn first17(report TranslateReport) -> str {
     if report.errors.len() == 0 { return "ok" }
     error_text(report.errors[0], "sample")
 }
+
+fn names_file17(name str) -> str {
+    if name == "ru" { return lf17(embed_str("cases/agent-step-names-222.tsv")) }
+    if name == "en" { return lf17(embed_str("cases/agent-step-names-222.en.tsv")) }
+    lf17(embed_str("cases/meeting-names-222.tsv"))
+}
+
+// The lines of a file of the reference: `kind of the declaration|path|JSON name`.
+fn reference17(name str) -> []str {
+    mut out = []str.new()
+    for line in names_file17(name).split("\n") {
+        if line == "" || line.starts_with("#") { continue }
+        ro cells = line.split("\t")
+        mut parts = []str.new()
+        for c in cells { parts.push(c) }
+        out.push("${parts[1]}|${parts[2]}|${parts[3]}")
+    }
+    out
+}
+
+fn ours17(names []JsonName) -> []str {
+    mut out = []str.new()
+    for n in names { out.push("${n.where}|${n.path}|${n.json}") }
+    out
+}
+
+fn same_set17(left []str, right []str) -> bool {
+    if left.len() != right.len() { return false }
+    for l in left {
+        if !right.contains(l) { return false }
+    }
+    for r in right {
+        if !left.contains(r) { return false }
+    }
+    true
+}
+
+fn missing17(left []str, right []str) -> str {
+    for l in left {
+        if !right.contains(l) { return l }
+    }
+    ""
+}
+
+// ---- the text of a sample: the numbers by counting ---------------------------------------------------------------------------------------------
 
 fn count_lines_starting17(text str, prefix str) -> int {
     mut n = 0
@@ -164,6 +209,16 @@ test "v217 agent step en is clean" {
     assert(report.warnings.len() == 0)
 }
 
+test "v217 agent step tree numbers" {
+    ro j = ru17_report().json
+    assert(j.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.22\",\"machine\":\"agent_step\",\"version\":\"alula-2.22\""))
+    ro o = obj17(j)
+    assert(items17(o, "states").len() == 14)
+    assert(items17(o, "data").len() == 21)
+    assert(items17(o, "definitions").len() == 16)
+    assert(items17(o, "common_events").len() == 6)
+}
+
 fn obj17(text str) -> JsonObject {
     match Json.parse(text) {
         Ok(v) => {
@@ -204,8 +259,50 @@ test "v217 agent step en has 149 JSON names" {
     assert(translate_names(en17s()).len() == 149)
 }
 
+test "v217 agent step ru names are the names of the reference" {
+    ro left = ours17(translate_names(ru17s()))
+    ro right = reference17("ru")
+    assert(missing17(left, right) == "")
+    assert(missing17(right, left) == "")
+    assert(same_set17(left, right))
+}
+
+test "v217 agent step en names are the names of the reference" {
+    ro left = ours17(translate_names(en17s()))
+    ro right = reference17("en")
+    assert(missing17(left, right) == "")
+    assert(same_set17(left, right))
+}
+
+fn json_part17(entry str) -> str {
+    ro at = entry.rfind("|") ?? -1
+    entry[at + 1..]
+}
+
+fn jsons17(entries []str) -> []str {
+    mut out = []str.new()
+    for e in entries { out.push(json_part17(e)) }
+    out
+}
+
+test "v217 agent step ru and en have one set of JSON names" {
+    ro ru = jsons17(reference17("ru"))
+    ro en = jsons17(reference17("en"))
+    assert(ru.len() == 149)
+    assert(missing17(ru, en) == "")
+    assert(missing17(en, ru) == "")
+}
+
 test "v217 meeting has 225 JSON names" {
     assert(translate_names(meeting17s()).len() == 225)
+}
+
+test "v217 meeting names are the names of the reference" {
+    ro left = ours17(translate_names(meeting17s()))
+    ro right = reference17("meeting")
+    assert(missing17(left, right) == "")
+    assert(missing17(right, left) == "")
+    assert(same_set17(left, right))
 }
 
 test "v217 the two rows of the agent step set the names" {

@@ -5,7 +5,67 @@ module alula.alula_eq
 
 import std.text
 import alula.machine.{text_of_file}
-import alula.examples.{machine_files, table_files}
+import alula.examples.{table_files, machine_files}
+
+fn tables217() -> []str => ["callee.alula.md", "caller.alula.md", "fan.alula.md", "echo.alula.md", "retry.alula.md", "verdict.alula.md", "router.alula.md", "pausable.alula.md", "keeper.alula.md", "batch.alula.md"]
+
+// ` (latin)` right after a name in a row of a table or in a heading of a state
+fn has_bracket_after_name217(line str) -> bool {
+    mut rest = line
+    while true {
+        ro at = rest.find(" (") ?? -1
+        if at < 0 { return false }
+        rest = rest[at + 2..]
+        mut word = []str.new()
+        mut closed = false
+        for c in rest.chars() {
+            ro one = "${c}"
+            ro letter = (one >= "a" && one <= "z") || (one >= "A" && one <= "Z") || one == "_" || (one >= "0" && one <= "9")
+            if letter { word.push(one) } else {
+                closed = one == ")"
+                break
+            }
+        }
+        if closed && word.len() > 0 { return true }
+    }
+    false
+}
+
+test "v217 tables say format 2.22" {
+    for name in tables217() {
+        ro text = text_of_file(table_files(), name)
+        assert(text.contains("format: 2.22"))
+        assert(!text.contains("format: 2.14"))
+    }
+}
+
+test "v217 tables have no brackets after the names" {
+    for name in tables217() {
+        for line in text_of_file(table_files(), name).split("\n") {
+            if line.starts_with("|") || line.starts_with("###") || line.starts_with("перечисление") || line.starts_with("тип ") {
+                if has_bracket_after_name217(line) { panic("${name}: ${line}") }
+            }
+        }
+    }
+}
+
+test "v217 the tables that need rows have the section of the names" {
+    mut with_names = 0
+    for name in tables217() {
+        if text_of_file(table_files(), name).contains("## Имена") { with_names += 1 }
+    }
+    assert(with_names >= 3)
+}
+
+test "v217 the tables use the dash of the request" {
+    mut dashes = 0
+    for name in tables217() {
+        for line in text_of_file(table_files(), name).split("\n") {
+            if line.contains("| — | сторона |") || line.contains("| — | исполнитель |") { dashes += 1 }
+        }
+    }
+    assert(dashes >= 4)
+}
 
 test "v217 the trees say 2.22" {
     for f in machine_files() {

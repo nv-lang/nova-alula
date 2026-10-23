@@ -51,6 +51,43 @@ test "cs names by the Alula" {
 
 // ---- the pilot "Agent step" ---------------------------------------------------------------------------------------------------
 
+test "cs pilot" {
+    ro report = translate_checked(case_text("agent-step.alula.md"), sample_registry())
+    if report.errors.len() > 0 { panic(lines_of_errors(report, "agent-step.alula.md")) }
+    assert(report.errors.len() == 0)
+    assert(report.rows_noted == 0)
+    assert(report.rows_total == 120)
+    assert(report.json.contains("\"request_limit\":{\"op\":\"lit\",\"value\":1}"))
+}
+
+test "cs pilot summary" {
+    ro report = translate_checked(case_text("agent-step.alula.md"), sample_registry())
+    ro text = render_summary(report.json)
+    assert(text.starts_with("machine agent_step (version pilot-2.5): 14 states, 47 rows, "))
+    assert(text.contains("  AgentTurn (appeal): 9 rows, 18 actions"))
+    assert(text.contains("  Pause (appeal): 4 rows, 4 actions"))
+    assert(text.contains("common events: 6 rows, 12 actions"))
+    assert(text.contains("ends: 13 rows"))
+}
+
+test "cs pilot twice" {
+    ro a = translate_report(case_text("agent-step.alula.md"))
+    ro b = translate_report(case_text("agent-step.alula.md"))
+    assert(a.json == b.json)
+    assert(a.rows_total == b.rows_total)
+}
+
+test "cs pilot pause" {
+    ro report = translate_checked(case_text("agent-step.alula.md"), sample_registry())
+    assert(report.json.contains("\"name\":\"human_stop\",\"fields\":[{\"name\":\"human_word\",\"type\":\"text\"}"))
+    assert(report.json.contains("\"to\":\"@previous\""))
+    assert(report.json.contains("{\"name\":\"previous\",\"type\":\"?State\""))
+    assert(report.json.contains("{\"do\":\"cancel_open\"}"))
+    assert(report.json.contains("\"value\":\"pause_halt\""))
+}
+
+// ---- the examples of the format -----------------------------------------------------------------------------------------------
+
 test "cs examples" {
     ro report = translate_checked(case_text("format-examples.alula.md"), examples_registry())
     if report.errors.len() > 0 { panic(lines_of_errors(report, "format-examples.alula.md")) }

@@ -2,11 +2,12 @@
 // the checks of the table pass, the paragraphs are skipped, the expansion of the fragment is skipped, the JSON is the JSON of the product table but for the keys of the project.
 module alula.machine_agent
 
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
 import alula.machine.{is_table_name}
+import alula.examples.{sample_registry}
 import alula.machine_table.{load_machine}
 import alula.machine_text.{translate_checked, TranslateReport, error_text, render_summary}
-import alula.examples.{sample_registry}
 
 fn lf(text str) -> str => text.replace("\r\n", "\n")
 
@@ -54,12 +55,36 @@ test "sm warnings listed" {
     assert(sample().contains("Начальное состояние: СТАРТ"))
 }
 
+test "sm loads" {
+    match load_machine(sample_json(), sample_registry()) {
+        Ok(def) => {
+            assert(def.name == "agent_step")
+            assert(def.version == "alula-2.22")
+            assert(def.states.len() == 14)
+            assert(def.common.len() == 6)
+            assert(def.parties.len() == 3)
+            assert(def.data.len() == 21)
+            assert(def.definitions.len() == 16)
+            assert(def.end_rows.len() == 13)
+            assert(def.primitives.len() == 3)
+            assert(def.request_limit.len() == 1)
+            assert(def.params.len() == 2)
+        }
+        Err(issues) => panic("the sample does not load: ${issues[0].path}: ${issues[0].message}")
+    }
+}
+
 test "sm summary" {
     ro text = render_summary(sample_json())
     assert(text.starts_with("machine agent_step (version alula-2.22): 14 states, 47 rows, "))
     assert(text.contains("  AgentTurn (appeal): 9 rows, 18 actions"))
     assert(text.contains("common events: 6 rows"))
     assert(text.contains("ends: 13 rows"))
+}
+
+test "sm header 27" {
+    assert(sample_json().starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.22\",\"machine\":\"agent_step\",\"version\":\"alula-2.22\""))
+    assert(sample().contains("- format: 2.22"))
 }
 
 test "sm no expansion section" {
@@ -134,4 +159,16 @@ test "sm id field" {
     ro json = sample_json()
     assert(!json.contains("\"request_id\""))
     assert(json.contains("\"name\":\"cancel_request\",\"fields\":[{\"name\":\"id\",\"type\":\"text\"}]"))
+}
+
+test "sm table names" {
+    for n in ["a.alula.md", "a.alula.txt"] { assert(is_table_name(n)) }
+    for n in ["a.md", "a.json", "a.alula", "table.md", "a.alula.json", "a.table.json", "foo.table.md", "foo.table.txt", "foo.machine.json"] { assert(!is_table_name(n)) }
+    // the translator reads the text and not the name of the file: the notes of one text differ only by the name that the caller prints
+    ro broken = translate_checked(sample().replace("число_ходов += 1", "число_ходов +="), sample_registry())
+    assert(broken.errors.len() > 0)
+    ro old_name = error_text(broken.errors[0], "agent_step.table.md")
+    ro new_name = error_text(broken.errors[0], "agent_step.alula.md")
+    assert(old_name.replace("agent_step.table.md", "F") == new_name.replace("agent_step.alula.md", "F"))
+    assert(sample_report().json == translate_checked(sample(), sample_registry()).json)
 }

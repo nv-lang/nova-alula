@@ -5,9 +5,9 @@ module alula.machine_nested
 import std.text
 import std.encoding.json.{Json, JsonValue, JsonObject}
 import alula.machine.{Registry, Primitive, ParamSpec, TextType, RecordType, Reading, register}
+import alula.examples.{sample_registry}
 import alula.machine_text.{translate_checked, translate_report, TranslateReport, TranslateError, error_text, render_machine, RenderReport}
 import alula.machine_table.{load_machine, parse_machine, MachineDef, LoadError, issue_text}
-import alula.examples.{sample_registry}
 
 // Three backticks: a block of code. A raw string cannot hold them, so they are put in.
 // ORACLE-WORKAROUND(43): the helper is `ticks`, not `fence`: a user function `fence` clashes with the C function of the runtime; rename to `fence` when item 43 is fixed
@@ -102,6 +102,12 @@ fn note_says(text str, needle str) -> bool {
         if line.contains(needle) { return true }
     }
     false
+}
+
+fn first_note(text str) -> str {
+    ro all = notes(text)
+    if all.len() == 0 { return "ok" }
+    all[0]
 }
 
 fn count_kind(text str, kind str) -> int {

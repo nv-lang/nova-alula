@@ -1,15 +1,66 @@
-// run_test.nv - the scenarios `nested-*.scenario.test.json` (task 119): a parent that calls a nested machine, run together by the runner of `src/machine_run/nested_scenario.nv`.
-// Each file names its parent (`caller`, `fan`); the nested machine `callee` is in the registry. A difference is a report that says the step, the engine and the part.
+// run_test.nv - the scenarios `nested-*.scenario.test.json` of the examples (task 119): a parent that calls a nested machine, run together by the runner of `src/machine_run/nested_scenario.nv`.
+// Each file names its parent (`caller`, `fan`); the nested machine `callee` is in the registry. A difference is a report that says the step, the engine and the part. The pair of the product
+// (`dialog_steps` calls the agent step of the methodology) is run in the product (task 158).
 module alula.machine_nested_run
 
 import std.text
 import alula.machine.{text_of_file, NamedText}
 import alula.machine_run.{AlulaMachine, NestedRegistry, load_alula_machine, parse_scenario, run_nested_scenario, run_ok, report_text, Scenario, ScenarioRun, check_registry}
-import alula.examples.{machine_files, scenario_files, sample_registry}
+import alula.examples.{machine_files, scenario_files, example_registry}
 
 fn machine_of(name str) -> AlulaMachine {
-    match load_alula_machine(text_of_file(machine_files(), "${name}.alula.json"), sample_registry()) {
+    match load_alula_machine(text_of_file(machine_files(), "${name}.alula.json"), example_registry()) {
         Ok(m) => m
         Err(e) => panic("the machine ${name} does not load: ${e}")
     }
+}
+
+// The nested machine as the parents call it.
+fn registry() -> NestedRegistry => NestedRegistry.empty().add("callee", machine_of("callee"))
+
+fn scenario_of(file NamedText) -> Scenario {
+    match parse_scenario(file.text) {
+        Ok(sc) => sc
+        Err(e) => panic("the scenario ${file.name} does not parse: ${e.path}: ${e.message}")
+    }
+}
+
+fn run_file(file NamedText) -> ScenarioRun {
+    ro sc = scenario_of(file)
+    // the file of a machine is named in lower case; the scenario names the machine as the table does (`Batch` - `batch.alula.json`)
+    ro file_name = if sc.machine == "Batch" { "batch" } else { sc.machine }
+    run_nested_scenario(machine_of(file_name), registry(), sc)
+}
+
+// Every scenario whose name starts with the prefix runs and agrees with its file; the number of the files is returned.
+fn run_group(prefix str) -> int {
+    mut n = 0
+    mut reports = []str.new()
+    for f in scenario_files() {
+        if !f.name.starts_with(prefix) { continue }
+        ro run = run_file(f)
+        if !run_ok(run) { reports.push("${f.name}: ${report_text(run)}") }
+        n += 1
+    }
+    if reports.len() > 0 { panic(reports.join("\n")) }
+    n
+}
+
+test "ns pair fits" {
+    assert(check_registry(machine_of("caller"), registry()).len() == 0)
+    assert(check_registry(machine_of("fan"), registry()).len() == 0)
+    assert(check_registry(machine_of("batch"), registry()).len() == 0)
+    assert(check_registry(machine_of("callee"), registry()).len() == 0)
+}
+
+test "ns call scenarios" {
+    assert(run_group("nested-call-") == 17)
+}
+
+test "ns set scenarios" {
+    assert(run_group("nested-set-") == 9)
+}
+
+test "ns batch scenarios" {
+    assert(run_group("batch-") == 3)
 }

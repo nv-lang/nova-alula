@@ -5,8 +5,8 @@ module alula.machine_nested_run
 import std.text
 import alula.engine.{PartyRequest, PartyResponse, EventKind, Incoming, Reply, Rejection, FailCode}
 import alula.machine.{text_of_file}
-import alula.machine_run.{NestedRegistry, check_registry, nested_of_request, call_start, call_signal, call_signal_name, call_reply, parse_scenario, run_nested_scenario, run_ok, report_text, scenario_through_parent, prepare_child}
 import alula.examples.{scenario_files}
+import alula.machine_run.{NestedRegistry, check_registry, nested_of_request, call_start, call_signal, call_signal_name, call_reply, parse_scenario, run_nested_scenario, run_ok, report_text, scenario_through_parent, prepare_child}
 
 fn request_of(id str, input str) -> PartyRequest[str] => { id, attempt: 1, party: "callee", input, idle_term: 0, trace: "t1-p", step: 3 }
 
@@ -15,6 +15,13 @@ fn text_of_scenario(name str) -> str {
         if f.name == name { return f.text }
     }
     panic("no scenario ${name}")
+}
+
+fn run_text(text str) -> str {
+    match parse_scenario(text) {
+        Ok(sc) => report_text(run_nested_scenario(machine_of(sc.machine), registry(), sc))
+        Err(e) => "parse: ${e.path}: ${e.message}"
+    }
 }
 
 fn ok_text() -> str => text_of_scenario("nested-call-ok.scenario.test.json")
@@ -69,6 +76,37 @@ test "np reply refusal" {
     }
 }
 
+test "np reply none" {
+    // ORACLE-WORKAROUND(61): the value is bound with its type, `call_reply("callee-1", None)` is typed `Option[int]` by the code generator; pass the literal when item 61 is fixed
+    ro running Option[PartyResponse[str]] = None
+    match call_reply("callee-1", running) {
+        Some(ev) => assert(false)
+        None => assert(true)
+    }
+}
+
+// ---- the registry ---------------------------------------------------------------------------------------------------------------------------
+
+test "np registry" {
+    ro reg = registry()
+    assert(reg.entries.len() == 1)
+    match reg.find("callee") {
+        Some(m) => assert(m.def.name == "callee")
+        None => assert(false)
+    }
+    match reg.find("nobody") {
+        Some(m) => assert(false)
+        None => assert(true)
+    }
+    assert(NestedRegistry.empty().entries.len() == 0)
+}
+
+test "np registry order" {
+    ro reg = NestedRegistry.empty().add("b", machine_of("callee")).add("a", machine_of("caller"))
+    assert(reg.entries[0].name == "b")
+    assert(reg.entries[1].name == "a")
+}
+
 test "np owner of a request" {
     ro caller = machine_of("caller")
     assert(nested_of_request(caller, "callee-1") == "callee")
@@ -77,6 +115,13 @@ test "np owner of a request" {
     ro fan = machine_of("fan")
     assert(nested_of_request(fan, "a-1") == "callee")
     assert(nested_of_request(fan, "enhanced-1") == "")
+}
+
+test "np check lacks" {
+    ro problems = check_registry(machine_of("caller"), NestedRegistry.empty())
+    assert(problems.len() == 1)
+    assert(problems[0].contains("callee"))
+    assert(problems[0].contains("not in the registry"))
 }
 
 test "np check wrong machine" {
@@ -95,6 +140,13 @@ test "np check a cycle of calls" {
     assert(problems[problems.len() - 1].contains("calls itself again"))
 }
 
+test "np check fits" {
+    assert(check_registry(machine_of("fan"), registry()).len() == 0)
+    assert(check_registry(machine_of("callee"), registry()).len() == 0)
+}
+
+// ---- the scenario of a parent ---------------------------------------------------------------------------------------------------------------
+
 test "np scenario fields" {
     match parse_scenario(ok_text()) {
         Ok(sc) => {
@@ -112,3 +164,57 @@ test "np scenario fields" {
         Err(e) => assert(false)
     }
 }
+
+test "np scenario refused" {
+    ro with_bad_also = ok_text().replace("\"also\": {", "\"also\": {\"zzz\": {\"mood\": 1}, ")
+    assert(run_text(with_bad_also).contains("mood"))
+    ro not_text = ok_text().replace("\"on\": \"callee-1\"", "\"on\": 5")
+    assert(run_text(not_text).contains("text"))
+}
+
+test "np runs" {
+    assert(run_text(ok_text()) == "")
+}
+
+test "np difference parent" {
+    ro text = ok_text().replace("\"state\": \"Done\"", "\"state\": \"Call\"")
+    ro report = run_text(text)
+    assert(report.contains("step 3"))
+    assert(report.contains("state: expected Call, got Done"))
+}
+
+test "np difference nested" {
+    // the step acts on the nested machine: `expect` is compared with it
+    ro text = ok_text().replace("\"state\": \"Done\"", "\"state\": \"Ask\"")
+    ro report = run_text(text)
+    assert(report != "")
+    assert(report.contains("expected"))
+}
+
+test "np difference also" {
+    ro text = ok_text().replace("\"state\": \"Ask\"", "\"state\": \"Done\"")
+    ro report = run_text(text)
+    assert(report.contains("callee-1: step 1"))
+    assert(report.contains("expected Done, got Ask"))
+}
+
+test "np difference also parent" {
+    ro text = ok_text().replace("\"in answer\"", "\"in failure\"")
+    ro report = run_text(text)
+    assert(report.contains("parent: step 2"))
+    assert(report.contains("queue"))
+}
+
+test "np no such target" {
+    ro text = ok_text().replace("\"callee-1\": {\n          \"state\": \"Ask\"", "\"callee-9\": {\n          \"state\": \"Ask\"")
+    assert(text != ok_text())
+    ro report = run_text(text)
+    assert(report.contains("there is no callee-9"))
+}
+
+test "np data difference" {
+    ro text = ok_text().replace("\"count\": 3", "\"count\": 4")
+    ro report = run_text(text)
+    assert(report.contains("data count"))
+}
+

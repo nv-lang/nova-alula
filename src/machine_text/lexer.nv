@@ -224,6 +224,9 @@ fn lx_reserialize(toks []LxTok) -> str {
     out.join("")
 }
 
+/// Do the tokens of a text give the text back, byte for byte (the lead invariant of the lexer)? The tests of a host that keeps its tables ask it of every table.
+export fn lex_round_trips(src str) -> bool => lx_reserialize(lx_lex(src)) == src
+
 /// The number of the line feeds in a text.
 fn lx_breaks(s str) -> int {
     ro b = s.bytes()

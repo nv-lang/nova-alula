@@ -100,6 +100,27 @@ test "ac cancel" {
     assert(ac("отменить_открытые(сторона: никто)").starts_with("ERR name:"))
 }
 
+test "ac pass" {
+    assert(ac("передать(вложенные, стоп)") == "[]")
+    assert(ac("передать([], стоп); число_повторов = 1") == arr([a_assign(tgt("retry_count"), x_lit(jint(1)))]))
+    ro step_list = x_list([x_lit(js("agent_step"))])
+    assert(ac("передать([шаг_агента], стоп)") == arr([a_pass(step_list, "stop")]))
+    assert(ac("передать([шаг_агента], продолжить)") == arr([a_pass(step_list, "continue")]))
+    assert(ac("передать([шаг_агента], остановить)") == arr([a_pass(step_list, "halt")]))
+    assert(ac("передать([шаг_агента], отмена)") == arr([a_pass(step_list, "cancel")]))
+    assert(ac("передать([шаг_агента, callee], стоп)") == arr([a_pass(x_list([x_lit(js("agent_step")), x_lit(js("callee"))]), "stop")]))
+    assert(ac_errors("передать([шаг_агента], прыжок)").len() == 1)
+    assert(ac("передать([шаг_агента], прыжок)").starts_with("ERR syntax:"))
+    assert(ac_errors("передать([шаг_агента], стоп)").len() == 0)
+}
+
+test "ac cancel except" {
+    ro step_list = x_list([x_lit(js("agent_step"))])
+    assert(ac("отменить_открытые(кроме: [шаг_агента])") == arr([a_cancel_open_except(step_list)]))
+    assert(ac("отменить_открытые(кроме: [])") == arr([a_cancel_open("")]))
+    assert(ac_errors("отменить_открытые(кроме: [шаг_агента])").len() == 0)
+}
+
 test "ac empty" {
     assert(ac("—") == "[]")
     assert(ac("") == "[]")

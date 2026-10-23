@@ -4,10 +4,32 @@ module alula.alula_eq
 
 import std.text
 import alula.machine.{NamedText, text_of_file}
-import alula.examples.{machine_files, table_files}
+import alula.examples.{table_files, machine_files}
+
+fn product_tables() -> []str => ["callee.alula.md", "caller.alula.md", "fan.alula.md", "echo.alula.md", "retry.alula.md", "verdict.alula.md", "router.alula.md", "pausable.alula.md", "keeper.alula.md", "batch.alula.md"]
+
+fn json_of_table(name str) -> str => name.replace(".alula.md", ".alula.json").replace(".alula.txt", ".alula.json")
+
+test "v212 table files say 2.22" {
+    for name in product_tables() {
+        ro text = text_of_file(table_files(), name)
+        assert(text.contains("format: 2.22\n"))
+        assert(!text.contains("format: 2.11"))
+        assert(!text.contains("alula-2.11"))
+    }
+}
 
 test "v212 json files say 2.22" {
     for f in machine_files() {
         assert(f.text.contains("\"alula_version\":\"2.22\"") || f.text.contains("\"alula_version\": \"2.22\""))
     }
 }
+
+test "v212 check takes every table" {
+    for name in product_tables() {
+        ro made = run_with(["check", "/m/${name}"], one("/m/${name}", text_of_file(table_files(), name)))
+        if made.code != 0 { panic("check ${name}: ${made.err}") }
+        assert(made.code == 0)
+    }
+}
+

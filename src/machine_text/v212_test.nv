@@ -4,7 +4,7 @@ module alula.machine_text
 
 import std.text
 import alula.machine.{text_of_file}
-import alula.examples.{table_files}
+import alula.examples.{table_files, sample_registry}
 
 test "v212 fragment files are 2.22" {
     assert(fragment_source("Pause", "ru").contains("- format: 2.22"))
@@ -26,7 +26,56 @@ test "v212 fragment files carry the parameters" {
 
 // ---- what the fragment brings (the shape the generator leaves out) is what the translator puts in --------------------------------------------------------
 
+fn dialog_steps_tree() -> RJ {
+    ro report = translate_checked(text_of_file(table_files(), "callee.alula.md"), sample_registry())
+    if report.errors.len() > 0 { panic("callee: ${report.errors[0].message}") }
+    match rj_parse(report.json) {
+        Ok(root) => root
+        Err(e) => panic("not a JSON: ${e}")
+    }
+}
+
+test "v212 fragment shape data" {
+    ro shape = fragment_shape("Pause")
+    ro data = rj_garr(dialog_steps_tree(), "data")
+    mut at = 0
+    for name in shape.data {
+        assert(rj_gstr(data[at], "name") == name)
+        at += 1
+    }
+}
+
+test "v212 fragment shape common events" {
+    ro shape = fragment_shape("Pause")
+    ro rows = rj_garr(dialog_steps_tree(), "common_events")
+    assert(rows.len() == shape.common)
+    for r in rows { assert(rj_gstr(rj_get(r, "event") ?? RNull, "kind") == "signal") }
+}
+
+test "v212 fragment shape states" {
+    ro shape = fragment_shape("Pause")
+    ro states = rj_garr(dialog_steps_tree(), "states")
+    assert(rj_gstr(states[states.len() - 1], "name") == shape.states[0])
+}
+
+test "v212 fragment shape signals" {
+    ro shape = fragment_shape("Pause")
+    ro signals = rj_garr(dialog_steps_tree(), "signals")
+    assert(signals.len() == shape.signals.len())
+    mut at = 0
+    for name in shape.signals {
+        assert(rj_gstr(signals[at], "name") == name)
+        at += 1
+    }
+}
+
 test "v212 fragment shape of an unknown fragment is empty" {
     ro shape = fragment_shape("Rest")
     assert(shape.data.len() == 0 && shape.common == 0 && shape.states.len() == 0 && shape.signals.len() == 0)
+}
+
+test "v212 fragment in the tree is the call" {
+    ro frags = rj_garr(dialog_steps_tree(), "fragments")
+    assert(frags.len() == 1)
+    assert(rj_gstr(frags[0], "name") == "Pause")
 }

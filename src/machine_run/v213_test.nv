@@ -6,6 +6,29 @@ import std.text
 import alula.machine.{text_of_file}
 import alula.examples.{machine_files, scenario_files}
 
+fn signal_step(name str, party str, input str) -> str {
+    ro who = if party == "" { "" } else { ",\"party\":\"${party}\"" }
+    ro data = if input == "" { "" } else { ",\"input\":\"${input}\"" }
+    `{"do":"feed","event":{"kind":"signal","name":"${name}"${who}${data}}}`
+}
+
+// ---- the step signal of a scenario ------------------------------------------------------------------------------------------------------------
+
+test "v213 word step refused" {
+    ro text = one_step(`{"do":"feed","event":{"kind":"word","name":"user_message","input":"hi"}}`)
+    ro got = parse_err(text)
+    assert(got != "ok")
+    assert(got.contains("signal"))
+}
+
+test "v213 signal step parses" {
+    assert(parse_err(one_step(signal_step("user_message", "", "hi"))) == "ok")
+}
+
+test "v213 signal step with its party parses" {
+    assert(parse_err(one_step(signal_step("user_message", "user", "hi"))) == "ok")
+}
+
 test "v213 event kinds" {
     assert(!event_kinds().contains("word"))
     assert(event_kinds().contains("signal"))

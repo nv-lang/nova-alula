@@ -127,3 +127,11 @@ test "v213 version names the format" {
     ro ran = run0(["version"])
     assert(ran.out.contains("Alula 2.22"))
 }
+
+test "v213 the tables of the examples are read" {
+    for name in example_tables() {
+        ro ran = run_with(["check", "/m/${name}"], one_in_host("/m/${name}", text_of_file(table_files(), name)))
+        if ran.code != 0 { panic("check ${name}: ${ran.err}") }
+        assert(ran.code == 0)
+    }
+}

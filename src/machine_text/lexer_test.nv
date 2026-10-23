@@ -550,3 +550,12 @@ test "lx adaptor columns after a comment-free line" {
         Err(e) => assert(false)
     }
 }
+
+test "lx mutations machines" {
+    // the tables of the examples (the tables of the product and of the methodology are mutated in the product, task 158)
+    mut seed = 3
+    for f in table_files() {
+        seed += 1
+        assert(lx_mutations_hold(f.text, 40, seed))
+    }
+}

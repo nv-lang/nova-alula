@@ -4,13 +4,36 @@ module alula.machine_run
 import std.text
 import std.encoding.json.{Json}
 import alula.machine.{schema_files, data_dir_names, is_machine_json_name, NamedText, text_of_file}
-import alula.examples.{machine_files, scenario_files, table_files, example_dir_names}
+import alula.examples.{scenario_files, machine_files, table_files, example_dir_names}
+
+// The machine a scenario names.
+fn machine_named(name str) -> AlulaMachine {
+    if name == "Calc" { return calc() }
+    if name == "Gate" { return build("gate.alula.json") }
+    if name == "Lenses" { return build("lenses.alula.json") }
+    if name == "Variants" { return build("variants.alula.json") }
+    if name == "Echo" { return build("echo.alula.json") }
+    if name == "Retry" { return build("retry.alula.json") }
+    if name == "Verdict" { return build("verdict.alula.json") }
+    if name == "Router" { return build("router.alula.json") }
+    if name == "Pausable" { return build("pausable.alula.json") }
+    if name == "Keeper" { return build("keeper.alula.json") }
+    panic("no machine ${name}")
+}
+
+// A scenario of one step (only parsed: the machine named in it is not run).
+fn one_step(step str) -> str => `{"format":"scenario/0","machine":"Calc","name":"t","start_at":1000,"steps":[${step}]}`
 
 fn scenario_of(file str) -> Scenario {
     match parse_scenario(text_of_file(scenario_files(), file)) {
         Ok(sc) => sc
         Err(e) => panic("the scenario ${file} does not parse: ${e.path}: ${e.message}")
     }
+}
+
+fn run_file(file str) -> ScenarioRun {
+    ro sc = scenario_of(file)
+    run_scenario(machine_named(sc.machine), sc)
 }
 
 fn run_text(machine AlulaMachine, text str) -> ScenarioRun {
@@ -27,12 +50,72 @@ fn parse_err(text str) -> str {
     }
 }
 
+test "every scenario" {
+    // the scenarios of a parent with its nested machines run in the unit `machine_nested_run`, the others on the machine they name
+    ro files = scenario_files()
+    assert(files.len() == 66)
+    mut run = 0
+    for f in files {
+        if f.name.starts_with("nested-") || f.name.starts_with("batch-") { continue }
+        ro result = run_file(f.name)
+        if !run_ok(result) { panic("${f.name}: ${report_text(result)}") }
+        run += 1
+    }
+    assert(run == 66 - 17 - 9 - 3)
+}
+
 test "scenario object input" {
     ro sc = scenario_of("calc-count-up.scenario.test.json")
     assert(sc.steps[0].event.kind == "start")
     assert(sc.steps[0].event.input == "{\"start\":0,\"label\":\"abc\"}")
     ro gate = scenario_of("gate-pause-continue.scenario.test.json")
     assert(gate.steps[1].event.input == "{\"author\":\"ann\",\"source\":\"console\"}")
+}
+
+test "scenario refused" {
+    assert(parse_err("not json").contains("not valid JSON"))
+    assert(parse_err("{}").contains("format"))
+    assert(parse_err("{\"format\":\"scenario/1\"}").contains("scenario/0"))
+    assert(parse_err(one_step("{\"do\":\"jump\"}")).contains("operation"))
+    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"dance\"}}")).contains("kind of an event"))
+    assert(parse_err(one_step("{\"do\":\"feed\",\"zzz\":1}")).contains("zzz"))
+    assert(parse_err(one_step("{\"do\":\"advance\",\"expect\":{\"mood\":\"x\"}}")).contains("mood"))
+    assert(parse_err(one_step("{\"do\":\"feed\"}")).contains("event"))
+    assert(parse_err(one_step("{\"do\":\"advance\",\"ms\":-5}")).contains("ms"))
+    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\"}}")).contains("name"))
+    assert(parse_err("{\"format\":\"scenario/0\",\"machine\":\"M\",\"name\":\"t\",\"steps\":{}}").contains("list"))
+    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"a\"},\"expect\":{\"journal\":[{\"params\":{}}]}}")).contains("code"))
+    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"a\"},\"expect\":{\"journal\":[{\"code\":\"x\",\"params\":{\"p\":1}}]}}")).contains("text"))
+    assert(parse_err(one_step("{\"do\":\"advance\",\"ms\":5}")) == "ok")
+}
+
+test "gate scenario" {
+    ro run = run_file("gate-pause-continue.scenario.test.json")
+    assert(run_ok(run))
+    assert(run.traces[1].state == "Pause")
+    assert(run.traces[2].sent.len() == 2)
+    assert(run.traces[3].outcome == "answer:1")
+}
+
+test "lenses scenario" {
+    ro run = run_file("lenses-all-answer.scenario.test.json")
+    assert(run_ok(run))
+    assert(run.traces[0].sent.len() == 3)
+    assert(run.traces[0].sent[2] == "c-1")
+    assert(run.traces[3].outcome == "answer:[\"b\",\"a\",\"c\"]")
+}
+
+test "scenario twice" {
+    ro first = run_file("calc-count-up.scenario.test.json")
+    ro second = run_file("calc-count-up.scenario.test.json")
+    assert(first.traces.len() == second.traces.len())
+    assert(first.traces[0].encoded == second.traces[0].encoded)
+    assert(first.traces[0].journal.len() == second.traces[0].journal.len())
+}
+
+test "unstarted machine" {
+    ro run = run_text(calc(), one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"expect\":{\"state\":\"Start\",\"journal\":[{\"code\":\"event_ignored\",\"params\":{\"event\":\"go\",\"state\":\"Start\"}}]}}"))
+    assert(run_ok(run))
 }
 
 fn listed(files []NamedText) -> []str {
@@ -110,3 +193,4 @@ test "standalone key in the schema" {
         Err(e) => assert(false)
     }
 }
+
