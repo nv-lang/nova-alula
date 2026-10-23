@@ -5,7 +5,7 @@ module alula.machine_text_lang
 
 import std.text
 import alula.machine.{NamedText, table_files, text_of_file, standard_registry}
-import alula.machine_text.{translate_checked_with, definitions_hash, TranslateReport}
+import alula.machine_text.{translate_checked_with, definitions_hash, TranslateReport, render}
 
 fn list154() -> str => "{\"op\":\"list\",\"items\":[]}"
 
@@ -593,4 +593,19 @@ test "s154 the old words of the rerun are refused" {
 test "s154 the check says nothing about a rerun at a state that has no appeal" {
     ro text = tiny_ru().replace("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | число_ходов >= 2 | — | КОНЕЦ, запуск заново |")
     assert(is_clean(text))
+}
+
+test "s154 the rerun is written back with the word of the language" {
+    ro ru_tree = tree222(third_ru154("то же, запуск заново"))
+    ro en_tree = tree222(third_en154("same, rerun"))
+    assert(render(ru_tree, "ru").contains("| то же, запуск заново |"))
+    assert(render(en_tree, "en").contains("| same, rerun |"))
+    assert(render(ru_tree, "en").contains("| same, rerun |"))
+    assert(render(en_tree, "ru").contains("| то же, запуск заново |"))
+}
+
+test "s154 the same state without the rerun is written back as the bare word" {
+    ro tree = tree222(third_ru154("то же"))
+    assert(render(tree, "ru").contains("| то же |"))
+    assert(render(tree, "en").contains("| same |"))
 }
