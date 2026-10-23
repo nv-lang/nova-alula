@@ -1,0 +1,398 @@
+// lexer.nv - the lossless lexer of Alula (format 2.22, AL-90 ... AL-92): the bytes of a text to tokens, every byte in exactly one token.
+//
+// The model is the lexer of Nova (`novac/src/lex/lex.nv`, the public repository nv-lang/nova), taken whole in its ideas and shortened to what Alula has:
+//   - LOSSLESS: the leading trivia (spaces, line breaks, a comment `//` up to the end of the line) and the text of a token are slices of the source, and the last token,
+//     `Eof`, carries the trivia at the end of the text, so `lx_reserialize(lx_lex(src)) == src` for EVERY input, a broken one too;
+//   - no `Result`: lexing always returns tokens; a broken place is an `Error` token that still carries its text (a quote that is not closed, a number touched by a
+//     letter or by `_`, a sign that the language does not have); the reader that needs a message makes it from the token and its place (`lx_error_message`);
+//   - the number is read by D44 of Nova: `1_000`, `1.5`, `1e-7`, `1.5e3`; the dot enters a number only when a digit follows it at once, so `0..3` is `0`, `..`, `3` and
+//     `1..n` is `1`, `..`, `n` (rule 1.5 of the lexer of Nova, AL-76); a number touched by a letter, a digit or `_` (`1__0`, `1_`, `1_e5`, `1e`, `0x1F`) is one
+//     `Error` token; hexadecimal, binary and octal literals and suffixes are not in the language (AL-91);
+//   - the order of the signs is the longest match: `...`, then `..=`, then `..` (AL-86), the two-letter signs before their first letters;
+//   - a text literal is ONE token from the quote to the quote; an escape `\x` takes two bytes and is not read here (the closed list of the escapes, AL-92, is read by
+//     `lx_unescape`); an insertion `${ ... }` is skipped as code, the quotes of the literals inside it (their own insertions too) included, so the literal ends at its own
+//     quote; a line break ends the search (an honest "not closed HERE", the model is the rule F19 of the lexer of Nova); unlike Nova the pieces of an insertion are not
+//     tokens of the lexer: the reader of expressions cuts the literal into parts (`lx_parts`) and lexes the code of every insertion again.
+//
+// The tokens keep no places: the column and the line are made by the reader from the lengths (the model: "widths, not positions"). A name is a letter of any
+// alphabet or `_`, then letters, digits, marks (`tx_is_letter`, `tx_is_name_char`).
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+
+const LK_NAME = 1
+const LK_INT = 2
+const LK_FLOAT = 3
+const LK_STR = 4
+const LK_SYM = 5
+const LK_ERROR = 6
+const LK_EOF = 7
+
+/// LxTok: a token with its leading trivia. `leading` and `text` are slices of the source (the end token holds the trivia at the end of the text and an empty `text`).
+type LxTok { kind int, leading str, text str }
+
+// The byte at `k` of the text, or 0 past the end, so that a lookahead needs no test of the bounds at the call.
+fn lx_at(b []u8, n int, k int) -> int {
+    if k < n { return b[k] as int }
+    0
+}
+
+fn lx_dig(c int) -> bool => c >= 48 && c <= 57
+
+fn lx_hex(c int) -> bool => (c >= 48 && c <= 57) || (c >= 97 && c <= 102) || (c >= 65 && c <= 70)
+
+// The end of a run of decimal digits that starts at `i`: the sign `_` belongs to the run only BETWEEN two digits (D44), so `1_000` runs to its end, and `1_`, `1__0`, `1_e5` stop at the `_`.
+fn lx_dec_end(b []u8, n int, i int) -> int {
+    mut k = i
+    while k < n {
+        ro c = b[k] as int
+        ro separator = c == 95 && k > i && lx_dig(lx_at(b, n, k + 1))
+        if !lx_dig(c) && !separator { return k }
+        k += 1
+    }
+    n
+}
+
+// The end of an exponent at `i` (`e` or `E`, an optional sign, digits), or `i` itself when no whole exponent stands there: a bare `1e` or `1e+` is no exponent.
+fn lx_exp_end(b []u8, n int, i int) -> int {
+    ro c = lx_at(b, n, i)
+    if c != 101 && c != 69 { return i }
+    mut k = i + 1
+    ro s = lx_at(b, n, k)
+    if s == 43 || s == 45 { k += 1 }
+    if lx_dig(lx_at(b, n, k)) { return lx_dec_end(b, n, k) }
+    i
+}
+
+// The end of a text literal whose quote stands at `i`; -1 when it is not closed on its line. An escape takes the next byte (a line break after `\` ends the search); `${` opens
+// an insertion that is skipped as code.
+fn lx_str_end(b []u8, n int, i int) -> int {
+    mut j = i + 1
+    while j < n {
+        ro c = b[j] as int
+        if c == 10 || c == 13 { return -1 }
+        if c == 34 { return j + 1 }
+        if c == 92 {
+            ro d = lx_at(b, n, j + 1)
+            if j + 1 >= n || d == 10 || d == 13 { return -1 }
+            j += 2
+            continue
+        }
+        if c == 36 && lx_at(b, n, j + 1) == 123 {
+            ro k = lx_interp_end(b, n, j + 2)
+            if k < 0 { return -1 }
+            j = k
+            continue
+        }
+        j += 1
+    }
+    -1
+}
+
+// The end of the code of an insertion that starts at `i` (after `${`): the index after the closing `}`, -1 when it is not closed on the line. The braces nest, the literals inside are skipped whole.
+fn lx_interp_end(b []u8, n int, i int) -> int {
+    mut j = i
+    mut depth = 0
+    while j < n {
+        ro c = b[j] as int
+        if c == 10 || c == 13 { return -1 }
+        if c == 34 {
+            ro k = lx_str_end(b, n, j)
+            if k < 0 { return -1 }
+            j = k
+            continue
+        }
+        if c == 123 { depth += 1 }
+        if c == 125 {
+            if depth == 0 { return j + 1 }
+            depth -= 1
+        }
+        j += 1
+    }
+    -1
+}
+
+fn lx_signs3() -> []str => ["...", "..="]
+
+fn lx_signs2() -> []str => ["..", "==", "!=", "<=", ">=", "+=", "??", "->", "=>"]
+
+fn lx_signs1() -> []str => ["(", ")", "[", "]", "{", "}", ",", ":", ";", ".", "?", "|", "+", "-", "*", "/", "%", "<", ">", "=", "—", "!"]
+
+/// The tokens of the whole text: always succeeds and covers every byte (the lead invariant: `lx_reserialize(lx_lex(src)) == src`).
+fn lx_lex(src str) -> []LxTok {
+    ro b = src.bytes()
+    ro n = src.byte_len()
+    mut toks = []LxTok.new()
+    mut i = 0
+    while true {
+        // the leading trivia: spaces, line breaks and a comment `//` up to the end of the line
+        ro from = i
+        while i < n {
+            ro c = tx_at(src, i)
+            if c == '\n' || c == '\r' || tx_is_space(c) {
+                i += c.len_utf8()
+            } else if c == '/' && lx_at(b, n, i + 1) == 47 {
+                while i < n && (b[i] as int) != 10 { i += 1 }
+            } else {
+                break
+            }
+        }
+        ro leading = src[from..i]
+        if i >= n {
+            toks.push(LxTok { kind: LK_EOF, leading, text: src[n..n] })
+            return toks
+        }
+        ro start = i
+        ro c = tx_at(src, i)
+        ro w = c.len_utf8()
+        mut kind = LK_ERROR
+        if tx_is_letter(c) {
+            i += w
+            while i < n {
+                ro d = tx_at(src, i)
+                if !tx_is_name_char(d) { break }
+                i += d.len_utf8()
+            }
+            kind = LK_NAME
+        } else if lx_dig(b[i] as int) {
+            i = lx_dec_end(b, n, i)
+            kind = LK_INT
+            // the dot is taken ONLY when a digit follows at once: `0..3` is `0`, `..`, `3`
+            if lx_at(b, n, i) == 46 && lx_dig(lx_at(b, n, i + 1)) {
+                i = lx_dec_end(b, n, i + 1)
+                kind = LK_FLOAT
+            }
+            ro exp = lx_exp_end(b, n, i)
+            if exp > i {
+                i = exp
+                kind = LK_FLOAT
+            }
+            // a number touched by a letter, a digit or `_` is one broken token (`1abc`, `1e`, `1_e5`, `1.5_`, `0x1F`)
+            if i < n && tx_is_name_char(tx_at(src, i)) {
+                while i < n && tx_is_name_char(tx_at(src, i)) { i += tx_at(src, i).len_utf8() }
+                kind = LK_ERROR
+            }
+        } else if c == '"' {
+            ro end = lx_str_end(b, n, i)
+            if end < 0 {
+                // not closed: the token is the rest of the line
+                while i < n && (b[i] as int) != 10 { i += 1 }
+                kind = LK_ERROR
+            } else {
+                i = end
+                kind = LK_STR
+            }
+        } else if c == '\\' && lx_at(b, n, i + 1) == 124 {
+            i += 2
+            kind = LK_SYM
+        } else {
+            ro rest = src[i..]
+            mut size = 0
+            for s in lx_signs3() {
+                if size == 0 && rest.starts_with(s) { size = 3 }
+            }
+            if size == 0 {
+                for s in lx_signs2() {
+                    if size == 0 && rest.starts_with(s) { size = 2 }
+                }
+            }
+            if size == 0 {
+                for s in lx_signs1() {
+                    if size == 0 && rest.starts_with(s) { size = s.byte_len() }
+                }
+            }
+            if size > 0 {
+                i += size
+                kind = LK_SYM
+            } else {
+                i += w
+            }
+        }
+        toks.push(LxTok { kind, leading, text: src[start..i] })
+    }
+    toks
+}
+
+/// The reserialization half of the lead invariant: the trivia and the text of every token in order give the source back, byte for byte.
+fn lx_reserialize(toks []LxTok) -> str {
+    mut out = []str.new()
+    for t in toks {
+        out.push(t.leading)
+        out.push(t.text)
+    }
+    out.join("")
+}
+
+/// The number of the line feeds in a text.
+fn lx_breaks(s str) -> int {
+    ro b = s.bytes()
+    ro n = s.byte_len()
+    mut count = 0
+    mut i = 0
+    while i < n {
+        if (b[i] as int) == 10 { count += 1 }
+        i += 1
+    }
+    count
+}
+
+/// Does the trivia hold a comment `//`? Returns its byte offset in the trivia, or -1.
+fn lx_comment_at(leading str) -> int {
+    ro n = leading.byte_len()
+    ro b = leading.bytes()
+    mut i = 0
+    while i + 1 < n {
+        if (b[i] as int) == 47 && (b[i + 1] as int) == 47 { return i }
+        i += 1
+    }
+    -1
+}
+
+// ---- the text literal: the escapes and the insertions -------------------------------------------------------------------------
+
+/// LxText: the content of a text literal read by the closed list of the escapes (AL-92); `bad` is the BYTE offset of the first wrong escape in the content (-1 when all are right) and `why` says what is wrong.
+type LxText { text str, bad int, why str }
+
+// One to six hexadecimal digits of `\u{HEX}` at `k` (after the brace): the value, the offset after the closing brace; the value is -1 when the escape is wrong.
+fn lx_hex_escape(b []u8, n int, k int) -> (int, int) {
+    mut j = k
+    mut v = 0
+    mut count = 0
+    while j < n && lx_hex(b[j] as int) {
+        ro d = b[j] as int
+        v = v * 16 + (if d <= 57 { d - 48 } else if d >= 97 { d - 87 } else { d - 55 })
+        count += 1
+        j += 1
+        if count > 6 { return (-1, j) }
+    }
+    if count == 0 || lx_at(b, n, j) != 125 { return (-1, j) }
+    if v > 1114111 || (v >= 55296 && v <= 57343) { return (-1, j + 1) }
+    (v, j + 1)
+}
+
+/// The content of a literal (without the quotes) with the escapes read: `\"` `\\` `\$` `\n` `\t` `\r` `\0` `\u{HEX}`; any other sign after `\` is wrong (D467 of Nova, AL-92). The text `${` that is not escaped stays as it is
+/// (an insertion is cut out before, by `lx_parts`).
+fn lx_unescape(inner str) -> LxText {
+    ro b = inner.bytes()
+    ro n = inner.byte_len()
+    mut out = []str.new()
+    mut run = 0
+    mut i = 0
+    while i < n {
+        if (b[i] as int) != 92 {
+            i += 1
+            continue
+        }
+        out.push(inner[run..i])
+        ro d = lx_at(b, n, i + 1)
+        if d == 34 {
+            out.push("\"")
+            i += 2
+        } else if d == 92 {
+            out.push("\\")
+            i += 2
+        } else if d == 36 {
+            out.push("$")
+            i += 2
+        } else if d == 110 {
+            out.push("\n")
+            i += 2
+        } else if d == 116 {
+            out.push("\t")
+            i += 2
+        } else if d == 114 {
+            out.push("\r")
+            i += 2
+        } else if d == 48 {
+            out.push("${(0).to_char() ?? ' '}")
+            i += 2
+        } else if d == 117 && lx_at(b, n, i + 2) == 123 {
+            ro (v, after) = lx_hex_escape(b, n, i + 3)
+            if v < 0 { return LxText { text: out.join(""), bad: i, why: "\\u{...}: от одной до шести шестнадцатеричных цифр, не суррогат (D800...DFFF) и не больше 10FFFF" } }
+            out.push("${v.to_char() ?? '?'}")
+            i = after
+        } else if i + 1 >= n {
+            return LxText { text: out.join(""), bad: i, why: "после `\\` ничего нет" }
+        } else {
+            ro e = tx_at(inner, i + 1)
+            return LxText { text: out.join(""), bad: i, why: "escape `\\${e}` не бывает: закрытый список — \\\" \\\\ \\$ \\n \\t \\r \\0 \\u{HEX} (AL-92)" }
+        }
+        run = i
+    }
+    out.push(inner[run..n])
+    LxText { text: out.join(""), bad: -1, why: "" }
+}
+
+/// LxPart: a piece of a literal: a text fragment (`code` false, `text` is the fragment with the escapes read) or an insertion (`code` true, `text` is the code between `${` and `}`); `at` is the BYTE offset of the piece in the inner text
+/// of the literal (for an insertion, the offset of its code).
+type LxPart { code bool, text str, at int }
+
+/// The pieces of the content of a literal (without the quotes), in order. `bad` is the BYTE offset of the first wrong place (a wrong escape, an insertion that is not closed) and `why` says what; -1 and "" when all is right.
+type LxParts { parts []LxPart, bad int, why str }
+
+fn lx_parts(inner str) -> LxParts {
+    ro b = inner.bytes()
+    ro n = inner.byte_len()
+    mut parts = []LxPart.new()
+    mut run = 0
+    mut i = 0
+    while i < n {
+        ro c = b[i] as int
+        if c == 92 {
+            i += 2
+            continue
+        }
+        if c == 36 && lx_at(b, n, i + 1) == 123 {
+            ro end = lx_interp_end(b, n, i + 2)
+            if end < 0 { return LxParts { parts, bad: i, why: "вставка `\${` не закрыта" } }
+            if i > run {
+                ro lit = lx_unescape(inner[run..i])
+                if lit.bad >= 0 { return LxParts { parts, bad: run + lit.bad, why: lit.why } }
+                parts.push(LxPart { code: false, text: lit.text, at: run })
+            }
+            parts.push(LxPart { code: true, text: inner[i + 2..end - 1], at: i + 2 })
+            i = end
+            run = i
+            continue
+        }
+        i += 1
+    }
+    if n > run {
+        ro lit = lx_unescape(inner[run..n])
+        if lit.bad >= 0 { return LxParts { parts, bad: run + lit.bad, why: lit.why } }
+        parts.push(LxPart { code: false, text: lit.text, at: run })
+    }
+    LxParts { parts, bad: -1, why: "" }
+}
+
+/// Does the content of a literal hold an insertion `${` that is not escaped?
+fn lx_has_insertion(inner str) -> bool {
+    ro b = inner.bytes()
+    ro n = inner.byte_len()
+    mut i = 0
+    while i < n {
+        ro c = b[i] as int
+        if c == 92 {
+            i += 2
+            continue
+        }
+        if c == 36 && lx_at(b, n, i + 1) == 123 { return true }
+        i += 1
+    }
+    false
+}
+
+// ---- the text of an error of a broken token -------------------------------------------------------------------------------
+
+/// What is wrong with a broken token: a literal that is not closed, a number touched by a name, a sign of the former writing, a sign that the language does not have.
+fn lx_error_message(text str) -> str {
+    ro c = tx_at(text, 0)
+    ro message_quote = "строка в кавычках не закрыта"
+    ro message_number = "число `${text}` записано неверно: цифры, между цифрами `_`, дробная часть после точки с цифрой, порядок `e`/`E` со знаком или без; к числу не липнут буква, цифра и `_`, шестнадцатеричных, двоичных и восьмеричных чисел и суффиксов нет (AL-91)"
+    ro message_sign = "недопустимый знак «${c}»"
+    if c == '"' { return message_quote }
+    if c >= '0' && c <= '9' { return message_number }
+    if tx_former_signs().contains(text) { return tx_former_sign_message(text) }
+    message_sign
+}
