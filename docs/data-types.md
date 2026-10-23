@@ -1,6 +1,6 @@
 # Типы данных в Алуле: как они взаимодействуют и для чего нужны
 
-**Пояснение, не норма.** Этот файл ничего не определяет и новых правил не вводит. Единственное определение языка — [state-machine-alula-spec.md](state-machine-alula-spec.md) (версия 2.22); при расхождении прав он. «Раздел N» ниже — раздел спецификации. Примеры — точные строки образцов с номером строки: «Шаг агента» — [state-machine-agent-step.alula.md](state-machine-agent-step.alula.md), «Совещание» — [task-runner-meeting.alula.md](task-runner-meeting.alula.md). Общая схема языка — [alula-overview.md](alula-overview.md).
+**Пояснение, не норма.** Этот файл ничего не определяет и новых правил не вводит. Единственное определение языка — [spec/alula-spec.md](../spec/alula-spec.md) (версия 2.22); при расхождении прав он. «Раздел N» ниже — раздел спецификации. Примеры — точные строки образцов с номером строки: «Шаг агента» — [spec/samples/agent-step.alula.md](../spec/samples/agent-step.alula.md), «Совещание» — [spec/samples/meeting-definitions.alula.md](../spec/samples/meeting-definitions.alula.md). Общая схема языка — [docs/overview.md](overview.md).
 
 ## 1. Карта типов
 
@@ -29,7 +29,7 @@
 
 ## 2. Один шаг машины
 
-![Типы в одном шаге машины: вход, данные, запрос стороне, сторона, ответ, строка перехода, журнал](alula-diagrams/alula-data-flow.svg)
+![Типы в одном шаге машины: вход, данные, запрос стороне, сторона, ответ, строка перехода, журнал](diagrams/alula-data-flow.svg)
 
 Как это выглядит в «Шаге агента»:
 
@@ -259,7 +259,7 @@
 
 ## 5. Как читать типы в файле
 
-Слова типов в русском и английском файле ([alula-keywords.tsv](alula-keywords.tsv), вид `type`; объявления — вид `decl`):
+Слова типов в русском и английском файле ([spec/alula-keywords.tsv](../spec/alula-keywords.tsv), вид `type`; объявления — вид `decl`):
 
 | ru | en |
 |---|---|
