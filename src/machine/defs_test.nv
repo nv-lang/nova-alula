@@ -104,7 +104,7 @@ test "non empty" {
 }
 
 test "checked calls" {
-    ro checked = DefTable { fns: []DefFn.new(), types: standard_types(), globals: []Binding.new(), registry: standard_registry(), checked: true }
+    ro checked = DefTable { fns: []DefFn.new(), types: empty_type_defs(), globals: []Binding.new(), registry: language_registry(), checked: true }
     mut ints = DHost { answer: Int(5) }
     match eval_defs(call_primitive("time_now", []Expr.new()), empty_scope(), checked, ints) {
         Ok(v) => assert(value_equal(v, Int(5)))

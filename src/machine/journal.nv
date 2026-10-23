@@ -1,6 +1,6 @@
-// journal.nv - the codes of the journal that a machine may write (format sections 5 and 10, 2.12, AL-31): the table of the methodology (`journal_methodology.md`, a copy of the two tables of
-// `state-machine-journal.md`: the templates and the events of the format) and the table of the product beside it (`journal_product.md`), both of the form
-// `Machine | Code | Russian template | Parameters`. The check takes the union of the two tables.
+// journal.nv - the codes of the journal that a machine may write (format sections 5 and 10, 2.12, AL-31): the table of the language (`journal_language.md`, 35 codes: the format itself, the fragment "Pause", the
+// engine and the executor; spec section 7a, AL-113) and the table of the host, a file of the form `Machine | Code | Russian template | Parameters` that the host registers (`journal.md` beside its machines). The
+// check takes the union of the two tables. The language holds no table of a host: the codes of the methodology and of the product are data of their owners.
 module alula.machine
 
 import std.text
@@ -24,8 +24,8 @@ fn ticked(cell str) -> []str {
     out
 }
 
-// The rows of the tables of a file: the lines `| machine | `code` | template | parameters |` (the header and the separator are skipped).
-fn journal_rows(text str) -> []JournalCode {
+/// The rows of the table of a file: the lines `| machine | `code` | template | parameters |` (the header and the separator are skipped; other lines are skipped too).
+export fn parse_journal(text str) -> []JournalCode {
     mut out = []JournalCode.new()
     for raw in text.split("\n") {
         ro line = (raw.strip_suffix("\r") ?? raw).trim_ascii()
@@ -52,16 +52,13 @@ fn journal_rows(text str) -> []JournalCode {
     out
 }
 
-/// The table of the methodology.
-export fn methodology_journal() -> []JournalCode => journal_rows(embed_str("journal_methodology.md"))
+/// The table of the language: the 35 codes that the format, the fragment "Pause", the engine and the executor write (`journal_language.md`).
+export fn language_journal() -> []JournalCode => parse_journal(embed_str("journal_language.md"))
 
-/// The table of the product.
-export fn product_journal() -> []JournalCode => journal_rows(embed_str("journal_product.md"))
-
-/// The union of the two tables: the codes that a machine of the product may write.
-export fn journal_union() -> []JournalCode {
-    mut out = methodology_journal()
-    for row in product_journal() { out.push(row) }
+/// The union of the table of the language and the table of a host: the codes that a machine of the host may write.
+export fn journal_union(host []JournalCode) -> []JournalCode {
+    mut out = language_journal()
+    for row in host { out.push(row) }
     out
 }
 
@@ -87,18 +84,18 @@ fn is_code_word(code str) -> bool {
     true
 }
 
-/// The faults of the table of the product against the table of the methodology: a code that is not lower case latin with underscores, a code that repeats a code of the methodology (even with the same
-/// template: this also covers the codes that the format itself writes, `signal_passed`, `input_rejected`, `machine_error`, `machine_data`, and the codes of the fragment "Pause"), a code twice in the table.
-export fn journal_table_issues(methodology []JournalCode, product []JournalCode) -> []str {
+/// The faults of the table of a host against the table of the language: a code that is not lower case latin with underscores, a code that repeats a code of the language (even with the same template: a code that the
+/// format, the fragment "Pause", the engine or the executor writes is not redefined), a code twice in the table.
+export fn journal_table_issues(language []JournalCode, host []JournalCode) -> []str {
     mut out = []str.new()
     mut seen = []str.new()
-    for row in product {
+    for row in host {
         if !is_code_word(row.code) {
-            out.push("the code ${row.code} of the table of the product is not lower case latin with underscores")
-        } else if journal_find(methodology, row.code).is_some() {
-            out.push("the code ${row.code} of the table of the product repeats a code of the methodology (a code of the methodology or of the format is not replaced)")
+            out.push("the code ${row.code} of the table of the host is not lower case latin with underscores")
+        } else if journal_find(language, row.code).is_some() {
+            out.push("the code ${row.code} of the table of the host repeats a code of the language (a code of the language is not replaced)")
         } else if seen.contains(row.code) {
-            out.push("the code ${row.code} stands twice in the table of the product")
+            out.push("the code ${row.code} stands twice in the table of the host")
         }
         seen.push(row.code)
     }

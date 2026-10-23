@@ -16,7 +16,6 @@ module alula.machine_run
 
 import std.text
 import alula.engine.{Engine, Incoming, EventKind, PartyRequest, PartyResponse, Journal, Store, Link, Time, start_engine_in}
-import alula.machine.{standard_registry, machine_files, text_of_file}
 import alula.machine_table.{MachineDef, MachineParty, check_nested}
 
 /// NestedEntry: a machine of the registry of a caller: the name the caller's table calls it by (`machine шаг_агента(…)`) and the machine.
@@ -42,20 +41,6 @@ export fn NestedRegistry @find(name str) -> Option[AlulaMachine] {
         if e.name == name { return Some(e.machine) }
     }
     None
-}
-
-/// The machines of the product that a caller may call, each under the name of its machine: "Шаг агента" (`agent_step`), "Запуск сессии" (`session_start`, task 121) and "Проверка цикла"
-/// (`cycle_check`, task 122), loaded from the JSON files compiled into the program (`machines/`). The runner of tasks (`task_runner`, task 123) calls the last two; the second calls the first and
-/// the third the second, so the runner of the pairs runs several levels (task 123: the runner is recursive).
-export fn product_registry() -> NestedRegistry {
-    mut reg = NestedRegistry.empty()
-    for name in ["agent_step", "session_start", "cycle_check"] {
-        match load_alula_machine(text_of_file(machine_files(), "${name}.alula.json"), standard_registry()) {
-            Ok(m) => { reg = reg.add(m.def.name, m) }
-            Err(e) => panic("the machine ${name} of the registry of the product does not load: ${e}")
-        }
-    }
-    reg
 }
 
 fn has_machine_party(m AlulaMachine) -> bool {

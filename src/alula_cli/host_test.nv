@@ -1,0 +1,130 @@
+// host_test.nv - task 158: the program takes the registry and the journal of the host as data (spec 7 and 7a, AL-113): `registry.md` and `journal.md` beside the file (in the folder, for `test`), or the files of
+// `--registry` and `--journal`. Without them the host is the language: two primitives (`time_now`, `new_id`) and the 35 codes of the language.
+module alula.alula_cli
+
+import alula.machine.{NamedText}
+fn hc_tick() -> str => "\u{60}"
+
+// The text with the sign ' read as a backtick (a table of the journal writes its codes between backticks).
+fn hc_ticked(text str) -> str => text.replace("'", hc_tick())
+
+// A machine of a shop: its action calls the writing primitive `reserve` of the host and journals the code `item_reserved` of the host.
+fn hc_shop() -> str {
+    ro table = "\n## Primitives\n\n| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| reserve | — | — | writing | — | — |\n"
+    ro machine = tiny_en().replace("turn_count += 1", "turn_count += 1; call(reserve, \"tea\", 1); journal(item_reserved, item: \"tea\")").replace("Machine: Малая", "Machine: Shop").replace("- machine: Tiny", "- machine: Shop")
+    "${machine}${table}"
+}
+
+fn hc_registry() -> str => "# the shop\n\n| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| reserve | item: text; count: int>=1 | — | writing | — | objects: the reserve |\n"
+
+fn hc_journal() -> str => hc_ticked("# the codes of the shop\n\n| Машина | Код события | Русский шаблон | Параметры |\n|---|---|---|---|\n| склад | 'item_reserved' | зарезервировано: {item} | 'item' |\n")
+
+fn hc_shop_scenario() -> str => "{\"format\":\"scenario/0\",\"machine\":\"Shop\",\"name\":\"shop starts\",\"start_at\":1000,\"steps\":[{\"do\":\"feed\",\"event\":{\"kind\":\"start\"},\"expect\":{\"state\":\"Wait\"}},{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"allow\"},\"host\":{\"reserve\":null},\"expect\":{\"state\":\"Wait\",\"journal\":[{\"code\":\"item_reserved\",\"params\":{\"item\":\"tea\"}}]}}]}"
+
+fn hc_files(with_registry bool, with_journal bool) -> []NamedText {
+    mut out = [NamedText { name: "/work/shop.alula.md", text: hc_shop() }]
+    if with_registry { out.push(NamedText { name: "/work/registry.md", text: hc_registry() }) }
+    if with_journal { out.push(NamedText { name: "/work/journal.md", text: hc_journal() }) }
+    out
+}
+
+test "host cli the files beside the machine are its host" {
+    ro ran = run_with(["check", "/work/shop.alula.md"], hc_files(true, true))
+    assert(ran.code == 0)
+    assert(ran.out == "ok\n")
+    assert(ran.err == "")
+}
+
+test "host cli without a registry the primitive of the host is not registered" {
+    ro ran = run_with(["check", "/work/shop.alula.md"], hc_files(false, true))
+    assert(ran.code == 1)
+    assert(ran.err.contains("reserve"))
+    assert(ran.err.contains("not registered"))
+}
+
+test "host cli without a journal the code of the host is in neither table" {
+    ro ran = run_with(["check", "/work/shop.alula.md"], hc_files(true, false))
+    assert(ran.code == 1)
+    assert(ran.err.contains("item_reserved"))
+    assert(ran.err.contains("the table of the language, the table of the host"))
+}
+
+test "host cli the options name the files of the host" {
+    ro files = [NamedText { name: "/work/shop.alula.md", text: hc_shop() }, NamedText { name: "/data/shop-registry.md", text: hc_registry() }, NamedText { name: "/data/shop-journal.md", text: hc_journal() }]
+    ro ran = run_with(["check", "/work/shop.alula.md", "--registry", "/data/shop-registry.md", "--journal", "/data/shop-journal.md"], files)
+    assert(ran.code == 0)
+    assert(ran.out == "ok\n")
+    ro equal = run_with(["check", "/work/shop.alula.md", "--registry=/data/shop-registry.md", "--journal=/data/shop-journal.md"], files)
+    assert(equal.code == 0)
+}
+
+test "host cli an option wins over the file beside the machine" {
+    ro files = [NamedText { name: "/work/shop.alula.md", text: hc_shop() }, NamedText { name: "/work/registry.md", text: "| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| other | — | int | reading | — | — |\n" }, NamedText { name: "/data/shop-registry.md", text: hc_registry() }, NamedText { name: "/work/journal.md", text: hc_journal() }]
+    assert(run_with(["check", "/work/shop.alula.md"], files).code == 1)
+    assert(run_with(["check", "/work/shop.alula.md", "--registry", "/data/shop-registry.md"], files).code == 0)
+}
+
+test "host cli a file of an option that is not there is a wrong use" {
+    ro ran = run_with(["check", "/work/shop.alula.md", "--registry", "/data/none.md"], hc_files(false, true))
+    assert(ran.code == 2)
+    assert(ran.err.contains("alula check: cannot read /data/none.md"))
+    ro bare = run_with(["check", "/work/shop.alula.md", "--journal"], hc_files(true, false))
+    assert(bare.code == 2)
+    assert(bare.err.contains("--journal needs a file"))
+}
+
+test "host cli a wrong registry is a wrong use with the line" {
+    ro files = [NamedText { name: "/work/shop.alula.md", text: hc_shop() }, NamedText { name: "/work/registry.md", text: "| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| reserve | item: Parcel | — | writing | — | — |\n" }]
+    ro ran = run_with(["check", "/work/shop.alula.md"], files)
+    assert(ran.code == 2)
+    assert(ran.err.contains("registry.md:3"))
+    assert(ran.err.contains("Parcel"))
+}
+
+test "host cli a code of the host that repeats a code of the language is a wrong use" {
+    ro journal = hc_ticked("| Машина | Код события | Русский шаблон | Параметры |\n|---|---|---|---|\n| склад | 'fork_no_match' | свой | 'fork' |\n")
+    ro files = [NamedText { name: "/work/shop.alula.md", text: hc_shop() }, NamedText { name: "/work/journal.md", text: journal }]
+    ro ran = run_with(["check", "/work/shop.alula.md"], files)
+    assert(ran.code == 2)
+    assert(ran.err.contains("repeats a code of the language"))
+}
+
+test "host cli compile and summary use the host too" {
+    ro compiled = run_with(["compile", "/work/shop.alula.md"], hc_files(true, true))
+    assert(compiled.code == 0)
+    assert(compiled.out.contains("\"reserve\""))
+    ro bare = run_with(["compile", "/work/shop.alula.md"], hc_files(false, true))
+    assert(bare.code == 1)
+    ro summary = run_with(["summary", "/work/shop.alula.md"], hc_files(true, true))
+    assert(summary.code == 0)
+}
+
+test "host cli render writes the class of a primitive from the registry of the host" {
+    ro compiled = run_with(["compile", "/work/shop.alula.md"], hc_files(true, true))
+    ro files = [NamedText { name: "/work/shop.alula.json", text: compiled.out }, NamedText { name: "/work/registry.md", text: hc_registry() }]
+    ro shown = run_with(["render", "/work/shop.alula.json"], files)
+    assert(shown.code == 0)
+    assert(shown.out.contains("| reserve | — | — | writing | — | — |"))
+    ro plain = run_with(["render", "/work/shop.alula.json"], one("/work/shop.alula.json", compiled.out))
+    assert(plain.out.contains("| reserve | — | — | reading | — | — |"))
+}
+
+test "host cli test reads the host from the folder" {
+    ro compiled = run_with(["compile", "/work/shop.alula.md"], hc_files(true, true))
+    ro files = [NamedText { name: "/work/shop/shop.alula.json", text: compiled.out }, NamedText { name: "/work/shop/registry.md", text: hc_registry() }, NamedText { name: "/work/shop/journal.md", text: hc_journal() }, NamedText { name: "/work/shop/s1.scenario.test.json", text: hc_shop_scenario() }]
+    ro ran = run_with(["test", "/work/shop"], files)
+    assert(ran.code == 0)
+    assert(ran.out.contains("1 of 1 scenarios passed"))
+    ro lonely = run_with(["test", "/work/shop"], [NamedText { name: "/work/shop/shop.alula.json", text: compiled.out }, NamedText { name: "/work/shop/s1.scenario.test.json", text: hc_shop_scenario() }])
+    assert(lonely.code == 1)
+    assert(lonely.err.contains("reserve"))
+}
+
+test "host cli the help names the options of the host" {
+    for command in ["compile", "check", "run", "test"] {
+        ro ran = run0([command, "--help"])
+        assert(ran.out.contains("--registry"))
+        assert(ran.out.contains("--journal"))
+    }
+    assert(run0(["--help"]).out.contains("registry.md"))
+}

@@ -1,0 +1,351 @@
+// host.nv - the data of a host: the registry of its primitives and the table of its journal codes, read from the files that the host registers (spec sections 7 and 7a, AL-113).
+//
+// The language names two primitives (`time_now`, `new_id`) and 35 journal codes; everything else a host gives as data, in two Markdown files beside its machines:
+//   `registry.md`  the tables of the section 7: the primitives `name | parameters | result | class | reads | writes`, the roles of a parse primitive `primitive | role | result | reads`, and the
+//                  records and the variants that the signatures use `type | kind | members`. The names are the JSON names of the registry of the host; the types are written as the tree
+//                  `machine/2` writes them (`int>=0`, `?text`, `[]Finding`, `"a" | "b"`, see `parse_spec`); a bar inside a cell is `\|`; `—` is an empty list; a list of reads and writes is
+//                  separated by `;`. The tables are told apart by the first cell of the header (`name`/`имя`, `primitive`/`примитив`, `type`/`тип`); the sets of types are told apart by the heading
+//                  above the table (`## Types`, `## Types: session`).
+//   `journal.md`   the table of the codes `Machine | Code | Russian template | Parameters` (the form of `journal_language.md`).
+// `host_registry` joins the data of the host with the registry of the language: the check of a table runs against the union.
+module alula.machine
+
+import std.text
+
+/// HostTypeSet: a set of the records and the variants of the registry of a host, under the name that the heading above its table gives (the empty name is the main set).
+export type HostTypeSet { name str, defs TypeDefs }
+
+/// HostRegistryData: what a file `registry.md` holds, in the order of the file.
+export type HostRegistryData { primitives []Primitive, roles []RoleRow, type_sets []HostTypeSet }
+
+/// The data of a host that gives nothing.
+export fn host_registry_empty() -> HostRegistryData => { primitives: []Primitive.new(), roles: []RoleRow.new(), type_sets: []HostTypeSet.new() }
+
+// The cells of a row of a table: `| a | b |` -> ["a", "b"]; `\|` is a bar inside a cell.
+fn hs_cells(line str) -> []str {
+    mut pieces = []str.new()
+    mut cur = ""
+    mut escaped = false
+    for c in line.chars() {
+        ro one = "${c}"
+        if escaped {
+            cur = if one == "|" { "${cur}|" } else { "${cur}\\${one}" }
+            escaped = false
+        } else if one == "\\" {
+            escaped = true
+        } else if one == "|" {
+            pieces.push(cur.trim_ascii())
+            cur = ""
+        } else {
+            cur = "${cur}${one}"
+        }
+    }
+    pieces.push(cur.trim_ascii())
+    mut out = []str.new()
+    mut i = 1
+    while i + 1 < pieces.len() {
+        out.push(pieces[i])
+        i += 1
+    }
+    out
+}
+
+fn hs_is_separator(cells []str) -> bool {
+    if cells.len() == 0 { return false }
+    for cell in cells {
+        if cell.byte_len() == 0 { return false }
+        for c in cell.chars() {
+            ro one = "${c}"
+            if one != "-" && one != ":" && one != " " { return false }
+        }
+    }
+    true
+}
+
+// Split at the separator outside of brackets and quotes: `a: [](x, y); b: int` at ";" -> two parts.
+fn hs_split_top(text str, sep str) -> []str {
+    mut out = []str.new()
+    mut cur = ""
+    mut depth = 0
+    mut quoted = false
+    for c in text.chars() {
+        ro one = "${c}"
+        if one == "\"" { quoted = !quoted }
+        if !quoted {
+            if one == "(" || one == "{" || one == "[" { depth += 1 }
+            if one == ")" || one == "}" || one == "]" { depth -= 1 }
+            if depth == 0 && one == sep {
+                out.push(cur.trim_ascii())
+                cur = ""
+                continue
+            }
+        }
+        cur = "${cur}${one}"
+    }
+    ro last = cur.trim_ascii()
+    if last != "" || out.len() > 0 { out.push(last) }
+    out
+}
+
+fn hs_is_none(cell str) -> bool => cell == "" || cell == "—" || cell == "-"
+
+fn hs_list(cell str) -> []str {
+    if hs_is_none(cell) { return []str.new() }
+    hs_split_top(cell, ";")
+}
+
+fn hs_class(word str) -> Option[PrimitiveClass] {
+    if word == "pure" { return Some(Pure) }
+    if word == "reading" { return Some(Reading) }
+    if word == "writing" { return Some(Writing) }
+    if word == "irreversible" { return Some(Irreversible) }
+    None
+}
+
+// The kind of a table by the first cell of its header: 1 primitives, 2 roles, 3 types, 0 none.
+fn hs_table_kind(first str) -> int {
+    if first == "name" || first == "имя" { return 1 }
+    if first == "primitive" || first == "примитив" { return 2 }
+    if first == "type" || first == "тип" { return 3 }
+    0
+}
+
+// The name of a set of types from a heading: `## Types` -> "", `## Types: session` -> "session"; a heading of another table -> "".
+fn hs_set_name(heading str) -> Option[str] {
+    mut text = heading
+    while text.starts_with("#") { text = text[1..] }
+    text = text.trim_ascii()
+    for word in ["Types", "types", "Типы", "типы"] {
+        if text.starts_with(word) {
+            mut rest = text[word.byte_len()..].trim_ascii()
+            if rest.starts_with(":") { rest = rest[1..].trim_ascii() }
+            return Some(rest)
+        }
+    }
+    None
+}
+
+/// A row of a table of types, before the types are known: the set it is in, the name, the kind, the members, the line.
+type HostTypeRow { set str, name str, kind str, members str, line int }
+type HostPrimRow { cells []str, line int }
+type HostRoleRow { cells []str, line int }
+
+fn hs_err(line int, message str) -> str => "registry.md:${line}: ${message}"
+
+// The names of the types of all the rows: the types that a signature may use are declared in the file (any set).
+fn hs_placeholder(rows []HostTypeRow) -> TypeDefs {
+    mut records = []RecordDef.new()
+    mut variants = []VariantDef.new()
+    for r in rows {
+        if r.kind == "record" { records.push(RecordDef { name: r.name, fields: []FieldDef.new() }) }
+        if r.kind == "variant" { variants.push(VariantDef { name: r.name, cases: []CaseDef.new(), values: []EnumValue.new() }) }
+    }
+    TypeDefs { records, variants }
+}
+
+// `name: type` -> the field; the type is read against the declared names.
+fn hs_field(text str, known TypeDefs, line int) -> Result[FieldDef, str] {
+    ro at = text.find(":") ?? -1
+    if at < 0 { return Err(hs_err(line, "a field is `name: type`, got `${text}`")) }
+    ro name = text[..at].trim_ascii()
+    ro type_text = text[at + 1..].trim_ascii()
+    if name == "" { return Err(hs_err(line, "a field has no name in `${text}`")) }
+    match parse_spec(type_text, known) {
+        Ok(spec) => Ok(FieldDef { name, spec })
+        Err(message) => Err(hs_err(line, message))
+    }
+}
+
+fn hs_fields(text str, sep str, known TypeDefs, line int) -> Result[[]FieldDef, str] {
+    mut out = []FieldDef.new()
+    if hs_is_none(text) { return Ok(out) }
+    for part in hs_split_top(text, sep) {
+        ro f = hs_field(part, known, line)?
+        out.push(f)
+    }
+    Ok(out)
+}
+
+// A case of a variant: `Name` or `Name(field: type, field: type)`.
+fn hs_case(text str, known TypeDefs, line int) -> Result[CaseDef, str] {
+    ro open = text.find("(") ?? -1
+    if open < 0 { return Ok(CaseDef { name: text.trim_ascii(), fields: []FieldDef.new() }) }
+    if !text.ends_with(")") { return Err(hs_err(line, "a case with fields is `Name(field: type)`, got `${text}`")) }
+    ro name = text[..open].trim_ascii()
+    ro inner = text[open + 1..text.byte_len() - 1]
+    ro fields = hs_fields(inner, ",", known, line)?
+    Ok(CaseDef { name, fields })
+}
+
+fn hs_type_sets(rows []HostTypeRow, known TypeDefs) -> Result[[]HostTypeSet, str] {
+    mut names = []str.new()
+    for r in rows {
+        if !names.contains(r.set) { names.push(r.set) }
+    }
+    mut out = []HostTypeSet.new()
+    for set_name in names {
+        mut records = []RecordDef.new()
+        mut variants = []VariantDef.new()
+        for r in rows {
+            if r.set != set_name { continue }
+            if r.kind == "record" {
+                ro fields = hs_fields(r.members, ";", known, r.line)?
+                records.push(RecordDef { name: r.name, fields })
+            } else if r.kind == "variant" {
+                mut cases = []CaseDef.new()
+                for part in hs_split_top(r.members, ";") {
+                    ro c = hs_case(part, known, r.line)?
+                    cases.push(c)
+                }
+                variants.push(VariantDef { name: r.name, cases, values: []EnumValue.new() })
+            } else {
+                return Err(hs_err(r.line, "the kind of the type ${r.name} is `record` or `variant`, got `${r.kind}`"))
+            }
+        }
+        out.push(HostTypeSet { name: set_name, defs: TypeDefs { records, variants } })
+    }
+    Ok(out)
+}
+
+fn hs_params(cell str, known TypeDefs, line int) -> Result[[]ParamSpec, str] {
+    mut out = []ParamSpec.new()
+    if hs_is_none(cell) { return Ok(out) }
+    for part in hs_split_top(cell, ";") {
+        ro f = hs_field(part, known, line)?
+        out.push(ParamSpec { name: f.name, spec: f.spec })
+    }
+    Ok(out)
+}
+
+fn hs_result(cell str, known TypeDefs, line int) -> Result[TypeSpec, str] {
+    if hs_is_none(cell) || cell == "nothing" { return Ok(NothingType) }
+    match parse_spec(cell, known) {
+        Ok(spec) => Ok(spec)
+        Err(message) => Err(hs_err(line, message))
+    }
+}
+
+fn hs_primitive(row HostPrimRow, known TypeDefs) -> Result[Primitive, str] {
+    ro c = row.cells
+    if c.len() != 6 { return Err(hs_err(row.line, "a primitive is `name | parameters | result | class | reads | writes`, six cells, got ${c.len()}")) }
+    if c[0] == "" { return Err(hs_err(row.line, "the name of a primitive is empty")) }
+    ro params = hs_params(c[1], known, row.line)?
+    ro result = hs_result(c[2], known, row.line)?
+    ro class = match hs_class(c[3]) {
+        Some(k) => k
+        None => return Err(hs_err(row.line, "the class of ${c[0]} is pure, reading, writing or irreversible, got `${c[3]}`"))
+    }
+    Ok(Primitive { name: c[0], params, result, class, reads: hs_list(c[4]), writes: hs_list(c[5]) })
+}
+
+/// The data of a file `registry.md`; the errors are the lines `registry.md:<line>: <reason>`. An empty text is a host that gives nothing.
+export fn parse_registry_table(text str) -> Result[HostRegistryData, []str] {
+    mut type_rows = []HostTypeRow.new()
+    mut prim_rows = []HostPrimRow.new()
+    mut role_rows = []HostRoleRow.new()
+    mut errors = []str.new()
+    mut heading = ""
+    mut kind = 0
+    mut in_table = false
+    mut line_no = 0
+    for raw in text.split("\n") {
+        line_no += 1
+        ro line = (raw.strip_suffix("\r") ?? raw).trim_ascii()
+        if line.starts_with("#") {
+            heading = line
+            in_table = false
+            kind = 0
+            continue
+        }
+        if !line.starts_with("|") {
+            in_table = false
+            kind = 0
+            continue
+        }
+        ro cells = hs_cells(line)
+        if hs_is_separator(cells) { continue }
+        if !in_table {
+            in_table = true
+            kind = if cells.len() > 0 { hs_table_kind(cells[0]) } else { 0 }
+            continue
+        }
+        if kind == 1 {
+            prim_rows.push(HostPrimRow { cells, line: line_no })
+        } else if kind == 2 {
+            role_rows.push(HostRoleRow { cells, line: line_no })
+        } else if kind == 3 {
+            if cells.len() != 3 {
+                errors.push(hs_err(line_no, "a type is `type | kind | members`, three cells, got ${cells.len()}"))
+            } else {
+                ro set_name = match hs_set_name(heading) {
+                    Some(n) => n
+                    None => ""
+                }
+                type_rows.push(HostTypeRow { set: set_name, name: cells[0], kind: cells[1], members: cells[2], line: line_no })
+            }
+        }
+    }
+    if errors.len() > 0 { return Err(errors) }
+    ro known = hs_placeholder(type_rows)
+    mut data = host_registry_empty()
+    match hs_type_sets(type_rows, known) {
+        Ok(sets) => { data.type_sets = sets }
+        Err(message) => return Err([message])
+    }
+    for r in prim_rows {
+        match hs_primitive(r, known) {
+            Ok(p) => data.primitives.push(p)
+            Err(message) => errors.push(message)
+        }
+    }
+    for r in role_rows {
+        ro c = r.cells
+        if c.len() != 4 {
+            errors.push(hs_err(r.line, "a role is `primitive | role | result | reads`, four cells, got ${c.len()}"))
+            continue
+        }
+        match hs_result(c[2], known, r.line) {
+            Ok(result) => data.roles.push(RoleRow { primitive: c[0], role: c[1], result, reads: hs_list(c[3]) })
+            Err(message) => errors.push(message)
+        }
+    }
+    if errors.len() > 0 { return Err(errors) }
+    Ok(data)
+}
+
+/// The set of types with the name of the data of a host (the empty name is the main set); no types when there is no such set.
+export fn host_types(data HostRegistryData, name str) -> TypeDefs {
+    for s in data.type_sets {
+        if s.name == name { return s.defs }
+    }
+    TypeDefs { records: []RecordDef.new(), variants: []VariantDef.new() }
+}
+
+/// The registry of a host: the registry of the language and the primitives and the roles of the data, and the table of the journal: the codes of the language and the codes of the host. A primitive
+/// or a code of the host that repeats one of the language, a name twice, a role of a primitive that is not registered are errors (a list of lines).
+export fn host_registry(data HostRegistryData, journal []JournalCode) -> Result[Registry, []str] {
+    mut reg = language_registry()
+    mut errors = []str.new()
+    for p in data.primitives {
+        match register(reg, p) {
+            Ok(u) => ()
+            Err(x) => errors.push("registry.md: ${x.message}")
+        }
+    }
+    for r in data.roles {
+        match add_role(reg, r.primitive, r.role, r.result, r.reads) {
+            Ok(u) => ()
+            Err(x) => errors.push("registry.md: ${x.message}")
+        }
+    }
+    for issue in journal_table_issues(language_journal(), journal) { errors.push("journal.md: ${issue}") }
+    if errors.len() > 0 { return Err(errors) }
+    with_journal(reg, journal_union(journal))
+    Ok(reg)
+}
+
+/// The registry of a host from the texts of its two files (an empty text is a file that is not there: a host without primitives, a host without codes).
+export fn load_host(registry_text str, journal_text str) -> Result[Registry, []str] {
+    ro data = parse_registry_table(registry_text)?
+    host_registry(data, parse_journal(journal_text))
+}

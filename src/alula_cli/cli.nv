@@ -8,8 +8,8 @@ import std.fs.{Fs, Path, read, write_text, try_exists, read_dir}
 import std.os.{args}
 import std.io.{stderr, stdout}
 import std.text
-import alula.machine.{NamedText}
-
+import alula.machine.{NamedText, Registry}
+import alula.machine.{load_host}
 fn put_out(text str) Io -> () {
     if text == "" { return }
     mut o = stdout()
@@ -94,6 +94,48 @@ fn folder_files(dir str) Fs -> Option[[]NamedText] {
     Some(files)
 }
 
+// The folder of a file name (`a/b/c.alula.md` -> `a/b`, `c.alula.md` -> `.`); the signs `\` and `/` both divide.
+fn dir_of(name str) -> str {
+    ro parts = name.replace("\\", "/").split("/")
+    mut names = []str.new()
+    for p in parts { names.push(p) }
+    if names.len() < 2 { return "." }
+    mut out = []str.new()
+    mut i = 0
+    while i + 1 < names.len() {
+        out.push(names[i])
+        i += 1
+    }
+    ro joined = out.join("/")
+    if joined == "" { return "/" }
+    joined
+}
+
+// The text of a file of the host: the file named by the option (it must be there), else the file `fallback` beside the machines (an absent one is an empty text: no primitives, no codes of the host).
+fn host_text(explicit bool, name str, fallback str) Fs -> Result[str, str] {
+    if explicit {
+        match read_file(name) {
+            Some(t) => return Ok(t)
+            None => return Err("cannot read ${name}")
+        }
+    }
+    if !file_exists(fallback) { return Ok("") }
+    match read_file(fallback) {
+        Some(t) => Ok(t)
+        None => Err("cannot read ${fallback}")
+    }
+}
+
+// The registry of the host of the command: the language and the data of the host, `registry.md` and `journal.md` beside the files (in the folder, for `test`), or the files of `--registry` and `--journal`.
+fn host_of(command str, a Args, anchor str) Fs -> Result[Registry, str] {
+    ro registry_text = host_text(a.has_registry, a.registry_file, "${anchor}/registry.md")?
+    ro journal_text = host_text(a.has_journal, a.journal_file, "${anchor}/journal.md")?
+    match load_host(registry_text, journal_text) {
+        Ok(reg) => Ok(reg)
+        Err(lines) => Err(lines.join("; "))
+    }
+}
+
 // What the command gave: the errors go to the standard error; the product goes to the file of `-o` (the code 2 when it cannot be written) or to the standard output.
 fn deliver(made CmdResult, command str, a Args) Fs Io -> int {
     put_err(made.err)
@@ -126,11 +168,15 @@ fn run_file_command(command str, a Args) Fs Io -> int {
         Some(t) => t
         None => return usage_error(command, "cannot read ${file}")
     }
-    if command == "compile" { return deliver(compile_command(text, file, a.no_check, a.lenient), command, a) }
-    if command == "render" { return deliver(render_command(text, file, language, a.lenient), command, a) }
-    if command == "convert" { return deliver(convert_command(text, file, language, a.no_check, a.lenient), command, a) }
-    if command == "check" { return deliver(check_command(text, file, a.no_check), command, a) }
-    deliver(summary_command(text, file, a.no_check), command, a)
+    ro registry = match host_of(command, a, dir_of(file)) {
+        Ok(r) => r
+        Err(message) => return usage_error(command, message)
+    }
+    if command == "compile" { return deliver(compile_command(text, file, a.no_check, a.lenient, registry), command, a) }
+    if command == "render" { return deliver(render_command(text, file, language, a.lenient, registry), command, a) }
+    if command == "convert" { return deliver(convert_command(text, file, language, a.no_check, a.lenient, registry), command, a) }
+    if command == "check" { return deliver(check_command(text, file, a.no_check, registry), command, a) }
+    deliver(summary_command(text, file, a.no_check, registry), command, a)
 }
 
 fn run_scenario_command(a Args) Fs Io -> int {
@@ -145,7 +191,11 @@ fn run_scenario_command(a Args) Fs Io -> int {
         Some(t) => t
         None => return usage_error("run", "cannot read ${scenario_file}")
     }
-    deliver(run_command(machine_text, machine_file, scenario_text, scenario_file), "run", a)
+    ro registry = match host_of("run", a, dir_of(machine_file)) {
+        Ok(r) => r
+        Err(message) => return usage_error("run", message)
+    }
+    deliver(run_command(machine_text, machine_file, scenario_text, scenario_file, registry), "run", a)
 }
 
 fn run_folder_command(a Args) Fs Io -> int {
@@ -153,7 +203,12 @@ fn run_folder_command(a Args) Fs Io -> int {
     if !file_exists(dir) { return usage_error("test", "cannot read the folder ${dir}") }
     match folder_files(dir) {
         None => usage_error("test", "cannot read the folder ${dir}")
-        Some(files) => deliver(test_command(files, dir, a.verbose), "test", a)
+        Some(files) => {
+            match host_of("test", a, dir) {
+                Err(message) => usage_error("test", message)
+                Ok(registry) => deliver(test_command(files, dir, a.verbose, registry), "test", a)
+            }
+        }
     }
 }
 

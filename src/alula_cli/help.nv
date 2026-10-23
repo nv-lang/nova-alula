@@ -32,12 +32,15 @@ Commands:
       the translation and the checks of the table; the errors and the warnings.
   alula summary <file.alula.md|file.alula.json> [--no-check]
       the states, the rows, the actions, the data, the parties.
-  alula run <machine> <scenario.scenario.test.json>
+  alula run <machine> <scenario.scenario.test.json> [--registry <file>] [--journal <file>]
       one scenario on a machine: ok, or the report of the difference.
-  alula test <folder> [-v]
+  alula test <folder> [-v] [--registry <file>] [--journal <file>]
       every *.scenario.test.json of the folder on the machines of the folder: "N of M scenarios passed".
   alula version
       the version of the program and of the languages it reads.
+
+The host: the language names two primitives (time_now, new_id) and 35 journal codes; the rest is the data of the host, the files registry.md (primitives, roles of a parse
+primitive, types) and journal.md (codes) beside the machines, or --registry <file> and --journal <file> (every command that reads a machine takes them).
 
 Files:
   *.alula.md            a machine written in Alula (Russian or English; the header says which)
@@ -61,6 +64,8 @@ The errors and the warnings go to the standard error as "file:line:column: kind:
   --force               overwrite the file of -o
   --lenient             print the JSON of what could be translated even when there are errors (the code is still 1)
   --no-check            do not check the table against the primitives of the host
+  --registry <file>     the registry of the host (default: registry.md beside the file)
+  --journal <file>      the table of the journal codes of the host (default: journal.md beside the file)
 `
     }
     if command == "render" {
@@ -73,6 +78,8 @@ What the file cannot say goes to the standard error and the code is 1.
   -o, --output <file>   write the file (an existing file is not overwritten without --force)
   --force               overwrite the file of -o
   --lenient             print what could be said even when something could not
+  --registry <file>     the registry of the host (default: registry.md beside the file)
+  --journal <file>      the table of the journal codes of the host (default: journal.md beside the file)
 `
     }
     if command == "convert" {
@@ -86,6 +93,8 @@ starting with ">" or "//") are not carried over, and the program says so on the 
   --force               overwrite the file of -o
   --no-check            do not check the table against the primitives of the host
   --lenient             go on when there are errors
+  --registry <file>     the registry of the host (default: registry.md beside the file)
+  --journal <file>      the table of the journal codes of the host (default: journal.md beside the file)
 `
     }
     if command == "check" {
@@ -95,6 +104,8 @@ A file of Alula: the translation, the checks of the table, the warnings. A file 
 Prints "ok" and the code 0 when there are no errors; the errors and the warnings go to the standard error.
 
   --no-check            do not check the table against the primitives of the host
+  --registry <file>     the registry of the host (default: registry.md beside the file)
+  --journal <file>      the table of the journal codes of the host (default: journal.md beside the file)
 `
     }
     if command == "summary" {
@@ -103,6 +114,8 @@ Prints "ok" and the code 0 when there are no errors; the errors and the warnings
 The summary of a machine: the states, the rows, the actions, the data, the parties; one line per state.
 
   --no-check            do not check the table against the primitives of the host
+  --registry <file>     the registry of the host (default: registry.md beside the file)
+  --journal <file>      the table of the journal codes of the host (default: journal.md beside the file)
 `
     }
     if command == "run" {
@@ -110,6 +123,9 @@ The summary of a machine: the states, the rows, the actions, the data, the parti
 
 One scenario (scenario/0) on a machine. Prints "ok" and the code 0, or the report of the first differences and the code 1.
 The scenario names its machine; a machine with another name is an error.
+
+  --registry <file>     the registry of the host (default: registry.md beside the machine)
+  --journal <file>      the table of the journal codes of the host (default: journal.md beside the machine)
 `
     }
     if command == "test" {
@@ -120,6 +136,8 @@ of the folder, or the *.alula.md files when a machine has no JSON. Prints the re
 The code is 1 when a scenario differs.
 
   -v, --verbose         one line "ok <file>" for every scenario that passed
+  --registry <file>     the registry of the host (default: registry.md in the folder)
+  --journal <file>      the table of the journal codes of the host (default: journal.md in the folder)
 `
     }
     if command == "version" {

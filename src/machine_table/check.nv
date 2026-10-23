@@ -1781,11 +1781,11 @@ fn check_journal(mut cx Checker) -> () {
             if !is_snake(n) { cx_issue(cx, c.place, "the parameter ${n} of the code ${c.code} must be lower case latin with underscores") }
         }
     }
-    // the codes against the union of the table of the methodology and the table of the product (format 2.12, AL-31); a host that names no table has no codes to compare with
+    // the codes against the union of the table of the language and the table of the host (format 2.12, AL-31, spec section 7a); a registry that names no table has no codes to compare with
     if cx.registry.journal.len() > 0 {
         for c in seen {
             match journal_find(cx.registry.journal, c.code) {
-                None => cx_issue(cx, c.place, "the code ${c.code} is in neither of the journal tables (the table of the methodology, the table of the product)")
+                None => cx_issue(cx, c.place, "the code ${c.code} is in neither of the journal tables (the table of the language, the table of the host)")
                 Some(row) => {
                     for n in row.params {
                         if !c.names.contains(n) { cx_issue(cx, c.place, "the code ${c.code} lacks the parameter ${n} of the journal tables") }

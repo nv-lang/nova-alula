@@ -1,0 +1,282 @@
+// host_test.nv - task 158: the registry and the journal of a host are data (spec 7a, AL-113). The language knows two primitives and 35 journal codes; a host gives the rest in `registry.md` and `journal.md`
+// (`parse_registry_table`, `host_registry`, `load_host`): the check of a table runs against the union "language + host".
+module alula.machine
+
+
+fn hst_registry_text() -> str => `# a host
+
+## Primitives
+
+| name | parameters | result | class | reads | writes |
+|---|---|---|---|---|---|
+| stock_level | item: text | int>=0 | reading | objects: the stock | — |
+| reserve | item: text; count: int>=1 | — | writing | — | objects: the reserve |
+| ship | order: Order | ?Receipt | irreversible | objects: the reserve; the clock | objects: the shipment; the log |
+| pick | mode: "fast" \| "slow" | text | pure | — | — |
+| parse_note | note: text; role: text | NoteResult | reading | — | — |
+
+## Roles
+
+| primitive | role | result | reads |
+|---|---|---|---|
+| parse_note | plain | text | — |
+| parse_note | long | []text | objects: the note |
+
+## Types
+
+| type | kind | members |
+|---|---|---|
+| Order | record | item: text; count: int>=1; paid: bool |
+| Receipt | record | number: int>=0; lines: []Order |
+| NoteResult | variant | Plain(text: text); Long(lines: []text); Nothing |
+
+## Types: second
+
+| type | kind | members |
+|---|---|---|
+| Order | record | item: text |
+`
+
+fn hst_tick() -> str => "\u{60}"
+
+fn hst_journal_text() -> str => hst_ticked("# the codes of a host\n\n| Машина | Код события | Русский шаблон | Параметры |\n|---|---|---|---|\n| склад | 'item_reserved' | зарезервировано: {item} | 'item'; необязательные 'note' |\n| склад | 'item_shipped' | отправлено | — |\n")
+
+// The text with the sign ' read as a backtick (a table of the journal writes its codes between backticks).
+fn hst_ticked(text str) -> str => text.replace("'", hst_tick())
+
+fn hst_host() -> Registry {
+    match load_host(hst_registry_text(), hst_journal_text()) {
+        Ok(r) => r
+        Err(errors) => panic(errors.join(" | "))
+    }
+}
+
+fn hst_errors(registry_text str, journal_text str) -> str {
+    match load_host(registry_text, journal_text) {
+        Ok(r) => "ok"
+        Err(errors) => errors.join(" | ")
+    }
+}
+
+fn hst_names(registry Registry) -> []str {
+    mut out = []str.new()
+    for p in registry.primitives { out.push(p.name) }
+    out
+}
+
+test "host the language names two primitives and 35 codes" {
+    ro reg = language_registry()
+    assert(hst_names(reg) == ["time_now", "new_id"])
+    for p in reg.primitives { assert(class_word(p.class) == "reading") }
+    assert(reg.roles.len() == 0)
+    assert(language_journal().len() == 35)
+    assert(reg.journal.len() == 35)
+}
+
+test "host the 35 codes of the language are those of the section 7a" {
+    ro wanted = ["signal_passed", "input_rejected", "machine_error", "machine_data", "fork_no_match",
+        "human_stop", "pause_by_parent_stop", "cancel_discarded_foreign_request", "cancel_discarded_already_replied", "request_cancelled", "cancel_parse_no_match", "human_continue", "parent_continue",
+        "machine_started", "event_accepted", "reply_discarded", "request_ordered", "request_sent", "request_repeated", "request_closed", "cancel_ordered", "cancel_sent", "cancel_without_request",
+        "snapshot_ordered", "machine_finished", "engine_resumed", "signal_ordered", "machine_defect", "event_ignored", "event_unknown", "event_malformed", "answer_held", "answer_replayed", "answer_edited", "form_returned"]
+    ro have = language_journal()
+    assert(wanted.len() == 35)
+    for code in wanted { assert(journal_find(have, code).is_some()) }
+    assert(have.len() == wanted.len())
+    // a code of the methodology or of the product is not in the table of the language
+    for code in ["agent_usage", "turn_failed", "user_message", "agent_chunk", "session_result"] { assert(journal_find(have, code).is_none()) }
+}
+
+test "host the parameters of a code of the language" {
+    ro have = language_journal()
+    match journal_find(have, "event_accepted") {
+        Some(row) => {
+            assert(row.params == ["kind", "name"])
+            assert(row.optional == ["source", "input"])
+        }
+        None => assert(false)
+    }
+    match journal_find(have, "fork_no_match") {
+        Some(row) => assert(row.params == ["fork"])
+        None => assert(false)
+    }
+}
+
+test "host a table of a file gives its rows" {
+    ro rows = parse_journal(hst_journal_text())
+    assert(rows.len() == 2)
+    assert(rows[0].code == "item_reserved")
+    assert(rows[0].params == ["item"])
+    assert(rows[0].optional == ["note"])
+    assert(rows[1].params.len() == 0)
+    assert(parse_journal("").len() == 0)
+}
+
+test "host the registry of a host is the language and its data" {
+    ro reg = hst_host()
+    assert(hst_names(reg) == ["time_now", "new_id", "stock_level", "reserve", "ship", "pick", "parse_note"])
+    assert(reg.journal.len() == 37)
+    assert(journal_find(reg.journal, "item_reserved").is_some())
+    assert(journal_find(reg.journal, "fork_no_match").is_some())
+    assert(journal_find(reg.journal, "agent_usage").is_none())
+}
+
+test "host the signature of a primitive" {
+    ro reg = hst_host()
+    match find_primitive(reg, "ship") {
+        Some(p) => {
+            assert(class_word(p.class) == "irreversible")
+            assert(p.params.len() == 1)
+            assert(p.params[0].name == "order")
+            assert(spec_text(p.params[0].spec) == "Order")
+            assert(spec_text(p.result) == "?Receipt")
+            assert(p.reads == ["objects: the reserve", "the clock"])
+            assert(p.writes == ["objects: the shipment", "the log"])
+        }
+        None => assert(false)
+    }
+    match find_primitive(reg, "reserve") {
+        Some(p) => {
+            assert(spec_text(p.params[1].spec) == "int>=1")
+            assert(spec_text(p.result) == "nothing")
+            assert(p.reads.len() == 0)
+        }
+        None => assert(false)
+    }
+}
+
+test "host a bar in a cell is written with a backslash" {
+    ro reg = hst_host()
+    match find_primitive(reg, "pick") {
+        Some(p) => {
+            assert(spec_text(p.params[0].spec) == "\"fast\" | \"slow\"")
+            assert(class_word(p.class) == "pure")
+        }
+        None => assert(false)
+    }
+}
+
+test "host the table by role" {
+    ro reg = hst_host()
+    assert(has_roles(reg, "parse_note"))
+    assert(!has_roles(reg, "ship"))
+    match find_role(reg, "parse_note", "long") {
+        Some(r) => {
+            assert(spec_text(r.result) == "[]text")
+            assert(r.reads == ["objects: the note"])
+        }
+        None => assert(false)
+    }
+    assert(find_role(reg, "parse_note", "none").is_none())
+}
+
+test "host the sets of types" {
+    ro data = match parse_registry_table(hst_registry_text()) {
+        Ok(d) => d
+        Err(errors) => panic(errors.join(" | "))
+    }
+    assert(data.type_sets.len() == 2)
+    ro main = host_types(data, "")
+    assert(main.records.len() == 2)
+    assert(main.variants.len() == 1)
+    assert(main.records[0].name == "Order")
+    assert(main.records[0].fields.len() == 3)
+    assert(main.variants[0].cases.len() == 3)
+    assert(main.variants[0].cases[0].name == "Plain")
+    assert(main.variants[0].cases[0].fields.len() == 1)
+    assert(main.variants[0].cases[2].fields.len() == 0)
+    ro second = host_types(data, "second")
+    assert(second.records.len() == 1)
+    assert(second.records[0].fields.len() == 1)
+    assert(host_types(data, "elsewhere").records.len() == 0)
+}
+
+test "host the class of a primitive decides the places of its call" {
+    ro reg = hst_host()
+    assert(check_call_position(reg, "stock_level", ActionPos).is_err())
+    assert(check_call_position(reg, "reserve", ActionPos).is_ok())
+    assert(check_call_position(reg, "reserve", ConditionPos).is_err())
+    assert(check_call_position(reg, "pick", ConditionPos).is_ok())
+    assert(check_call_position(reg, "time_now", ConditionPos).is_err())
+    assert(check_call_position(reg, "party_profile", ActionPos).is_err())
+}
+
+test "host no file is a host that gives nothing" {
+    match load_host("", "") {
+        Ok(reg) => {
+            assert(hst_names(reg) == ["time_now", "new_id"])
+            assert(reg.journal.len() == 35)
+        }
+        Err(errors) => assert(false)
+    }
+}
+
+test "host an unknown class is refused with the line" {
+    ro text = hst_registry_text().replace("| reserve | item: text; count: int>=1 | — | writing |", "| reserve | item: text; count: int>=1 | — | sleeping |")
+    ro said = hst_errors(text, "")
+    assert(said.contains("registry.md:"))
+    assert(said.contains("sleeping"))
+}
+
+test "host a type that is not declared is refused" {
+    ro said = hst_errors(hst_registry_text().replace("order: Order", "order: Parcel"), "")
+    assert(said.contains("Parcel"))
+    assert(said.contains("not declared"))
+}
+
+test "host a row with a wrong number of cells is refused" {
+    ro said = hst_errors("| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| lone | — | int | reading |\n", "")
+    assert(said.contains("six cells"))
+}
+
+test "host a primitive of the host with a name of the language is refused" {
+    ro said = hst_errors("| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| time_now | — | int | reading | — | — |\n", "")
+    assert(said.contains("time_now"))
+    assert(said.contains("registered already"))
+}
+
+test "host the same name twice and the same parameter twice are refused" {
+    ro twice = "| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| a | — | int | reading | — | — |\n| a | — | int | reading | — | — |\n"
+    assert(hst_errors(twice, "").contains("registered already"))
+    ro same = "| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| b | x: int; x: int | int | reading | — | — |\n"
+    assert(hst_errors(same, "").contains("twice"))
+}
+
+test "host a role of a primitive that is not registered is refused" {
+    ro text = "| primitive | role | result | reads |\n|---|---|---|---|\n| ghost | r | text | — |\n"
+    assert(hst_errors(text, "").contains("not registered"))
+}
+
+test "host a code of the host that repeats a code of the language is refused" {
+    ro journal = "| Машина | Код события | Русский шаблон | Параметры |\n|---|---|---|---|\n| склад | `machine_error` | свой шаблон | `reason` |\n"
+    ro said = hst_errors("", journal)
+    assert(said.contains("journal.md:"))
+    assert(said.contains("repeats a code of the language"))
+}
+
+test "host the faults of a table of codes: a bad word, a repeat, the language" {
+    ro rows = parse_journal("| Машина | Код события | Русский шаблон | Параметры |\n|---|---|---|---|\n| x | `Bad-Word` | t | — |\n| x | `fine` | t | — |\n| x | `fine` | t | — |\n| x | `event_sent` | t | — |\n| x | `human_stop` | t | — |\n")
+    ro issues = journal_table_issues(language_journal(), rows)
+    assert(issues.len() == 3)
+}
+
+test "host the samples of the specification have a registry that loads" {
+    match load_host(embed_str("../../spec/samples/registry.md"), "") {
+        Ok(reg) => {
+            assert(reg.primitives.len() == 22)
+            assert(has_roles(reg, "parse_agent_reply"))
+            assert(find_role(reg, "parse_agent_reply", "witness").is_some())
+        }
+        Err(errors) => panic(errors.join(" | "))
+    }
+}
+
+test "host the registry of the examples loads and the table of its codes does not repeat the language" {
+    match load_host(embed_str("../../examples/registry.md"), embed_str("../../examples/journal.md")) {
+        Ok(reg) => {
+            assert(find_primitive(reg, "close_agent_turn").is_some())
+            assert(find_primitive(reg, "time_now").is_some())
+            assert(reg.journal.len() == 35 + parse_journal(embed_str("../../examples/journal.md")).len())
+        }
+        Err(errors) => panic(errors.join(" | "))
+    }
+}

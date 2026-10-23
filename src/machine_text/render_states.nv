@@ -3,7 +3,7 @@ module alula.machine_text
 
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
-import alula.machine.{standard_registry, class_word}
+import alula.machine.{Registry, language_registry, class_word}
 
 fn rn_binds(cx RnCx, bind RJ) -> str {
     mut parts = []str.new()
@@ -305,8 +305,8 @@ fn rn_sec_ends(mut cx RnCx, root RJ) -> []str {
     out
 }
 
-fn rn_class_of(name str) -> str {
-    for p in standard_registry().primitives {
+fn rn_class_of(cx RnCx, name str) -> str {
+    for p in cx.registry.primitives {
         if p.name == name { return class_word(p.class) }
     }
     "reading"
@@ -316,7 +316,7 @@ fn rn_sec_primitives(cx RnCx, root RJ) -> []str {
     mut rows = []RnRow.new()
     for n in rj_garr(root, "primitives") {
         ro name = rj_str(n)
-        rows.push(RnRow { cells: [name, "—", "—", rn_class_of(name), "—", "—"] })
+        rows.push(RnRow { cells: [name, "—", "—", rn_class_of(cx, name), "—", "—"] })
     }
     if rows.len() == 0 { return ["—"] }
     rn_table(rn_cols(cx, ["name", "parameters", "result", "class", "reads", "writes"]), rows)
@@ -400,7 +400,10 @@ fn rn_former_note(v RJ, path str) -> str {
 
 /// The file of Alula for a tree `machine/2` in the language (`ru` or `en`); `copy_includes` writes the types, the constants and the definitions of the included files of definitions as the
 /// machine's own (else the line of connection stands and the copies are left out, section 1b (м)).
-export fn render_machine_with(machine_json str, language str, copy_includes bool) -> RenderReport {
+export fn render_machine_with(machine_json str, language str, copy_includes bool) -> RenderReport => render_machine_in(machine_json, language, copy_includes, language_registry())
+
+/// The same with the registry of the host: the class of a primitive in the table "Primitives" of the file is the class that the registry gives (a primitive that the registry does not know is `reading`).
+export fn render_machine_in(machine_json str, language str, copy_includes bool, registry Registry) -> RenderReport {
     if language != "ru" && language != "en" {
         return RenderReport { text: "", notes: ["the language must be `ru` or `en`, got `${language}`"] }
     }
@@ -420,7 +423,7 @@ export fn render_machine_with(machine_json str, language str, copy_includes bool
             }
             ro former = rn_former_note(root, "$")
             if former != "" { return RenderReport { text: "", notes: [former] } }
-            mut cx = rn_cx(language)
+            mut cx = rn_cx_in(language, registry)
             ro dropped = rn_dropped(cx, root, copy_includes)
             // what the fragments bring is written by the line of connection, not as the machine's own (1b (m), 2.12, AL-32)
             ro shown = if rj_garr(root, "fragments").len() == 0 { root } else { rn_without_fragments(root) }
