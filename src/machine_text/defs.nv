@@ -80,7 +80,7 @@ type TxDefsDoc { version str, types TxTypes, constants []TxJ, definitions []TxJ 
 fn defs_header(entries []TxEntry, mut cx TxCx) -> str {
     mut version = ""
     mut format = ""
-    ro head_word = "${kw(cx.words, "header", "Definitions")}:"
+    ro head_word = "${kw(cx.words, "header", "Functions")}:"
     if entries.len() == 0 || entries[0].kind != EN_HEAD || entries[0].level != 1 || !entries[0].text.starts_with(head_word) {
         note(cx, struct_error(1, 1, "файл определений начинается со строки `# ${head_word} <имя>`"))
     }
@@ -89,7 +89,7 @@ fn defs_header(entries []TxEntry, mut cx TxCx) -> str {
         ro e = entries[i]
         if kv_colon(e) >= 0 {
             ro line = kv_read(entries, i)
-            if line.key == "definitions_version" {
+            if line.key == "functions_version" {
                 version = line.segs[0].text
             } else if line.key == "format" {
                 format = line.segs[0].text
@@ -97,7 +97,7 @@ fn defs_header(entries []TxEntry, mut cx TxCx) -> str {
                 // read by the detection of the language
                 ()
             } else {
-                note(cx, struct_error(e.line, 1, "в шапке файла определений бывают строки definitions_version, format, language"))
+                note(cx, struct_error(e.line, 1, "в шапке файла определений бывают строки functions_version, format, language"))
             }
             i += line.taken
         } else {
@@ -110,13 +110,13 @@ fn defs_header(entries []TxEntry, mut cx TxCx) -> str {
         Ok(n) => { version_ok = true }
         Err(err) => ()
     }
-    if !version_ok { note(cx, struct_error(1, 1, "в шапке нет строки `definitions_version: <целое>`")) }
+    if !version_ok { note(cx, struct_error(1, 1, "в шапке нет строки `functions_version: <целое>`")) }
     if !format_versions().contains(format) { note(cx, struct_error(1, 1, "формат файла определений должен быть ${format_versions().join(", ")}, найдено: ${format}")) }
     version
 }
 
 fn names_in_order(sections []TxSection) -> bool {
-    mut want = ["Types", "Constants", "Definitions"]
+    mut want = ["Types", "Constants", "Functions"]
     // the section `## Имена` is optional and stands after `## Типы` (AL-60)
     mut kept = []TxSection.new()
     for s in sections {
@@ -164,7 +164,7 @@ fn defs_read(file_text str, mut cx TxCx) -> TxDefsDoc {
     ro version = defs_header(entries, dcx)
     ro sections = sections_of(entries, dcx)
     if !names_in_order(sections) {
-        note(dcx, struct_error(1, 1, "в файле определений три раздела по порядку: ${kw_all(dcx.words, "section", ["Types", "Constants", "Definitions"]).join(", ")} (пустой раздел — `—`)"))
+        note(dcx, struct_error(1, 1, "в файле определений три раздела по порядку: ${kw_all(dcx.words, "section", ["Types", "Constants", "Functions"]).join(", ")} (пустой раздел — `—`)"))
     }
     mut types = TxTypes { records: []TxJ.new(), variants: []TxJ.new() }
     mut constants = []TxJ.new()
@@ -181,7 +181,7 @@ fn defs_read(file_text str, mut cx TxCx) -> TxDefsDoc {
         Some(sec) => { constants = decl_constants(entries, sec, dcx) }
         None => ()
     }
-    match section_of(sections, "Definitions") {
+    match section_of(sections, "Functions") {
         Some(sec) => {
             match section_calls(entries, sec, dcx.words) {
                 Some(e) => note(dcx, struct_error(e.line, e.indent + 1, "в файле определений нет `${kw(dcx.words, "action", "call")}`: только чистые определения"))
@@ -199,6 +199,7 @@ fn defs_read(file_text str, mut cx TxCx) -> TxDefsDoc {
     for q in dcx.env.defs { if !pair_has(cx.env.defs, q.ru) { pair_add(cx.env.defs, q.ru, q.en) } }
     for q in dcx.env.types { if !pair_has(cx.env.types, q.ru) { pair_add(cx.env.types, q.ru, q.en) } }
     for q in dcx.env.cases { if !pair_has(cx.env.cases, q.ru) { pair_add(cx.env.cases, q.ru, q.en) } }
+    for q in dcx.env.case_types { cx.env.case_types.push(q) }
     for q in dcx.env.globals { if !pair_has(cx.env.globals, q.ru) { pair_add(cx.env.globals, q.ru, q.en) } }
     TxDefsDoc { version, types, constants, definitions }
 }
@@ -209,9 +210,13 @@ fn defs_read(file_text str, mut cx TxCx) -> TxDefsDoc {
 type TxDefsCall { name str, version str, hash str, line int, col int }
 
 fn defs_call_read(line TxKv, e TxEntry, w TxWords) -> Result[TxDefsCall, TranslateError] {
-    mut p = lex_segs(line.segs)?
+    // the hash can start with a digit (`642e1f78f0f7`), and a number touched by letters is a broken token: the line is lexed up to the word `hash`, the hash is read from the text
+    ro raw0 = line.segs[0].text
+    ro hash_at = raw0.rfind(kw(w, "key", "hash")) ?? -1
+    ro cut_text = if hash_at >= 0 { raw0[..hash_at + kw(w, "key", "hash").byte_len()] } else { raw0 }
+    mut p = lex_segs([TxSeg { text: cut_text, line: line.segs[0].line, col: line.segs[0].col, code: false }])?
     ro n = p_tok(p)
-    if n.kind != TK_NAME { return Err(p_fail(p, "после `${kw(w, "key", "definitions")}:` ожидается имя файла")) }
+    if n.kind != TK_NAME { return Err(p_fail(p, "после `${kw(w, "key", "functions")}:` ожидается имя файла")) }
     p_adv(p)
     p_expect_kw(p, w, "key", "version")?
     ro v = p_tok(p)
@@ -260,7 +265,7 @@ fn defs_includes(entries []TxEntry, sec TxSection, registry []NamedText, mut cx 
         ro e = entries[i]
         if e.kind == EN_TEXT && kv_colon(e) >= 0 {
             ro line = kv_read(entries, i)
-            if line.key == "definitions" {
+            if line.key == "functions" {
                 match defs_call_read(line, e, cx.words) {
                     Ok(call) => {
                         match defs_file_named(call.name, registry) {

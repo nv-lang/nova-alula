@@ -119,3 +119,33 @@ fn other_lang(lang str) -> str => if lang == "en" { "ru" } else { "en" }
 
 /// The kinds under which a foreign word is looked for in a name position (a word of an expression, an action, a type, an event, a destination, a catalog function).
 fn kinds_foreign_names() -> []str => ["expr", "action", "type", "event", "destination", "catalog", "readable", "enum_value", "kind_party", "kind_state"]
+
+// ---- the former forms (no transition period) -------------------------------------------------------------------------------------
+
+/// TxFormer: a word of a former format and what is written now.
+type TxFormer { word str, instead str, label str, shown str }
+
+/// The former form of a word under a kind (`type`, `call`, `decl`, `word`) in the language of the file (`former.tsv`): what to write instead, the label of the change. None when the word was never a form of the language.
+fn former_find(lang str, kind str, word str) -> Option[TxFormer] {
+    for raw in embed_str("former.tsv").split("\n") {
+        ro line = raw.strip_suffix("\r") ?? raw
+        if line.byte_len() == 0 || line.starts_with("#") { continue }
+        ro cells = line.split("\t")
+        mut c = []str.new()
+        for x in cells { c.push(x) }
+        if c.len() < 6 || c[0] == "lang" { continue }
+        if c[0] == lang && c[1] == kind && c[2] == word { return Some(TxFormer { word: c[2], instead: c[3], label: c[4], shown: c[5] }) }
+    }
+    None
+}
+
+/// The text of the error about a former form: what it was, what to write now, the label; there is no transition period.
+fn former_message(f TxFormer) -> str => "`${f.shown}` в формате 2.22 не бывает (${f.label}): пишется `${f.instead}`; переходного периода нет"
+
+/// Is the word a former form under the kind?
+fn former_is(lang str, kind str, word str) -> bool {
+    match former_find(lang, kind, word) {
+        Some(f) => true
+        None => false
+    }
+}

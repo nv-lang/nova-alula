@@ -10,7 +10,7 @@ import std.text
 type TxSection { name str, title str, line int, first int, last int }
 
 /// TxSeg: a piece of text of a line with its place; the value of a `Ключ: значение` line is one piece and the pieces of its continuation lines.
-type TxSeg { text str, line int, col int }
+type TxSeg { text str, line int, col int, code bool }
 
 /// TxKv: a line `Ключ: значение`: the key (its English word), the pieces of the value, and the number of the entries it takes.
 type TxKv { key str, segs []TxSeg, line int, taken int }
@@ -43,7 +43,7 @@ fn kv_read(entries []TxEntry, at int) -> TxKv {
     mut segs = []TxSeg.new()
     ro colon_col = tx_cols(entry.text, 0, colon)
     ro (lead_at, lead) = skip_spaces(entry.text, colon + 1)
-    segs.push(TxSeg { text: entry.text[lead_at..], line: entry.line, col: entry.indent + entry.shift + colon_col + 1 + lead + 1 })
+    segs.push(TxSeg { text: entry.text[lead_at..], line: entry.line, col: entry.indent + entry.shift + colon_col + 1 + lead + 1, code: false })
     mut taken = 1
     while at + taken < entries.len() {
         ro next = entries[at + taken]
@@ -56,7 +56,7 @@ fn kv_read(entries []TxEntry, at int) -> TxKv {
             item_at = after
             item_lead = 1 + skipped
         }
-        segs.push(TxSeg { text: next.text[item_at..], line: next.line, col: next.indent + item_lead + 1 })
+        segs.push(TxSeg { text: next.text[item_at..], line: next.line, col: next.indent + item_lead + 1, code: false })
         taken += 1
     }
     TxKv { key, segs, line: entry.line, taken }
@@ -68,7 +68,7 @@ fn lex_segs(segs []TxSeg) -> Result[TxP, TranslateError] {
     mut end_line = 1
     mut end_col = 1
     for seg in segs {
-        ro tokens = tx_lex(seg.text, seg.line, seg.col)?
+        ro tokens = tx_lex_in(seg.text, seg.line, seg.col, seg.code)?
         for t in tokens { all.push(t) }
         end_line = seg.line
         end_col = seg.col + seg.text.chars().count()
@@ -115,7 +115,7 @@ fn struct_error(line int, col int, message str) -> TranslateError => tx_err(line
 
 /// The keys of the sections of a file of a machine, in the order of format section 1 (the English words of the table of words; `Signals` and `Response parts` are the product's).
 fn section_keys() -> []str => [
-    "Types", "Names", "Constants", "Parameters", "Input", "Data", "Parties", "Signals", "Response parts", "Definitions", "Includes", "Common events", "States", "Ends", "Primitives"
+    "Types", "Names", "Constants", "Parameters", "Input", "Data", "Parties", "Signals", "Response parts", "Functions", "Includes", "Common events", "States", "Ends", "Primitives"
 ]
 
 /// The words of the sections in the language of the file, for a message.
@@ -219,7 +219,7 @@ fn tab_read(entries []TxEntry, at int, last int, expected []str, mut cx TxCx) ->
             k2 += 1
         }
         if former_at >= 0 {
-            note(cx, struct_error(head.line, head.cells[former_at].col, "столбец «${head.cells[former_at].text}» в формате 2.17 называется «${kw(cx.words, "column", "signals")}» (Я-38): в нём объявлены сигналы стороны; переходного периода нет"))
+            note(cx, struct_error(head.line, head.cells[former_at].col, "столбец «${head.cells[former_at].text}» в формате 2.22 называется «${kw(cx.words, "column", "signals")}» (Я-38): в нём объявлены сигналы стороны; переходного периода нет"))
         } else if foreign_at >= 0 {
             note(cx, foreign_error(cx.words, head.line, head.cells[foreign_at].col, head.cells[foreign_at].text, "column", foreign_key))
         } else {

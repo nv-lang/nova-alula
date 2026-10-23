@@ -1,0 +1,151 @@
+// v222_decl_test.nv - task 152: the declarations of Alula 2.22 (AL-89, AL-95, AL-96, AL-99, AL-78): `тип Имя перечисление …` in the one-line and the multi-line forms, the values of the elements, the forms with fields,
+// the records with a trailing comma, the types `строка`, `вещественное`, `булево`, a comment in a block of code, the refused old forms.
+module alula.machine_text
+
+import std.text
+
+fn dq222(s str) -> str => s.replace("'", "\"")
+
+fn td222(text str, json str) -> bool => types_json(text) == dq222(json)
+
+fn te222(text str, part str) -> bool {
+    ro made = types_json(text)
+    made.starts_with("ERR") && made.contains(part)
+}
+
+// ---- enumerations -----------------------------------------------------------------------------------------------------------------------
+
+test "d222 an enumeration in one line" {
+    assert(td222("тип Цвет перечисление Красный | Синий", "{'records':[],'variants':[{'name':'Tsvet','cases':[{'name':'Krasnyy'},{'name':'Siniy'}]}]}"))
+}
+
+test "d222 an enumeration in lines with values" {
+    assert(td222("тип Цвет перечисление\n  | Красный = \"red\"\n  | Синий = \"blue\"", "{'records':[],'variants':[{'name':'Tsvet','cases':[{'name':'Krasnyy'},{'name':'Siniy'}],'values':[['Krasnyy','red'],['Siniy','blue']]}]}"))
+}
+
+test "d222 an enumeration with fields in lines" {
+    assert(td222("тип Итог перечисление\n  | Готово { текст строка }\n  | Пусто", "{'records':[],'variants':[{'name':'Itog','cases':[{'name':'Done','fields':[{'name':'text','type':'text'}]},{'name':'Pusto'}]}]}"))
+}
+
+test "d222 a form with fields in the one-line form is refused" {
+    assert(te222("тип Итог перечисление Готово { текст строка } | Пусто", "в записи на одной строке не бывает"))
+}
+
+test "d222 a value in the one-line form is refused" {
+    assert(te222("тип Цвет перечисление Красный = \"r\" | Синий = \"b\"", "в записи на одной строке не бывает"))
+}
+
+test "d222 values and fields together are refused" {
+    assert(te222("тип Цвет перечисление\n  | Красный = \"red\"\n  | Синий { а число }", "значения и поля вперемешку"))
+}
+
+test "d222 an enumeration without elements is refused" {
+    assert(te222("тип Цвет перечисление", "ожидаются элементы перечисления"))
+}
+
+test "d222 elements in lines need a bar" {
+    assert(te222("тип Цвет перечисление\n  Красный\n  Синий", "ожидаются элементы перечисления"))
+}
+
+test "d222 the old declaration of an enumeration is refused" {
+    assert(te222("перечисление Цвет = А | Б", "тип Имя перечисление"))
+    assert(te222("перечисление Цвет = А | Б", "AL-99"))
+}
+
+test "d222 the old declaration of a variant is refused" {
+    assert(te222("вариант Знак { А }", "AL-99"))
+}
+
+test "d222 an equals sign after the name of a type is refused" {
+    assert(te222("тип Т = { а число }", "AL-89"))
+}
+
+test "d222 brackets after an element are refused" {
+    assert(te222("тип Цвет перечисление Красный (Red) | Синий", "убраны из языка"))
+}
+
+test "d222 the elements get their JSON names by themselves" {
+    assert(types_json("тип Цвет перечисление Красный | Синий").contains("Krasnyy"))
+}
+
+// ---- records and types --------------------------------------------------------------------------------------------------------------------
+
+test "d222 a record in braces" {
+    assert(td222("тип Т { а число, б ?строка }", "{'records':[{'name':'T','fields':[{'name':'a','type':'int'},{'name':'b','type':'?text'}]}],'variants':[]}"))
+}
+
+test "d222 a record in lines with a trailing comma" {
+    assert(types_json("тип Т {\n  а число,\n  б ?строка,\n}") == types_json("тип Т { а число, б ?строка }"))
+}
+
+test "d222 the type float is written вещественное" {
+    assert(td222("тип Т { а вещественное, б булево }", "{'records':[{'name':'T','fields':[{'name':'a','type':'float'},{'name':'b','type':'bool'}]}],'variants':[]}"))
+}
+
+test "d222 the old name of the float type is refused" {
+    assert(te222("тип Т { а дробное }", "AL-96"))
+}
+
+test "d222 the old name of the text type is refused" {
+    assert(te222("тип Т { а текст }", "AL-95"))
+}
+
+test "d222 the old name of the bool type is refused" {
+    assert(te222("тип Т { а да/нет }", "булево"))
+}
+
+test "d222 a map type is written словарь" {
+    assert(td222("тип Т { а словарь[строка, число] }", "{'records':[{'name':'T','fields':[{'name':'a','type':'{text: int}'}]}],'variants':[]}"))
+}
+
+test "d222 a type of another language for a map is refused" {
+    assert(te222("тип Т { а HashMap[число, число] }", "словарь[K, V]"))
+}
+
+test "d222 a list of optional strings and a tuple" {
+    assert(td222("тип Т { а []?строка, б (число, строка) }", "{'records':[{'name':'T','fields':[{'name':'a','type':'[]?text'},{'name':'b','type':'(int, text)'}]}],'variants':[]}"))
+}
+
+test "d222 a colon after the name of a field is refused" {
+    assert(te222("тип Т { а: число }", "без двоеточия"))
+}
+
+// ---- AL-78 and comments -------------------------------------------------------------------------------------------------------------------
+
+fn warned222(sections str, needle str) -> bool {
+    for w in translate_report("${head()}${sections}").warnings {
+        if w.message.contains(needle) { return true }
+    }
+    false
+}
+
+test "d222 a field named as a macro is a warning" {
+    ro fence = "```"
+    assert(warned222("## Типы\n\n${fence}\nтип Т { фильтр число }\n${fence}\n", "AL-78"))
+    assert(warned222("## Типы\n\n${fence}\nтип Т { любой число }\n${fence}\n", "AL-78"))
+    assert(warned222("## Типы\n\n${fence}\nтип Т { количество число }\n${fence}\n", "AL-78"))
+}
+
+test "d222 a field named as a function that is no macro is allowed" {
+    assert(!warned222("## Типы\n\n```\nтип Т { длина число }\n```\n", "AL-78"))
+}
+
+test "d222 a comment stands in a block of code" {
+    ro text = jsn("## Типы\n\n```\n// пояснение\nтип Т { а число } // и здесь\n```\n")
+    assert(text.contains("\"name\":\"T\""))
+}
+
+test "d222 a comment outside a block is refused" {
+    assert(te222("тип Т { а число } // пояснение", "AL-90"))
+}
+
+test "d222 a block of code holds several declarations" {
+    ro text = jsn("## Типы\n\n```\nтип А { а число }\nтип Б перечисление Х | Ю\n```\n")
+    assert(text.contains("\"records\":[{\"name\":\"A\"") || text.contains("\"name\":\"A\""))
+    assert(text.contains("\"variants\":[{\"name\":\"B\""))
+}
+
+test "d222 a declaration outside a block is a comment with a warning" {
+    ro report = translate_report("${head()}## Типы\n\nтип Т { а число }\n")
+    assert(report.warnings.len() >= 1)
+}

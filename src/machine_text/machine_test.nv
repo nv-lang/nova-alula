@@ -8,7 +8,7 @@ import alula.machine_table.{parse_machine, load_machine}
 test "tm clean" {
     ro report = checked(tiny_text())
     assert(report.errors.len() == 0)
-    assert(report.json.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.17\",\"machine\":\"Tiny\""))
+    assert(report.json.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.22\",\"machine\":\"Tiny\""))
     assert(report.rows_total > 0 && report.rows_noted == 0)
 }
 
@@ -51,8 +51,8 @@ test "tm names of the states" {
 
 test "tm header" {
     assert(note_says(tiny_with("# Машина: Малая", "# Что-то: Малая"), "начинается со строки `# Машина:"))
-    assert(note_says(tiny_with("format: 2.17", "format: 2.4"), "формат 2.4: версия не известна переводчику, он читает формат 2.17"))
-    assert(note_says(tiny_with("format: 2.17\n", ""), "формат не указан"))
+    assert(note_says(tiny_with("format: 2.22", "format: 2.4"), "формат 2.4: версия не известна переводчику, он читает формат 2.22"))
+    assert(note_says(tiny_with("format: 2.22\n", ""), "формат не указан"))
     assert(note_says(tiny_with("machine: Tiny\n", ""), "нет строки `machine:"))
     assert(note_says(tiny_with("machine: Tiny", "machine: Малая"), "латинский идентификатор"))
     assert(note_says(tiny_with("machine_version: 1", "machine_version: 1\nлишнее: слово"), "лишняя строка в шапке"))
@@ -60,7 +60,7 @@ test "tm header" {
 }
 
 test "tm header places" {
-    ro all = notes(tiny_with("format: 2.17", "format: 2.4"))
+    ro all = notes(tiny_with("format: 2.22", "format: 2.4"))
     assert(all[0].starts_with("1:1 structure"))
 }
 
@@ -204,9 +204,9 @@ test "tm entry" {
 }
 
 test "tm except" {
-    assert(note_says(tiny_with("Кроме: остановка in {\"\"}", "Кроме: остановка in {\"x\"}"), "\"x\" is not in the set of stop_reason"))
-    assert(note_says(tiny_with("Кроме: остановка in {\"\"}", "Кроме: остановка {\"\"}"), "ожидается `in`"))
-    assert(note_says(tiny_with("Кроме: остановка in {\"\"}\n", ""), "do not cover 1 values of stop_reason: "))
+    assert(note_says(tiny_with("Кроме: остановка в [\"\"]", "Кроме: остановка в [\"x\"]"), "\"x\" is not in the set of stop_reason"))
+    assert(note_says(tiny_with("Кроме: остановка в [\"\"]", "Кроме: остановка {\"\"}"), "ожидается `в`"))
+    assert(note_says(tiny_with("Кроме: остановка в [\"\"]\n", ""), "do not cover 1 values of stop_reason: "))
 }
 
 // ---- the ends ----------------------------------------------------------------------------------------------------------------
@@ -278,7 +278,7 @@ test "tm class" {
 }
 
 test "tm new id outside" {
-    ro in_cond = tiny_with("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | текст(вызвать(новый_ид)) == \"\" | — | КОНЕЦ |")
+    ro in_cond = tiny_with("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | строка(вызвать(новый_ид)) == \"\" | — | КОНЕЦ |")
     assert(note_says(in_cond, "new_id may stand only in a binding of the entry of an operation"))
     assert(note_says(in_cond, "the reading primitive new_id may not stand in condition"))
 }

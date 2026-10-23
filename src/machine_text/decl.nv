@@ -48,6 +48,11 @@ fn decl_field(mut p TxP, mut cx TxCx, what str) -> Result[TxJ, TranslateError] {
     p_adv(p)
     if p_is(p, ":") { return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "после имени поля тип пишется без двоеточия (формат 2.3)")) }
     ro en = decl_exported(p, cx, n, what, "${what}:${cx.env.opath.join(".")}", path_under(cx, n.text))?
+    // AL-78: a field named as a macro of the catalog cannot be read after a dot when a call follows (`x.filter(`): a warning, not an error, because the machines of the product have a field `count` that the English file
+    // writes with the same word; the specification says an error of the check of types, the reference script does not check it (reported to the methodology)
+    if is_macro_word(cx.words, n.text) {
+        cx.warnings.push(tx_err(n.line, n.col, "warning", "поле `${n.text}` названо как макрос каталога (AL-78): после точки `${n.text}(…)` — вызов метода, поле с таким именем прочитать нельзя"))
+    }
     if p_is(p, ":") { return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "после имени поля тип пишется без двоеточия (формат 2.3)")) }
     declare_field(cx, n, en)
     ro type_text = ty_parse(p, cx)?
@@ -68,7 +73,7 @@ fn decl_fields(mut p TxP, mut cx TxCx, close str, what str) -> Result[[]TxJ, Tra
 
 // ---- the types -----------------------------------------------------------------------------------------------------------------------------
 
-/// TxTypes: the records and the variants of the section `## Типы`.
+/// TxTypes: the records and the enumerations (the tree key `variants`) of the section `## Типы`.
 type TxTypes { records []TxJ, variants []TxJ }
 
 fn same_names(first []str, second []str) -> bool {
@@ -94,27 +99,76 @@ fn word_is_code(w str) -> bool {
     true
 }
 
-// `перечисление Имя (Json) = Зн (Json) "значение" | Зн (Json) "значение" …` (the values are optional, format 2.7 P-7, 2.13 AL-41: the pairs [name, value] go to the key `values`); returns the JSON of the variant or None for the built-in FailCode.
-fn decl_enum(mut p TxP, mut cx TxCx) -> Result[Option[TxJ], TranslateError] {
-    ro n = p_tok(p)
-    if n.kind != TK_NAME { return Err(p_fail(p, "после `перечисление` ожидается имя типа")) }
-    p_adv(p)
+/// TxTypeDecl: the result of one declaration `тип …`: a record or an enumeration (the JSON, none for the built-in `КодСбоя`).
+type TxTypeDecl { record bool, json Option[TxJ] }
+
+// The last column that a token of the line occupies (the end of the code of the line, a comment not counted): the tokens of the line `line` from the place of the reader.
+fn line_end_col(p TxP, line int) -> int {
+    mut end = 0
+    mut k = p.pos
+    while k < p.toks.len() && p.toks[k].line == line {
+        ro t = p.toks[k]
+        ro w = t.raw.chars().count()
+        if t.col + w - 1 > end { end = t.col + w - 1 }
+        k += 1
+    }
+    end
+}
+
+/// `тип Имя перечисление …` (AL-99, as D406 of Nova; the values `Эл = "значение"` AL-41, AL-89), after the words `тип Имя перечисление`. On one line: `тип Имя перечисление Эл | Эл2` — only bare names, the line not longer
+/// than 100 signs, no `|` before the first one. On several lines: the header, then a form on a line that starts with `|`: `| Эл`, `| Эл = "значение"`, `| Вар { поле тип, … }`. The type has either values at the elements or fields
+/// at the forms. The JSON is one node of the variants: the cases, and the pairs `values` when there are values.
+fn decl_enum(mut p TxP, mut cx TxCx, n TxTok, header_line int) -> Result[TxTypeDecl, TranslateError] {
     ro type_en = decl_exported(p, cx, n, "типа", "типы", [n.text])?
     pair_add(cx.env.types, n.text, type_en)
-    p_expect(p, "=")?
     mut cases = []TxJ.new()
     mut case_names = []str.new()
     mut word_pairs = []TxJ.new()
     mut word_owners = []TxPair.new()
+    mut with_fields = false
+    mut with_values = false
+    // an enumeration with fields at its forms (AL-99): its parts are forms, else they are elements of the enumeration (the kind of the declaration in the messages and in the list of the names)
+    mut fields_ahead = false
+    mut look = p.pos
+    while look < p.toks.len() {
+        ro lt = p.toks[look]
+        if lt.kind == TK_NAME && lt.col == 1 && (lt.text == kw(cx.words, "decl", "type") || former_is(cx.words.lang, "decl", lt.text)) { break }
+        if t_is(lt, "{") { fields_ahead = true }
+        look += 1
+    }
+    // the label of the kind of the declaration is the label of the reference script of the methodology (`check-alula-keywords.py` still says "варианта" for a form with fields): the tests compare the lists of names by it
+    ro form_what = if fields_ahead { "варианта" } else { "элемента перечисления" }
+    ro form_space = if fields_ahead { "формы:" } else { "элементы:" }
+    ro one_line = !p_done(p) && p_tok(p).line == header_line
+    if one_line && p_is(p, "|") { return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "в записи перечисления на одной строке `|` перед первым элементом не бывает (AL-99): `тип Имя перечисление Эл | Эл2`; в несколько строк — заголовок и строки `  | Эл`")) }
+    if p_done(p) || (!one_line && !p_is(p, "|")) { return Err(p_fail(p, "после `${kw(cx.words, "decl", "enum")}` ожидаются элементы перечисления")) }
     while true {
-        ro c = p_tok(p)
-        if c.kind != TK_NAME { return Err(p_fail(p, "ожидается значение перечисления")) }
-        p_adv(p)
-        ro case_en = decl_exported(p, cx, c, "элемента перечисления", "элементы:${n.text}", [n.text, c.text])?
-        pair_add(cx.env.cases, c.text, case_en)
-        if p_tok(p).kind == TK_STR {
-            ro word = p_tok(p)
+        if !one_line {
+            // a form starts the line with `|`
+            ro bar = p_tok(p)
+            if !t_is(bar, "|") { break }
+            if bar.line == header_line { break }
             p_adv(p)
+        }
+        ro c = p_tok(p)
+        if c.kind != TK_NAME { return Err(p_fail(p, "ожидается элемент перечисления")) }
+        if one_line && c.line != header_line { return Err(tx_err(c.line, c.col, "syntax", "запись перечисления на одной строке не переносится (AL-99): элементы — на строке заголовка или каждый на своей строке с `|`")) }
+        p_adv(p)
+        ro case_en = decl_exported(p, cx, c, form_what, "${form_space}${n.text}", [n.text, c.text])?
+        pair_add(cx.env.cases, c.text, case_en)
+        pair_add(cx.env.case_types, c.text, type_en)
+        mut has_fields = false
+        mut fields = []TxJ.new()
+        if p_tok(p).kind == TK_STR && p_tok(p).line == c.line {
+            return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "значение элемента пишется через `=`: `${c.text} = \"значение\"` (AL-89); `${c.text} \"значение\"` в формате 2.22 не бывает; переходного периода нет"))
+        }
+        if p_is(p, "=") {
+            if one_line { return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "значение элемента в записи на одной строке не бывает (AL-99): заголовок `тип Имя перечисление` и строки `  | ${c.text} = \"значение\"`")) }
+            p_adv(p)
+            ro word = p_tok(p)
+            if word.kind != TK_STR { return Err(p_fail(p, "после `=` ожидается значение в кавычках")) }
+            p_adv(p)
+            with_values = true
             if word.text == "" {
                 cx_error(cx, word, "syntax", "значение `${c.text}` не может быть пустым")
             } else if !word_is_code(word.text) {
@@ -131,21 +185,55 @@ fn decl_enum(mut p TxP, mut cx TxCx) -> Result[Option[TxJ], TranslateError] {
                     word_pairs.push(TxArr([js(case_en), js(word.text)]))
                 }
             }
+        } else if p_is(p, "{") {
+            if one_line { return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "форма с полями в записи на одной строке не бывает (AL-99): заголовок `тип Имя перечисление` и строки `  | ${c.text} { поле тип }`")) }
+            p_adv(p)
+            cx.env.owner = c.text
+            cx.env.opath = [n.text, c.text]
+            fields = decl_fields(p, cx, "}", "поля")?
+            cx.env.owner = ""
+            cx.env.opath = []str.new()
+            p_expect(p, "}")?
+            has_fields = true
+            with_fields = true
+        } else if p_is(p, "(") {
+            return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "поля формы пишутся в фигурных скобках `${c.text} { поле тип }` (AL-82); круглые скобки — только у функций; переходного периода нет"))
         }
         case_names.push(case_en)
-        cases.push(jobj([kv("name", js(case_en))]))
-        if p_eat(p, "|") { continue }
-        break
+        if has_fields {
+            cases.push(jobj([kv("name", js(case_en)), kv("fields", TxArr(fields))]))
+        } else {
+            cases.push(jobj([kv("name", js(case_en))]))
+        }
+        if one_line {
+            if p_eat(p, "|") { continue }
+            break
+        }
+        // the next form is on the next line; two forms on one line are an error
+        if !p_done(p) && t_is(p_tok(p), "|") && p_tok(p).line == c.line {
+            return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "в записи перечисления в несколько строк каждая форма — на своей строке с `|` (AL-99)"))
+        }
     }
+    if one_line && line_end_col(p_from_header(p, header_line), header_line) > 100 {
+        return Err(tx_err(n.line, n.col, "syntax", "перечисление на одной строке длиннее 100 знаков (AL-99): пишется в несколько строк — заголовок `тип ${n.text} перечисление` и строки `  | Эл`"))
+    }
+    if with_fields && with_values { return Err(tx_err(n.line, n.col, "type", "у типа `${n.text}` значения и поля вперемешку (AL-99): либо у элементов значения `= \"значение\"`, либо у форм поля `{ … }`")) }
     if type_en == "FailCode" {
         if !same_names(case_names, fail_code_names()) {
             cx_unsupported(cx, n, "КодСбоя — встроенное перечисление из десяти значений, другого состава быть не может")
         }
-        return Ok(None)
+        return Ok(TxTypeDecl { record: false, json: None })
     }
     mut pairs = [kv("name", js(type_en)), kv("cases", TxArr(cases))]
     if word_pairs.len() > 0 { pairs.push(kv("values", TxArr(word_pairs))) }
-    Ok(Some(jobj(pairs)))
+    Ok(TxTypeDecl { record: false, json: Some(jobj(pairs)) })
+}
+
+// A reader that stands on the first token of the header line `header_line` (the tokens of that line are looked at for the length of the line).
+fn p_from_header(p TxP, header_line int) -> TxP {
+    mut k = 0
+    while k < p.toks.len() && p.toks[k].line != header_line { k += 1 }
+    TxP { toks: p.toks, pos: k, end_line: p.end_line, end_col: p.end_col }
 }
 
 // ORACLE-WORKAROUND(41): the list is called `pairs_in`, not `list` or `pairs`: a name that means a list of one type in one function and a list of another type in another function of the unit is mixed up by the code generator; use plain names when item 41 is fixed
@@ -163,11 +251,8 @@ fn pair_owner(pairs_in []TxPair, en str) -> str {
     ""
 }
 
-// `тип Имя { поле тип, … }`.
-fn decl_record(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
-    ro n = p_tok(p)
-    if n.kind != TK_NAME { return Err(p_fail(p, "после `тип` ожидается имя типа")) }
-    p_adv(p)
+// `тип Имя { поле тип, … }`, after the words `тип Имя`.
+fn decl_record(mut p TxP, mut cx TxCx, n TxTok) -> Result[TxTypeDecl, TranslateError] {
     ro type_en = decl_exported(p, cx, n, "типа", "типы", [n.text])?
     pair_add(cx.env.types, n.text, type_en)
     p_expect(p, "{")?
@@ -177,41 +262,26 @@ fn decl_record(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
     cx.env.owner = ""
     cx.env.opath = []str.new()
     p_expect(p, "}")?
-    Ok(jobj([kv("name", js(type_en)), kv("fields", TxArr(fields))]))
+    Ok(TxTypeDecl { record: true, json: Some(jobj([kv("name", js(type_en)), kv("fields", TxArr(fields))])) })
 }
 
-// `вариант Имя { Вар { поле тип, … } Вар … }`.
-fn decl_variant(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
+// `тип Имя …`: a record `{ … }` or an enumeration `перечисление …` (AL-99); the former `тип Имя = …` is an error.
+fn decl_type(mut p TxP, mut cx TxCx, head TxTok) -> Result[TxTypeDecl, TranslateError] {
     ro n = p_tok(p)
-    if n.kind != TK_NAME { return Err(p_fail(p, "после `вариант` ожидается имя типа")) }
+    if n.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "decl", "type")}` ожидается имя типа")) }
     p_adv(p)
-    ro type_en = decl_exported(p, cx, n, "типа", "типы", [n.text])?
-    pair_add(cx.env.types, n.text, type_en)
-    p_expect(p, "{")?
-    mut cases = []TxJ.new()
-    while !p_is(p, "}") {
-        if p_done(p) { return Err(p_fail(p, "ожидается `}` в конце варианта")) }
-        ro c = p_tok(p)
-        if c.kind != TK_NAME { return Err(p_fail(p, "ожидается имя случая варианта")) }
-        p_adv(p)
-        ro case_en = decl_exported(p, cx, c, "варианта", "варианты:${n.text}", [n.text, c.text])?
-        pair_add(cx.env.cases, c.text, case_en)
-        if p_eat(p, "{") {
-            cx.env.owner = c.text
-            cx.env.opath = [n.text, c.text]
-            ro fields = decl_fields(p, cx, "}", "поля")?
-            cx.env.owner = ""
-            cx.env.opath = []str.new()
-            p_expect(p, "}")?
-            cases.push(jobj([kv("name", js(case_en)), kv("fields", TxArr(fields))]))
-        } else {
-            cases.push(jobj([kv("name", js(case_en))]))
-        }
-        p_eat(p, ",")
+    if p_is(p, "(") && p_ahead(p, 1).kind == TK_NAME && t_is(p_ahead(p, 2), ")") {
+        cx_error(cx, p_tok(p), "name", "скобки `(${p_ahead(p, 1).text})` после имени типа `${n.text}` убраны из языка (AL-60): JSON-имя задаёт строка раздела `## Имена`, без строки оно строится само; переходного периода нет")
+        p.pos += 3
     }
-    p_expect(p, "}")?
-    if cases.len() == 0 { return Err(p_fail(p, "вариант без случаев")) }
-    Ok(jobj([kv("name", js(type_en)), kv("cases", TxArr(cases))]))
+    if t_is(p_tok(p), "{") { return decl_record(p, cx, n) }
+    if p_is_kw(p, cx.words, "decl", "enum") {
+        ro word = p_tok(p)
+        p_adv(p)
+        return decl_enum(p, cx, n, word.line)
+    }
+    if p_is(p, "=") { return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "знак `=` после имени типа в формате 2.22 не бывает (AL-89, AL-99): `${kw(cx.words, "decl", "type")} ${n.text} ${kw(cx.words, "decl", "enum")} Эл | Эл2`; значение элемента — `Эл = \"значение\"`; переходного периода нет")) }
+    Err(p_fail(p, "после имени типа ожидается `{` (запись) или `${kw(cx.words, "decl", "enum")}` (перечисление)"))
 }
 
 /// The section `## Типы`.
@@ -223,7 +293,7 @@ fn decl_types(entries []TxEntry, sec TxSection, mut cx TxCx) -> TxTypes {
     while i < sec.last {
         ro e = entries[i]
         if e.kind == EN_TEXT {
-            if e.text != "—" { segs.push(TxSeg { text: e.text, line: e.line, col: e.indent + 1 }) }
+            if e.text != "—" { segs.push(TxSeg { text: e.text, line: e.line, col: e.indent + 1, code: e.fenced }) }
         } else {
             note(cx, struct_error(e.line, 1, "в разделе `Типы` таблиц нет"))
         }
@@ -236,7 +306,7 @@ fn decl_types(entries []TxEntry, sec TxSection, mut cx TxCx) -> TxTypes {
             while !p_done(pre) {
                 ro first = p_tok(pre)
                 p_adv(pre)
-                if t_is_kw(first, cx.words, "decl", "enum") || t_is_kw(first, cx.words, "decl", "type") || t_is_kw(first, cx.words, "decl", "variant") {
+                if t_is_kw(first, cx.words, "decl", "type") {
                     ro named = p_tok(pre)
                     if named.kind == TK_NAME {
                         p_adv(pre)
@@ -248,11 +318,13 @@ fn decl_types(entries []TxEntry, sec TxSection, mut cx TxCx) -> TxTypes {
             while !p_done(p) {
                 ro head = p_tok(p)
                 p_adv(p)
-                if t_is_kw(head, cx.words, "decl", "enum") {
-                    match decl_enum(p, cx) {
-                        Ok(v) => {
-                            match v {
-                                Some(j) => variants.push(j)
+                if t_is_kw(head, cx.words, "decl", "type") {
+                    match decl_type(p, cx, head) {
+                        Ok(d) => {
+                            match d.json {
+                                Some(j) => {
+                                    if d.record { records.push(j) } else { variants.push(j) }
+                                }
                                 None => ()
                             }
                         }
@@ -261,24 +333,11 @@ fn decl_types(entries []TxEntry, sec TxSection, mut cx TxCx) -> TxTypes {
                             tx_skip_decl(p, cx.words)
                         }
                     }
-                } else if t_is_kw(head, cx.words, "decl", "type") {
-                    match decl_record(p, cx) {
-                        Ok(j) => records.push(j)
-                        Err(e) => {
-                            note(cx, e)
-                            tx_skip_decl(p, cx.words)
-                        }
-                    }
-                } else if t_is_kw(head, cx.words, "decl", "variant") {
-                    match decl_variant(p, cx) {
-                        Ok(j) => variants.push(j)
-                        Err(e) => {
-                            note(cx, e)
-                            tx_skip_decl(p, cx.words)
-                        }
-                    }
                 } else {
-                    note(cx, tx_err(head.line, head.col, "syntax", "ожидается `${kw(cx.words, "decl", "enum")}`, `${kw(cx.words, "decl", "type")}` или `${kw(cx.words, "decl", "variant")}`, найдено: ${t_shown(head)}"))
+                    match former_find(cx.words.lang, "decl", head.text) {
+                        Some(f) => note(cx, tx_err(head.line, head.col, "syntax", former_message(f)))
+                        None => note(cx, tx_err(head.line, head.col, "syntax", "ожидается `${kw(cx.words, "decl", "type")}`, найдено: ${t_shown(head)}"))
+                    }
                     tx_skip_decl(p, cx.words)
                 }
             }
@@ -288,9 +347,19 @@ fn decl_types(entries []TxEntry, sec TxSection, mut cx TxCx) -> TxTypes {
     TxTypes { records, variants }
 }
 
-// After an error: to the next keyword of a declaration.
+// After an error: to the next keyword of a declaration (or a word of a former declaration, which is an error of its own).
 fn tx_skip_decl(mut p TxP, w TxWords) -> () {
-    while !p_done(p) && !(p_is_kw(p, w, "decl", "enum") || p_is_kw(p, w, "decl", "type") || p_is_kw(p, w, "decl", "variant")) { p_adv(p) }
+    while !p_done(p) {
+        if p_is_kw(p, w, "decl", "type") { break }
+        ro t = p_tok(p)
+        if t.kind == TK_NAME && t.col == 1 {
+            match former_find(w.lang, "decl", t.text) {
+                Some(f) => { break }
+                None => ()
+            }
+        }
+        p_adv(p)
+    }
 }
 
 // ---- constants, parameters ------------------------------------------------------------------------------------------------------------

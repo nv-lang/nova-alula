@@ -21,8 +21,8 @@ fn party_id_of(row TxPartyRow) -> str {
     ""
 }
 
-// The list of the column `сигналы`: `—`, or `сигнал`, `сигнал(поле тип, …)`, … separated by commas (AL-38). Returns the JSON of the signals; the JSON names are built by themselves (AL-53, AL-60), the
-// signals of one party are one space (AL-58).
+// The list of the column `сигналы`: `—`, or `сигнал`, `сигнал { поле тип, … }`, … separated by commas (AL-38, AL-82: the fields in braces). Returns the JSON of the signals; the JSON names are built by themselves
+// (AL-53, AL-60), the signals of one party are one space (AL-58).
 fn party_signals(cell TxCell, line int, mut cx TxCx, party str) -> Result[[]TxJ, TranslateError] {
     mut out = []TxJ.new()
     if cell.text == "—" || cell.text == "" { return Ok(out) }
@@ -32,13 +32,16 @@ fn party_signals(cell TxCell, line int, mut cx TxCx, party str) -> Result[[]TxJ,
         ro phrase = ev_phrase(p)?
         ro en = decl_json_text(p, cx, first, phrase, "сигнала", "сигналы:${party}", [party, phrase])?
         pair_add(cx.env.psignals, phrase, en)
-        if p_eat(p, "(") {
+        if p_is(p, "(") {
+            return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "сигнал с полями `${phrase}(поле тип)` в формате 2.22 не бывает (AL-82): поля пишутся в фигурных скобках `${phrase} { поле тип }`; круглые скобки — только у функций; переходного периода нет"))
+        }
+        if p_eat(p, "{") {
             cx.env.owner = phrase
             cx.env.opath = [party, phrase]
-            ro fields = decl_fields(p, cx, ")", "поля сигнала")?
+            ro fields = decl_fields(p, cx, "}", "поля сигнала")?
             cx.env.owner = ""
             cx.env.opath = []str.new()
-            p_expect(p, ")")?
+            p_expect(p, "}")?
             out.push(jobj([kv("name", js(en)), kv("fields", TxArr(fields))]))
         } else {
             out.push(jobj([kv("name", js(en))]))
@@ -391,7 +394,7 @@ fn def_segs(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxSeg {
     while i < sec.last {
         ro e = entries[i]
         if e.kind == EN_TEXT {
-            if e.text != "—" { segs.push(TxSeg { text: e.text, line: e.line, col: e.indent + 1 }) }
+            if e.text != "—" { segs.push(TxSeg { text: e.text, line: e.line, col: e.indent + 1, code: e.fenced }) }
         } else {
             note(cx, struct_error(e.line, 1, "в разделе `${sec.name}` таблиц нет"))
         }
@@ -400,18 +403,33 @@ fn def_segs(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxSeg {
     segs
 }
 
-/// The names of the definitions are known before the bodies are read (a definition may call one that comes later).
+/// AL-81: the name of a definition or of a primitive is no word of the catalog in either language and is not `range` (the name of the call of a range in the tree); the JSON name is checked too.
+fn call_clash(mut cx TxCx, n TxTok, json str) -> () {
+    ro ru_words = words_load("ru")
+    ro en_words = words_load("en")
+    // `новый_ид` is the built-in primitive of the host and stands in the table of words under the kind `catalog` (section 12 of the specification): it is no function of the catalog
+    if json == "new_id" { return }
+    for cand in [n.text, json] {
+        if cand == "range" || kw_has(ru_words, "catalog", cand) || kw_has(en_words, "catalog", cand) {
+            cx_error(cx, n, "check", "имя `${cand}` совпадает с функцией каталога (AL-81): определение и примитив называются иначе, чем `фильтр`/`filter`, `склеить`/`concat`, `range` и другие функции каталога")
+            return
+        }
+    }
+}
+
+/// The names of the functions are known before the bodies are read (a function may call one that comes later).
 fn defs_register(entries []TxEntry, sec TxSection, mut cx TxCx) -> () {
     ro segs = def_segs(entries, sec, cx)
     match lex_segs(segs) {
         Ok(p0) => {
             mut k = 0
             while k + 1 < p0.toks.len() {
-                if t_is_kw(p0.toks[k], cx.words, "decl", "define") && p0.toks[k + 1].kind == TK_NAME {
+                if t_is_kw(p0.toks[k], cx.words, "decl", "fn") && p0.toks[k + 1].kind == TK_NAME {
                     ro n = p0.toks[k + 1]
                     ro en = decl_internal(cx, n)
+                    call_clash(cx, n, en)
                     if pair_has(cx.env.defs, n.text) {
-                        cx_error(cx, n, "name", "определение `${n.text}` повторено")
+                        cx_error(cx, n, "name", "функция `${n.text}` повторена")
                     } else {
                         pair_add(cx.env.defs, n.text, en)
                     }
@@ -423,10 +441,10 @@ fn defs_register(entries []TxEntry, sec TxSection, mut cx TxCx) -> () {
     }
 }
 
-// One definition after `определение`.
+// One function after `функция` (AL-83): `имя(арг тип, …) -> тип => выр` or `имя(арг тип, …) -> тип { пусть …; выр }` (AL-67, AL-84).
 fn def_one(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
     ro n = p_tok(p)
-    if n.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "decl", "define")}` ожидается имя")) }
+    if n.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "decl", "fn")}` ожидается имя")) }
     p_adv(p)
     ro en = match pair_get(cx.env.defs, n.text) {
         Some(x) => x
@@ -451,12 +469,23 @@ fn def_one(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
     if !tx_arrow(p_tok(p)) { return Err(p_fail(p, "после параметров ожидается `->` и тип результата")) }
     p_adv(p)
     ro result = ty_parse(p, cx)?
-    p_expect(p, "=")?
-    ro body = ex_expr(p, cx, scope)?
+    mut body = x_null()
+    if tx_fat(p_tok(p)) {
+        ro fat = p_tok(p)
+        p_adv(p)
+        if p_is(p, "{") { return Err(tx_err(fat.line, fat.col, "syntax", "`=> {` после заголовка функции в формате 2.22 не бывает (AL-84): тело — выражение после `=>` или блок `{ … }` без `=>`; запись как всё тело пишется в скобках `=> ({ ...r, поле: выр })`; переходного периода нет")) }
+        body = ex_expr(p, cx, scope)?
+    } else if p_is(p, "{") {
+        body = ex_block(p, cx, scope)?
+    } else if p_is(p, "=") {
+        return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "знак `=` перед телом функции в формате 2.22 не бывает: пишется `=>` (AL-67) или блок `{ … }` (AL-84); переходного периода нет"))
+    } else {
+        return Err(p_fail(p, "после типа результата ожидается `=>` и выражение или блок `{ … }`"))
+    }
     Ok(jobj([kv("name", js(en)), kv("params", TxArr(params)), kv("result", js(result)), kv("body", body)]))
 }
 
-/// The section `## Определения`: `определение имя(арг тип, …) -> тип = выр`.
+/// The section `## Функции`: `функция имя(арг тип, …) -> тип => выр` or with a block body (AL-83, AL-84).
 fn decl_definitions(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
     mut out = []TxJ.new()
     ro segs = def_segs(entries, sec, cx)
@@ -465,10 +494,13 @@ fn decl_definitions(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
             mut p = p_copy(p0)
             while !p_done(p) {
                 ro head = p_tok(p)
-                if !t_is_kw(head, cx.words, "decl", "define") {
-                    note(cx, tx_err(head.line, head.col, "syntax", "ожидается `${kw(cx.words, "decl", "define")}`, найдено: ${t_shown(head)}"))
+                if !t_is_kw(head, cx.words, "decl", "fn") {
+                    match former_find(cx.words.lang, "decl", head.text) {
+                        Some(f) => note(cx, tx_err(head.line, head.col, "syntax", former_message(f)))
+                        None => note(cx, tx_err(head.line, head.col, "syntax", "ожидается `${kw(cx.words, "decl", "fn")}`, найдено: ${t_shown(head)}"))
+                    }
                     p_adv(p)
-                    while !p_done(p) && !p_is_kw(p, cx.words, "decl", "define") { p_adv(p) }
+                    while !p_done(p) && !(p_is_kw(p, cx.words, "decl", "fn") || (p_tok(p).col == 1 && p_tok(p).kind == TK_NAME && former_is(cx.words.lang, "decl", p_tok(p).text))) { p_adv(p) }
                     continue
                 }
                 p_adv(p)
@@ -481,7 +513,7 @@ fn decl_definitions(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
                     }
                     Err(e) => {
                         note(cx, e)
-                        while !p_done(p) && !p_is_kw(p, cx.words, "decl", "define") { p_adv(p) }
+                        while !p_done(p) && !p_is_kw(p, cx.words, "decl", "fn") { p_adv(p) }
                     }
                 }
                 if cx.errors.len() > before { cx.rows_noted += 1 }
@@ -501,6 +533,7 @@ fn prim_row(r TxEntry, mut cx TxCx) -> Result[str, TranslateError] {
     if !primitive_classes().contains(r.cells[3].text) {
         return Err(tx_err(r.line, r.cells[3].col, "syntax", "класс примитива: ${primitive_classes().join(", ")}"))
     }
+    call_clash(cx, d.tok, d.json)
     pair_add(cx.env.prims, d.tok.text, d.json)
     Ok(d.json)
 }

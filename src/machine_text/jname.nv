@@ -1,6 +1,6 @@
 // jname.nv - the JSON names of the names that a file declares (task 151, format 2.17, AL-53, AL-58 ... AL-62).
 //
-// A name that leaves the machine (a state, a datum, a field of the input, a type, a field, a variant, an element of an enum, a signal of a party and its field, a primitive, the setting of a keeper) has a Latin JSON name
+// A name that leaves the machine (a state, a datum, a field of the input, a type, a field, a form of an enumeration, an element of an enum, a signal of a party and its field, a primitive, the setting of a keeper) has a Latin JSON name
 // in the tree. The JSON name is built by itself, in this order (spec 1a): the row of the section `## Имена` (the qualified name `Тип.поле` is stronger than the simple one and a simple row renames every declaration of
 // the name), the Latin name as it is, the English name of the dictionary of the methodology for the WHOLE name (the version 11, 1268 pairs, the hash of its normative part is `60383c370415`, AL-62), the transliteration
 // word by word (the types and the states in Pascal case, the others in snake case). A word of two alphabets is an error (AL-59). The brackets after a name of 2.14 are an error (AL-60). The JSON names of one space are
@@ -50,7 +50,7 @@ fn glossary_hash_text(tsv str) -> str {
 
 /// The hash that a version of the format pins (AL-62); the version and the hash change only together. "" for a version that is not read.
 fn glossary_pinned_hash(format str) -> str {
-    if format == "2.17" { return "60383c370415" }
+    if format == "2.22" { return "60383c370415" }
     ""
 }
 
@@ -273,7 +273,7 @@ fn jn_mixed(name str) -> str {
     ""
 }
 
-/// The automatic JSON name (AL-53): a Latin name is its own name; else the English name of the dictionary for the whole name; else the transliteration of every word. `pascal`: a state, a type, a variant, an
+/// The automatic JSON name (AL-53): a Latin name is its own name; else the English name of the dictionary for the whole name; else the transliteration of every word. `pascal`: a state, a type, a form, an
 /// element of an enum (the words joined, each with a capital first letter); else a name of a value (the words in lower case joined by `_`).
 fn jn_auto(name str, pascal bool, g TxGlossary) -> str {
     if is_identifier_latin(name) { return name }
@@ -338,7 +338,7 @@ fn jn_rows_read(entries []TxEntry, sec TxSection, mut cx TxCx) -> () {
         for part in key.split(".") { path.push(part.trim_ascii()) }
         ro line = r.line
         ro col = r.cells[0].col
-        ro at = TxTok { kind: TK_NAME, text: key, line, col }
+        ro at = tk(TK_NAME, key, line, col)
         mut skip = false
         for part in path {
             ro mixed = jn_mixed(part)
@@ -350,7 +350,7 @@ fn jn_rows_read(entries []TxEntry, sec TxSection, mut cx TxCx) -> () {
             skip = true
         }
         if !is_identifier_latin(json) {
-            cx_error(cx, TxTok { kind: TK_NAME, text: json, line, col: r.cells[1].col }, "name", "JSON-имя `${json}` строки `## Имена` у `${key}` не латинское: JSON-имя — латинское имя `[A-Za-z_][A-Za-z0-9_]*`")
+            cx_error(cx, tk(TK_NAME, json, line, r.cells[1].col), "name", "JSON-имя `${json}` строки `## Имена` у `${key}` не латинское: JSON-имя — латинское имя `[A-Za-z_][A-Za-z0-9_]*`")
         }
         if !skip { cx.jn.rows.push(TxJnRow { key, path, json, line, col, jcol: r.cells[1].col }) }
     }
@@ -435,7 +435,7 @@ fn jn_finish(mut cx TxCx) -> () {
         for d in cx.jn.decls {
             if d.row == k && d.without != row.json { extra = false }
         }
-        ro at = TxTok { kind: TK_NAME, text: row.key, line: row.line, col: row.col }
+        ro at = tk(TK_NAME, row.key, row.line, row.col)
         if !known {
             cx_error(cx, at, "name", "строка `## Имена` для `${row.key}`: такого объявления в файле нет (внутренние и читаемые имена в таблицу не пишутся, AL-60)")
         } else if extra {
@@ -460,7 +460,7 @@ fn jn_finish(mut cx TxCx) -> () {
         }
         if first >= 0 {
             ro other = cx.jn.decls[first]
-            cx_error(cx, TxTok { kind: TK_NAME, text: d.name, line: d.line, col: d.col }, "name", "JSON-имя `${d.json}` у ${d.where} `${jn_path_text(d.path)}` уже у ${other.where} `${jn_path_text(other.path)}` (строка ${other.line}): коллизия в одном пространстве (AL-58)")
+            cx_error(cx, tk(TK_NAME, d.name, d.line, d.col), "name", "JSON-имя `${d.json}` у ${d.where} `${jn_path_text(d.path)}` уже у ${other.where} `${jn_path_text(other.path)}` (строка ${other.line}): коллизия в одном пространстве (AL-58)")
         } else {
             seen_space.push(d.space)
             seen_json.push(d.json)

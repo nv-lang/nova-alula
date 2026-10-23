@@ -100,10 +100,10 @@ fn calls_read(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxCall {
             i += 1
         } else if e.kind == EN_TEXT && e.indent == 0 && kv_colon(e) < 0 && is_call_start(e.text) {
             in_table = false
-            mut segs = [TxSeg { text: e.text, line: e.line, col: e.indent + 1 }]
+            mut segs = [TxSeg { text: e.text, line: e.line, col: e.indent + 1, code: e.fenced }]
             mut k = i + 1
             while k < sec.last && entries[k].kind == EN_TEXT && entries[k].indent > 0 {
-                segs.push(TxSeg { text: entries[k].text, line: entries[k].line, col: entries[k].indent + 1 })
+                segs.push(TxSeg { text: entries[k].text, line: entries[k].line, col: entries[k].indent + 1, code: entries[k].fenced })
                 k += 1
             }
             match call_read(segs, e.line) {
@@ -113,7 +113,7 @@ fn calls_read(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxCall {
             i = k
         } else if e.kind == EN_TEXT && e.indent == 0 && kv_colon(e) >= 0 {
             ro line = kv_read(entries, i)
-            if line.key != "definitions" { note(cx, only_connections(e)) }
+            if line.key != "functions" { note(cx, only_connections(e)) }
             in_table = false
             i += line.taken
         } else if e.kind == EN_ROW {
@@ -168,7 +168,7 @@ fn fragment_text(call TxCall, mut cx TxCx) -> Option[str] {
     for q in call.params {
         if !pause_params(words).contains(q.name) {
             if q.name == "слово_остановки" || q.name == "halt_word" {
-                note(cx, tx_err(q.tok.line, q.tok.col, "structure", "параметр `${q.name}` фрагмента в формате 2.17 называется `${kw(words, "fragment_param", "halt_signal")}` (Я-38): это сигнал стороны, а не слово ворот; переходного периода нет"))
+                note(cx, tx_err(q.tok.line, q.tok.col, "structure", "параметр `${q.name}` фрагмента в формате 2.22 называется `${kw(words, "fragment_param", "halt_signal")}` (Я-38): это сигнал стороны, а не слово ворот; переходного периода нет"))
             } else {
                 note(cx, tx_err(q.tok.line, q.tok.col, "structure", "у фрагмента `${call.name}` нет параметра `${q.name}`"))
             }

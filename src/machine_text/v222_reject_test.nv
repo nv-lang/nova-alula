@@ -1,0 +1,191 @@
+// v222_reject_test.nv - task 152: the former forms of the language are errors with the message that names the new way and the label of the change (`former.tsv`, AL-NN); there is no transition period (the owner, 2026-10-20).
+// The table of the former forms is read by `former_find`; the translator never holds such a word in its code.
+module alula.machine_text
+
+import std.text
+
+fn exr222(text str, lang str) -> str {
+    match translate_expression_in(text, piece_entries(), lang) {
+        Ok(j) => j
+        Err(problems) => "ERR ${problems[0].kind}: ${problems[0].message}"
+    }
+}
+
+fn tyr222(text str, lang str) -> str {
+    match translate_type_with(text, piece_entries(), lang) {
+        Ok(j) => j
+        Err(problems) => "ERR ${problems[0].kind}: ${problems[0].message}"
+    }
+}
+
+fn refused222(made str, label str) -> bool => made.starts_with("ERR") && made.contains(label) && made.contains("переходного периода нет")
+
+// ---- the table itself -------------------------------------------------------------------------------------------------------------------
+
+test "r222 the table has the rows of both languages" {
+    assert(former_is("ru", "type", "текст"))
+    assert(former_is("en", "type", "text"))
+    assert(former_is("ru", "decl", "определение"))
+    assert(former_is("en", "decl", "define"))
+}
+
+test "r222 the table has no word that 2.22 still has" {
+    assert(!former_is("ru", "type", "строка"))
+    assert(!former_is("ru", "decl", "функция"))
+    assert(!former_is("en", "type", "str"))
+    assert(!former_is("en", "decl", "fn"))
+}
+
+test "r222 a row says what to write and the label" {
+    match former_find("ru", "type", "текст") {
+        Some(f) => {
+            assert(f.instead == "строка")
+            assert(f.label == "AL-95")
+        }
+        None => assert(false)
+    }
+}
+
+test "r222 the message names the new way" {
+    match former_find("ru", "call", "диапазон") {
+        Some(f) => {
+            assert(former_message(f).contains("a..b"))
+            assert(former_message(f).contains("AL-76"))
+            assert(former_message(f).contains("переходного периода нет"))
+        }
+        None => assert(false)
+    }
+}
+
+test "r222 an unknown word is no former form" {
+    assert(!former_is("ru", "type", "ничего"))
+    assert(!former_is("ru", "nothing", "текст"))
+}
+
+// ---- the types ------------------------------------------------------------------------------------------------------------------------------
+
+test "r222 ru text" {
+    assert(refused222(tyr222("текст", "ru"), "AL-95"))
+}
+
+test "r222 ru float" {
+    assert(refused222(tyr222("дробное", "ru"), "AL-96"))
+}
+
+test "r222 ru bool with a slash" {
+    assert(refused222(tyr222("да/нет", "ru"), "AL-66"))
+}
+
+test "r222 en text" {
+    assert(refused222(tyr222("text", "en"), "AL-94"))
+}
+
+test "r222 en float" {
+    assert(refused222(tyr222("float", "en"), "AL-94"))
+}
+
+test "r222 the new types are read" {
+    assert(!tyr222("строка", "ru").starts_with("ERR"))
+    assert(!tyr222("вещественное", "ru").starts_with("ERR"))
+    assert(!tyr222("булево", "ru").starts_with("ERR"))
+    assert(!tyr222("str", "en").starts_with("ERR"))
+    assert(!tyr222("f64", "en").starts_with("ERR"))
+    assert(!tyr222("bool", "en").starts_with("ERR"))
+}
+
+test "r222 the new types give the same JSON in both languages" {
+    assert(tyr222("[]строка", "ru") == tyr222("[]str", "en"))
+    assert(tyr222("?вещественное", "ru") == tyr222("?f64", "en"))
+}
+
+// ---- the calls ----------------------------------------------------------------------------------------------------------------------------
+
+test "r222 ru call of a range" {
+    assert(refused222(exr222("диапазон(1, 2)", "ru"), "AL-76"))
+}
+
+test "r222 en call of a range" {
+    assert(refused222(exr222("range(1, 2)", "en"), "AL-76"))
+}
+
+test "r222 ru conversion to text" {
+    assert(refused222(exr222("текст(число_повторов)", "ru"), "AL-95"))
+}
+
+test "r222 ru conversion to float" {
+    assert(refused222(exr222("дробное(число_повторов)", "ru"), "AL-96"))
+}
+
+test "r222 the new conversions are read" {
+    assert(exr222("строка(число_повторов)", "ru").contains("\"fn\":\"text\""))
+    assert(exr222("вещественное(число_повторов)", "ru").contains("\"fn\":\"float\""))
+}
+
+// ---- the signs and the arrows ------------------------------------------------------------------------------------------------------------------
+
+test "r222 a sign of Unicode" {
+    for sign in ["≥", "≤", "≠"] {
+        assert(exr222("число_повторов ${sign} 1", "ru").starts_with("ERR"))
+    }
+}
+
+test "r222 the arrow of a lambda" {
+    assert(exr222("[1].фильтр(х -> х)", "ru").starts_with("ERR"))
+}
+
+test "r222 the arrow of a branch in English" {
+    assert(exr222("match turn { \"a\" -> 1, else -> 2 }", "en").starts_with("ERR"))
+}
+
+test "r222 the new arrows in English" {
+    assert(exr222("match turn { \"a\" => 1, else => 2 }", "en").contains("\"op\":\"match\""))
+    assert(exr222("[1].filter(x => x > 0)", "en").contains("\"fn\":\"filter\""))
+}
+
+// ---- the declarations -----------------------------------------------------------------------------------------------------------------------
+
+fn decl222(text str, lang str) -> str {
+    match translate_types_in(text, lang) {
+        Ok(j) => j
+        Err(problems) => "ERR ${problems[0].kind}: ${problems[0].message}"
+    }
+}
+
+test "r222 ru variant and enum" {
+    assert(refused222(decl222("вариант Знак { А }", "ru"), "AL-99"))
+    assert(refused222(decl222("перечисление Цвет = А | Б", "ru"), "AL-99"))
+}
+
+test "r222 en variant and enum" {
+    assert(refused222(decl222("variant Sign { A }", "en"), "AL-99"))
+    assert(refused222(decl222("enum Color = A | B", "en"), "AL-99"))
+}
+
+test "r222 the new declaration in English" {
+    assert(decl222("type Color enum Red | Blue", "en").contains("\"variants\":[{\"name\":\"Color\""))
+}
+
+test "r222 ru record and en record agree" {
+    assert(decl222("тип Т { а строка }", "ru") == decl222("type T { a str }", "en").replace("\"a\"", "\"a\""))
+}
+
+// ---- the header -----------------------------------------------------------------------------------------------------------------------------
+
+test "r222 an older format is not read" {
+    for version in ["2.5", "2.11", "2.14", "2.17", "2.21", "3.0"] {
+        ro text = tiny_text().replace("format: 2.22", "format: ${version}")
+        assert(note_says(text, "переходного периода нет"))
+    }
+}
+
+test "r222 no format is not read" {
+    assert(note_says(tiny_text().replace("format: 2.22\n", ""), "формат не указан"))
+}
+
+test "r222 the tiny machine of 2.22 is clean" {
+    assert(is_clean(tiny_text()))
+}
+
+test "r222 the key of the old input is refused" {
+    assert(note_says(tiny_text().replace("Читает: число_ходов\n\n### СТОП", "Вход: число_ходов\n\n### СТОП"), "Вход:"))
+}

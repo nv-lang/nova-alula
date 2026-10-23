@@ -1,11 +1,11 @@
 kind	ru	en
 header	Машина	Machine
-header	Определения	Definitions
+header	Функции	Functions
 header	Фрагмент	Fragment
 header	machine	machine
 header	machine_version	machine_version
 header	format	format
-header	definitions_version	definitions_version
+header	functions_version	functions_version
 header	fragment	fragment
 header	language	language
 section	Типы	Types
@@ -14,7 +14,7 @@ section	Параметры	Parameters
 section	Вход	Input
 section	Данные	Data
 section	Стороны	Parties
-section	Определения	Definitions
+section	Функции	Functions
 section	Подключения	Includes
 section	Состояния	States
 section	Концы	Ends
@@ -73,7 +73,7 @@ key	Предел запросов	Request limit
 key	набор	set
 key	Кроме	Except
 key	Инвариант	Invariant
-key	определения	definitions
+key	функции	functions
 key	версия	version
 key	хеш	hash
 key	проект	project
@@ -98,13 +98,12 @@ destination	то же	same
 destination	запуск заново	rerun
 decl	тип	type
 decl	перечисление	enum
-decl	вариант	variant
-decl	определение	define
+decl	функция	fn
 type	число	int
 type	число>=	int>=
-type	дробное	float
-type	текст	text
-type	да/нет	bool
+type	вещественное	f64
+type	строка	str
+type	булево	bool
 type	ид	id
 type	словарь	map
 type	полный словарь	full map
@@ -114,7 +113,7 @@ type	Сигнал	Signal
 type	СобытиеЖурнала	JournalEvent
 type	ИсходВорот	GateOutcome
 kind_param	сигнал	signal
-kind_param	текст	text
+kind_param	строка	str
 kind_param	[]машина	[]machine
 kind_param	поведение	behavior
 kind_param	примечание	note
@@ -125,7 +124,6 @@ expr	и	and
 expr	или	or
 expr	не	not
 expr	пусть	let
-expr	в	in
 expr	выбор	match
 expr	истина	true
 expr	ложь	false
@@ -140,9 +138,7 @@ action	передать	pass
 action	отменить_открытые	cancel_open
 action	кроме	except
 action	для	for
-action	каждого	each
-action	для каждого	for each
-action	в	in
+action	из	in
 action	если	if
 action	то	then
 action	иначе	else
@@ -151,8 +147,11 @@ operator	>=	>=
 operator	<=	<=
 operator	!=	!=
 operator	->	->
+operator	=>	=>
 operator	...	...
-operator	in	in
+operator	..	..
+operator	..=	..=
+operator	в	in
 operator	??	??
 operator	_	_
 readable	вход	input
@@ -195,12 +194,12 @@ enum_value	irreversible	irreversible
 catalog	есть	has
 catalog	обязательно	require
 catalog	непустое	non_empty
-catalog	текст	text
+catalog	строка	text
 catalog	текст_записи	record_text
-catalog	дробное	float
+catalog	вещественное	float
 catalog	число	int
 catalog	длина	length
-catalog	диапазон	range
+catalog	склеить	concat
 catalog	наибольшее	max
 catalog	наименьшее	min
 catalog	ключи	keys
