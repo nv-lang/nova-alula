@@ -1,0 +1,34 @@
+// align_test.nv - task 154: `то же` and `то же, запуск заново` at run time (AL-111, section 4.1 of the specification): without the mark only the actions of the row run, nothing is entered again and no request is
+// sent; with the mark the state is entered again, the open request of the appeal is cancelled and a new one is sent.
+module alula.machine_run
+
+import std.text
+import alula.engine.{EventKind}
+
+fn retry154() -> str => "{\"$variant\":\"Outcome\",\"name\":\"Retry\"}"
+
+test "r154 the same state with the rerun sends a new request" {
+    ro m = build("variants.alula.json")
+    ro started = run1(m, m.initial(), start_with(""))
+    assert(summary(started.orders) == "send:agent:go:5000,save")
+    ro retry = run1(m, started.state, stamped(EventKind.Answered, "answer", Some("agent-1"), retry154()))
+    assert(summary(retry.orders) == "log:retrying,send:agent:go:5000,save")
+    assert(retry.state.name == started.state.name)
+}
+
+test "r154 the same state without the rerun only runs the actions of the row" {
+    ro text = machine_text("variants.alula.json").replace("\"actions\": [ { \"do\": \"journal\", \"code\": \"retrying\" } ], \"to\": \"@same\", \"restart\": true }", "\"actions\": [ { \"do\": \"journal\", \"code\": \"retrying\" } ], \"to\": \"@same\" }")
+    assert(text != machine_text("variants.alula.json"))
+    ro m = build_from(text)
+    ro started = run1(m, m.initial(), start_with(""))
+    ro retry = run1(m, started.state, stamped(EventKind.Answered, "answer", Some("agent-1"), retry154()))
+    assert(summary(retry.orders) == "log:retrying,save")
+    assert(retry.state.name == started.state.name)
+}
+
+test "r154 the rerun on a transient failure sends the request again" {
+    ro m = build("variants.alula.json")
+    ro started = run1(m, m.initial(), start_with(""))
+    ro again = run1(m, started.state, stamped(EventKind.Refused, "failure", Some("agent-1"), "Timeout"))
+    assert(summary(again.orders).contains("send:agent:go:5000"))
+}

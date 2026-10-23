@@ -1,0 +1,96 @@
+// align_test.nv - task 154: the tree by the clarified text of the specification (the commit c0b8f68 of the methodology): the key `alula_version` of the root is optional, its value is "2.22" and another version is an
+// error that names it (AL-108); `то же` and `то же, запуск заново` are the target `@same` with and without the mark `restart` (AL-111).
+module alula.machine_table
+
+import std.text
+import alula.machine.{text_of_file, machine_files}
+
+fn with_version154(value str) -> str => tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"alula_version\":${value},")
+
+test "v154 a tree without the key is the tree of the version that the program reads" {
+    assert(!tiny().contains("alula_version"))
+    assert(ok_text(tiny()))
+}
+
+test "v154 the value 2.22 is read" {
+    assert(ok_text(with_version154("\"2.22\"")))
+}
+
+test "v154 another version is an error that names the version" {
+    assert(says(with_version154("\"2.21\""), "got 2.21"))
+    assert(says(with_version154("\"2.23\""), "got 2.23"))
+    assert(says(with_version154("\"3.0\""), "got 3.0"))
+    assert(says(with_version154("\"2.21\""), "$.alula_version"))
+}
+
+test "v154 the error of another version says that there is no transition period" {
+    assert(says(with_version154("\"2.20\""), "there is no transition period"))
+    assert(says(with_version154("\"2.20\""), "must be 2.22"))
+}
+
+test "v154 an empty version is not the absent key" {
+    assert(!ok_text(with_version154("\"\"")))
+}
+
+test "v154 the key table_format does not exist" {
+    ro text = tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"table_format\":\"2.22\",")
+    assert(!ok_text(text))
+    assert(says(text, "table_format"))
+}
+
+test "v154 the format of the tree is not the version of the language" {
+    assert(!ok_text(tiny().replace("\"format\":\"machine/2\"", "\"format\":\"machine/3\"")))
+}
+
+// ---- то же and the rerun (AL-111) ---------------------------------------------------------------------------------------------------------------
+
+fn stay_rows154(target str) -> str {
+    ro inc = jassign("n", jb("+", jn("n"), jl("1")))
+    ro a = jassign("stop", jl(jstr("a")))
+    ro again = `{"n":1,"event":{"kind":"signal","name":"go"},"cond":${jb(">=", jn("n"), jl("9"))},"actions":[],${target}}`
+    ro go = `{"n":2,"event":{"kind":"signal","name":"go"},"actions":[${inc}],"to":"Decide"}`
+    ro halt = `{"n":3,"event":{"kind":"signal","name":"halt"},"actions":[${a}],"to":"Stopped"}`
+    "${again},${go},${halt}"
+}
+
+fn stay154(target str) -> str => tiny_with("", "", stay_rows154(target), tiny_ends_rows())
+
+test "v154 the target same without the mark stays in the appeal" {
+    ro text = stay154("\"to\":\"@same\"")
+    assert(ok_text(text))
+    match decoded(text).states[0].rows[0].next.target {
+        ToSame => assert(true)
+        _ => assert(false)
+    }
+    assert(!decoded(text).states[0].rows[0].next.restart)
+}
+
+test "v154 the target same with the mark enters the appeal again" {
+    ro text = stay154("\"to\":\"@same\",\"restart\":true")
+    assert(ok_text(text))
+    ro goto = decoded(text).states[0].rows[0].next
+    match goto.target {
+        ToSame => assert(true)
+        _ => assert(false)
+    }
+    assert(goto.restart)
+}
+
+test "v154 the mark restart is a boolean" {
+    assert(!ok_text(stay154("\"to\":\"@same\",\"restart\":\"yes\"")))
+}
+
+test "v154 same is refused in a row of a fork with and without the mark" {
+    assert(says(tiny().replace("\"to\":\"Finished\"", "\"to\":\"@same\""), "@same is for the rows of an appeal and the common events"))
+    assert(says(tiny().replace("\"to\":\"Finished\"", "\"to\":\"@same\",\"restart\":true"), "@same is for the rows of an appeal and the common events"))
+}
+
+test "v154 the check says nothing about the mark at a target that is no appeal" {
+    assert(ok_text(tiny().replace("\"to\":\"Finished\"", "\"to\":\"Finished\",\"restart\":true")))
+}
+
+test "v154 the sample with the retry has the rerun of the same state" {
+    ro text = text_of_file(machine_files(), "variants.alula.json")
+    assert(text.contains("\"@same\""))
+    assert(text.contains("\"restart\": true"))
+}
