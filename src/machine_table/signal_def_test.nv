@@ -1,0 +1,10 @@
+// signal_def_test.nv - task 166: the declaration of a signal of a party or of the machine is `SignalDef` (it was `WordDef` before 0.4.0).
+module alula.machine_table
+
+import alula.machine.{FieldDef}
+
+test "sd a signal declaration has a name and fields" {
+    ro s = SignalDef { name: "go", fields: []FieldDef.new() }
+    assert(s.name == "go")
+    assert(s.fields.len() == 0)
+}

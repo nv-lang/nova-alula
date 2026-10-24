@@ -1,0 +1,11 @@
+// signal_test.nv - task 166: the signal that comes from outside is built by `Incoming.signal` (it was `Incoming.word` before 0.4.0).
+module alula.engine
+
+test "signal: an incoming signal is an Input event of its name that belongs to no request" {
+    ro e = Incoming.signal("user_message", "hello")
+    assert(e.name == "user_message")
+    assert(e.input == "hello")
+    assert(e.request == None)
+    assert(!e.kind.is_request_bound())
+    assert(e.id == "")
+}
