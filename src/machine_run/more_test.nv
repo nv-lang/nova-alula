@@ -13,7 +13,7 @@ fn gate_started() -> Out {
     run1(m, m.initial(), start_with(""))
 }
 
-fn stop_by(author str) -> Incoming => word_in("stop", "{\"author\":\"${author}\",\"source\":\"console\"}")
+fn stop_by(author str) -> Incoming => signal_in("stop", "{\"author\":\"${author}\",\"source\":\"console\"}")
 
 test "gate start" {
     ro m = gate()
@@ -41,15 +41,15 @@ test "common stop" {
     assert(ended.state.name == "Done")
 }
 
-test "pause words" {
+test "pause signals" {
     ro m = gate()
     ro working = gate_started().state
-    assert(summary(run1(m, working, word_in("halt", "")).orders) == "log:event_ignored(event=halt;state=Work)")
+    assert(summary(run1(m, working, signal_in("halt", "")).orders) == "log:event_ignored(event=halt;state=Work)")
     ro paused = run1(m, working, stop_by("ann")).state
-    ro back = run1(m, paused, word_in("continue", "{\"author\":\"ann\",\"source\":\"console\"}"))
+    ro back = run1(m, paused, signal_in("continue", "{\"author\":\"ann\",\"source\":\"console\"}"))
     assert(back.state.name == "Work")
     assert(summary(back.orders) == "log:human_continue(previous=Work;author=ann;source=console;event=e-1),send:agent:work:0,save")
-    ro halted = run1(m, paused, word_in("halt", ""))
+    ro halted = run1(m, paused, signal_in("halt", ""))
     assert(halted.state.name == "Halted")
     assert(summary(halted.orders) == "finish:refusal:StoppedByHuman,save")
 }
@@ -57,7 +57,7 @@ test "pause words" {
 test "no previous" {
     ro m = gate()
     ro lost = AlulaState { name: "Pause", started: true, input: Null, data: m.initial().data, taken: []str.new() }
-    ro r = run1(m, lost, word_in("continue", "{\"author\":\"a\",\"source\":\"s\"}"))
+    ro r = run1(m, lost, signal_in("continue", "{\"author\":\"a\",\"source\":\"s\"}"))
     assert(!r.moved)
     assert(r.state.name == "Pause")
     assert(summary(r.orders).starts_with("log:machine_defect(kind=unreachable"))
@@ -66,11 +66,11 @@ test "no previous" {
 
 test "before the start" {
     ro m = gate()
-    ro r = run1(m, m.initial(), word_in("halt", ""))
+    ro r = run1(m, m.initial(), signal_in("halt", ""))
     assert(!r.moved)
     assert(summary(r.orders) == "log:event_ignored(event=halt;state=Work)")
     ro started = gate_started().state
-    assert(summary(run1(m, started, word_in("start", "")).orders) == "log:event_unknown(name=start)")
+    assert(summary(run1(m, started, signal_in("start", "")).orders) == "log:event_unknown(name=start)")
 }
 
 test "failure fallback" {

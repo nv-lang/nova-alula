@@ -90,7 +90,7 @@ $p = "target/alula.exe"
 & $p check target/callee.en.alula.md --registry examples/registry.md --journal examples/journal.md   # ok
 & $p convert target/callee.en.alula.md --language ru -o target/callee.ru.alula.md --registry examples/registry.md --journal examples/journal.md   # back to Russian (through the JSON)
 & $p summary target/callee.alula.json                                                   # the states, the rows, the actions
-& $p run examples/echo.alula.json examples/scenarios/echo-words.scenario.test.json     # ok
+& $p run examples/echo.alula.json examples/scenarios/echo-signals.scenario.test.json     # ok
 & $p test examples                                                                       # 66 of 66 scenarios passed
 ```
 

@@ -44,7 +44,7 @@
 | маршрут | `measured` | размер измерен: {verdict} | `verdict` |
 | пауза | `worked` | работа сделана: {text} | `text` |
 | пауза | `work_lost` | работа потеряна: {reason} | `reason` |
-| ворота | `word_allowed` | слово «разрешить», всего {count} | `count` |
-| ворота | `word_denied` | слово «отказать» | — |
+| ворота | `signal_allowed` | сигнал «разрешить», всего {count} | `count` |
+| ворота | `signal_denied` | сигнал «отказать» | — |
 | пачка | `job_answered` | работа {party} ответила: {answer} | `party`, `answer` |
 | пачка | `job_lost` | работа {party} потеряна | `party`, `code` |

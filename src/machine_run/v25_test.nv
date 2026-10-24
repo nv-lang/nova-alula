@@ -5,7 +5,7 @@ module alula.machine_run
 import alula.machine.{Value, Int, Text, Null, is_uuid}
 import alula.engine.{Incoming, EventKind}
 
-// A machine that opens with an operation: two new ids in one step, kept in the data; then it waits for a word.
+// A machine that opens with an operation: two new ids in one step, kept in the data; then it waits for a signal.
 fn ids_text(second_id str) -> str {
     ro bind_a = `{"do":"bind","name":"first","value":{"op":"primitive_call","name":"new_id","args":[]}}`
     ro bind_b = `{"do":"bind","name":"second","value":${second_id}}`
@@ -73,7 +73,7 @@ test "v25 ids scripted" {
 test "v25 ids finish" {
     ro m = ids_machine()
     ro r1 = opened_at(m, 1000)
-    ro r2 = run1(m, r1.state, word_in("go", ""))
+    ro r2 = run1(m, r1.state, signal_in("go", ""))
     assert(r2.state.name == "Done")
     assert(summary(r2.orders) == "finish:answer:${text_of(datum(r1.state, "sid"))},save")
 }
@@ -155,7 +155,7 @@ test "v25 input optional given" {
     assert(summary(bad.orders).starts_with("log:input_rejected(reason=type;field=level),finish:refusal:NoResult"))
 }
 
-// ---- a set of literals in a word and in the data -------------------------------------------------------------------------------
+// ---- a set of literals in a signal and in the data -------------------------------------------------------------------------------
 
 fn set_machine() -> AlulaMachine {
     ro data = `{"name":"mode","type":"\"fast\" | \"slow\"","initial":{"expr":{"op":"lit","value":"fast"}}},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}`
@@ -166,12 +166,12 @@ fn set_machine() -> AlulaMachine {
     build_from(`{"format":"machine/2","machine":"Sets","version":"1","data":[${data}],"parties":[${party}],"initial":"Wait","states":[${wait},${done}],"ends":${ends}}`)
 }
 
-test "v25 word set" {
+test "v25 signal set" {
     ro m = set_machine()
-    ro r = run1(m, m.initial(), word_in("pick", "slow"))
+    ro r = run1(m, m.initial(), signal_in("pick", "slow"))
     assert(r.state.name == "Done")
     assert(datum_json(r.state, "mode") == "\"slow\"")
-    ro bad = run1(m, m.initial(), word_in("pick", "medium"))
+    ro bad = run1(m, m.initial(), signal_in("pick", "medium"))
     assert(bad.state.name == "Wait")
     assert(summary(bad.orders).starts_with("log:event_malformed"))
 }
@@ -189,10 +189,10 @@ fn set_write_machine() -> AlulaMachine {
 
 test "v25 set write" {
     ro m = set_write_machine()
-    ro good = run1(m, m.initial(), word_in("pick", "slow"))
+    ro good = run1(m, m.initial(), signal_in("pick", "slow"))
     assert(good.state.name == "Done")
     assert(datum_json(good.state, "mode") == "\"slow\"")
-    ro bad = run1(m, m.initial(), word_in("pick", "medium"))
+    ro bad = run1(m, m.initial(), signal_in("pick", "medium"))
     assert(bad.state.name == "Errored")
     assert(summary(bad.orders).contains("machine_error(reason=bound_violation"))
 }

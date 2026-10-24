@@ -55,8 +55,8 @@ fn accepted_events(world MemoryWorld) -> []JournalEvent {
 test "journal: the input of an event is a parameter of event_accepted, only when there is one" {
     mut world = MemoryWorld.at(5000)
     mut e = echo_begin(world)
-    echo_arrives(e, world, Incoming.word("hello", "привет\nвторая строка \"мир\""))
-    echo_arrives(e, world, Incoming.word("empty", ""))
+    echo_arrives(e, world, Incoming.signal("hello", "привет\nвторая строка \"мир\""))
+    echo_arrives(e, world, Incoming.signal("empty", ""))
     ro events = accepted_events(world)
     assert(events.len() == 2)
     assert(events[0].value_of("input") == Some("привет\nвторая строка \"мир\""))
@@ -68,9 +68,9 @@ test "events: take_events hands the accepted events out once, stamped, in order"
     mut world = MemoryWorld.at(5000)
     mut e = echo_begin(world)
     assert(e.take_events().len() == 0)
-    echo_arrives(e, world, Incoming.word("hello", "один"))
+    echo_arrives(e, world, Incoming.signal("hello", "один"))
     world.advance(10)
-    echo_arrives(e, world, Incoming.word("hello", "два"))
+    echo_arrives(e, world, Incoming.signal("hello", "два"))
     ro got = e.take_events()
     assert(got.len() == 2)
     assert(got[0].id == "input-2")
@@ -91,7 +91,7 @@ test "pump: a ready backlog yields at the event budget and resumes in order" {
     mut e = echo_begin(world)
     mut i = 0
     while i < 20 {
-        world.deliver(Incoming.word("hello", "event-${i}"))
+        world.deliver(Incoming.signal("hello", "event-${i}"))
         i += 1
     }
     ro first = with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
@@ -120,11 +120,11 @@ test "events: a discarded event is not handed out" {
 test "events: history after a restart is the accepted events again" {
     mut world = MemoryWorld.at(5000)
     mut e = echo_begin(world)
-    echo_arrives(e, world, Incoming.word("hello", "один"))
+    echo_arrives(e, world, Incoming.signal("hello", "один"))
     world.advance(10)
     echo_arrives(e, world, Incoming.incoming(EventKind.Progress, "agent_chunk", Some("agent-9"), "поздно"))
     world.advance(10)
-    echo_arrives(e, world, Incoming.word("hello", "два\nстрока"))
+    echo_arrives(e, world, Incoming.signal("hello", "два\nстрока"))
     ro live = e.take_events()
     ro again = echo_history(echo_resumed(world), world)
     assert(again.len() == 2)
@@ -143,7 +143,7 @@ test "events: history after a restart is the accepted events again" {
 test "events: history leaves out the lines of a step that was never committed" {
     mut world = MemoryWorld.at(5000)
     mut e = echo_begin(world)
-    echo_arrives(e, world, Incoming.word("hello", "один"))
+    echo_arrives(e, world, Incoming.signal("hello", "один"))
     // the process died after the journal line of the next step and before its snapshot
     ro lost JournalEntry = {
         trace: e.trace(), step: e.step_number() + 1, cause: "input-9", state: "idle", request: "", at: 5100,

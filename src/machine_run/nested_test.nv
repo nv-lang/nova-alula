@@ -18,9 +18,9 @@ fn answered(request str, input str) -> Incoming => stamped(EventKind.Answered, "
 
 fn failed(request str, code str) -> Incoming => stamped(EventKind.Refused, "failure", Some(request), code)
 
-fn human_stop_by(author str) -> Incoming => word_in("human_stop", "{\"human_word\":\"stop\",\"author\":\"${author}\",\"source\":\"console\"}")
+fn human_stop_by(author str) -> Incoming => signal_in("human_stop", "{\"human_word\":\"stop\",\"author\":\"${author}\",\"source\":\"console\"}")
 
-fn continued_by(author str) -> Incoming => word_in("continue", "{\"human_word\":\"go\",\"author\":\"${author}\",\"source\":\"console\"}")
+fn continued_by(author str) -> Incoming => signal_in("continue", "{\"human_word\":\"go\",\"author\":\"${author}\",\"source\":\"console\"}")
 
 fn called() -> Out {
     ro m = caller()
@@ -108,7 +108,7 @@ fn tracer() -> str => `{"format":"machine/2","machine":"Tracer","version":"1",
 test "nr trace and step" {
     // the envelope of the call (rule 35, item 1): the trace and the number of the step of the caller that sends the request
     ro m = build_from(tracer())
-    ro r = run1(m, m.initial(), word_in("start", ""))
+    ro r = run1(m, m.initial(), signal_in("start", ""))
     assert(summary(r.orders) == "send:c:{\"trace\":\"t-1\",\"step\":2}:0,save")
 }
 
@@ -139,7 +139,7 @@ test "nr continue no resend" {
 test "nr halt" {
     ro m = caller()
     ro paused = run1(m, called().state, human_stop_by("ann")).state
-    ro halted = run1(m, paused, word_in("halt", ""))
+    ro halted = run1(m, paused, signal_in("halt", ""))
     assert(halted.state.name == "Halted")
     assert(signals_text(halted.signals) == "callee-1:halt")
     assert(summary(halted.orders).contains("finish:refusal:StoppedByHuman"))
@@ -148,7 +148,7 @@ test "nr halt" {
 test "nr cancel request" {
     // the cancel of the request that started the machine: the signal `cancel` goes down, every open request is cancelled, the machine ends
     ro m = caller()
-    ro r = run1(m, called().state, word_in("cancel_request", "up-1"))
+    ro r = run1(m, called().state, signal_in("cancel_request", "up-1"))
     assert(r.state.name == "Halted")
     assert(signals_text(r.signals) == "callee-1:cancel")
     assert(summary(r.orders).contains("cancel:callee"))
@@ -157,7 +157,7 @@ test "nr cancel request" {
 
 test "nr cancel foreign" {
     ro m = caller()
-    ro r = run1(m, called().state, word_in("cancel_request", "other-9"))
+    ro r = run1(m, called().state, signal_in("cancel_request", "other-9"))
     assert(r.state.name == "Call")
     assert(signals_text(r.signals) == "")
     assert(summary(r.orders).contains("cancel_discarded_foreign_request"))
@@ -166,7 +166,7 @@ test "nr cancel foreign" {
 test "nr parent stop" {
     // the stop of the parent of this machine (not of a human): a pause, the signal goes down too
     ro m = caller()
-    ro r = run1(m, called().state, word_in("parent_stop", "up-1"))
+    ro r = run1(m, called().state, signal_in("parent_stop", "up-1"))
     assert(r.state.name == "Pause")
     assert(signals_text(r.signals) == "callee-1:stop")
 }
@@ -182,7 +182,7 @@ test "nr end cancels" {
 
 fn fan_started() -> Out {
     ro m = fan()
-    run1(m, m.initial(), word_in("start", "{\"order\":[\"a\",\"b\",\"c\"]}"))
+    run1(m, m.initial(), signal_in("start", "{\"order\":[\"a\",\"b\",\"c\"]}"))
 }
 
 test "nr set limit" {
@@ -259,7 +259,7 @@ test "nr set cancel returns" {
     // the cancel of the request of this machine: the signal `cancel` goes to every nested machine, every request is cancelled, the parties of the set go back to `to_send`
     // before those not sent yet, in the order of the open requests (rule 18)
     ro m = fan()
-    ro r = run1(m, fan_started().state, word_in("cancel_request", ""))
+    ro r = run1(m, fan_started().state, signal_in("cancel_request", ""))
     assert(r.state.name == "Halted")
     assert(signals_text(r.signals) == "a-1:cancel,b-1:cancel")
     assert(summary(r.orders).contains("cancel:a,cancel:b"))
@@ -271,7 +271,7 @@ test "nr set one by one" {
     // the limit 1 makes the set a queue in the order of the list
     ro text = machine_text("fan.alula.json").replace("{\"op\":\"lit\",\"value\":2}", "{\"op\":\"lit\",\"value\":1}")
     ro m = build_from(text)
-    ro r = run1(m, m.initial(), word_in("start", "{\"order\":[\"x\",\"y\"]}"))
+    ro r = run1(m, m.initial(), signal_in("start", "{\"order\":[\"x\",\"y\"]}"))
     assert(datum_json(r.state, "open_requests") == "[\"x-1\"]")
     assert(datum_json(r.state, "to_send") == "[\"y\"]")
     ro next = run1(m, r.state, answered("x-1", child_answer("q", 1)))
@@ -282,7 +282,7 @@ test "nr set no limit" {
     // without a limit every party goes at once
     ro text = machine_text("fan.alula.json").replace("\"request_limit\":{\"op\":\"name\",\"name\":\"LIMIT\"},", "")
     ro m = build_from(text)
-    ro r = run1(m, m.initial(), word_in("start", "{\"order\":[\"x\",\"y\",\"z\"]}"))
+    ro r = run1(m, m.initial(), signal_in("start", "{\"order\":[\"x\",\"y\",\"z\"]}"))
     assert(datum_json(r.state, "open_requests") == "[\"x-1\",\"y-1\",\"z-1\"]")
     assert(datum_json(r.state, "to_send") == "[]")
 }
@@ -334,13 +334,13 @@ fn parsed_reply(answer str) -> ScriptedReply => { name: "parse_out", value: out_
 
 test "nr fixer loads" {
     ro m = fixer_with([changed_reply(false), parsed_reply("p")])
-    ro r = run1(m, m.initial(), word_in("start", ""))
+    ro r = run1(m, m.initial(), signal_in("start", ""))
     assert(summary(r.orders) == "send:c:{\"note\":\"v0\"}:0,save")
 }
 
 test "nr edits accepted" {
     ro m = fixer_with([changed_reply(false), parsed_reply("p")])
-    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro st = run1(m, m.initial(), signal_in("start", "")).state
     ro r = run1(m, st, answered("c-1", out_json("raw")))
     assert(r.state.name == "Done")
     assert(summary(r.orders) == "finish:answer:p,save")
@@ -350,7 +350,7 @@ test "nr edits accepted" {
 test "nr edits rejected" {
     // the object changed while the party worked: the answer is not accepted, the request goes again with a new identifier, the input read again
     ro m = fixer_with([changed_reply(true), parsed_reply("p")])
-    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro st = run1(m, m.initial(), signal_in("start", "")).state
     ro r = run1(m, st, answered("c-1", out_json("raw")))
     assert(r.state.name == "Ask")
     assert(summary(r.orders) == "log:answer_edited(party=c;request=c-1),send:c:{\"note\":\"v0\"}:0,save")
@@ -361,7 +361,7 @@ test "nr edits rejected" {
 test "nr parse value" {
     // the value of the answer is the result of the parse
     ro m = fixer_with([changed_reply(false), parsed_reply("fixed")])
-    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro st = run1(m, m.initial(), signal_in("start", "")).state
     ro r = run1(m, st, answered("c-1", out_json("raw")))
     assert(datum_json(r.state, "got") == "\"fixed\"")
 }
@@ -369,7 +369,7 @@ test "nr parse value" {
 test "nr form return" {
     // the parse fails (the answer is not by the form): the request goes again once, with a new identifier
     ro m = fixer_with([changed_reply(false)])
-    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro st = run1(m, m.initial(), signal_in("start", "")).state
     ro r = run1(m, st, answered("c-1", out_json("raw")))
     assert(r.state.name == "Ask")
     assert(summary(r.orders) == "log:form_returned(party=c;returns=1;request=c-1),send:c:{\"note\":\"v0\"}:0,save")
@@ -379,7 +379,7 @@ test "nr form return" {
 test "nr form not fixed" {
     // no return is left: the failure `FormNotFixed`, the rows of the state take it
     ro m = fixer_with([changed_reply(false)])
-    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro st = run1(m, m.initial(), signal_in("start", "")).state
     ro once = run1(m, st, answered("c-1", out_json("raw"))).state
     ro r = run1(m, once, answered("c-2", out_json("raw")))
     assert(r.state.name == "Done")
@@ -390,7 +390,7 @@ test "nr form not fixed" {
 test "nr form count reset" {
     // an accepted answer clears the count of the returns
     ro m = fixer_with([changed_reply(false), parsed_reply("p")])
-    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro st = run1(m, m.initial(), signal_in("start", "")).state
     ro r = run1(m, st, answered("c-1", out_json("raw")))
     assert(datum_json(r.state, "$form_used") == "0" || datum_json(r.state, "$form_used") == "null")
 }
@@ -398,7 +398,7 @@ test "nr form count reset" {
 test "nr failure not parsed" {
     // a refusal of the nested machine does not go through the parse or the check
     ro m = fixer_with([changed_reply(true)])
-    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro st = run1(m, m.initial(), signal_in("start", "")).state
     ro r = run1(m, st, failed("c-1", "Timeout"))
     assert(r.state.name == "Done")
     assert(datum_json(r.state, "got") == "\"timeout\"")

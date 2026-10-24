@@ -101,8 +101,8 @@ export type AcceptRow { event EventPat, actions []Action }
 /// InputField: a field of the table "Input" of an appeal; `to_party` is the column `reads` = party (else executor).
 export type InputField { field str, value Expr, to_party bool }
 
-/// WordDef: a signal of a party or of the machine, or a part of an answer, with its fields.
-export type WordDef { name str, fields []FieldDef }
+/// SignalDef: a signal of a party or of the machine, with its fields; a part of an answer (`progress`) has the same shape and is kept in the same type.
+export type SignalDef { name str, fields []FieldDef }
 
 /// ParseDef: the `разбор` of a party of the kind `machine` (format section 1): the reading primitive that turns the answer into the value of the answer, the literal of the role
 /// (empty when there is none) and the type of its result.
@@ -111,7 +111,7 @@ export type ParseDef { primitive str, role str, result TypeSpec }
 /// PartyDef: a party (format section 1); `profile` is zero or one expression. A party of the kind `machine` names the nested machine (`nested`, a name of the registry of the caller),
 /// the record type of the input of the call (`input_spec`, zero or one) and may have `parse` (zero or one).
 export type PartyDef {
-    name str, id str, kind PartyKind, profile []Expr, signals []WordDef, progress []WordDef,
+    name str, id str, kind PartyKind, profile []Expr, signals []SignalDef, progress []SignalDef,
     setting str, nested str, input_spec []TypeSpec, result_spec []TypeSpec, parse []ParseDef, counter str
 }
 
@@ -156,7 +156,7 @@ export type EndRow { state str, n int, when Expr, answer AnswerDef }
 export type MachineDef {
     name str, version str, types TypeDefs,
     constants []ConstDef, params []ParamDef, input InputDef, data []DataDef,
-    parties []PartyDef, request_limit []Expr, signals []WordDef,
+    parties []PartyDef, request_limit []Expr, signals []SignalDef,
     definitions []DefFn, includes []IncludeDef, fragments []FragmentUse,
     initial str, error_end str, common []TableRow, states []StateDef,
     result_spec []TypeSpec, end_rows []EndRow, primitives []str

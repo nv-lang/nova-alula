@@ -189,7 +189,7 @@ fn party_row(r TxEntry, mut cx TxCx) -> Result[TxPartyRow, TranslateError] {
         profile = cell_expr(r.cells[3], r.line, cx, sc_empty())?
         has_profile = true
     }
-    ro words = party_signals(r.cells[4], r.line, cx, n.text)?
+    ro signals = party_signals(r.cells[4], r.line, cx, n.text)?
     mut counter = ""
     if r.cells[5].text == "—" || r.cells[5].text == "" {
         if k.kind != "human" {
@@ -211,7 +211,7 @@ fn party_row(r TxEntry, mut cx TxCx) -> Result[TxPartyRow, TranslateError] {
     if has_profile { pairs.push(kv("profile", profile)) }
     if k.setting != "" { pairs.push(kv("setting", js(k.setting))) }
     if counter != "" { pairs.push(kv("counter", js(counter))) }
-    if words.len() > 0 { pairs.push(kv("signals", TxArr(words))) }
+    if signals.len() > 0 { pairs.push(kv("signals", TxArr(signals))) }
     Ok(TxPartyRow { ru: n.text, en, pairs })
 }
 

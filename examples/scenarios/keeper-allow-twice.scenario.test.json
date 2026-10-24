@@ -1,11 +1,11 @@
 {
   "format": "scenario/0",
   "machine": "Keeper",
-  "name": "a gate: two words `allow` open the machine; the fork Count sends the first word back to the gate",
+  "name": "a gate: two signals `allow` open the machine; the fork Count sends the first signal back to the gate",
   "start_at": 1000,
   "steps": [
     {"do": "feed", "event": {"kind": "start"}, "expect": {"state": "Wait"}},
-    {"do": "feed", "event": {"kind": "signal", "name": "allow"}, "expect": {"state": "Wait", "journal": [{"code": "word_allowed", "params": {"count": "1"}}], "data": {"allowed": 1}}},
-    {"do": "feed", "event": {"kind": "signal", "name": "allow"}, "expect": {"state": "Opened", "journal": [{"code": "word_allowed", "params": {"count": "2"}}], "outcome": "answer:2", "data": {"allowed": 2}}}
+    {"do": "feed", "event": {"kind": "signal", "name": "allow"}, "expect": {"state": "Wait", "journal": [{"code": "signal_allowed", "params": {"count": "1"}}], "data": {"allowed": 1}}},
+    {"do": "feed", "event": {"kind": "signal", "name": "allow"}, "expect": {"state": "Opened", "journal": [{"code": "signal_allowed", "params": {"count": "2"}}], "outcome": "answer:2", "data": {"allowed": 2}}}
   ]
 }

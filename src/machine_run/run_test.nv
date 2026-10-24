@@ -32,7 +32,7 @@ test "calc direct" {
 
 test "calc before start" {
     ro m = calc()
-    ro r = run1(m, m.initial(), word_in("go", ""))
+    ro r = run1(m, m.initial(), signal_in("go", ""))
     assert(!r.moved)
     assert(summary(r.orders) == "log:event_ignored(event=go;state=Start)")
     assert(!r.state.started)
@@ -80,40 +80,40 @@ test "calc state text" {
 
 test "actions add tag" {
     ro m = actions()
-    ro r = run_all(m, m.initial(), [word_in("add", "5"), word_in("add", "-2")])
+    ro r = run_all(m, m.initial(), [signal_in("add", "5"), signal_in("add", "-2")])
     assert(datum_json(r.state, "total") == "3")
     assert(summary(r.orders) == "save")
     assert(r.state.name == "Wait")
-    ro t = run_all(m, m.initial(), [word_in("tag", "ab"), word_in("tag", "cd")])
+    ro t = run_all(m, m.initial(), [signal_in("tag", "ab"), signal_in("tag", "cd")])
     assert(datum_json(t.state, "label") == "\"abcd\"")
 }
 
 test "actions push" {
     ro m = actions()
-    ro r = run_all(m, m.initial(), [word_in("push", "x"), word_in("push", "y"), word_in("push", "x")])
+    ro r = run_all(m, m.initial(), [signal_in("push", "x"), signal_in("push", "y"), signal_in("push", "x")])
     assert(datum_json(r.state, "log") == "[\"x\",\"y\",\"x\"]")
     assert(datum_json(r.state, "counts") == "{\"x\":2,\"y\":1}")
 }
 
 test "actions path" {
     ro m = actions()
-    ro put = run_all(m, m.initial(), [word_in("put", "{\"key\":\"k\",\"val\":\"v\"}")])
+    ro put = run_all(m, m.initial(), [signal_in("put", "{\"key\":\"k\",\"val\":\"v\"}")])
     assert(datum_json(put.state, "items") == "{\"k\":{\"$record\":\"Item\",\"fields\":{\"name\":\"v\"}}}")
-    ro renamed = run1(m, put.state, word_in("rename", "{\"key\":\"k\",\"val\":\"w\"}"))
+    ro renamed = run1(m, put.state, signal_in("rename", "{\"key\":\"k\",\"val\":\"w\"}"))
     assert(datum_json(renamed.state, "items") == "{\"k\":{\"$record\":\"Item\",\"fields\":{\"name\":\"w\"}}}")
-    ro missing = run1(m, put.state, word_in("rename", "{\"key\":\"zz\",\"val\":\"w\"}"))
+    ro missing = run1(m, put.state, signal_in("rename", "{\"key\":\"zz\",\"val\":\"w\"}"))
     assert(missing.state.name == "Errored")
     assert(summary(missing.orders).starts_with("log:machine_error(reason=missing_key),log:machine_error(reason=missing_key)"))
 }
 
 test "actions journal" {
     ro m = actions()
-    ro pushed = run_all(m, m.initial(), [word_in("push", "x"), word_in("push", "y")])
-    ro each = run1(m, pushed.state, word_in("each", ""))
+    ro pushed = run_all(m, m.initial(), [signal_in("push", "x"), signal_in("push", "y")])
+    ro each = run1(m, pushed.state, signal_in("each", ""))
     assert(summary(each.orders) == "log:seen(item=x),log:seen(item=y),save")
-    assert(summary(run1(m, m.initial(), word_in("branch", "9")).orders) == "log:big,save")
-    assert(summary(run1(m, m.initial(), word_in("branch", "1")).orders) == "log:small,save")
-    ro let_it = run1(m, m.initial(), word_in("letit", "4"))
+    assert(summary(run1(m, m.initial(), signal_in("branch", "9")).orders) == "log:big,save")
+    assert(summary(run1(m, m.initial(), signal_in("branch", "1")).orders) == "log:small,save")
+    ro let_it = run1(m, m.initial(), signal_in("letit", "4"))
     assert(summary(let_it.orders) == "log:doubled(value=8),save")
     assert(datum_json(let_it.state, "total") == "8")
 }
@@ -121,7 +121,7 @@ test "actions journal" {
 test "actions call" {
     ro m = actions()
     mut host = RecHost { calls: []str.new() }
-    ro r = run_with(m, m.initial(), word_in("shut", ""), host)
+    ro r = run_with(m, m.initial(), signal_in("shut", ""), host)
     assert(host.calls.len() == 1)
     assert(host.calls[0] == "close_agent_turn/0")
     assert(summary(r.orders) == "save")
@@ -129,7 +129,7 @@ test "actions call" {
 
 test "actions error" {
     ro m = actions()
-    ro r = run1(m, m.initial(), word_in("boom", ""))
+    ro r = run1(m, m.initial(), signal_in("boom", ""))
     assert(r.state.name == "Errored")
     assert(summary(r.orders) == "log:boom(why=asked),log:boom(why=asked),log:machine_data(data=total=99; label=; log=[]; counts={}; items={}; p_attempt=0),finish:refusal:NoResult,save")
     assert(datum_json(r.state, "total") == "99")
@@ -137,26 +137,26 @@ test "actions error" {
 
 test "actions finish" {
     ro m = actions()
-    ro r = run_all(m, m.initial(), [word_in("add", "7"), word_in("finish", "")])
+    ro r = run_all(m, m.initial(), [signal_in("add", "7"), signal_in("finish", "")])
     assert(r.state.name == "Done")
     assert(summary(r.orders) == "finish:answer:7,save")
 }
 
-test "actions bad words" {
+test "actions bad signals" {
     ro m = actions()
-    assert(summary(run1(m, m.initial(), word_in("add", "x")).orders) == "log:event_malformed(name=add)")
-    assert(summary(run1(m, m.initial(), word_in("put", "{\"key\":\"k\"}")).orders) == "log:event_malformed(name=put)")
-    assert(summary(run1(m, m.initial(), word_in("put", "[]")).orders) == "log:event_malformed(name=put)")
-    assert(summary(run1(m, m.initial(), word_in("nothing", "")).orders) == "log:event_unknown(name=nothing)")
+    assert(summary(run1(m, m.initial(), signal_in("add", "x")).orders) == "log:event_malformed(name=add)")
+    assert(summary(run1(m, m.initial(), signal_in("put", "{\"key\":\"k\"}")).orders) == "log:event_malformed(name=put)")
+    assert(summary(run1(m, m.initial(), signal_in("put", "[]")).orders) == "log:event_malformed(name=put)")
+    assert(summary(run1(m, m.initial(), signal_in("nothing", "")).orders) == "log:event_unknown(name=nothing)")
 }
 
 test "bound on write" {
     ro text = machine_text("actions.alula.json").replace("{ \"name\": \"total\", \"type\": \"int\"", "{ \"name\": \"total\", \"type\": \"int>=0\"")
     ro m = build_from(text)
-    ro r = run1(m, m.initial(), word_in("add", "-5"))
+    ro r = run1(m, m.initial(), signal_in("add", "-5"))
     assert(r.state.name == "Errored")
     assert(summary(r.orders).starts_with("log:machine_error(reason=bound_violation)"))
-    ro ok = run1(m, m.initial(), word_in("add", "5"))
+    ro ok = run1(m, m.initial(), signal_in("add", "5"))
     assert(ok.state.name == "Wait")
 }
 
@@ -164,15 +164,15 @@ test "does not decrease" {
     ro plain = "{ \"name\": \"total\", \"type\": \"int\", \"initial\": { \"expr\": { \"op\": \"lit\", \"value\": 0 } }"
     ro text = machine_text("actions.alula.json").replace(plain, "${plain}, \"monotonic\": true")
     ro m = build_from(text)
-    ro up = run1(m, m.initial(), word_in("add", "5"))
+    ro up = run1(m, m.initial(), signal_in("add", "5"))
     assert(up.state.name == "Wait")
-    ro down = run1(m, up.state, word_in("add", "-1"))
+    ro down = run1(m, up.state, signal_in("add", "-1"))
     assert(down.state.name == "Errored")
     assert(summary(down.orders).starts_with("log:machine_error(reason=bound_violation)"))
     ro capped = machine_text("actions.alula.json").replace(plain, "${plain}, \"monotonic\": { \"bound\": { \"op\": \"lit\", \"value\": 10 } }")
     ro c = build_from(capped)
-    assert(run1(c, c.initial(), word_in("add", "10")).state.name == "Wait")
-    assert(run1(c, c.initial(), word_in("add", "11")).state.name == "Errored")
+    assert(run1(c, c.initial(), signal_in("add", "10")).state.name == "Wait")
+    assert(run1(c, c.initial(), signal_in("add", "11")).state.name == "Errored")
 }
 
 test "fork no match" {
@@ -190,7 +190,7 @@ test "fork no match" {
 test "defect stops" {
     ro text = machine_text("actions.alula.json")
     ro m = build_from(text.replace("{ \"op\": \"lit\", \"value\": 99 }", "{ \"op\": \"call\", \"fn\": \"require\", \"args\": [ { \"op\": \"lit\", \"value\": null } ] }"))
-    ro r = run1(m, m.initial(), word_in("boom", ""))
+    ro r = run1(m, m.initial(), signal_in("boom", ""))
     assert(summary(r.orders).starts_with("log:machine_defect(kind=unreachable"))
     assert(summary(r.orders).contains("finish:refusal:NoResult"))
     assert(r.state.name == "Wait")

@@ -283,13 +283,13 @@ fn rn_party_kind(mut cx RnCx, p RJ, path str) -> str {
     ""
 }
 
-fn rn_words_cell(mut cx RnCx, p RJ) -> str {
+fn rn_signals_cell(mut cx RnCx, p RJ) -> str {
     mut parts = []str.new()
     for w in rj_garr(p, "signals") {
         ro name = rj_gstr(w, "name")
-        ro word = name
+        ro signal = name
         ro fields = rj_garr(w, "fields")
-        parts.push(if fields.len() == 0 { word } else { "${word} { ${rn_fields_text(cx, fields)} }" })
+        parts.push(if fields.len() == 0 { signal } else { "${signal} { ${rn_fields_text(cx, fields)} }" })
     }
     if parts.len() == 0 { return "—" }
     parts.join(", ")
@@ -309,7 +309,7 @@ fn rn_sec_parties(mut cx RnCx, root RJ) -> []str {
         }
         // a party with no counter is a party of a free input: `—` (spec 1, AL-52)
         ro counter = if rj_gstr(p, "counter") == "" { "—" } else { rn_datum_name(cx, rj_gstr(p, "counter")) }
-        rows.push(RnRow { cells: [party_word, rj_gstr(p, "id"), kind, profile, rn_words_cell(cx, p), counter] })
+        rows.push(RnRow { cells: [party_word, rj_gstr(p, "id"), kind, profile, rn_signals_cell(cx, p), counter] })
     }
     mut out = []str.new()
     if rows.len() > 0 { out = rn_table(rn_cols(cx, ["name", "id", "kind", "profile", "signals", "counter"]), rows) }

@@ -26,8 +26,8 @@ two primitives (`time_now`, `new_id`) and 35 journal codes; the host of the exam
 | `Verdict` | `verdict.alula.md` | an enumeration with fields: the forms `Accepted { score }`, `Rejected { reason }`, `Unsure` | `verdict-*` 3 |
 | `Router` | `router.alula.md` | the exhaustion of a fork by the type and the row `else` with `fork_no_match` | `router-*` 4 |
 | `Pausable` | `pausable.alula.md` | the fragment "Pause": stop, continue, halt | `pause-*` 3 |
-| `Keeper` | `keeper.alula.md` | a gate (`human or agent by setting`) with two words | `keeper-*` 3 |
+| `Keeper` | `keeper.alula.md` | a gate (`human or agent by setting`) with two signals | `keeper-*` 3 |
 | `Batch` | `batch.alula.md` | a set of nested calls to the machine `callee`, the limit 2 | `batch-*` 3 |
 
-The new tables (`Echo` ... `Batch`) are written in English; the scenarios are `scenario/0`. Run one: `target/alula.exe run examples/echo.alula.json examples/scenarios/echo-words.scenario.test.json`.
+The new tables (`Echo` ... `Batch`) are written in English; the scenarios are `scenario/0`. Run one: `target/alula.exe run examples/echo.alula.json examples/scenarios/echo-signals.scenario.test.json`.
 The machines of the product CrewHarness and of the methodology are not here: they are the data of their owners (the CrewHarness repository, `machines/`).

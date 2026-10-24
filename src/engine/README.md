@@ -175,7 +175,7 @@ Not in the MVP (the list for the next tasks):
 
 - 19-21 and 28: gates of a human, sets of requests to several parties, the limit of simultaneous requests;
 - 23-24 and 36: "stop of a human", "continue", the PAUSE state and its fragment; the signals are not there, `StoppedByHuman` comes
-  only from the user's `Cancel` word of the chat machine;
+  only from the user's `Cancel` signal of the chat machine;
 - 35 beyond the end: calling a machine from another machine, passing stop/continue/cancel down, `Cancelled` (cancelled by the
   parent) is in the list and never produced;
 - 14 beyond the acceptance at arrival: the split into open and accepted requests, the fingerprint of the object a result is written

@@ -5,8 +5,8 @@
 - format: 2.22
 - language: en
 
-A gate (spec 1, 4.2: the party `human or agent by setting`, the executor decides who answers). The gatekeeper says `allow` or `deny`; the machine counts the words that allow and ends when it has had `NEEDED` of them, a word
-that denies ends it with a refusal. Every request to the gate carries the number of the words so far. The scenarios: `keeper-*`.
+A gate (spec 1, 4.2: the party `human or agent by setting`, the executor decides who answers). The gatekeeper says `allow` or `deny`; the machine counts the signals that allow and ends when it has had `NEEDED` of them, a signal
+that denies ends it with a refusal. Every request to the gate carries the number of the signals so far. The scenarios: `keeper-*`.
 
 ## Constants
 
@@ -42,8 +42,8 @@ Initial state: Wait
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|
-| 1 | signal(allow) | — | allowed += 1; journal(word_allowed, count: text(allowed)) | Count |
-| 2 | signal(deny) | — | stop_reason = "denied"; journal(word_denied) | Denied |
+| 1 | signal(allow) | — | allowed += 1; journal(signal_allowed, count: text(allowed)) | Count |
+| 2 | signal(deny) | — | stop_reason = "denied"; journal(signal_denied) | Denied |
 
 ### Count — fork
 - Reads: allowed

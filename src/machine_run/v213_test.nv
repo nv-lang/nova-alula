@@ -1,5 +1,5 @@
 // v213_test.nv - task 149: Alula 2.13 in the interpreter and the scenario runner: the signal of a party is an event `signal` (the step `word` of a scenario is gone, the step `signal` may name the party
-// that declared the signal), the question `accepts_word` of the hub is answered from the signals of the table, an optional field of the input that the input does not have is none (AL-48).
+// that declared the signal), the question `accepts_signal` of the hub is answered from the signals of the table, an optional field of the input that the input does not have is none (AL-48).
 module alula.machine_run
 
 import std.text
@@ -90,6 +90,6 @@ test "v213 optional input of a wrong type is refused" {
 test "v213 the signal of the table is taken by the machine" {
     ro m = opt13()
     ro st = run1(m, m.initial(), start_with("{\"session\":\"a\"}")).state
-    ro r = run1(m, st, word_in("go", ""))
+    ro r = run1(m, st, signal_in("go", ""))
     assert(r.state.name == "Done")
 }

@@ -9,7 +9,7 @@ import alula.examples.{machine_files, scenario_files}
 test "v212 parse value of another type is a defect" {
     ro wrong = ScriptedReply { name: "parse_out", value: Text("not a record") }
     ro m = fixer_with([changed_reply(false), wrong])
-    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro st = run1(m, m.initial(), signal_in("start", "")).state
     ro r = run1(m, st, answered("c-1", out_json("raw")))
     assert(summary(r.orders).starts_with("log:machine_defect(kind=type_mismatch"))
 }
@@ -17,7 +17,7 @@ test "v212 parse value of another type is a defect" {
 test "v212 parse value of another type does not use a return" {
     ro wrong = ScriptedReply { name: "parse_out", value: Text("not a record") }
     ro m = fixer_with([changed_reply(false), wrong])
-    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro st = run1(m, m.initial(), signal_in("start", "")).state
     ro r = run1(m, st, answered("c-1", out_json("raw")))
     assert(!summary(r.orders).contains("form_returned"))
 }
@@ -29,7 +29,7 @@ test "v212 parse failure with no returns" {
         Ok(x) => with_replies(x, [changed_reply(false)])
         Err(e) => panic("the fixer does not load: ${e}")
     }
-    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro st = run1(m, m.initial(), signal_in("start", "")).state
     ro r = run1(m, st, answered("c-1", out_json("raw")))
     assert(r.state.name == "Done")
     assert(datum_json(r.state, "got") == "\"form_not_fixed\"")
@@ -38,14 +38,14 @@ test "v212 parse failure with no returns" {
 test "v212 parse failure is not an accepted answer" {
     // the rejected answer does not run "On accept": the datum of the proposal keeps its value
     ro m = fixer_with([changed_reply(false)])
-    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro st = run1(m, m.initial(), signal_in("start", "")).state
     ro r = run1(m, st, answered("c-1", out_json("raw")))
     assert(datum_json(r.state, "proposal") == "\"v0\"")
 }
 
 test "v212 parse failure after the returns is the code of the form" {
     ro m = fixer_with([changed_reply(false)])
-    ro st = run1(m, m.initial(), word_in("start", "")).state
+    ro st = run1(m, m.initial(), signal_in("start", "")).state
     ro once = run1(m, st, answered("c-1", out_json("raw"))).state
     ro r = run1(m, once, answered("c-2", out_json("raw")))
     assert(datum_json(r.state, "got") == "\"form_not_fixed\"")

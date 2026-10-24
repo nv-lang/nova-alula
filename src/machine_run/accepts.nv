@@ -1,15 +1,15 @@
-// accepts.nv - the question of a caller that is not the machine: does the state take this word? (task 126)
+// accepts.nv - the question of a caller that is not the machine: does the state take this signal? (task 126)
 //
 // The hub must not know the names of the states of the table: "a message is not taken while a turn is open" is a question to the table, not a comparison of a name.
-// `accepts_word` answers it from the table alone: the word (or the signal) is declared, and the common events or the rows of the state have a row for it.
+// `accepts_signal` answers it from the table alone: the signal is declared, and the common events or the rows of the state have a row for it.
 // The condition of a row is evaluated with the data of the state and with NO bindings of the pattern: a condition that cannot be evaluated that way
-// (it reads a binding of the word, or a primitive the host does not answer) counts as taking the word - the question is "can the state take it", not "will this event".
+// (it reads a binding of the signal, or a primitive the host does not answer) counts as taking the signal - the question is "can the state take it", not "will this event".
 module alula.machine_run
 
 import alula.engine.{Incoming}
 import alula.machine_table.{TableRow, find_state}
 
-// Does a row of the list name this word or this signal, and does its condition hold (or fail to be evaluated)?
+// Does a row of the list name this signal, and does its condition hold (or fail to be evaluated)?
 fn rows_take(ctx Ctx, rows []TableRow, wanted str) -> bool {
     for r in rows {
         ro named = match r.event {
@@ -33,16 +33,16 @@ fn rows_take(ctx Ctx, rows []TableRow, wanted str) -> bool {
     false
 }
 
-/// Does the state take the word (or the signal) `name`? False: the machine has not started; the word is declared nowhere in the table (the machine would write `event_unknown`);
+/// Does the state take the signal `name`? False: the machine has not started; the signal is declared nowhere in the table (the machine would write `event_unknown`);
 /// the state is not an appeal and the common events have no row for it; no row of the common events and of the state is for it. The names of the states are the table's own:
 /// the caller does not need to know them.
-export fn AlulaMachine @accepts_word(state AlulaState, name str) -> bool {
+export fn AlulaMachine @accepts_signal(state AlulaState, name str) -> bool {
     if !state.started { return false }
     match input_decl(@def, name) {
         Some(fields) => ()
         None => return false
     }
-    ro ctx = new_ctx(@, state, Incoming.word(name, ""))
+    ro ctx = new_ctx(@, state, Incoming.signal(name, ""))
     if rows_take(ctx, @def.common, name) { return true }
     ro at = find_state(@def, state.name)
     if at < 0 { return false }

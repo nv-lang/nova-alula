@@ -5,8 +5,8 @@
 - format: 2.22
 - language: en
 
-A chat in the quiet: the party `user` is a human with a free input (spec AL-51, AL-52: no gate, no request, no counter). Every word of the user is journaled and counted, the row stays in the
-state (`same`: the actions of the row only, no new entry); the word `close` ends the machine. The scenarios: `echo-*`.
+A chat in the quiet: the party `user` is a human with a free input (spec AL-51, AL-52: no gate, no request, no counter). Every signal of the user is journaled and counted, the row stays in the
+state (`same`: the actions of the row only, no new entry); the signal `close` ends the machine. The scenarios: `echo-*`.
 
 ## Data
 

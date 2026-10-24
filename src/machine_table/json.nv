@@ -684,9 +684,9 @@ fn party_kind_of(word str, path str) -> Result[PartyKind, LoadError] {
     }
 }
 
-fn dec_words(v JsonValue, defs TypeDefs, path str) -> Result[[]WordDef, LoadError] {
+fn dec_signals(v JsonValue, defs TypeDefs, path str) -> Result[[]SignalDef, LoadError] {
     ro items = j_arr(v, path)?
-    mut out = []WordDef.new()
+    mut out = []SignalDef.new()
     mut i = 0
     for item in items {
         ro p = "${path}[${i}]"
@@ -697,16 +697,16 @@ fn dec_words(v JsonValue, defs TypeDefs, path str) -> Result[[]WordDef, LoadErro
             if w.name == name { return Err(le(p, "the signal ${name} is repeated")) }
         }
         ro fields = j_fields_or_empty(o, "fields", defs, p)?
-        out.push(WordDef { name, fields })
+        out.push(SignalDef { name, fields })
         i += 1
     }
     Ok(out)
 }
 
-fn dec_words_or_empty(o JsonObject, key str, defs TypeDefs, path str) -> Result[[]WordDef, LoadError] {
-    if !j_has(o, key) { return Ok([]WordDef.new()) }
+fn dec_signals_or_empty(o JsonObject, key str, defs TypeDefs, path str) -> Result[[]SignalDef, LoadError] {
+    if !j_has(o, key) { return Ok([]SignalDef.new()) }
     ro v = j_need(o, key, path)?
-    dec_words(v, defs, "${path}.${key}")
+    dec_signals(v, defs, "${path}.${key}")
 }
 
 // The `разбор` of a party: {"primitive": "name", "role": "literal" (optional), "type": "T"}.
@@ -731,8 +731,8 @@ fn dec_parties(root JsonObject, defs TypeDefs) -> Result[[]PartyDef, LoadError] 
         ro id = j_str_or(o, "id", "", p)?
         ro kind = party_kind_of(j_need_str(o, "kind", p)?, "${p}.kind")?
         ro profile = j_expr_opt(o, "profile", p)?
-        ro signals = dec_words_or_empty(o, "signals", defs, p)?
-        ro progress = dec_words_or_empty(o, "progress", defs, p)?
+        ro signals = dec_signals_or_empty(o, "signals", defs, p)?
+        ro progress = dec_signals_or_empty(o, "progress", defs, p)?
         ro setting = j_str_or(o, "setting", "", p)?
         ro nested = j_str_or(o, "nested", "", p)?
         mut input_spec = []TypeSpec.new()
@@ -1122,7 +1122,7 @@ fn dec_machine(root JsonObject) -> Result[MachineDef, LoadError] {
     ro data = dec_data(root, types)?
     ro parties = dec_parties(root, types)?
     ro request_limit = j_expr_opt(root, "request_limit", "$")?
-    ro signals = dec_words_or_empty(root, "signals", types, "$")?
+    ro signals = dec_signals_or_empty(root, "signals", types, "$")?
     ro definitions = dec_definitions(root, types)?
     ro includes = dec_includes(root)?
     ro fragments = dec_fragments(root)?

@@ -3,8 +3,8 @@
 // `alula_step(machine, state, event, environment, host)` is the whole of the protocol `Machine`'s `step`: it reads the state and the event
 // (nothing else: the clock is the stamp of the event, the primitives are the host's), gives its orders to the environment and returns the
 // transition. The order of a step is the order of the format:
-//   1. the event of the engine is read as the event of the machine (a word, a signal, a part of an answer, the answer, the failure,
-//      the term); a name the machine does not know is the journal event `event_unknown`, a text that does not fit the fields of the word is
+//   1. the event of the engine is read as the event of the machine (a signal, a part of an answer, the answer, the failure,
+//      the term); a name the machine does not know is the journal event `event_unknown`, a text that does not fit the fields of the signal is
 //      `event_malformed`;
 //   2. the common events (format 9) come first, then "On accept" of the appeal, then the first row of the state that fits (the pattern of the
 //      event and the condition); no row - the journal event `event_ignored`;
@@ -26,7 +26,7 @@ import std.encoding.json.{JsonValue, JsonObject}
 import alula.engine.{Incoming, SendOrder, CancelOrder, SignalOrder, Conclusion, FailCode, JournalParam, JournalEvent, journal_event, param}
 import alula.machine.{Value, Null, Int, Text, List, Dict, DictEntry, RecordField, Binding, Scope, DefTable, Expr, TypeSpec, PrimitiveHost, EvalError, Binary, Add}
 import alula.machine.{eval_defs, kind_word, make_record, make_tuple, enum_value, value_text, value_json, value_to_json, value_compare, parse_value, value_from_json, record_get, dict_get, check_value, FieldDef, TypeDefs, check_call_args, check_call_result, Lit}
-import alula.machine_table.{MachineDef, TableRow, EventPat, Action, LValue, PathStep, NamedExpr, Bind, WordDef, PartyDef, MachineParty}
+import alula.machine_table.{MachineDef, TableRow, EventPat, Action, LValue, PathStep, NamedExpr, Bind, SignalDef, PartyDef, MachineParty}
 import alula.machine_table.{find_state, find_party, find_data}
 
 /// The longest chain of transitions in one step (a loop of forks that never ends is a defect of the table).
@@ -39,7 +39,7 @@ type EvKind enum
     | EvFailure
     | EvTimeout
 
-// The event of the engine read as the event of the machine: `name` is the label of the journal, `fields` the data of a word or of a part,
+// The event of the engine read as the event of the machine: `name` is the label of the journal, `fields` the data of a signal or of a part,
 // `value` the answer or the reason of the failure, `reason` the case of the failure.
 type EventVal { kind EvKind, name str, id str, request str, party str, fields []RecordField, value Value, reason str }
 
@@ -183,35 +183,35 @@ fn finish_with(mut ctx Ctx, failure Option[FailCode], text str) -> () {
 
 // ---- the event of the machine -------------------------------------------------------------------------------------------
 
-fn find_word(words []WordDef, name str) -> int {
+fn find_signal(signals []SignalDef, name str) -> int {
     mut i = 0
-    while i < words.len() {
-        if words[i].name == name { return i }
+    while i < signals.len() {
+        if signals[i].name == name { return i }
         i += 1
     }
     -1
 }
 
-// The declaration of a word or a signal by name: Some(fields).
+// The declaration of a signal by name: Some(fields).
 fn input_decl(def MachineDef, name str) -> Option[[]FieldDef] {
     for p in def.parties {
-        ro at = find_word(p.signals, name)
+        ro at = find_signal(p.signals, name)
         if at >= 0 { return Some(p.signals[at].fields) }
     }
-    ro at = find_word(def.signals, name)
+    ro at = find_signal(def.signals, name)
     if at >= 0 { return Some(def.signals[at].fields) }
     None
 }
 
 fn progress_decl(def MachineDef, name str) -> Option[[]FieldDef] {
     for p in def.parties {
-        ro at = find_word(p.progress, name)
+        ro at = find_signal(p.progress, name)
         if at >= 0 { return Some(p.progress[at].fields) }
     }
     None
 }
 
-// One value of the single field of a word from the text of the input.
+// One value of the single field of a signal from the text of the input.
 fn field_from_text(spec TypeSpec, input str, defs TypeDefs) -> Result[Value, str] {
     mut v = Text(input)
     match spec {
@@ -235,7 +235,7 @@ fn int_of(input str) -> Result[Value, str] {
     }
 }
 
-// The fields of a word from the text of the input: a word with one field takes the text as the field, with more - an object of the JSON.
+// The fields of a signal from the text of the input: a signal with one field takes the text as the field, with more - an object of the JSON.
 fn decode_fields(fields []FieldDef, input str, defs TypeDefs) -> Result[[]RecordField, str] {
     mut out = []RecordField.new()
     if fields.len() == 0 { return Ok(out) }

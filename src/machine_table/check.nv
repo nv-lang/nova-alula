@@ -1,7 +1,7 @@
 // check.nv - the checks of a table (format 2.1, section 10) on a decoded machine.
 //
 // What is checked: the names (unique, the right shape, no shadowing), the structure of every kind of a state, the events against the
-// words, the signals and the progress of the parties, the targets ("Where"), the reads against the "Input" of the state (rule 11 of the
+// signals and the progress of the parties, the targets ("Where"), the reads against the "Input" of the state (rule 11 of the
 // specification), the writes against the data of the machine and their `writes` mark, the class of every primitive in the place of its call,
 // the reachability of the states, the exhaustiveness of the "Ends", the definitions (no recursion), the journal codes, the bounds and the
 // includes. `check_machine` returns every issue it finds, each with its place in the JSON, in a fixed order; an empty list is a table that
@@ -753,12 +753,12 @@ fn check_state_shape(mut cx Checker, st StateDef, path str) -> () {
     }
 }
 
-// ---- events, words, targets -----------------------------------------------------------------------------------------------
+// ---- events, signals, targets ---------------------------------------------------------------------------------------------
 
-fn word_decl(words []WordDef, name str) -> int {
+fn signal_decl(signals []SignalDef, name str) -> int {
     mut i = 0
-    while i < words.len() {
-        if words[i].name == name { return i }
+    while i < signals.len() {
+        if signals[i].name == name { return i }
         i += 1
     }
     -1
@@ -810,7 +810,7 @@ fn sends_requests(kind PartyKind) -> bool {
     }
 }
 
-fn check_event_for(mut cx Checker, ev EventPat, party_ix int, path str, mut used_words []str) -> () {
+fn check_event_for(mut cx Checker, ev EventPat, party_ix int, path str, mut used_signals []str) -> () {
     ro def = cx.def
     check_bind_shadow(cx, ev, path)
     match ev {
@@ -818,14 +818,14 @@ fn check_event_for(mut cx Checker, ev EventPat, party_ix int, path str, mut used
             // a signal of the party of the appeal (AL-38), else a signal of the machine (a common event, the protocol of a fragment)
             if party_ix >= 0 {
                 ro party = def.parties[party_ix]
-                ro at = word_decl(party.signals, name)
+                ro at = signal_decl(party.signals, name)
                 if at >= 0 {
                     check_binds(cx, binds, party.signals[at].fields, path)
-                    used_words.push("${party.name}/${name}")
+                    used_signals.push("${party.name}/${name}")
                     return
                 }
             }
-            ro at = word_decl(def.signals, name)
+            ro at = signal_decl(def.signals, name)
             if at < 0 {
                 if party_ix >= 0 {
                     cx_issue(cx, path, "the signal ${name} is not a signal of the party ${def.parties[party_ix].name} and is not declared in signals")
@@ -842,7 +842,7 @@ fn check_event_for(mut cx Checker, ev EventPat, party_ix int, path str, mut used
                 return
             }
             ro party = def.parties[party_ix]
-            ro at = word_decl(party.progress, name)
+            ro at = signal_decl(party.progress, name)
             if at < 0 { cx_issue(cx, path, "${name} is not a progress event of the party ${party.name}") } else { check_binds(cx, binds, party.progress[at].fields, path) }
         }
         AnswerEv { bind } => check_answer_party(cx, party_ix, path)
@@ -898,7 +898,7 @@ fn check_answer_party(mut cx Checker, party_ix int, path str) -> () {
 
 fn check_events(mut cx Checker) -> () {
     ro def = cx.def
-    mut used_words = []str.new()
+    mut used_signals = []str.new()
     mut i = 0
     for st in def.states {
         ro p = "$.states[${i}]"
@@ -906,13 +906,13 @@ fn check_events(mut cx Checker) -> () {
         if st.kind == AppealKind {
             mut k = 0
             for r in st.rows {
-                check_event_for(cx, r.event, party_ix, "${p}.rows[${k}].event", used_words)
+                check_event_for(cx, r.event, party_ix, "${p}.rows[${k}].event", used_signals)
                 check_targets_of_row(cx, r, "${p}.rows[${k}]", true)
                 k += 1
             }
             k = 0
             for a in st.accept {
-                check_event_for(cx, a.event, party_ix, "${p}.accept[${k}].event", used_words)
+                check_event_for(cx, a.event, party_ix, "${p}.accept[${k}].event", used_signals)
                 match a.event {
                     AnswerEv { bind } => ()
                     AnswerVariantEv { variant, binds } => ()
@@ -933,7 +933,7 @@ fn check_events(mut cx Checker) -> () {
     }
     mut ci = 0
     for r in def.common {
-        check_event_for(cx, r.event, -1, "$.common_events[${ci}].event", used_words)
+        check_event_for(cx, r.event, -1, "$.common_events[${ci}].event", used_signals)
         check_targets_of_row(cx, r, "$.common_events[${ci}]", true)
         ci += 1
     }
@@ -941,7 +941,7 @@ fn check_events(mut cx Checker) -> () {
     mut pi = 0
     for pt in def.parties {
         for w in pt.signals {
-            if !used_words.contains("${pt.name}/${w.name}") && !word_used_in_signal(def, w.name) {
+            if !used_signals.contains("${pt.name}/${w.name}") && !signal_used_in_rows(def, w.name) {
                 cx_issue(cx, "$.parties[${pi}].signals", "the signal ${w.name} of the party ${pt.name} is used by no row")
             }
         }
@@ -950,12 +950,12 @@ fn check_events(mut cx Checker) -> () {
 }
 
 // A signal that stands in the rows of a state of another party is used.
-fn word_used_in_signal(def MachineDef, word str) -> bool {
+fn signal_used_in_rows(def MachineDef, signal str) -> bool {
     for st in def.states {
         for r in st.rows {
             match r.event {
                 SignalEv { name, binds } => {
-                    if name == word { return true }
+                    if name == signal { return true }
                 }
                 _ => ()
             }
@@ -964,7 +964,7 @@ fn word_used_in_signal(def MachineDef, word str) -> bool {
     for r in def.common {
         match r.event {
             SignalEv { name, binds } => {
-                if name == word { return true }
+                if name == signal { return true }
             }
             _ => ()
         }

@@ -42,7 +42,7 @@ export type PartyResponse[R] enum
     | Refusal(Rejection)
 
 /// EventKind: the class of an incoming event, the only thing the engine itself branches on (spec rule 6).
-///  - Input: comes from outside and belongs to no request (a user's word);
+///  - Input: comes from outside and belongs to no request (a signal, for example a message of the user);
 ///  - Progress: partial data of an open request; it keeps the request open and renews its idle term;
 ///  - Answered: the final answer, closes the request;
 ///  - Refused: a refusal with a reason (`input` is the FailCode name), closes the request;
@@ -241,8 +241,8 @@ export fn Incoming.from_source(key str, event Incoming) -> Incoming => {
     request: event.request, input: event.input, at: event.at
 }
 
-/// A word from outside that belongs to no request.
-export fn Incoming.word(name str, input str) -> Incoming => Incoming.incoming(Input, name, None, input)
+/// A signal from outside (of a party or of the machine) that belongs to no request.
+export fn Incoming.signal(name str, input str) -> Incoming => Incoming.incoming(Input, name, None, input)
 
 /// An empty engine state for a trace (the state of the machine is set by the caller).
 export fn EngineState.fresh[S](trace str, state S) -> EngineState[S] => {

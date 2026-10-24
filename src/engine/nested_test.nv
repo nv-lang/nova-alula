@@ -1,6 +1,6 @@
 // nested_test.nv - what the engine gives to nested machines (task 119): the order `order_signal` (a signal to a nested machine, rule 35 item 8), the signals the engine holds until the
 // caller passes them on and marks them passed, the repeat of an open request with the same identifier (rule 22 and rule 35 item 4), a trace given by the caller (the trace of a nested
-// machine is a child of the trace of the parent, rule 35 item 3). A tiny machine is enough: the word `ask` orders a request to `callee`, `stop` and `halt` order a signal to the request
+// machine is a child of the trace of the parent, rule 35 item 3). A tiny machine is enough: the signal `ask` orders a request to `callee`, `stop` and `halt` order a signal to the request
 // `callee-1`, `finish` ends the machine.
 module alula.engine
 
@@ -58,13 +58,13 @@ fn caller_resumed(mut world MemoryWorld) -> Engine[CallMachine, str] {
 
 fn caller_feed(mut e Engine[CallMachine, str], mut world MemoryWorld, name str) -> () {
     with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
-        e.feed(Incoming.word(name, ""))
+        e.feed(Incoming.signal(name, ""))
     }
 }
 
 fn caller_accept(mut e Engine[CallMachine, str], mut world MemoryWorld, name str) -> () {
     with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
-        e.on_arrival(Incoming.word(name, ""))
+        e.on_arrival(Incoming.signal(name, ""))
     }
 }
 

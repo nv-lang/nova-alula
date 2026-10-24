@@ -39,9 +39,9 @@ test "mx limit guards" {
     // the limit of the requests that the machine holds open (rule 21): a second appeal that would pass it is a defect
     ro m = build_from(two_agents())
     assert(m.limit == 1)
-    ro first = run1(m, m.initial(), word_in("start", ""))
+    ro first = run1(m, m.initial(), signal_in("start", ""))
     assert(first.state.name == "A")
-    ro jumped = run1(m, first.state, word_in("jump", ""))
+    ro jumped = run1(m, first.state, signal_in("jump", ""))
     assert(summary(jumped.orders).starts_with("log:machine_defect(kind=request_limit;"))
     assert(summary(jumped.orders).contains("finish:refusal:NoResult"))
 }

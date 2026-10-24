@@ -15,7 +15,7 @@ fn jlog(code str, names []str) -> str {
     `{"do":"journal","code":"${code}","params":[${ps.join(",")}]}`
 }
 
-// The tiny machine whose first word writes the journal event.
+// The tiny machine whose first signal writes the journal event.
 fn tiny_logging(code str, names []str) -> str {
     ro inc = jassign("n", jb("+", jn("n"), jl("1")))
     ro go = `{"n":1,"event":{"kind":"signal","name":"go"},"actions":[${inc},${jlog(code, names)}],"to":"Decide"}`
