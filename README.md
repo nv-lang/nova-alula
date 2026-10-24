@@ -63,7 +63,7 @@ The copies that the tests embed (`src/machine_text/alula-keywords.tsv`, `src/mac
 
 ## The samples
 
-The package holds the language and its own examples. The examples are in [examples/](examples/): the tables `*.alula.md`, the compiled `*.alula.json`, the scenarios `examples/scenarios/*.scenario.test.json`, and the host of the examples, `registry.md` and `journal.md` (the primitive `close_agent_turn` and 24 journal codes). The smallest ones to start from: the caller and the callee (`caller`, `callee`), `echo` (a free input), `retry` (`same` and `same, rerun`), `verdict` (an enumeration with fields), `router` (the exhaustion of a fork), `pausable` (the fragment "Pause"), `keeper` (a gate), `batch` (a set of nested calls). `alula test examples` runs all 66 scenarios.
+The package holds the language and its own examples. The examples are in [examples/](examples/): the tables `*.alula.md`, the compiled `*.alula.json`, the scenarios `examples/scenarios/*.scenario.test.json`, and the host of the examples, `registry.md` and `journal.md` (the primitive `close_agent_turn` and 44 journal codes). The smallest ones to start from: the caller and the callee (`caller`, `callee`), `echo` (a free input), `retry` (`same` and `same, rerun`), `verdict` (an enumeration with fields), `router` (the exhaustion of a fork), `pausable` (the fragment "Pause"), `keeper` (a gate), `batch` (a set of nested calls). `alula test examples` runs all 66 scenarios.
 
 The samples of the methodology (the agent step and the meeting) stay in `spec/samples/` as texts: the tests translate them, check the hashes and the numbers; the registry of their pilots is `spec/samples/registry.md`.
 

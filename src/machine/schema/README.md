@@ -431,7 +431,7 @@ Initial state: AgentTurn
 ```
 
 The separator rows (`|---|`) are omitted here for room; the file that the program reads has them (the canonical form of 1b writes
-them and also writes every section, an empty one as `—`). The journal codes `callee_answered` and `callee_failed` are two codes of the table of the methodology (`src/machine/journal_methodology.md`).
+them and also writes every section, an empty one as `—`). The journal codes `callee_answered` and `callee_failed` are two codes of the table of the host "examples" (`examples/journal.md`); the table of the language is `src/machine/journal_language.md` (35 codes).
 
 ### `ask.alula.json` — the tree of the Russian file (the output of `alula compile`)
 
