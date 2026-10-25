@@ -1,5 +1,5 @@
 // v224_test.nv - task 173 (Alula 2.24): the renamed catalog function `обязательно_непустое` / `require_non_empty` (the former `непустое` / `non_empty` is an error with the new name), the refusal of the mixes of `??` and of the chains of comparisons
-// without brackets, the section `Внешние функции` and the call of an external function as an operator. The label `AL-2xx` is a placeholder: the numbers of the decisions of 2.24 are not named yet.
+// without brackets, the section `Внешние функции` and the call of an external function as an operator. The label `AL-128` is a placeholder: the numbers of the decisions of 2.24 are not named yet.
 module alula.machine_text
 
 import std.text
@@ -9,10 +9,10 @@ import std.text
 test "v224 the former non_empty is refused with the new name in both languages" {
     ro ru = exr222("непустое(остановка)", "ru")
     assert(ru.starts_with("ERR"))
-    assert(ru.contains("`непустое(…)` в формате 2.23 не бывает (AL-2xx): пишется `обязательно_непустое`; переходного периода нет"))
+    assert(ru.contains("`непустое(…)` в формате 2.23 не бывает (AL-128): пишется `обязательно_непустое`; переходного периода нет"))
     ro en = exr222("non_empty(stop_reason)", "en")
     assert(en.starts_with("ERR"))
-    assert(en.contains("`non_empty(…)` в формате 2.23 не бывает (AL-2xx): пишется `require_non_empty`; переходного периода нет"))
+    assert(en.contains("`non_empty(…)` в формате 2.23 не бывает (AL-128): пишется `require_non_empty`; переходного периода нет"))
 }
 
 test "v224 the new name reads to the same node in both languages" {
