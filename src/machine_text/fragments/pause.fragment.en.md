@@ -1,7 +1,7 @@
 # Fragment: Pause
 
 - fragment: Pause
-- format: 2.23
+- format: 2.24
 - language: en
 
 > The English twin of `pause.fragment.md` (Alula 2.17, section 9): the common events and the state Pause. In the text a parameter stands as `<parameter>` and is put in before the reading.

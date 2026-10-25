@@ -1,10 +1,10 @@
 # Машина: Шаг агента
 
 - machine: agent_step
-- machine_version: alula-2.23
-- format: 2.23
+- machine_version: alula-2.24
+- format: 2.24
 
-Это **иллюстрация**: машина «Шаг агента» целиком, записанная в формате «Алула», версия формата 2.23 ([spec/alula-spec.md](../alula-spec.md); он единственное определение языка записи). Файл нужен, чтобы человек мог открыть и увидеть настоящую машину: типы, данные, стороны, функции, все 37 строк переходов, концы с таблицей «конец → ответ», подключённый фрагмент «Пауза»; что приносит фрагмент (параметры, общие события ОБЩ 1–6, состояние ПАУЗА с событиями ПАУЗА 1–4), описано в разделе 9 спецификации.
+Это **иллюстрация**: машина «Шаг агента» целиком, записанная в формате «Алула», версия формата 2.24 ([spec/alula-spec.md](../alula-spec.md); он единственное определение языка записи). Файл нужен, чтобы человек мог открыть и увидеть настоящую машину: типы, данные, стороны, функции, все 37 строк переходов, концы с таблицей «конец → ответ», подключённый фрагмент «Пауза»; что приносит фрагмент (параметры, общие события ОБЩ 1–6, состояние ПАУЗА с событиями ПАУЗА 1–4), описано в разделе 9 спецификации.
 
 **Статус.** Эквивалентность этой записи автомату по журналу не проверялась: интерпретатор «Шага агента» не гонялся, сценарии не сравнивались. **Первоисточник — эта запись на Алуле; прежние таблицы лежат в архиве и не обновляются.** Прежняя запись — таблицы состояний [archive/state-machine-agent-step-states.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/state-machine-agent-step-states.md) и код автомата [archive/state-machine-agent-step-automaton.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/state-machine-agent-step-automaton.md). Фрагмент «Пауза» — [archive/state-machine-pause-states.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/state-machine-pause-states.md), коды журнала — [state-machine-journal.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/state-machine-journal.md), имена — [state-machine-glossary.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/state-machine-glossary.md).
 

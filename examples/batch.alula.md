@@ -2,7 +2,7 @@
 
 - machine: Batch
 - machine_version: 1
-- format: 2.23
+- format: 2.24
 - language: en
 
 A set of nested calls (spec 4.2, `set:`; the party of the kind `machine`): one request to the machine `callee` for every name of the input `names`, no more than `LIMIT` at once (`Request limit`). The answers

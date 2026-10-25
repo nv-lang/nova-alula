@@ -997,7 +997,7 @@ functions: <name> version <N> hash <hex12>
 - **Hash** — the first 12 signs of the SHA-256 of the file content in UTF-8 after normalization: a leading BOM is dropped (a file with and without a BOM give one hash); line breaks are LF (CRLF and a lone CR are replaced by LF); trailing spaces and tabs are removed from every line; at the end of the file there is exactly one LF (empty lines at the end are removed, a missing LF is added); the 12 signs of the hash are hexadecimal, in lowercase. The normalization is unambiguous: a file without a final LF and a file with it give one hash.
 - Names from an included file are visible without a prefix; a coincidence with a local name or with a name of another included file is a table check error; a mismatch of the version or the hash is a table check error, not a warning.
 
-Example (“Meeting”: the arithmetic of a cycle is common to the meeting and the cycle check). The hash below is the SHA-256 of the given file (12 signs): of the text of the block from the header line `# Functions: cycle_arithmetic` to the closing fence after the normalization (above); it differs from the hash of the Russian sample (`ebb7658048b2`) because this file is in the English form and contains the line `- language: en`. The hash `a9af85407c2b` in the include line is the value of version 2.23; the line `- format: 2.24` is part of the hash, so it is recomputed when version 2.24 is published.
+Example (“Meeting”: the arithmetic of a cycle is common to the meeting and the cycle check). The hash below is the SHA-256 of the given file (12 signs): of the text of the block from the header line `# Functions: cycle_arithmetic` to the closing fence after the normalization (above); it differs from the hash of the Russian sample (`818a4aaeef4f`) because this file is in the English form and contains the line `- language: en`. The hash `431e7018e2bb` in the include line is the value of version 2.24; the line `- format: 2.24` is part of the hash, so it changes with every version of the format.
 
 ```
 # Functions: cycle_arithmetic
@@ -1020,7 +1020,7 @@ fn ceiling_reached(pass_number int>=1, origin int>=1, limit int>=0) -> bool =>
 
 ```
 ## Includes
-functions: cycle_arithmetic version 1 hash a9af85407c2b
+functions: cycle_arithmetic version 1 hash 431e7018e2bb
 ```
 
 ## 9. Included fragments
