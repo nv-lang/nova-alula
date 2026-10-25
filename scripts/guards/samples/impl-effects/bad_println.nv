@@ -1,0 +1,11 @@
+// A sample for the guard check-impl-effects.py: output behind the environment (violations: println, print, eprintln).
+module sample.bad_println
+
+import alula.machine.{Value, Null}
+
+export fn noisy(args []Value) -> Value {
+    println("called")
+    print("x")
+    eprintln("y")
+    Null
+}

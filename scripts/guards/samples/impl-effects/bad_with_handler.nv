@@ -1,0 +1,13 @@
+// A sample for the guard check-impl-effects.py: a handler of an effect and the concurrency behind the environment (violations: with, spawn, detach, parallel for).
+module sample.bad_with_handler
+
+import alula.machine.{Value, Null}
+
+export fn handled(args []Value) -> Value {
+    with Time = clock() {
+        spawn { work() }
+        detach { work() }
+        parallel for i in 0..4 { work() }
+    }
+    Null
+}
