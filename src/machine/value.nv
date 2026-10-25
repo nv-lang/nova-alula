@@ -14,6 +14,10 @@
 //  - equality is structural; a record keeps its fields in a canonical order (by the name), a dict keeps its entries in the
 //    order of insertion (`keys` and `values` give that order: the order of the first record of a key) and equals another dict
 //    with the same entries in any order; the JSON text of a value is the same on every run;
+//  - THE NORM OF THE DICT ORDER (format 2.23, task 170): the order of a dict is the order of the record; a write to a key that is
+//    already there changes its value and keeps its place, a new key goes to the end; a repeated key in one literal or in one
+//    `dict(...)` macro is not a write but an error (`DuplicateKey`, eval.nv); `make_dict` (a builder for the host and the tests, not
+//    a literal of a machine) keeps the place of the first record of a key and takes the last value;
 //  - a tuple is an anonymous record (the name is empty) with the positional fields `1`, `2`, ... (`t.1`, `t.2`).
 //
 // JSON form of a value (lossless, `value_to_json` and `value_from_json`): null, bool, integer, float, text and list are the
@@ -35,7 +39,8 @@ export type RecordField { name str, value Value }
 export type DictEntry { key Value, value Value }
 
 /// Value: the dynamic value of a machine.
-///  - Dict keeps its entries in the order of insertion, without a repeated key;
+///  - Dict keeps its entries in the order of insertion, without a repeated key (the order of a dict is the order of the record:
+///    a write to an existing key keeps the place, a new key goes to the end);
 ///  - Record keeps its fields sorted by the name;
 ///  - Variant is a case of a sum type or of an enum (`fields` empty): `type_name` is the type, `name` the case.
 export type Value enum

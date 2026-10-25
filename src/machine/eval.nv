@@ -396,6 +396,8 @@ fn eval_with_field(base Expr, fields []FieldExpr, mut env Env, mut host Primitiv
     }
 }
 
+// A dict literal: the entries are made in the written order and that is the order of the dict (the norm "the order of a dict is the order of
+// the record", value.nv); a repeated key is not a later write but the error `DuplicateKey` at the place of the second entry.
 fn eval_dict_lit(entries []EntryExpr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
     mut out = []DictEntry.new()
     mut i = 0
@@ -593,6 +595,7 @@ fn eval_macro(name str, args []Expr, mut env Env, mut host PrimitiveHost, depth 
         return Ok(acc)
     }
     if name == "dict" {
+        // the order of the items is the order of the dict; a repeated key is the error `DuplicateKey`, not a later write (value.nv)
         ro key_lam = lambda_at(args, 1, 1)?
         ro value_lam = lambda_at(args, 2, 1)?
         mut out = []DictEntry.new()

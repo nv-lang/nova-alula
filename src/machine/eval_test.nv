@@ -279,6 +279,33 @@ test "ev dup key" {
     assert(eerr(d) == "duplicate_key@$.entries[1]")
 }
 
+// The norm of the dict order (format 2.23): the order of a dict is the order of the record, a repeated key is an error.
+test "ev dict order" {
+    // the literal: the written order, not the order of the keys; `value_equal` does not see the order, the JSON text does
+    ro d = DictLit([EntryExpr { key: lit_text("b"), value: ei(1) }, EntryExpr { key: lit_text("a"), value: ei(2) }, EntryExpr { key: lit_text("c"), value: ei(3) }])
+    match ev_plain(d) {
+        Ok(v) => assert(value_json(v) == "{\"b\":1,\"a\":2,\"c\":3}")
+        Err(x) => assert(false)
+    }
+    assert(eis(ec("keys", [d]), List([Text("b"), Text("a"), Text("c")])))
+    assert(eis(ec("values", [d]), eints([1, 2, 3])))
+}
+
+test "ev dict dup lit" {
+    // a repeated key of a literal is the error at the place of the second entry, also when it is not the next one
+    ro d = DictLit([EntryExpr { key: lit_text("a"), value: ei(1) }, EntryExpr { key: lit_text("b"), value: ei(2) }, EntryExpr { key: lit_text("a"), value: ei(3) }])
+    assert(eerr(d) == "duplicate_key@$.entries[2]")
+}
+
+test "ev dict dup macro" {
+    // the macro `dict`: the order of the list is the order of the dict, a key made twice is the error (not a later write)
+    ro key_of = lambda1("v", en(Mod, er("v"), ei(3)))
+    ro same = lambda1("v", er("v"))
+    assert(eis(ec("keys", [ec("dict", [eint_list([3, 1, 4]), same, same])]), eints([3, 1, 4])))
+    assert(eis(ec("keys", [ec("dict", [eint_list([4, 3, 1]), same, same])]), eints([4, 3, 1])))
+    assert(eerr(ec("dict", [eint_list([3, 1, 4]), key_of, same])) == "duplicate_key@$")
+}
+
 test "mt first arm" {
     ro arms = [
         arm([CasePattern { type_name: "", name: "Critical", binds: []Bind.new() }], None, lit_text("c")),
