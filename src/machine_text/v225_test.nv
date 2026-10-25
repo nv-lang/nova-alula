@@ -1,0 +1,37 @@
+// v225_test.nv - task 225 (Alula 2.25, AL-133, AL-134) in the translator: `событие.момент` / `event.at` is the field `at` of the event, the former function of the time is refused with the hint,
+// the name of the stamp is taken in a signal and in a form but not in a record, the functions of the time are calls of the catalog.
+module alula.machine_text
+
+import std.text
+
+test "v225 the stamp of the event is the field at of the event" {
+    assert(ex("событие.момент") == tx_text(x_field(x_name("event"), "at")))
+    assert(ex("событие.момент > 0").contains("\"name\":\"at\""))
+}
+
+test "v225 the former function of the time is refused with the hint, in an expression and as an action" {
+    assert(ex("время_сейчас()").starts_with("ERR syntax: `время_сейчас()` в формате 2.24 не бывает (AL-134, с 2.25 время — событие.момент): пишется `событие.момент`; переходного периода нет"))
+    assert(ac("время_сейчас()").starts_with("ERR syntax: `время_сейчас()` в формате 2.24 не бывает (AL-134, с 2.25 время — событие.момент)"))
+    assert(ac("пусть сейчас = время_сейчас()").contains("событие.момент"))
+}
+
+test "v225 the former function of the time is refused in a file of functions" {
+    assert(defs_says("функция f() -> число =>\n  время_сейчас()", "пишется `событие.момент`"))
+}
+
+test "v225 a declaration of an external function by the former name is refused with the hint" {
+    assert(note_says(tiny_with("## Концы", "## Внешние функции\n\n```\nвнешняя функция время_сейчас() изменчивая -> число\n```\n\n## Концы"), "пишется `событие.момент`"))
+}
+
+test "v225 the functions of the time are calls of the catalog" {
+    assert(ex("время_в_текст(0)") == tx_text(x_call("time_to_text", [x_lit(jint(0))])))
+    assert(ex("текст_во_время(\"1970-01-01T00:00:00Z\")") == tx_text(x_call("text_to_time", [x_lit(js("1970-01-01T00:00:00Z"))])))
+}
+
+test "v225 a signal or a form cannot have a field with the name of the stamp" {
+    assert(note_says(tiny_with("разрешить, отказать", "разрешить { момент число }, отказать"), "занято читаемым именем `событие.момент` (AL-134)"))
+}
+
+test "v225 another field of a signal is fine" {
+    assert(!note_says(tiny_with("разрешить, отказать", "разрешить { amount число }, отказать"), "занято читаемым именем"))
+}

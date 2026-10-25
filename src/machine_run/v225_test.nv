@@ -1,0 +1,68 @@
+// v225_test.nv - task 225 (Alula 2.25, AL-134): the stamp of the event `event.at` in the run: it is the stamp of the event, not of the host; one value in a step;
+// a kept answer that is taken again carries the stamp of the step that takes it; the question `accepts_signal` has no event, so a condition that reads the stamp counts as taking the signal.
+module alula.machine_run
+
+import std.text
+import alula.machine.{Text, RecordField, make_record}
+import alula.engine.{Incoming, EventKind}
+
+fn stamped_at(kind EventKind, name str, request Option[str], input str, at int) -> Incoming => {
+    id: "e-1", trace: "t-1", step: 2, kind, name, request, input, at
+}
+
+test "ev225 the start event reads its own stamp, not the clock of the host" {
+    ro m = calc()
+    // the host of `run1` has the clock 1000; the event is stamped 4242: the first read of `event.at` (the entry of Start) is the stamp of the event
+    ro r = run1(m, m.initial(), stamped_at(EventKind.Input, "start", None, "{\"start\":9,\"label\":\"t\"}", 4242))
+    assert(datum_json(r.state, "began") == "4242")
+}
+
+test "ev225 two steps read two stamps" {
+    ro m = calc()
+    ro a = run1(m, m.initial(), stamped_at(EventKind.Input, "start", None, "{\"start\":9,\"label\":\"t\"}", 10))
+    ro b = run1(m, m.initial(), stamped_at(EventKind.Input, "start", None, "{\"start\":9,\"label\":\"t\"}", 20))
+    assert(datum_json(a.state, "began") == "10")
+    assert(datum_json(b.state, "began") == "20")
+}
+
+test "ev225 a kept answer taken again carries the stamp of the step that takes it" {
+    ro m = calc()
+    ro first = stamped_at(EventKind.Input, "start", None, "{\"start\":9,\"label\":\"t\"}", 1111)
+    ro ctx = new_ctx(m, m.initial(), first)
+    ro item = make_record("Held", [
+        RecordField { name: "id", value: Text("answer-3") }, RecordField { name: "kind", value: Text("answered") }, RecordField { name: "name", value: Text("agent_done") },
+        RecordField { name: "request", value: Text("agent-1") }, RecordField { name: "input", value: Text("the reply") }
+    ])
+    ro again = held_incoming(ctx, item, "agent-1")
+    assert(again.at == 1111)
+    assert(again.id == "answer-3" && again.name == "agent_done" && again.input == "the reply")
+    assert(ctx.has_stamp && ctx.stamp == 1111)
+}
+
+// keeper.alula.json with the condition `event.at > 0` on the row of the signal `allow`
+fn keeper_reading_stamp() -> AlulaMachine {
+    ro text = machine_text("keeper.alula.json")
+    ro row = "{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"allow\"},\"actions\""
+    ro with_cond = "{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"allow\"},\"cond\":{\"op\":\">\",\"left\":{\"op\":\"field\",\"of\":{\"op\":\"name\",\"name\":\"event\"},\"name\":\"at\"},\"right\":{\"op\":\"lit\",\"value\":0}},\"actions\""
+    assert(text.contains(row))
+    build_from(text.replace(row, with_cond))
+}
+
+test "ev225 accepts_signal counts a condition that reads the stamp as taking the signal" {
+    ro m = keeper_reading_stamp()
+    ro st = run1(m, m.initial(), signal_in("start", "{}")).state
+    assert(m.accepts_signal(st, "allow"))
+    assert(m.accepts_signal(st, "deny"))
+    assert(!m.accepts_signal(st, "nobody"))
+}
+
+test "ev225 the row with the condition on the stamp takes the signal when the stamp passes" {
+    ro m = keeper_reading_stamp()
+    ro st = run1(m, m.initial(), signal_in("start", "{}")).state
+    ro stamped = run1(m, st, stamped_at(EventKind.Input, "allow", None, "", 5))
+    assert(stamped.moved)
+    assert(datum_json(stamped.state, "allowed") == "1")
+    // the stamp 0 is a stamp too: the condition `event.at > 0` is false, the signal is ignored
+    ro zero = run1(m, st, stamped_at(EventKind.Input, "allow", None, "", 0))
+    assert(datum_json(zero.state, "allowed") == "0")
+}

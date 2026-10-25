@@ -19,7 +19,7 @@
 // A primitive also names what it reads without an argument (`reads`: they join the "Input" of the state of the call, rule 11)
 // and what it writes (`writes`: the data of the machine of an acting one, the service records of a volatile one).
 //
-// `language_registry()` holds the two primitives that the language itself names (`time_now`, `new_id`; spec section 7a, AL-113) and the table of the codes of the language; the other primitives are the
+// `language_registry()` holds the one primitive that the language itself names (`new_id`; spec section 7a, AL-113; since 2.25 the time is the stamp of the event `event.at`, AL-134, and the former function of the time is gone) and the table of the codes of the language; the other primitives are the
 // data of the host (a file `registry.md` in the form of the section 7, read by `parse_registry_table` of `alula.machine_table`): the bodies are the host's, the registry keeps a name, the types and the class.
 module alula.machine
 
@@ -310,15 +310,14 @@ export fn check_call_result(registry Registry, defs TypeDefs, name str, result V
 fn nothing() -> []str => []str.new()
 fn no_params() -> []ParamSpec => []ParamSpec.new()
 
-/// The registry of the language (spec section 7a, AL-113): the two standard primitives that every host and every executor must give, `time_now` (milliseconds of the clock of the executor) and
-/// `new_id` (a new identifier, format 2.5), both of the class `volatile`, and the table of the 35 codes of the language. A host adds its own primitives and codes (`host_registry` of `alula.machine_table`):
+/// The registry of the language (spec section 7a, AL-113, AL-134): the one standard primitive that every host and every executor must give, `new_id` (a new identifier, format 2.5) of the class `volatile`,
+/// and the table of the 35 codes of the language. There is no function of the time since 2.25: the time is the stamp of the event, `event.at`. A host adds its own primitives and codes (`host_registry` of `alula.machine_table`):
 /// the registry of a host is this one and the data of the host.
 export fn language_registry() -> Registry {
     mut reg = new_registry()
-    ro clock = Primitive { name: "time_now", params: no_params(), result: IntType, class: Volatile, reads: nothing(), writes: nothing() }
     // format 2.5, section 7: a built-in primitive; a new identifier (UUID v7), fixed in the event `now` of an operation
     ro fresh = Primitive { name: "new_id", params: no_params(), result: IdType, class: Volatile, reads: nothing(), writes: nothing() }
-    for p in [clock, fresh] {
+    for p in [fresh] {
         match register(reg, p) {
             Ok(u) => ()
             Err(x) => panic("the registry of the language is wrong: ${x.message}")

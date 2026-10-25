@@ -32,6 +32,11 @@ export fn MemoryWorld mut @advance(ms int) -> () {
     @clock_ms = @clock_ms + ms
 }
 
+/// Set the clock to a moment (a scenario that gives the time in the event itself, `"at"` of the event, AL-134).
+export fn MemoryWorld mut @set_clock(ms int) -> () {
+    @clock_ms = ms
+}
+
 /// An event arrives from the party.
 export fn MemoryWorld mut @deliver(event Incoming) -> () {
     @inbox.push(event)

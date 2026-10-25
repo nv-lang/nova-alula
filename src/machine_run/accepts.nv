@@ -42,7 +42,9 @@ export fn AlulaMachine @accepts_signal(state AlulaState, name str) -> bool {
         Some(fields) => ()
         None => return false
     }
-    ro ctx = new_ctx(@, state, Incoming.signal(name, ""))
+    // no event: `event.at` of a condition is not computable here (AL-134), the row counts as taking the signal
+    mut ctx = new_ctx(@, state, Incoming.signal(name, ""))
+    ctx.has_stamp = false
     if rows_take(ctx, @def.common, name) { return true }
     ro at = find_state(@def, state.name)
     if at < 0 { return false }

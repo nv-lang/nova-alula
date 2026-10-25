@@ -73,7 +73,6 @@ test "ac machine error" {
 test "ac call" {
     assert(ac("новый_ид()") == arr([a_call("new_id", [])]))
     assert(ac("новый_ид(1, ход)") == arr([a_call("new_id", [x_lit(jint(1)), x_name("turn")])]))
-    assert(ac("время_сейчас()") == arr([a_call("time_now", [])]))
     assert(ac("нет_примитива()").starts_with("ERR name:"))
     // `вызвать(…)` of the formats before 2.24 is an error with the new writing, once for all (AL-123)
     assert(ac("вызвать(новый_ид)").starts_with("ERR syntax: `вызвать(…)` в формате 2.23 не бывает (AL-123): пишется `имя(арг)`; переходного периода нет"))

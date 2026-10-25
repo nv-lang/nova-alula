@@ -96,7 +96,7 @@ test "actions push" {
 }
 
 test "actions dict order" {
-    // a write to a key that is there keeps its place, a new key goes to the end (the norm of the dict order, format 2.24)
+    // a write to a key that is there keeps its place, a new key goes to the end (the norm of the dict order, format 2.25)
     ro m = actions()
     ro r = run_all(m, m.initial(), [signal_in("push", "y"), signal_in("push", "x"), signal_in("push", "y"), signal_in("push", "z"), signal_in("push", "x")])
     assert(datum_json(r.state, "counts") == "{\"y\":2,\"x\":2,\"z\":1}")
@@ -207,7 +207,7 @@ test "scripted host" {
     ro m = calc()
     mut host = ScriptedHost { at: 4242, replies: [], ids: 0 }
     ro r = run_with(m, m.initial(), start_with("{\"start\":9,\"label\":\"t\"}"), host)
-    assert(datum_json(r.state, "began") == "4242")
+    assert(datum_json(r.state, "began") == "1000")  // the time is the stamp of the event (1000), not the clock of the host (AL-134)
     mut scripted = ScriptedHost { at: 1, replies: [ScriptedReply { name: "other", value: Int(5) }], ids: 0 }
     match scripted.call_primitive("other", []Value.new()) {
         Ok(v) => assert(value_equal(v, Int(5)))

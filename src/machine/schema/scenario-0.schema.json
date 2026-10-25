@@ -23,6 +23,7 @@
         "kind": { "enum": ["signal", "progress", "answer", "failure", "timeout", "start"] },
         "name": { "type": "string", "description": "required for signal and progress; the defaults are answer, failure, timeout, start" },
         "party": { "type": "string", "description": "for a signal: the name of the party that declared it (the owner of a party signal, format 2.13, AL-38); a party that does not declare the signal is a mistake of the scenario; absent: the signal is looked for in the parties and then in the signals of the machine" },
+        "at": { "type": "integer", "description": "the stamp of the event in milliseconds of the epoch (AL-134, Alula 2.25): the clock of the world is set to it before the event is accepted; `event.at` of the machine reads it; absent: the clock of the world as it is (start_at and the steps advance)" },
         "request": { "type": "string", "description": "the id of the request the event answers (agent-1); for `start` the id of the request that started the machine (the request of the call)" },
         "input": { "type": ["string", "object"], "description": "the data of the event: a signal with one field has the value of the field (a text, `\"ivan\"`, not an object), with several fields an object {field: value}, with none no input; the input of the start is an object (format 2.7, P-8)" },
         "code": { "type": "string", "description": "the failure code of a `failure` event (ModelRefused)" },

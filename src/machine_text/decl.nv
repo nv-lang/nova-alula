@@ -41,6 +41,14 @@ fn path_under(cx TxCx, name str) -> []str {
     out
 }
 
+// The word of the stamp of the event in the language of the file: `момент` (`событие.момент`), `at` (`event.at`).
+fn ev_stamp_word(cx TxCx) -> str {
+    ro full = kw(cx.words, "readable", "event.at")
+    ro dot = full.find(".") ?? -1
+    if dot >= 0 { return full[dot + 1..] }
+    full
+}
+
 // A field `имя тип` of a record, of a case or of a signal; returns the JSON {"name", "type"}. `what` says whose field it is in a message; the owner of the field is `cx.env.opath`.
 fn decl_field(mut p TxP, mut cx TxCx, what str) -> Result[TxJ, TranslateError] {
     ro n = p_tok(p)
@@ -54,6 +62,10 @@ fn decl_field(mut p TxP, mut cx TxCx, what str) -> Result[TxJ, TranslateError] {
         cx.warnings.push(tx_err(n.line, n.col, "warning", "поле `${n.text}` названо как функция списка каталога (AL-78, AL-106): `x.${n.text}` — поле, `x.${n.text}(…)` — вызов функции списка, их отличают скобки"))
     }
     if p_is(p, ":") { return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "после имени поля тип пишется без двоеточия (формат 2.3)")) }
+    // AL-134: the field of a signal, of a part of an answer or of a form is read as `событие.<поле>`; the name of the stamp of the event (`момент` / `at`) is taken, a record may have it (it is not read after `событие`)
+    if cx.env.opath.len() != 1 && n.text == ev_stamp_word(cx) {
+        cx_error(cx, n, "check", "имя поля `${n.text}` занято читаемым именем `${kw(cx.words, "readable", "event.at")}` (AL-134): штамп события; поле сигнала, части ответа или формы так не называется")
+    }
     declare_field(cx, n, en)
     ro type_text = ty_parse(p, cx)?
     Ok(jobj([kv("name", js(en)), kv("type", js(type_text))]))

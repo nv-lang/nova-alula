@@ -18,7 +18,7 @@ fn boss_text() -> str => `# Машина: Босс
 
 - machine: Boss
 - machine_version: 1
-- format: 2.24
+- format: 2.25
 
 ## Типы
 
@@ -80,7 +80,7 @@ fn meeting_json() -> str => json_of(meeting_examples())
 fn with_prims_in(reg Registry, text str, names []str) -> str {
     mut rows = []str.new()
     for n in names {
-        if n == "time_now" || n == "new_id" { continue }
+        if n == "new_id" { continue }
         match find_primitive(reg, n) {
             Some(p) => rows.push(declaration_of(p))
             None => rows.push("внешняя функция ${n}()")

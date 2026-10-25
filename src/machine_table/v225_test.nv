@@ -1,0 +1,29 @@
+// v225_test.nv - task 225 (Alula 2.25, AL-134) in the check of the tree: the former function of the time is refused with the hint, the field `at` of a signal is taken by the stamp of the event.
+module alula.machine_table
+
+import std.text
+
+test "v225 the call of the former function of the time in a tree is refused with the hint" {
+    ro in_action = tiny_rows(wait_rows_with(jprim("time_now", "")))
+    assert(!ok_text(in_action))
+    assert(says(in_action, "функция time_now убрана в формате 2.25 (AL-134)"))
+    assert(says(in_action, "`event.at`"))
+}
+
+test "v225 the field at of a signal is taken by the stamp of the event" {
+    ro text = tiny().replace("{\"name\":\"go\"}", "{\"name\":\"go\",\"fields\":[{\"name\":\"at\",\"type\":\"int\"}]}")
+    assert(!ok_text(text))
+    assert(says(text, "the field at of the signal go of the party user is taken by the readable name `event.at`"))
+}
+
+test "v225 a signal with another field is fine" {
+    ro text = tiny().replace("{\"name\":\"go\"}", "{\"name\":\"go\",\"fields\":[{\"name\":\"moment\",\"type\":\"int\"}]}")
+    assert(!says(text, "is taken by the readable name"))
+}
+
+test "v225 the field at of the form of an enumeration is taken by the stamp of the event" {
+    ro issues = issues_of(tiny().replace("\"parties\":", "\"types\":{\"variants\":[{\"name\":\"Shape\",\"cases\":[{\"name\":\"Dot\",\"fields\":[{\"name\":\"at\",\"type\":\"int\"}]}]}]},\"parties\":"))
+    mut found = false
+    for line in issues { if line.contains("the field at of the form Shape.Dot is taken") { found = true } }
+    assert(found)
+}

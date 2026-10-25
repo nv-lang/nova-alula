@@ -142,7 +142,7 @@ test "constants" {
 }
 
 test "with replies" {
-    ro m = with_replies(calc(), [ScriptedReply { name: "time_now", value: Int(1) }])
+    ro m = with_replies(calc(), [ScriptedReply { name: "read_clock", value: Int(1) }])
     assert(m.replies.len() == 1)
     ro r = run1(m, m.initial(), start_with("{\"start\":9,\"label\":\"t\"}"))
     assert(datum_json(r.state, "began") == "1000")

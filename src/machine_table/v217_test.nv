@@ -25,36 +25,36 @@ fn warnings17(text str) -> []str {
 
 // ---- the version -------------------------------------------------------------------------------------------------------------------------------
 
-test "v217 the version of the language is 2.24" {
-    assert(ALULA_VERSION == "2.24")
-    assert(alula_versions() == ["2.24"])
+test "v217 the version of the language is 2.25" {
+    assert(ALULA_VERSION == "2.25")
+    assert(alula_versions() == ["2.25"])
 }
 
-test "v217 a tree of the version 2.24 loads" {
-    assert(ok_text(tiny().replace("\"format\":\"machine/2\"", "\"format\":\"machine/2\",\"alula_version\":\"2.24\"")))
+test "v217 a tree of the version 2.25 loads" {
+    assert(ok_text(tiny().replace("\"format\":\"machine/2\"", "\"format\":\"machine/2\",\"alula_version\":\"2.25\"")))
 }
 
 test "v217 a tree of the version 2.23 is refused" {
     ro text = tiny().replace("\"format\":\"machine/2\"", "\"format\":\"machine/2\",\"alula_version\":\"2.23\"")
     assert(!ok_text(text))
     assert(says(text, "got 2.23"))
-    assert(says(text, "must be 2.24"))
+    assert(says(text, "must be 2.25"))
 }
 
 test "v217 a tree of the version 2.22 is refused" {
     ro text = tiny().replace("\"format\":\"machine/2\"", "\"format\":\"machine/2\",\"alula_version\":\"2.22\"")
     assert(!ok_text(text))
     assert(says(text, "got 2.22"))
-    assert(says(text, "must be 2.24"))
+    assert(says(text, "must be 2.25"))
     ro older = tiny().replace("\"format\":\"machine/2\"", "\"format\":\"machine/2\",\"alula_version\":\"2.14\"")
     assert(!ok_text(older))
     assert(says(older, "2.14"))
-    assert(says(older, "2.24"))
+    assert(says(older, "2.25"))
 }
 
-test "v217 the schema names the version 2.24" {
+test "v217 the schema names the version 2.25" {
     ro schema = text_of_file(schema_files(), "machine-2.schema.json")
-    assert(schema.contains("\"enum\": [\"2.24\"]"))
+    assert(schema.contains("\"enum\": [\"2.25\"]"))
     assert(!schema.contains("2.14"))
 }
 
@@ -133,7 +133,7 @@ test "v217 a free input state with an idle term is refused" {
 }
 
 test "v217 a free input state with edits is refused" {
-    ro text = with17("\"party\":\"user\",", "\"party\":\"user\",\"edits\":\"n\",\"edit_check\":\"time_now\",")
+    ro text = with17("\"party\":\"user\",", "\"party\":\"user\",\"edits\":\"n\",\"edit_check\":\"call_step\",")
     assert(!ok_text(text))
     assert(says(text, "free input"))
 }

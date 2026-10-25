@@ -1051,6 +1051,16 @@ fn ex_postfix(mut p TxP, mut cx TxCx, sc TxScope, e TxJ) -> Result[TxJ, Translat
                 return Err(tx_err(t.line, t.col, "syntax", "метод `.${t.text}(…)` бывает только у функций списка (${list_function_words(cx.words)}); остальные функции вызываются как `имя(…)` (AL-78)"))
             }
             p_adv(p)
+            // AL-134: after `событие` / `event` the readable names (`момент` / `at`, `идентификатор`, `сторона`) come first: a field of a record that is named alike must not hide the stamp of the event
+            if tx_text(e) == tx_text(x_name("event")) {
+                match kw_key(cx.words, "readable", "${kw(cx.words, "readable", "event")}.${t.text}") {
+                    Some(k) => {
+                        ro dot = k.find(".") ?? -1
+                        if dot >= 0 { return ex_postfix(p, cx, sc, x_field(e, k[dot + 1..])) }
+                    }
+                    None => ()
+                }
+            }
             return ex_postfix(p, cx, sc, x_field(e, tr_field_name(cx, t)))
         }
         return Err(p_fail(p, "после `.` ожидается поле"))
@@ -1205,8 +1215,8 @@ fn ex_call(mut p TxP, mut cx TxCx, sc TxScope, name TxTok) -> Result[TxJ, Transl
     mut fn_en = ""
     match kw_key(cx.words, "catalog", name.text) {
         Some(en) => {
-            // `время_сейчас` and `новый_ид` are declared by the language beforehand (7а): a call of the same node as a call of a declared external function
-            if en == "time_now" || en == "new_id" {
+            // `новый_ид` is declared by the language beforehand (7а): a call of the same node as a call of a declared external function
+            if en == "new_id" {
                 if cx.env.in_defs_file {
                     cx_error(cx, name, "check", "в файле функций нет внешних функций (AL-123): `${name.text}` — стандартная внешняя функция, её зовёт машина; функция файла читает только свои аргументы")
                 }

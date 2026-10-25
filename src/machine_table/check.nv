@@ -93,7 +93,7 @@ fn is_snake(s str) -> bool {
 
 fn catalog_names() -> []str => [
     "filter", "map", "any", "all", "count", "first_where", "fold", "dict", "range", "keys", "values", "length", "has", "require",
-    "remove", "without_key", "text", "float", "int", "max", "min", "record_text", "require_non_empty", "journal_event", "concat"
+    "remove", "without_key", "text", "float", "int", "max", "min", "record_text", "require_non_empty", "journal_event", "concat", "time_to_text", "text_to_time"
 ]
 
 fn macro_names() -> []str => ["filter", "map", "any", "all", "count", "first_where", "fold", "dict"]
@@ -500,6 +500,25 @@ fn check_names(mut cx Checker) -> () {
             if !is_identifier(c.name) { cx_issue(cx, "$.types", "the name of a case of ${v.name} must be a latin identifier, got ${c.name}") }
             for f in c.fields {
                 if !is_identifier(f.name) { cx_issue(cx, "$.types", "the name of a field of ${v.name}.${c.name} must be a latin identifier, got ${f.name}") }
+                if f.name == "at" { cx_issue(cx, "$.types", "the field at of the form ${v.name}.${c.name} is taken by the readable name `event.at` (`событие.момент`, AL-134): the stamp of the event") }
+            }
+        }
+    }
+    // AL-134: the field `at` of a signal or of a part of an answer would hide the stamp of the event (`event.at`)
+    for s in def.signals {
+        for f in s.fields {
+            if f.name == "at" { cx_issue(cx, "$.signals", "the field at of the signal ${s.name} is taken by the readable name `event.at` (`событие.момент`, AL-134): the stamp of the event") }
+        }
+    }
+    for pt in def.parties {
+        for s in pt.signals {
+            for f in s.fields {
+                if f.name == "at" { cx_issue(cx, "$.parties", "the field at of the signal ${s.name} of the party ${pt.name} is taken by the readable name `event.at` (`событие.момент`, AL-134): the stamp of the event") }
+            }
+        }
+        for s in pt.progress {
+            for f in s.fields {
+                if f.name == "at" { cx_issue(cx, "$.parties", "the field at of the part ${s.name} of the party ${pt.name} is taken by the readable name `event.at` (`событие.момент`, AL-134): the stamp of the event") }
             }
         }
     }
@@ -1348,7 +1367,7 @@ fn check_positions(mut cx Checker) -> () {
 // ---- the external functions declared in the file against the registry of the host (AL-123) ---------------------------------------------------------
 
 // The standard external functions of the language (spec 7a): the machine does not declare them, they are not in `primitives`.
-fn standard_externals() -> []str => ["time_now", "new_id"]
+fn standard_externals() -> []str => ["new_id"]
 
 // The base words of a type in the language of the messages: `int` is `число`, `text` is `строка`; the rest of the text is as the tree writes it.
 export fn type_words(text str) -> str {
@@ -1445,6 +1464,11 @@ fn check_declared_primitives(mut cx Checker) -> () {
     }
     collect_call_names(def, used)
     for pn in used {
+        if pn == "time_now" {
+            // AL-134: the stamp of the event replaced the standard function of the time
+            cx_issue(cx, "$.primitives", "функция time_now убрана в формате 2.25 (AL-134): с 2.25 время — `event.at` (в Алуле `событие.момент`), штамп события; переходного периода нет")
+            continue
+        }
         if !declared.contains(pn) && !standard_externals().contains(pn) { cx_issue(cx, "$.primitives", "функция ${pn}: вызывается, но не объявлена в разделе внешних функций") }
     }
 }

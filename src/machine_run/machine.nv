@@ -6,11 +6,11 @@ import std.encoding.json.{Json, JsonValue, JsonObject}
 import std.identifiers.uuid.{Uuid}
 import std.testing.handlers as th
 import alula.engine.{Incoming, Environment, Transition}
-import alula.machine.{Value, Null, Int, Text, EvalError, PrimitiveFailed, value_to_json, value_from_json}
+import alula.machine.{Value, Null, Text, EvalError, PrimitiveFailed, value_to_json, value_from_json}
 import alula.machine_table.{find_state}
 
-/// ScriptedHost: the default host of the primitives of a machine (`PrimitiveHost`). The clock `time_now` is the stamp of the event it was made
-/// for (`at`): a step reads the world through its event only; any other primitive answers what the script says, or fails. `new_id` (format 2.5)
+/// ScriptedHost: the default host of the primitives of a machine (`PrimitiveHost`). The stamp `at` of the event it was made for is the seed of `new_id` (the time itself is read as `event.at`, AL-134,
+/// not through the host): a step reads the world through its event only; any other primitive answers what the script says, or fails. `new_id` (format 2.5)
 /// is a UUID v7 made by `Uuid.v7()` under the clock `at` and a random source seeded with the stamp and the number of the call in the step (`ids`):
 /// a step is a function of the state and the event, and the same step gives the same ids. A host of the product that reads files and writes
 /// buffers is another `PrimitiveHost`, passed to `alula_step`, and gives real random ids.
@@ -23,7 +23,6 @@ fn scripted_id(at int, n int) -> str {
 }
 
 export fn ScriptedHost mut @call_primitive(name str, args []Value) -> Result[Value, EvalError] {
-    if name == "time_now" { return Ok(Int(@at)) }
     for r in @replies {
         if r.name == name { return Ok(r.value) }
     }

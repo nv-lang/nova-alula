@@ -1,4 +1,4 @@
-// v224_ext_test.nv - task 175 (Alula 2.24, AL-123, AL-129): the section `Внешние функции`, the call `имя(арг)` in an expression and as an action, the refusal of the former forms, the file of functions, the named tail and the pairs.
+// v224_ext_test.nv - task 175 (Alula 2.25, AL-123, AL-129): the section `Внешние функции`, the call `имя(арг)` in an expression and as an action, the refusal of the former forms, the file of functions, the named tail and the pairs.
 module alula.machine_text
 
 import std.text
@@ -17,7 +17,7 @@ test "v224 the former heading and the former call are refused with the hint, onc
     assert(note_says(old_section, "`## Примитивы` в формате 2.23 не бывает (AL-123): пишется `## Внешние функции`; переходного периода нет"))
     ro old_call = with_ext("внешняя функция close_agent_turn() действующая", "; вызвать(close_agent_turn)")
     assert(note_says(old_call, "`вызвать(…)` в формате 2.23 не бывает (AL-123): пишется `имя(арг)`; переходного периода нет"))
-    ro old_in_expr = tiny_with("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | вызвать(время_сейчас) > 0 | — | КОНЕЦ |")
+    ro old_in_expr = tiny_with("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | вызвать(новый_ид) > 0 | — | КОНЕЦ |")
     assert(note_says(old_in_expr, "`вызвать(…)` в формате 2.23 не бывает (AL-123)"))
 }
 
@@ -32,20 +32,19 @@ test "v224 a declaration has no body, is not repeated, names a class of the file
 test "v224 the call of an external function is a call by name, in an expression and as an action" {
     ro as_action = json_of_ext("внешняя функция close_agent_turn() действующая", "; close_agent_turn()")
     assert(as_action.contains("{\"do\":\"call\",\"primitive\":\"close_agent_turn\",\"args\":[]}"))
-    ro in_expr = translate_report(tiny_with("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | время_сейчас() > 0 | — | КОНЕЦ |")).json
-    assert(in_expr.contains("{\"op\":\"primitive_call\",\"name\":\"time_now\",\"args\":[]}"))
+    ro in_expr = translate_report(tiny_with("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | новый_ид() > 0 | — | КОНЕЦ |")).json
+    assert(in_expr.contains("{\"op\":\"primitive_call\",\"name\":\"new_id\",\"args\":[]}"))
     // a name that nobody declares is an error, an action too
     assert(note_says(with_ext("", "; close_agent_turn()"), "внешняя функция `close_agent_turn` не объявлена"))
 }
 
 test "v224 a file of functions has no external functions, the standard ones either" {
     assert(defs_says("внешняя функция читать(x число) изменчивая -> число", "в файле функций внешних функций нет (AL-123)"))
-    assert(defs_says("функция f() -> число =>\n  время_сейчас()", "в файле функций нет внешних функций (AL-123)"))
     assert(defs_says("функция f() -> ид =>\n  новый_ид()", "в файле функций нет внешних функций (AL-123)"))
 }
 
 fn defs_says(body str, needle str) -> bool {
-    ro text = "# Функции: проба\n\nfunctions_version: 1\nformat: 2.24\n\n## Типы\n—\n\n## Константы\n—\n\n## Функции\n\n```\n${body}\n```\n"
+    ro text = "# Функции: проба\n\nfunctions_version: 1\nformat: 2.25\n\n## Типы\n—\n\n## Константы\n—\n\n## Функции\n\n```\n${body}\n```\n"
     for e in translate_definitions(text).errors {
         if e.message.contains(needle) { return true }
     }

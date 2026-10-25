@@ -235,6 +235,7 @@ fn nested_ids_open(node Kid) -> []str {
 
 // One operation of a step on an engine.
 fn apply_op(op str, event ScEvent, ms int, mut e Engine[AlulaMachine, AlulaState], mut world MemoryWorld, machine AlulaMachine, id str) -> Engine[AlulaMachine, AlulaState] {
+    if event.has_at && (op == "feed" || op == "accept" || op == "deliver") { world.set_clock(event.at) }
     if op == "feed" { engine_feed[AlulaState, AlulaMachine](e, world, scenario_incoming(event)) }
     if op == "accept" { engine_accept[AlulaState, AlulaMachine](e, world, scenario_incoming(event)) }
     if op == "dispatch" { engine_dispatch[AlulaState, AlulaMachine](e, world) }
@@ -423,7 +424,7 @@ export fn scenario_through_parent(sc Scenario, parent_machine str, parent_reques
     if first.op != "feed" || first.event.kind != "start" { return None }
     mut steps = []ScStep.new()
     steps.push(ScStep {
-        op: "feed", event: ScEvent { kind: "start", name: "start", request: parent_request, input: first.event.input, code: "", source: "", party: "" }, ms: 0,
+        op: "feed", event: ScEvent { kind: "start", name: "start", request: parent_request, input: first.event.input, code: "", source: "", party: "", has_at: first.event.has_at, at: first.event.at }, ms: 0,
         expect: nothing_expected(), host: []ScHost.new(), on: "", also: []ScAlso.new()
     })
     mut i = 1

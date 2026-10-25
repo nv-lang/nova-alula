@@ -53,7 +53,10 @@ type Planned enum
 type Ctx {
     def MachineDef, table DefTable, name str, started bool, input Value, data Value,
     event EventVal, locals []Binding, record Value, planned []Planned,
-    fired bool, finished bool, defect bool, chain int, taken []str, limit int, trace str, step_no int, again bool
+    fired bool, finished bool, defect bool, chain int, taken []str, limit int, trace str, step_no int, again bool,
+    // the stamp of the event of the step (AL-134): milliseconds of the epoch, put by the engine once at the arrival; one value for the whole step (a replayed held answer reads the stamp of the step that replays it);
+    // `has_stamp` is false in the question `accepts_signal`, which has no event: `event.at` is then not computable and the row counts as taking the signal
+    stamp int, has_stamp bool
 }
 
 type Fault { defect bool, code str, params []JournalParam, kind str, message str }
@@ -109,12 +112,14 @@ fn data_put(data Value, name str, value Value) -> Value {
     }
 }
 
-fn event_record(ev EventVal) -> Value {
+fn event_record(ev EventVal, stamp int, has_stamp bool) -> Value {
     // ORACLE-WORKAROUND(45): a copy of a `ro` list (`ev.fields`) built by hand in a loop; write `mut fields = ev.fields` when item 45 is fixed
     mut fields = []RecordField.new()
     for f in ev.fields { fields.push(f) }
     fields.push(RecordField { name: "id", value: Text(ev.id) })
     fields.push(RecordField { name: "party", value: Text(ev.party) })
+    // `event.at` (AL-134): the stamp of the event, the same for every read of the step; absent when the step has no event (the name is then not computable)
+    if has_stamp { fields.push(RecordField { name: "at", value: Int(stamp) }) }
     make_record("Event", fields)
 }
 
@@ -133,7 +138,7 @@ fn scope_of(ctx Ctx) -> Scope {
     bs.push(Binding { name: "step", value: Int(ctx.step_no) })
     bs.push(Binding { name: "state", value: Text(ctx.name) })
     bs.push(Binding { name: "party", value: Text(ctx.event.party) })
-    bs.push(Binding { name: "event", value: event_record(ctx.event) })
+    bs.push(Binding { name: "event", value: event_record(ctx.event, ctx.stamp, ctx.has_stamp) })
     bs.push(Binding { name: "transition_note", value: ctx.record })
     bs.push(Binding { name: "all_data", value: ctx.data })
     for l in ctx.locals { bs.push(l) }
@@ -798,7 +803,7 @@ fn ctx_with(ctx Ctx, left_name str, left_value Value, right_name str, right_valu
     Ctx {
         def: ctx.def, table: ctx.table, name: ctx.name, started: ctx.started, input: ctx.input, data: ctx.data, event: ctx.event, locals,
         record: ctx.record, planned: ctx.planned, fired: ctx.fired, finished: ctx.finished, defect: ctx.defect, chain: ctx.chain,
-        taken: ctx.taken, limit: ctx.limit, trace: ctx.trace, step_no: ctx.step_no, again: ctx.again
+        taken: ctx.taken, limit: ctx.limit, trace: ctx.trace, step_no: ctx.step_no, again: ctx.again, stamp: ctx.stamp, has_stamp: ctx.has_stamp
     }
 }
 

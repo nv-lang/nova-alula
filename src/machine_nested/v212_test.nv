@@ -8,7 +8,7 @@ import alula.examples.{sample_registry}
 import alula.machine_text.{translate_checked, render, render_machine, TranslateReport}
 
 // A file at 2.12 (the fixtures of the older tasks are migrated by the same replace).
-fn at212(text str) -> str => text.replace("- format: 2.11\n", "- format: 2.24\n")
+fn at212(text str) -> str => text.replace("- format: 2.11\n", "- format: 2.25\n")
 
 fn meeting212() -> str => at212(meeting_examples())
 
@@ -34,7 +34,7 @@ test "v212 meeting reads" {
     ro report = checked(meeting212())
     if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
     assert(report.errors.len() == 0)
-    assert(report.json.contains("\"alula_version\":\"2.24\""))
+    assert(report.json.contains("\"alula_version\":\"2.25\""))
 }
 
 test "v212 fragments key" {
@@ -295,7 +295,7 @@ fn pure_registry() -> Registry {
 
 fn fork_text(condition str) -> str {
     ro with_fork = boss212().replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | reply = итог | CHECK |").replace("### DONE — конец", "### CHECK — развилка\n- Читает: reply\n\n| № | Условие | Действия | Куда |\n|---|---|---|---|\n| 1 | ${condition} | — | DONE |\n| 2 | иначе | — | DONE |\n\n### DONE — конец")
-    with_prims_in(pure_registry(), with_fork, ["big", "time_now"])
+    with_prims_in(pure_registry(), with_fork, ["big", "new_id"])
 }
 
 fn checked_pure(text str) -> TranslateReport => translate_checked(text, pure_registry())
@@ -317,17 +317,17 @@ test "v212 pure call inside an expression" {
 }
 
 test "v212 volatile call as a function in a condition" {
-    ro text = fork_text("время_сейчас() > 0")
+    ro text = fork_text("новый_ид() == новый_ид()")
     ro report = checked_pure(text)
     assert(report.errors.len() > 0)
     assert(note_says_in(report, "volatile"))
-    assert(note_says_in(report, "time_now"))
+    assert(note_says_in(report, "new_id"))
 }
 
 test "v212 volatile call word in a condition" {
-    ro report = checked_pure(fork_text("время_сейчас() > 0"))
+    ro report = checked_pure(fork_text("новый_ид() == новый_ид()"))
     assert(report.errors.len() > 0)
-    assert(note_says_in(report, "time_now"))
+    assert(note_says_in(report, "new_id"))
 }
 
 test "v212 unknown function still refused" {
@@ -379,7 +379,7 @@ test "v212 field named as a datum read by the rows" {
     assert(report.errors.len() == 0)
 }
 
-// ---- the parse is one function per role (AL-33 turned into AL-131 in 2.24) ----------------------------------------------------------------
+// ---- the parse is one function per role (AL-33 turned into AL-131 in 2.25) ----------------------------------------------------------------
 
 fn role_fns_registry() -> Registry {
     mut reg = sample_registry()

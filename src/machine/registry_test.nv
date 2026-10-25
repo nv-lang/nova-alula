@@ -88,13 +88,13 @@ fn ritem(severity str) -> Value {
 
 test "rg register" {
     mut reg = new_registry()
-    ro p = rprim("time_now", []ParamSpec.new(), IntType, Volatile)
+    ro p = rprim("read_clock", []ParamSpec.new(), IntType, Volatile)
     match register(reg, p) {
         Ok(u) => assert(true)
         Err(x) => assert(false)
     }
-    match find_primitive(reg, "time_now") {
-        Some(found) => assert(found.name == "time_now" && class_word(found.class) == "volatile")
+    match find_primitive(reg, "read_clock") {
+        Some(found) => assert(found.name == "read_clock" && class_word(found.class) == "volatile")
         None => assert(false)
     }
     match find_primitive(reg, "other") {
@@ -154,8 +154,8 @@ test "cs acting" {
 
 test "ps call" {
     ro reg = rfixture()
-    assert(rpos_ok(reg, call_primitive("time_now", []Expr.new()), ForkEntryPos))
-    assert(!rpos_ok(reg, call_primitive("time_now", []Expr.new()), ConditionPos))
+    assert(rpos_ok(reg, call_primitive("read_note", []Expr.new()), ForkEntryPos))
+    assert(!rpos_ok(reg, call_primitive("read_note", []Expr.new()), ConditionPos))
     assert(rpos_ok(reg, call_primitive("commit_turn", []Expr.new()), EndEntryPos))
     assert(!rpos_ok(reg, call_primitive("commit_turn", []Expr.new()), ForkEntryPos))
     match check_call_position(reg, "commit_turn", InputPos) {
@@ -199,10 +199,9 @@ test "ps unknown" {
 }
 
 test "ps language" {
-    // the two primitives of the language (spec 7a) are always there: both of the class volatile, no parameters
+    // the primitive of the language (spec 7a) is always there: of the class volatile, no parameters
     ro reg = language_registry()
-    assert(reg.primitives.len() == 2)
-    assert(rpos_ok(reg, call_primitive("time_now", []Expr.new()), OperationEntryPos))
+    assert(reg.primitives.len() == 1)
     assert(rpos_ok(reg, call_primitive("new_id", []Expr.new()), OperationEntryPos))
     // new_id in the actions of a row is allowed by the class (volatile, AL-116, AL-117); its own rule (a binding of the entry of an operation) is a check of the table
     assert(rpos_ok(reg, call_primitive("new_id", []Expr.new()), ActionPos))
@@ -250,7 +249,7 @@ test "ag count types" {
     assert(rargs("profile_of", []Value.new()) == "$: wrong argument count for profile_of: expected 1, got 0")
     assert(rargs("profile_of", [rtext("a"), rtext("b")]) == "$: wrong argument count for profile_of: expected 1, got 2")
     assert(rargs("profile_of", [Int(1)]) == "$.party: expected text, got int")
-    assert(rargs("time_now", []Value.new()) == "ok")
+    assert(rargs("read_note", []Value.new()) == "ok")
     assert(rargs("no_such", []Value.new()) == "$: the primitive no_such is not registered")
 }
 
@@ -269,8 +268,8 @@ test "ag variant" {
 }
 
 test "rs checked" {
-    assert(rresult("time_now", Int(1000)))
-    assert(!rresult("time_now", Text("1000")))
+    assert(rresult("step_number", Int(1000)))
+    assert(!rresult("step_number", Text("1000")))
     assert(rresult("finish_turn", Null))
     assert(rresult("commit_turn", Bool(true)))
     assert(!rresult("finish_turn", Int(1)))

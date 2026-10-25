@@ -517,6 +517,15 @@ fn rn_expr(mut cx RnCx, v RJ, locals []str) -> str {
         return rn_global(cx, name)
     }
     if op == "field" {
+        // the fields of the event that have a readable name (`event.at` is `событие.момент`, AL-134; `event.id`, `event.party`) are written by the word of the table of words
+        ro of_event = match rj_get(v, "of") {
+            Some(x) => rj_gstr(x, "op") == "name" && rj_gstr(x, "name") == "event" && !locals.contains("event")
+            None => false
+        }
+        if of_event {
+            ro readable = kw(cx.words, "readable", "event.${rj_gstr(v, "name")}")
+            if readable != "event.${rj_gstr(v, "name")}" { return readable }
+        }
         ro base = match rj_get(v, "of") {
             Some(x) => rn_sub(cx, x, locals, 10)
             None => "none"
@@ -677,7 +686,7 @@ fn rn_nested_list(mut cx RnCx, v RJ, locals []str) -> str {
     rn_expr(cx, v, locals)
 }
 
-// A call of an external function (AL-123): `имя(арг, …)`, then the pairs `ключ: значение` of the named tail in the order of the writing (AL-129). The standard `time_now` and `new_id` are the words of the table (`время_сейчас`, `новый_ид`).
+// A call of an external function (AL-123): `имя(арг, …)`, then the pairs `ключ: значение` of the named tail in the order of the writing (AL-129). The standard `new_id` is a word of the table (`новый_ид`).
 fn rn_prim_call(mut cx RnCx, name str, args []RJ, named []RJ, locals []str) -> str {
     mut parts = []str.new()
     for a in args { parts.push(rn_expr(cx, a, locals)) }
@@ -688,7 +697,7 @@ fn rn_prim_call(mut cx RnCx, name str, args []RJ, named []RJ, locals []str) -> s
         }
         parts.push("${rj_gstr(pair, "name")}: ${value}")
     }
-    ro shown = if name == "time_now" || name == "new_id" { rn_kw(cx, "catalog", name) } else { name }
+    ro shown = if name == "new_id" { rn_kw(cx, "catalog", name) } else { name }
     "${shown}(${parts.join(", ")})"
 }
 

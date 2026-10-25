@@ -8,7 +8,7 @@ fn head() -> str => `# Машина: Проба
 
 machine: Probe
 machine_version: 1
-format: 2.24
+format: 2.25
 
 `
 
@@ -272,15 +272,15 @@ test "dc reserved name" {
 // ---- the primitives ----------------------------------------------------------------------------------------------------------------------
 
 test "dc primitives" {
-    // AL-123: an external function is a line of the block of code under `## Внешние функции`; its JSON name is the row of `## Имена` or is built by itself; `время_сейчас` is the language's and is not written
+    // AL-123: an external function is a line of the block of code under `## Внешние функции`; its JSON name is the row of `## Имена` or is built by itself; `новый_ид` is the language's and is not written
     ro text = jsn("## Имена\n\n| имя | JSON-имя |\n|---|---|\n| прочитать_часы | read_clock |\n\n## Внешние функции\n\n```\nвнешняя функция close_agent_turn() действующая\nвнешняя функция прочитать_часы(зона строка) изменчивая -> число\nвнешняя функция сложить(а число, б число) -> число\n```\n")
     assert(text.contains("\"primitives\":[{\"name\":\"close_agent_turn\",\"params\":[],\"class\":\"acting\"},{\"name\":\"read_clock\",\"params\":[{\"name\":\"зона\",\"type\":\"text\"}],\"result\":\"int\",\"class\":\"volatile\"},{\"name\":\"slozhit\",\"params\":[{\"name\":\"а\",\"type\":\"int\"},{\"name\":\"б\",\"type\":\"int\"}],\"result\":\"int\",\"class\":\"pure\"}]"))
-    assert(says("## Внешние функции\n\n```\nвнешняя функция время_сейчас() изменчивая -> число\n```\n", "стандартная внешняя функция языка"))
+    assert(says("## Внешние функции\n\n```\nвнешняя функция новый_ид() изменчивая -> ид\n```\n", "стандартная внешняя функция языка"))
 }
 
 fn prim_ru(class str) -> str => "## Внешние функции\n\n```\nвнешняя функция читать() ${class} -> число\n```\n"
 
-fn prim_en(class str) -> str => "# Machine: Probe\n\n- machine: Probe\n- machine_version: 1\n- format: 2.24\n- language: en\n\n## External functions\n\n```\nexternal fn read() ${class} -> int\n```\n"
+fn prim_en(class str) -> str => "# Machine: Probe\n\n- machine: Probe\n- machine_version: 1\n- format: 2.25\n- language: en\n\n## External functions\n\n```\nexternal fn read() ${class} -> int\n```\n"
 
 fn says_en(text str, needle str) -> bool {
     for e in translate_report(text).errors {

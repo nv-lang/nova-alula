@@ -552,7 +552,7 @@ fn input_scope_ctx(ctx Ctx, input Value) -> Ctx {
     Ctx {
         def: ctx.def, table: ctx.table, name: ctx.name, started: ctx.started, input, data: ctx.data, event: ctx.event, locals,
         record: ctx.record, planned: ctx.planned, fired: ctx.fired, finished: ctx.finished, defect: ctx.defect, chain: ctx.chain,
-        taken: ctx.taken, limit: ctx.limit, trace: ctx.trace, step_no: ctx.step_no, again: ctx.again
+        taken: ctx.taken, limit: ctx.limit, trace: ctx.trace, step_no: ctx.step_no, again: ctx.again, stamp: ctx.stamp, has_stamp: ctx.has_stamp
     }
 }
 
@@ -594,7 +594,7 @@ fn new_ctx(machine AlulaMachine, current AlulaState, event Incoming) -> Ctx {
         def: machine.def, table: machine.table, name: current.name, started: current.started, input: current.input, data: current.data,
         event: EventVal { kind: EvTimeout, name: "", id: "", request: "", party: "", fields: []RecordField.new(), value: Null, reason: "" },
         locals: []Binding.new(), record: Null, planned: []Planned.new(), fired: false, finished: false, defect: false, chain: 0,
-        taken: []str.new(), limit: machine.limit, trace: event.trace, step_no: event.step, again: false
+        taken: []str.new(), limit: machine.limit, trace: event.trace, step_no: event.step, again: false, stamp: event.at, has_stamp: true
     }
 }
 
@@ -858,6 +858,12 @@ fn hold_answer(mut ctx Ctx, event Incoming) -> () {
     note(ctx, "answer_held", [param("request", rid), param("state", ctx.name)])
 }
 
+// The event that a kept outcome becomes when it is taken again: it carries the stamp of the step that takes it (AL-134), not the stamp of the step that kept it.
+fn held_incoming(ctx Ctx, item Value, rid str) -> Incoming => {
+    id: held_text(item, "id"), trace: ctx.trace, step: ctx.step_no, kind: event_kind_of(held_text(item, "kind")), name: held_text(item, "name"), request: Some(rid),
+    input: held_text(item, "input"), at: ctx.stamp
+}
+
 // The kept outcomes that the state now waits for are taken one after another, as if they had just come: the request leaves the open ones, the event runs (a chain may lead to another state that waits for another kept outcome).
 fn replay_held(mut ctx Ctx, mut host PrimitiveHost) -> Result[(), Fault] {
     mut rounds = 0
@@ -879,10 +885,7 @@ fn replay_held(mut ctx Ctx, mut host PrimitiveHost) -> Result[(), Fault] {
         }
         ctx.data = data_put(ctx.data, "$held", List(rest))
         ro rid = held_text(item, "request")
-        ro again = Incoming {
-            id: held_text(item, "id"), trace: ctx.trace, step: ctx.step_no, kind: event_kind_of(held_text(item, "kind")), name: held_text(item, "name"), request: Some(rid),
-            input: held_text(item, "input"), at: 0
-        }
+        ro again = held_incoming(ctx, item, rid)
         match read_event(ctx, again) {
             ReadReady(ev) => {
                 note(ctx, "answer_replayed", [param("request", rid)])

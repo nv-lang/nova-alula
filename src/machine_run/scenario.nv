@@ -14,6 +14,7 @@
 //
 // "do": `feed` (accept the event and send what it ordered), `accept` (accept only: the process dies before the send), `dispatch`, `pump`,
 // `deliver` (an event arrives at the link and waits for `pump`), `advance` (`ms` of the clock), `restart` (a new engine over the same world).
+// "event.at" (optional): the stamp of the event in milliseconds, the clock of the world is set to it before the event is accepted (AL-134: `event.at` of a machine reads it).
 // "event.kind": `signal` (a signal of a party or of the machine, AL-38), `progress`, `answer`, `failure` (`code` is the failure code), `timeout`, `start`
 // (`input` is the object of the input of the machine). `input` is a text, or an object that is written as JSON.
 module alula.machine_run
@@ -25,8 +26,8 @@ import alula.engine.{Machine, Engine, MemoryWorld, Incoming, EventKind, JournalE
 import alula.machine.{value_equal, value_from_json, value_json}
 import alula.machine_table.{LoadError, MachineDef}
 
-/// ScEvent: an event of a scenario step as the file writes it. `party` is, for a signal, the name or the id of the party that declared it (format 2.13, AL-38); empty when the step does not say.
-export type ScEvent { kind str, name str, request str, input str, code str, source str, party str }
+/// ScEvent: an event of a scenario step as the file writes it. `at` (with `has_at`) is the key `"at"`: the stamp of the event in milliseconds, the clock of the world is set to it before the event is accepted (AL-134: the scenario gives the time in the event). `party` is, for a signal, the name or the id of the party that declared it (format 2.13, AL-38); empty when the step does not say.
+export type ScEvent { kind str, name str, request str, input str, code str, source str, party str, has_at bool, at int }
 
 /// ExpParam, ExpEntry: an expected journal entry: the code and the parameters in order.
 export type ExpParam { name str, value str }
@@ -138,7 +139,7 @@ fn step_ops() -> []str => ["feed", "accept", "dispatch", "pump", "deliver", "adv
 
 fn sj_event(v JsonValue, path str) -> Result[ScEvent, LoadError] {
     ro o = sj_obj(v, path)?
-    sj_only(o, ["kind", "name", "request", "input", "code", "source", "party"], path)?
+    sj_only(o, ["kind", "name", "request", "input", "code", "source", "party", "at"], path)?
     ro kind = sj_need_str(o, "kind", path)?
     if kind == "word" { return Err(sle("${path}.kind", "the step word is gone: a signal of a party is the event signal (format 2.13, AL-38; there is no transition period)")) }
     if !event_kinds().contains(kind) { return Err(sle("${path}.kind", "the kind of an event must be signal, progress, answer, failure, timeout or start, got ${kind}")) }
@@ -161,13 +162,22 @@ fn sj_event(v JsonValue, path str) -> Result[ScEvent, LoadError] {
         }
         None => ()
     }
+    mut has_at = false
+    mut at = 0
+    if sj_present(o, "at") {
+        has_at = true
+        at = match (o.get("at") ?? JsonValue.null()).int() {
+            Some(n) => n
+            None => return Err(sle("${path}.at", "at is an integer: the stamp of the event in milliseconds of the epoch"))
+        }
+    }
     Ok(ScEvent {
         kind, name, request: sj_str_or(o, "request", "", path)?, input, code: sj_str_or(o, "code", "", path)?,
-        source: sj_str_or(o, "source", "", path)?, party: sj_str_or(o, "party", "", path)?
+        source: sj_str_or(o, "source", "", path)?, party: sj_str_or(o, "party", "", path)?, has_at, at
     })
 }
 
-fn empty_event() -> ScEvent => { kind: "", name: "", request: "", input: "", code: "", source: "", party: "" }
+fn empty_event() -> ScEvent => { kind: "", name: "", request: "", input: "", code: "", source: "", party: "", has_at: false, at: 0 }
 
 fn sj_journal(v JsonValue, path str) -> Result[[]ExpEntry, LoadError] {
     ro items = match v.array() {
@@ -451,6 +461,7 @@ export fn drive_scenario[S, M Machine[S]](machine M, sc Scenario) -> []StepTrace
     mut traces = []StepTrace.new()
     for s in sc.steps {
         ro from = world.journal.len()
+        if s.event.has_at && (s.op == "feed" || s.op == "accept" || s.op == "deliver") { world.set_clock(s.event.at) }
         if s.op == "feed" { engine_feed[S, M](e, world, scenario_incoming(s.event)) }
         if s.op == "accept" { engine_accept[S, M](e, world, scenario_incoming(s.event)) }
         if s.op == "dispatch" { engine_dispatch[S, M](e, world) }
@@ -652,6 +663,7 @@ export fn drive_table_scenario(first_machine AlulaMachine, sc Scenario) -> []Ste
             }
             e.machine = with_replies(machine, replies)
         }
+        if s.event.has_at && (s.op == "feed" || s.op == "accept" || s.op == "deliver") { world.set_clock(s.event.at) }
         if s.op == "feed" { engine_feed[AlulaState, AlulaMachine](e, world, scenario_incoming(s.event)) }
         if s.op == "accept" { engine_accept[AlulaState, AlulaMachine](e, world, scenario_incoming(s.event)) }
         if s.op == "dispatch" { engine_dispatch[AlulaState, AlulaMachine](e, world) }

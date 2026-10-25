@@ -133,10 +133,10 @@ fn ac_stmt(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError]
     ac_assign(p, cx, sc)
 }
 
-// Is the word one of the external functions that the language declares beforehand (`время_сейчас`, `новый_ид`, 7а)?
+// Is the word the external function that the language declares beforehand (`новый_ид`, 7а)?
 fn standard_call(cx TxCx, w str) -> bool {
     match kw_key(cx.words, "catalog", w) {
-        Some(en) => en == "time_now" || en == "new_id"
+        Some(en) => en == "new_id"
         None => false
     }
 }

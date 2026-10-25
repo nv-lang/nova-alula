@@ -409,9 +409,8 @@ fn call_clash(mut cx TxCx, n TxTok, json str) -> () {
     ro en_words = words_load("en")
     // AL-107: `new_id` (`новый_ид`) is the built-in primitive of the host; it stands in the table of words under the kind `catalog` (section 12) but is no function of the catalog, so the name, as written and as JSON, is not checked
     ro ru_new_id = kw(ru_words, "catalog", "new_id")
-    ro ru_time_now = kw(ru_words, "catalog", "time_now")
     for cand in [n.text, json] {
-        if cand == "new_id" || cand == ru_new_id || cand == "time_now" || cand == ru_time_now { continue }
+        if cand == "new_id" || cand == ru_new_id { continue }
         if cand == "range" || kw_has(ru_words, "catalog", cand) || kw_has(en_words, "catalog", cand) {
             cx_error(cx, n, "check", "имя `${cand}` совпадает с функцией каталога (AL-81): определение и примитив называются иначе, чем `фильтр`/`filter`, `склеить`/`concat`, `range` и другие функции каталога")
             return
@@ -592,7 +591,12 @@ fn ext_one(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
         }
         None => { json = decl_json(p, cx, n, "примитива", "примитивы", [n.text])? }
     }
-    if standard_call(cx, n.text) || json == "time_now" || json == "new_id" {
+    // AL-134: the former function of the time is gone with 2.25, a declaration of an external function by that name is refused with the same hint as a call
+    match former_find(cx.words.lang, "call", n.text) {
+        Some(f) => return Err(tx_err(n.line, n.col, "syntax", former_message(f)))
+        None => ()
+    }
+    if standard_call(cx, n.text) || json == "new_id" {
         return Err(tx_err(n.line, n.col, "syntax", "`${n.text}` — стандартная внешняя функция языка (7а): она заранее объявлена и в разделе `## ${kw(cx.words, "section", "External functions")}` не пишется (AL-123)"))
     }
     if pair_has(cx.env.prims, n.text) { cx_error(cx, n, "name", "внешняя функция `${n.text}` объявлена повторно (AL-123)") }
