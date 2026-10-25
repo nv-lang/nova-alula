@@ -1,6 +1,6 @@
 // v217_test.nv - task 151: the samples of the methodology at the state of the format 2.22 (the illustration of the agent step in both languages and the record of the machine "Meeting"), copied as they
 // are into `cases/`, go through the translator without a hand edit and give the numbers that the methodology gives (the agent step: 13 states, 37 rows of transitions, 13 rows of ends, 16 definitions,
-// 21 codes of the journal, 149 JSON names, 2 rows of `## Имена`; the meeting: 30 states, 67 rows of transitions, 12 rows of ends, 29 data, 22 primitives, 225 JSON names, 14 rows of `## Имена`). The JSON names
+// 21 codes of the journal, 148 JSON names, 2 rows of `## Имена`; the meeting: 30 states, 67 rows of transitions, 12 rows of ends, 29 data, 22 primitives, 225 JSON names, 14 rows of `## Имена`). The JSON names
 // that the translator builds are the names of the reference script of the package (`tools/check-alula-keywords.py`): the files `cases/*-names-222*.tsv` are its output.
 module alula.machine_agent
 
@@ -70,6 +70,20 @@ fn missing17(left []str, right []str) -> str {
 }
 
 // ---- the text of a sample: the numbers by counting ---------------------------------------------------------------------------------------------
+
+// The lines of the blocks of code that start with the prefix (the declarations of the external functions, AL-123).
+fn count_code_lines_starting17(text str, prefix str) -> int {
+    mut n = 0
+    mut in_code = false
+    for line in text.split("\n") {
+        if line.starts_with("```") {
+            in_code = !in_code
+            continue
+        }
+        if in_code && line.starts_with(prefix) { n += 1 }
+    }
+    n
+}
 
 fn count_lines_starting17(text str, prefix str) -> int {
     mut n = 0
@@ -191,7 +205,7 @@ test "v217 meeting numbers" {
     assert(count_transition_rows17(text) == 67)
     assert(count_table_rows17(text, "## Концы") == 12)
     assert(count_table_rows17(text, "## Данные") == 29)
-    assert(count_table_rows17(text, "## Примитивы") == 22)
+    assert(count_code_lines_starting17(text, "внешняя функция ") == 22)
     assert(count_table_rows17(text, "## Имена") == 14)
 }
 
@@ -254,12 +268,12 @@ fn names17(o JsonObject, key str, field str) -> []str {
 
 // ---- AC-1: the names of the translator are the names of the reference ---------------------------------------------------------------------
 
-test "v217 agent step ru has 149 JSON names" {
-    assert(translate_names(ru17s()).len() == 149)
+test "v217 agent step ru has 148 JSON names" {
+    assert(translate_names(ru17s()).len() == 148)
 }
 
-test "v217 agent step en has 149 JSON names" {
-    assert(translate_names(en17s()).len() == 149)
+test "v217 agent step en has 148 JSON names" {
+    assert(translate_names(en17s()).len() == 148)
 }
 
 test "v217 agent step ru names are the names of the reference" {
@@ -291,7 +305,7 @@ fn jsons17(entries []str) -> []str {
 test "v217 agent step ru and en have one set of JSON names" {
     ro ru = jsons17(reference17("ru"))
     ro en = jsons17(reference17("en"))
-    assert(ru.len() == 149)
+    assert(ru.len() == 148)
     assert(missing17(ru, en) == "")
     assert(missing17(en, ru) == "")
 }

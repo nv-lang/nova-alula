@@ -56,7 +56,7 @@ test "cs pilot" {
     if report.errors.len() > 0 { panic(lines_of_errors(report, "agent-step.alula.md")) }
     assert(report.errors.len() == 0)
     assert(report.rows_noted == 0)
-    assert(report.rows_total == 120)
+    assert(report.rows_total == 119)
     assert(report.json.contains("\"request_limit\":{\"op\":\"lit\",\"value\":1}"))
 }
 
@@ -93,7 +93,7 @@ test "cs examples" {
     if report.errors.len() > 0 { panic(lines_of_errors(report, "format-examples.alula.md")) }
     assert(report.errors.len() == 0)
     assert(report.rows_noted == 0)
-    assert(report.rows_total == 70)
+    assert(report.rows_total == 68)
 }
 
 test "cs examples shape" {
@@ -153,11 +153,11 @@ fn defs_has(d DefsReport, needle str) -> bool {
 }
 
 test "cs defs file errors" {
-    ro text = "# Функции: арифметика_цикла\n\nfunctions_version: 1\nformat: 2.4\n\n## Типы\n—\n\n## Функции\n\nфункция потолок_исчерпан(номер число>=1) -> булево =>\n  вызвать(время) > 1\n"
+    ro text = "# Функции: арифметика_цикла\n\nfunctions_version: 1\nformat: 2.4\n\n## Типы\n—\n\n## Функции\n\nфункция потолок_исчерпан(номер число>=1) -> булево =>\n  время_сейчас() > 1\n"
     ro report = translate_definitions(text)
     assert(defs_has(report, "формат файла определений должен быть 2.23"))
     assert(defs_has(report, "три раздела по порядку"))
-    assert(defs_has(report, "в файле определений нет `вызвать`"))
+    assert(defs_has(report, "в файле функций нет внешних функций (AL-123)"))
 }
 
 test "cs cycle hash 26" {

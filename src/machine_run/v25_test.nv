@@ -16,7 +16,7 @@ fn ids_text(second_id str) -> str {
     ro data = `{"name":"sid","type":"?id","initial":{"expr":{"op":"lit","value":null}}},{"name":"sid2","type":"?id","initial":{"expr":{"op":"lit","value":null}}},{"name":"u_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"}`
     ro party = `{"name":"user","id":"user","kind":"human","counter":"u_attempt","signals":[{"name":"go"}]}`
     ro ends = `{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"call","fn":"text","args":[{"op":"name","name":"sid"}]}}}]}`
-    `{"format":"machine/2","machine":"Ids","version":"1","input":{"fields":[]},"primitives":["new_id"],"data":[${data}],"parties":[${party}],"initial":"Open","states":[${open},${wait},${done}],"ends":${ends}}`
+    `{"format":"machine/2","machine":"Ids","version":"1","input":{"fields":[]},"data":[${data}],"parties":[${party}],"initial":"Open","states":[${open},${wait},${done}],"ends":${ends}}`
 }
 
 fn ids_machine() -> AlulaMachine => build_from(ids_text(`{"op":"primitive_call","name":"new_id","args":[]}`))

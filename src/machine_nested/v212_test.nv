@@ -288,14 +288,14 @@ test "v212 call without the fields it needs" {
 
 fn pure_registry() -> Registry {
     mut reg = sample_registry()
-    ro p = Primitive { name: "big", params: [ParamSpec { name: "n", spec: IntType }], result: BoolType, class: Pure, reads: []str.new(), writes: []str.new() }
+    ro p = Primitive { name: "big", params: [ParamSpec { name: "n", spec: IntType, tail: false }], result: BoolType, class: Pure, reads: []str.new(), writes: []str.new() }
     ro r = register(reg, p)
     reg
 }
 
 fn fork_text(condition str) -> str {
     ro with_fork = boss212().replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | reply = итог | CHECK |").replace("### DONE — конец", "### CHECK — развилка\n- Читает: reply\n\n| № | Условие | Действия | Куда |\n|---|---|---|---|\n| 1 | ${condition} | — | DONE |\n| 2 | иначе | — | DONE |\n\n### DONE — конец")
-    with_prims(with_fork, ["big", "time_now"])
+    with_prims_in(pure_registry(), with_fork, ["big", "time_now"])
 }
 
 fn checked_pure(text str) -> TranslateReport => translate_checked(text, pure_registry())
@@ -306,12 +306,9 @@ test "v212 pure call as a function" {
     assert(report.json.contains("\"op\":\"primitive_call\",\"name\":\"big\""))
 }
 
-test "v212 pure call as a function equals the call word" {
-    ro a = checked_pure(fork_text("big(2)"))
-    ro b = checked_pure(fork_text("вызвать(big, 2)"))
-    assert(a.errors.len() == 0)
-    assert(b.errors.len() == 0)
-    assert(a.json == b.json)
+test "v212 the former call word is refused with the new writing" {
+    ro report = checked_pure(fork_text("вызвать(big, 2)"))
+    assert(note_says_in(report, "`вызвать(…)` в формате 2.23 не бывает (AL-123): пишется `имя(арг)`"))
 }
 
 test "v212 pure call inside an expression" {
@@ -320,7 +317,7 @@ test "v212 pure call inside an expression" {
 }
 
 test "v212 volatile call as a function in a condition" {
-    ro text = fork_text("time_now() > 0")
+    ro text = fork_text("время_сейчас() > 0")
     ro report = checked_pure(text)
     assert(report.errors.len() > 0)
     assert(note_says_in(report, "volatile"))
@@ -328,7 +325,7 @@ test "v212 volatile call as a function in a condition" {
 }
 
 test "v212 volatile call word in a condition" {
-    ro report = checked_pure(fork_text("вызвать(time_now) > 0"))
+    ro report = checked_pure(fork_text("время_сейчас() > 0"))
     assert(report.errors.len() > 0)
     assert(note_says_in(report, "time_now"))
 }
@@ -369,7 +366,7 @@ test "v212 field named as a datum with an if" {
 }
 
 test "v212 field named as a datum with a call" {
-    ro text = with_prims(boss212().replace("| count | 1 | сторона |", "| count | вызвать(call_step) | сторона |"), ["call_step"])
+    ro text = with_prims(boss212().replace("| count | 1 | сторона |", "| count | call_step() | сторона |"), ["call_step"])
     ro report = checked(text)
     if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
     assert(report.json.contains("\"op\":\"primitive_call\",\"name\":\"call_step\""))
@@ -386,8 +383,8 @@ test "v212 field named as a datum read by the rows" {
 
 fn roles_registry() -> Registry {
     mut reg = sample_registry()
-    ro answer = ParamSpec { name: "answer", spec: RecordType("CallOutput") }
-    ro role = ParamSpec { name: "role", spec: TextType }
+    ro answer = ParamSpec { name: "answer", spec: RecordType("CallOutput"), tail: false }
+    ro role = ParamSpec { name: "role", spec: TextType, tail: false }
     ro p = Primitive { name: "read_by_role", params: [answer, role], result: RecordType("CallOutput"), class: Volatile, reads: []str.new(), writes: []str.new() }
     ro r1 = register(reg, p)
     ro r2 = add_role(reg, "read_by_role", "author", RecordType("CallOutput"), []str.new())
@@ -395,7 +392,7 @@ fn roles_registry() -> Registry {
     reg
 }
 
-fn role_text(role str, result str) -> str => with_prims(boss212().replace("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput); разбор: read_by_role(\"${role}\") -> ${result} | — |"), ["read_by_role"])
+fn role_text(role str, result str) -> str => with_prims_in(roles_registry(), boss212().replace("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput); разбор: read_by_role(\"${role}\") -> ${result} | — |"), ["read_by_role"])
 
 fn checked_roles(text str) -> TranslateReport => translate_checked(text, roles_registry())
 
@@ -419,7 +416,7 @@ test "v212 role unknown" {
 }
 
 test "v212 role without a literal" {
-    ro text = with_prims(boss212().replace("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput); разбор: read_by_role -> CallOutput | — |"), ["read_by_role"])
+    ro text = with_prims_in(roles_registry(), boss212().replace("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput); разбор: read_by_role -> CallOutput | — |"), ["read_by_role"])
     assert(checked_roles(text).errors.len() > 0)
 }
 

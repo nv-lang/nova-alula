@@ -131,16 +131,16 @@ test "a154 the meeting keeps its numbers" {
 
 // The fingerprint of a sample is the hash of its text by the rule of the hash of a file of functions (section 8): the samples are the files of the commit 87f59cb of the methodology with the classes of the primitives and the words of the column `пишет` migrated by task 170 (AL-116: `reading` is `volatile`, `writing` and `irreversible` are `acting`; AL-122: `строки` is `действия`); the fingerprints of the files as they came were a2812af20cde, 9652269ab7b7 and 126641e835c7 (these are fingerprints of the whole text, not the hashes of the files of functions of section 8, which the migration does not touch).
 test "a154 the samples are the files of the methodology" {
-    assert(definitions_hash(ru17s()) == "7d6f4f8ff231")
-    assert(definitions_hash(en17s()) == "5dd5b7169fca")
-    assert(definitions_hash(meeting17s()) == "06b8417839e6")
+    assert(definitions_hash(ru17s()) == "246d60a9cd09")
+    assert(definitions_hash(en17s()) == "68f21137a628")
+    assert(definitions_hash(meeting17s()) == "fb210d8ee561")
 }
 
 // ---- the primitive new_id and the names of the calls (AL-107) ---------------------------------------------------------------------------------
 
-fn ru_new_id154() -> str => ru17s().replace("| time_now | — | число | изменчивая | — | — |", "| time_now | — | число | изменчивая | — | — |\n| новый_ид | — | ид | изменчивая | — | — |")
+fn ru_new_id154() -> str => ru17s().replace("внешняя функция reply_validation() изменчивая -> ПроверкаОтвета", "внешняя функция reply_validation() изменчивая -> ПроверкаОтвета\nвнешняя функция новый_ид() изменчивая -> ид")
 
-fn en_new_id154() -> str => en17s().replace("| time_now | — | int | volatile | — | — |", "| time_now | — | int | volatile | — | — |\n| new_id | — | id | volatile | — | — |")
+fn en_new_id154() -> str => en17s().replace("external fn reply_validation() volatile -> ReplyCheck", "external fn reply_validation() volatile -> ReplyCheck\nexternal fn new_id() volatile -> id")
 
 fn clash154(text str) -> bool {
     for e in translate_checked(text, sample_registry()).errors {
@@ -172,7 +172,7 @@ test "a154 a function named as a function of the catalog is still a clash" {
 }
 
 test "a154 a primitive named as a function of the catalog is still a clash" {
-    ro text = ru17s().replace("| time_now | — | число | изменчивая | — | — |", "| time_now | — | число | изменчивая | — | — |\n| склеить | — | число | изменчивая | — | — |")
+    ro text = ru17s().replace("внешняя функция reply_validation() изменчивая -> ПроверкаОтвета", "внешняя функция reply_validation() изменчивая -> ПроверкаОтвета\nвнешняя функция склеить() изменчивая -> число")
     assert(text != ru17s())
     assert(clash154(text))
 }
