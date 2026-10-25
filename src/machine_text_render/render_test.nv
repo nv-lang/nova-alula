@@ -289,6 +289,29 @@ test "rn expression precedence" {
     assert(render_expression_in(bin("and", bin("or", lit("true"), lit("false")), lit("true")), "en", []) == "(true or false) and true")
     assert(render_expression_in(bin("or", bin("and", lit("true"), lit("false")), lit("true")), "en", []) == "true and false or true")
     assert(render_expression_in(bin("==", bin("+", lit("1"), lit("2")), lit("3")), "en", []) == "1 + 2 == 3")
+    // AL-132, the priorities of Nova: `или` < `и` < the comparisons < `??` (right) < `+ -` < `* / %` < the prefix `-` and `не`; the comparisons do not chain
+    ro not_true = `{"op":"not","operand":${lit("true")}}`
+    assert(render_expression_in(bin("??", bin("or", lit("true"), lit("false")), lit("1")), "en", []) == "(true or false) ?? 1")
+    assert(render_expression_in(bin("??", lit("1"), bin("and", lit("true"), lit("false"))), "en", []) == "1 ?? (true and false)")
+    assert(render_expression_in(bin("??", bin("<", lit("1"), lit("2")), lit("3")), "ru", []) == "(1 < 2) ?? 3")
+    assert(render_expression_in(bin("??", lit("1"), bin("==", lit("2"), lit("3"))), "ru", []) == "1 ?? (2 == 3)")
+    assert(render_expression_in(bin("??", not_true, lit("1")), "en", []) == "not true ?? 1")
+    assert(render_expression_in(bin("??", lit("1"), not_true), "en", []) == "1 ?? not true")
+    assert(render_expression_in(bin("??", bin("+", lit("1"), lit("2")), bin("*", lit("3"), lit("4"))), "en", []) == "1 + 2 ?? 3 * 4")
+    assert(render_expression_in(bin("??", lit("1"), bin("+", lit("2"), lit("3"))), "en", []) == "1 ?? 2 + 3")
+    assert(render_expression_in(bin("+", bin("??", lit("1"), lit("2")), lit("3")), "en", []) == "(1 ?? 2) + 3")
+    assert(render_expression_in(bin("+", lit("1"), bin("??", lit("2"), lit("3"))), "en", []) == "1 + (2 ?? 3)")
+    assert(render_expression_in(bin("??", lit("1"), bin("??", lit("2"), lit("3"))), "en", []) == "1 ?? 2 ?? 3")
+    assert(render_expression_in(bin("??", bin("??", lit("1"), lit("2")), lit("3")), "en", []) == "(1 ?? 2) ?? 3")
+    assert(render_expression_in(bin("<", bin("<", lit("1"), lit("2")), lit("3")), "en", []) == "(1 < 2) < 3")
+    assert(render_expression_in(bin("==", lit("1"), bin("!=", lit("2"), lit("3"))), "en", []) == "1 == (2 != 3)")
+    assert(render_expression_in(bin("==", bin("<", lit("1"), lit("2")), lit("true")), "en", []) == "(1 < 2) == true")
+    assert(render_expression_in(bin("and", bin("<", lit("1"), lit("2")), bin("<", lit("3"), lit("4"))), "en", []) == "1 < 2 and 3 < 4")
+    assert(render_expression_in(`{"op":"not","operand":${bin("==", lit("1"), lit("2"))}}`, "en", []) == "not (1 == 2)")
+    assert(render_expression_in(`{"op":"not","operand":${bin("and", lit("true"), lit("false"))}}`, "ru", []) == "не (истина и ложь)")
+    assert(render_expression_in(bin("==", not_true, lit("true")), "en", []) == "(not true) == true")
+    assert(render_expression_in(bin("==", lit("true"), not_true), "en", []) == "true == not true")
+    assert(render_expression_in(bin("and", not_true, bin(">", lit("1"), lit("0"))), "en", []) == "not true and 1 > 0")
 }
 
 test "rn expression forms" {
