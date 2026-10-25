@@ -137,7 +137,8 @@ fn go_to_open() -> str {
 
 fn keep_sid() -> str => jassign("sid", jn("fresh"))
 
-fn listed(text str) -> str => text.replace("\"parties\":", "\"primitives\":[\"new_id\"],\"parties\":")
+// `new_id` belongs to the language (7a): the tree does not list it (AL-123)
+fn listed(text str) -> str => text
 
 fn with_open(value str, row_actions str) -> str {
     listed(tiny_with(data_sid("?id", lit_null()), open_state(value, row_actions, "Decide"), go_to_open(), tiny_ends_rows()))

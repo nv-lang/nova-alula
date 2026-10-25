@@ -189,7 +189,7 @@ test "v212 role result types" {
 
 test "v212 add role" {
     mut reg = new_registry()
-    ro p = Primitive { name: "pr", params: [ParamSpec { name: "reply", spec: TextType }, ParamSpec { name: "role", spec: TextType }], result: TextType, class: Volatile, reads: []str.new(), writes: []str.new() }
+    ro p = Primitive { name: "pr", params: [ParamSpec { name: "reply", spec: TextType, tail: false }, ParamSpec { name: "role", spec: TextType, tail: false }], result: TextType, class: Volatile, reads: []str.new(), writes: []str.new() }
     assert(register(reg, p).is_ok())
     assert(add_role(reg, "pr", "a", IntMin(0), ["x"]).is_ok())
     assert(add_role(reg, "pr", "a", IntMin(0), []str.new()).is_err())

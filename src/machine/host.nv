@@ -4,7 +4,7 @@
 //   `registry.md`  the tables of the section 7: the primitives `name | parameters | result | class | reads | writes`, the roles of a parse primitive `primitive | role | result | reads`, and the
 //                  records and the variants that the signatures use `type | kind | members`. The names are the JSON names of the registry of the host; the types are written as the tree
 //                  `machine/2` writes them (`int>=0`, `?text`, `[]Finding`, `"a" | "b"`, see `parse_spec`); a bar inside a cell is `\|`; `—` is an empty list; a list of reads and writes is
-//                  separated by `;`. The tables are told apart by the first cell of the header (`name`/`имя`, `primitive`/`примитив`, `type`/`тип`); the sets of types are told apart by the heading
+//                  separated by `;`; the last parameter may be the named tail `...name: type` (AL-129). The tables are told apart by the first cell of the header (`name`/`имя`, `primitive`/`примитив`, `type`/`тип`); the sets of types are told apart by the heading
 //                  above the table (`## Types`, `## Types: session`).
 //   `journal.md`   the table of the codes `Machine | Code | Russian template | Parameters` (the form of `journal_language.md`).
 // `host_registry` joins the data of the host with the registry of the language: the check of a table runs against the union.
@@ -216,9 +216,15 @@ fn hs_type_sets(rows []HostTypeRow, known TypeDefs) -> Result[[]HostTypeSet, str
 fn hs_params(cell str, known TypeDefs, line int) -> Result[[]ParamSpec, str] {
     mut out = []ParamSpec.new()
     if hs_is_none(cell) { return Ok(out) }
-    for part in hs_split_top(cell, ";") {
-        ro f = hs_field(part, known, line)?
-        out.push(ParamSpec { name: f.name, spec: f.spec })
+    ro parts = hs_split_top(cell, ";")
+    mut at = 0
+    for part in parts {
+        // the named tail of a primitive (AL-129) is written `...name: type` and stands last
+        ro tail = part.starts_with("...")
+        ro f = hs_field(if tail { part[3..].trim_ascii() } else { part }, known, line)?
+        if tail && at + 1 != parts.len() { return Err(hs_err(line, "the named tail `${part}` stands last in the parameters (AL-129)")) }
+        out.push(ParamSpec { name: f.name, spec: f.spec, tail })
+        at += 1
     }
     Ok(out)
 }

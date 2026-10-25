@@ -11,7 +11,7 @@ module alula.machine_table
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
 import std.unicode.{GeneralCategory}
-import alula.machine.{Expr, TypeDefs, FieldDef, Bind, DefFn, Registry, Position, check_expr_positions, check_call_position, find_primitive, primitive_names, class_word, journal_find, find_role, has_roles}
+import alula.machine.{Expr, TypeDefs, FieldDef, Bind, DefFn, Registry, Position, check_expr_positions, check_call_position, find_primitive, primitive_names, has_tail, class_word, journal_find, find_role, has_roles}
 import alula.machine.{ConditionPos, InputPos, ProfilePos, ForkEntryPos, OperationEntryPos, EndEntryPos, AcceptPos, ActionPos}
 import alula.machine.{Pure, Volatile, Value, Text, TypeSpec, TextSet, IdType, OptionalType, VariantType, spec_text, is_uuid}
 
@@ -108,7 +108,12 @@ fn kids(e Expr) -> []Expr {
         IndexOf { target, index } => [target, index]
         CallFn { name, args } => args
         Lambda { params, body } => [body]
-        CallPrimitive { name, args } => args
+        CallPrimitive { name, args, named } => {
+            mut out = []Expr.new()
+            for a in args { out.push(a) }
+            for f in named { out.push(f.value) }
+            out
+        }
         MatchOn { subject, arms } => {
             mut out = [subject]
             for a in arms {
@@ -303,12 +308,13 @@ fn sites_of_actions(mut cx Checker, actions []Action, path str, entry Position, 
                 sites_of_actions(cx, then_actions, "${p}.then", entry, state, scope)
                 sites_of_actions(cx, else_actions, "${p}.else", entry, state, scope)
             }
-            CallAct { name, args } => {
+            CallAct { name, args, named } => {
                 mut k = 0
                 for arg in args {
                     add_site(cx, "${p}.args[${k}]", arg, entry, area_body(), state, scope)
                     k += 1
                 }
+                for f in named { add_site(cx, "${p}.named.${f.name}", f.value, entry, area_body(), state, scope) }
             }
             MachineErrorAct { code, params } => {
                 for q in params { add_site(cx, "${p}.params.${q.name}", q.value, entry, area_body(), state, scope) }
@@ -1178,7 +1184,7 @@ fn check_writes_in(mut cx Checker, actions []Action, path str, accept bool, frag
             MachineErrorAct { code, params } => {
                 if accept { cx_issue(cx, p, "On accept has no machine_error (format 4.4)") }
             }
-            CallAct { name, args } => {
+            CallAct { name, args, named } => {
                 if accept { cx_issue(cx, p, "On accept has no call of an acting primitive (format 4.4)") }
             }
             CancelOpenAct { party, except } => {
@@ -1336,20 +1342,110 @@ fn check_positions(mut cx Checker) -> () {
         check_call_actions(cx, r.actions, "$.common_events[${i}].actions", ActionPos)
         i += 1
     }
-    // the primitives in the section Primitives
-    for pn in def.primitives {
-        match find_primitive(cx.registry, pn) {
-            Some(p) => ()
-            None => cx_issue(cx, "$.primitives", "the primitive ${pn} is not registered")
+    check_declared_primitives(cx)
+}
+
+// ---- the external functions declared in the file against the registry of the host (AL-123) ---------------------------------------------------------
+
+// The standard external functions of the language (spec 7a): the machine does not declare them, they are not in `primitives`.
+fn standard_externals() -> []str => ["time_now", "new_id"]
+
+// The base words of a type in the language of the messages: `int` is `число`, `text` is `строка`; the rest of the text is as the tree writes it.
+export fn type_words(text str) -> str {
+    mut out = ""
+    mut word = ""
+    mut quoted = false
+    for c in text.chars() {
+        ro one = "${c}"
+        ro in_word = !quoted && ((one >= "a" && one <= "z") || (one >= "A" && one <= "Z") || (one >= "0" && one <= "9") || one == "_")
+        if in_word {
+            word = "${word}${one}"
+            continue
+        }
+        if word != "" {
+            out = "${out}${type_word(word)}"
+            word = ""
+        }
+        if one == "\"" { quoted = !quoted }
+        out = "${out}${one}"
+    }
+    if word != "" { out = "${out}${type_word(word)}" }
+    out
+}
+
+fn type_word(word str) -> str {
+    if word == "int" { return "число" }
+    if word == "text" { return "строка" }
+    if word == "float" { return "вещественное" }
+    if word == "bool" { return "булево" }
+    if word == "id" { return "ид" }
+    if word == "nothing" { return "ничего" }
+    word
+}
+
+fn no_spaces(text str) -> str {
+    mut out = ""
+    for c in text.chars() {
+        ro one = "${c}"
+        if one != " " { out = "${out}${one}" }
+    }
+    out
+}
+
+fn class_in_words(class str) -> str {
+    if class == "pure" { return "чистая" }
+    if class == "volatile" { return "изменчивая" }
+    "действующая"
+}
+
+// Every external function that the file declares is looked up in the registry of the host by its JSON name: the number and the types of the parameters, the tail, the type of the result and the class must be the registry's;
+// the names of the parameters need not agree. A function that the registry lacks is an error, a function of the registry that the file does not declare is allowed. The hidden reads and writes are the registry's.
+fn check_declared_primitives(mut cx Checker) -> () {
+    ro def = cx.def
+    mut at = 0
+    for d in def.primitives {
+        ro place = "$.primitives[${at}]"
+        at += 1
+        if standard_externals().contains(d.name) {
+            cx_issue(cx, place, "функция ${d.name}: стандартная внешняя функция языка (7а) заранее объявлена, в файле её не объявляют")
+            continue
+        }
+        match find_primitive(cx.registry, d.name) {
+            None => cx_issue(cx, place, "функция ${d.name}: нет в реестре хозяина")
+            Some(p) => {
+                if p.params.len() != d.params.len() {
+                    cx_issue(cx, place, "функция ${d.name}: число параметров в файле ${d.params.len()}, в реестре ${p.params.len()}")
+                } else {
+                    mut k = 0
+                    for q in d.params {
+                        ro r = p.params[k]
+                        if q.tail != r.tail {
+                            cx_issue(cx, place, "функция ${d.name}: параметр ${k + 1} в файле ${if q.tail { "именованный хвост" } else { "обычный" }}, в реестре ${if r.tail { "именованный хвост" } else { "обычный" }}")
+                        } else if no_spaces(q.type_text) != no_spaces(spec_text(r.spec)) {
+                            cx_issue(cx, place, "функция ${d.name}: параметр ${k + 1} в файле ${type_words(q.type_text)}, в реестре ${type_words(spec_text(r.spec))}")
+                        }
+                        k += 1
+                    }
+                }
+                ro in_file = if d.result == "" { "nothing" } else { d.result }
+                if no_spaces(in_file) != no_spaces(spec_text(p.result)) {
+                    cx_issue(cx, place, "функция ${d.name}: результат в файле ${type_words(in_file)}, в реестре ${type_words(spec_text(p.result))}")
+                }
+                if d.class != class_word(p.class) {
+                    cx_issue(cx, place, "функция ${d.name}: класс в файле ${class_in_words(d.class)}, в реестре ${class_in_words(class_word(p.class))}")
+                }
+            }
         }
     }
+    mut declared = []str.new()
+    for d in def.primitives { declared.push(d.name) }
     mut used = []str.new()
     for s in cx.sites {
         for pn in primitive_names(s.expr) { push_unique(used, pn) }
     }
     collect_call_names(def, used)
     for pn in used {
-        if !def.primitives.contains(pn) { cx_issue(cx, "$.primitives", "the primitive ${pn} is called but not listed in primitives") }
+        if !declared.contains(pn) && !standard_externals().contains(pn) { cx_issue(cx, "$.primitives", "функция ${pn}: вызывается, но не объявлена в разделе внешних функций") }
     }
 }
 
@@ -1434,7 +1530,7 @@ fn collect_call_names(def MachineDef, mut used []str) -> () {
 fn collect_calls_in(actions []Action, mut used []str) -> () {
     for a in actions {
         match a {
-            CallAct { name, args } => push_unique(used, name)
+            CallAct { name, args, named } => push_unique(used, name)
             ForEachAct { var, list, body } => collect_calls_in(body, used)
             LetAct { name, value, body } => collect_calls_in(body, used)
             IfAct { cond, then_actions, else_actions } => {
@@ -1451,7 +1547,7 @@ fn check_call_actions(mut cx Checker, actions []Action, path str, pos Position) 
     for a in actions {
         ro p = "${path}[${i}]"
         match a {
-            CallAct { name, args } => {
+            CallAct { name, args, named } => {
                 match check_call_position(cx.registry, name, pos) {
                     Ok(u) => {
                         match find_primitive(cx.registry, name) {
@@ -1459,7 +1555,9 @@ fn check_call_actions(mut cx Checker, actions []Action, path str, pos Position) 
                                 if prim.class == Volatile || prim.class == Pure {
                                     cx_issue(cx, p, "the call of the ${class_word(prim.class)} primitive ${name} as an action has no effect: bind its result with a binding")
                                 }
-                                if prim.params.len() != args.len() { cx_issue(cx, p, "${name} takes ${prim.params.len()} arguments, got ${args.len()}") }
+                                ro wanted = if has_tail(cx.registry, name) { prim.params.len() - 1 } else { prim.params.len() }
+                                if wanted != args.len() { cx_issue(cx, p, "${name} takes ${wanted} arguments, got ${args.len()}") }
+                                if named.len() > 0 && !has_tail(cx.registry, name) { cx_issue(cx, p, "${name} has no named tail: the pairs `имя: значение` are for an external function with `...имя: Тип` (AL-129)") }
                             }
                             None => ()
                         }
