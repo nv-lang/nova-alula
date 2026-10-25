@@ -159,14 +159,16 @@ test "ex logic" {
     assert(ex("не ложь и истина") == tx_text(x_bin("and", x_un("not", x_lit(TxBool(false))), x_lit(TxBool(true)))))
     assert(ex("ложь или истина и ложь") == tx_text(x_bin("or", x_lit(TxBool(false)), x_bin("and", x_lit(TxBool(true)), x_lit(TxBool(false))))))
     assert(ex("1 < 2 и 3 < 4") == tx_text(x_bin("and", x_bin("<", li(1), li(2)), x_bin("<", li(3), li(4)))))
-    assert(ex("не 1 < 2") == tx_text(x_un("not", x_bin("<", li(1), li(2)))))
+    assert(is_err("не 1 < 2"))
+    assert(ex("не (1 < 2)") == tx_text(x_un("not", x_bin("<", li(1), li(2)))))
 }
 
 test "ex coalesce" {
     assert(ex("ход ?? \"x\"") == tx_text(x_bin("??", nm("turn"), x_lit(js("x")))))
     assert(ex("ход ?? остановка ?? \"x\"") == tx_text(x_bin("??", nm("turn"), x_bin("??", nm("stop_reason"), x_lit(js("x"))))))
     assert(ex("(ход ?? 0) + 1") == tx_text(x_bin("+", x_bin("??", nm("turn"), li(0)), li(1))))
-    assert(ex("1 или 2 ?? 3") == tx_text(x_bin("??", x_bin("or", li(1), li(2)), li(3))))
+    assert(ex("1 или 2 ?? 3") == tx_text(x_bin("or", li(1), x_bin("??", li(2), li(3)))))
+    assert(ex("(1 или 2) ?? 3") == tx_text(x_bin("??", x_bin("or", li(1), li(2)), li(3))))
 }
 
 test "ex member" {

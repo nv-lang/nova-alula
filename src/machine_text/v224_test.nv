@@ -32,3 +32,85 @@ test "v224 the older formats keep their column was" {
         None => assert(false)
     }
 }
+
+// ---- the priorities of Nova (D49, AL-132): `или` < `и` < the comparisons < `??` (right) < `+ -` < `* / %` < the prefix `-` and `не` ---------------------------------
+
+fn chain224(text str, lang str) -> bool {
+    ro made = exr222(text, lang)
+    made.starts_with("ERR") && made.contains("цепочка сравнений без скобок: поставьте скобки (AL-132)")
+}
+
+fn notcmp224(text str, lang str) -> bool {
+    ro made = exr222(text, lang)
+    made.starts_with("ERR") && made.contains("над сравнением без скобок: поставьте скобки (AL-132)")
+}
+
+fn t224(text str) -> str => exr222(text, "ru")
+
+test "v224 ?? is stronger than the comparisons and the logic and weaker than + -" {
+    assert(t224("ход ?? 0 == 1") == tx_text(x_bin("==", x_bin("??", nm("turn"), li(0)), li(1))))
+    assert(t224("ход == 0 ?? 1") == tx_text(x_bin("==", nm("turn"), x_bin("??", li(0), li(1)))))
+    assert(t224("ход ?? 0 и ложь") == tx_text(x_bin("and", x_bin("??", nm("turn"), li(0)), x_lit(TxBool(false)))))
+    assert(t224("ход ?? 0 или 1") == tx_text(x_bin("or", x_bin("??", nm("turn"), li(0)), li(1))))
+    assert(t224("ход ?? 1 + 2") == tx_text(x_bin("??", nm("turn"), x_bin("+", li(1), li(2)))))
+    assert(t224("ход + 1 ?? 2") == tx_text(x_bin("??", x_bin("+", nm("turn"), li(1)), li(2))))
+    assert(t224("ход ?? 2 * 3") == tx_text(x_bin("??", nm("turn"), x_bin("*", li(2), li(3)))))
+    assert(t224("ход ?? 1 < 2") == tx_text(x_bin("<", x_bin("??", nm("turn"), li(1)), li(2))))
+}
+
+test "v224 ?? goes to the right" {
+    assert(t224("ход ?? 1 ?? 2") == tx_text(x_bin("??", nm("turn"), x_bin("??", li(1), li(2)))))
+    assert(t224("(ход ?? 1) ?? 2") == tx_text(x_bin("??", x_bin("??", nm("turn"), li(1)), li(2))))
+}
+
+test "v224 и and или and + - * / stay to the left" {
+    assert(t224("1 или 2 или 3") == tx_text(x_bin("or", x_bin("or", li(1), li(2)), li(3))))
+    assert(t224("1 и 2 и 3") == tx_text(x_bin("and", x_bin("and", li(1), li(2)), li(3))))
+    assert(t224("1 - 2 - 3") == tx_text(x_bin("-", x_bin("-", li(1), li(2)), li(3))))
+    assert(t224("8 / 2 * 3") == tx_text(x_bin("*", x_bin("/", li(8), li(2)), li(3))))
+}
+
+test "v224 не is a strong prefix" {
+    ro not_a = x_un("not", nm("turn"))
+    assert(t224("не ход и 1 > 0") == tx_text(x_bin("and", not_a, x_bin(">", li(1), li(0)))))
+    assert(t224("не есть(ход) и 1 > 0") == tx_text(x_bin("and", x_un("not", x_call("has", [nm("turn")])), x_bin(">", li(1), li(0)))))
+    assert(t224("(не ход) == ложь") == tx_text(x_bin("==", not_a, x_lit(TxBool(false)))))
+    assert(t224("ложь == не ход") == tx_text(x_bin("==", x_lit(TxBool(false)), not_a)))
+    assert(t224("не (ход == 1)") == tx_text(x_un("not", x_bin("==", nm("turn"), li(1)))))
+    assert(t224("не не ход") == tx_text(x_un("not", not_a)))
+    assert(t224("не ход ?? ложь") == tx_text(x_bin("??", not_a, x_lit(TxBool(false)))))
+    assert(t224("-ход * 2") == tx_text(x_bin("*", x_un("neg", nm("turn")), li(2))))
+}
+
+test "v224 не over a comparison without brackets is an error" {
+    assert(notcmp224("не ход == 1", "ru"))
+    assert(notcmp224("не ход < 1", "ru"))
+    assert(notcmp224("not turn >= 1", "en"))
+    assert(notcmp224("не (ход) == 1", "ru"))
+    assert(notcmp224("не ход в [1, 2]", "ru"))
+    assert(t224("не ход == 1").contains("`не` над сравнением без скобок"))
+}
+
+test "v224 a chain of comparisons and equalities without brackets is an error" {
+    assert(chain224("1 < 2 < 3", "ru"))
+    assert(chain224("1 == 2 != 3", "ru"))
+    assert(chain224("1 == 2 < 3", "ru"))
+    assert(chain224("1 < 2 == 3", "ru"))
+    assert(chain224("1 <= 2 >= 3", "en"))
+    assert(chain224("1 > 2 == 3", "en"))
+    assert(chain224("ход == 1 в [1, 2]", "ru"))
+    assert(chain224("ход в [1, 2] == истина", "ru"))
+}
+
+test "v224 brackets take the chain away" {
+    assert(t224("(1 < 2) < 3") == tx_text(x_bin("<", x_bin("<", li(1), li(2)), li(3))))
+    assert(t224("1 < (2 < 3)") == tx_text(x_bin("<", li(1), x_bin("<", li(2), li(3)))))
+    assert(t224("(1 == 2) != (3 == 4)") == tx_text(x_bin("!=", x_bin("==", li(1), li(2)), x_bin("==", li(3), li(4)))))
+    assert(t224("1 < 2 и 3 < 4") == tx_text(x_bin("and", x_bin("<", li(1), li(2)), x_bin("<", li(3), li(4)))))
+    assert(t224("1 + 1 == 2") == tx_text(x_bin("==", x_bin("+", li(1), li(1)), li(2))))
+}
+
+test "v224 the range stays the weakest" {
+    assert(t224("1..ход ?? 3").contains("\"fn\":\"range\""))
+    assert(t224("1..2..3").starts_with("ERR"))
+}

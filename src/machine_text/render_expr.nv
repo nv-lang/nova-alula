@@ -244,16 +244,17 @@ export fn render_type_in(ty str, lang str) -> str {
 
 // ---- the expressions -----------------------------------------------------------------------------------------------------------
 
-// How tight an expression binds: the operators of section 3.1 from `??` (1) to the postfix forms (10); `if`, `let`, `match` and a lambda (0) are bracketed when an operand.
+// How tight an expression binds: the priorities of Nova (D49, AL-132), from the weakest to the strongest: `или` (2), `и` (3), the comparisons and the equalities (4), `??` (5), `+ -` (6), `* / %` (7), the prefix
+// `-` and `не` (8), the postfix forms (10); `if`, `let`, `match`, a lambda and a range (0) are bracketed when an operand.
 fn rn_prec(v RJ) -> int {
     ro op = rj_gstr(v, "op")
-    if op == "??" { return 1 }
     if op == "or" { return 2 }
     if op == "and" { return 3 }
-    if op == "not" { return 4 }
-    if op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" { return 5 }
+    if op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" { return 4 }
+    if op == "??" { return 5 }
     if op == "+" || op == "-" { return 6 }
     if op == "*" || op == "/" || op == "%" { return 7 }
+    if op == "not" { return 8 }
     if op == "neg" { return 8 }
     if op == "if" || op == "match" || op == "lambda" { return 0 }
     if op == "call" && rj_gstr(v, "fn") == "range" && rj_garr(v, "args").len() == 2 { return 0 }
@@ -537,7 +538,7 @@ fn rn_expr(mut cx RnCx, v RJ, locals []str) -> str {
     if op == "primitive_call" { return "${rn_kw(cx, "action", "call")}(${rn_prim_args(cx, rj_gstr(v, "name"), rj_garr(v, "args"), locals)})" }
     if op == "not" {
         ro inner = match rj_get(v, "operand") {
-            Some(x) => rn_sub(cx, x, locals, 4)
+            Some(x) => rn_sub(cx, x, locals, 8)
             None => "none"
         }
         return "${rn_kw(cx, "expr", "not")} ${inner}"
@@ -632,8 +633,12 @@ fn rn_expr(mut cx RnCx, v RJ, locals []str) -> str {
     if op == "and" || op == "or" || op == "??" || op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" || op == "+" || op == "-" || op == "*" || op == "/" || op == "%" {
         ro prec = rn_prec(v)
         ro right_assoc = op == "??"
+        ro is_cmp = prec == 4
+        // AL-132: `??` goes to the right, the comparisons do not chain (an operand that is a comparison is bracketed), and `не` as the first operand of a comparison is bracketed (`(не a) == b`)
         ro left = match rj_get(v, "left") {
-            Some(x) => rn_sub(cx, x, locals, if right_assoc { prec + 1 } else { prec })
+            Some(x) => {
+                if is_cmp && rj_gstr(x, "op") == "not" { "(${rn_expr(cx, x, locals)})" } else { rn_sub(cx, x, locals, if right_assoc || is_cmp { prec + 1 } else { prec }) }
+            }
             None => "none"
         }
         ro right = match rj_get(v, "right") {

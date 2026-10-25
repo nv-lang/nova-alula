@@ -648,11 +648,11 @@ fn ex_expr(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
 
 /// `a..b` (half-open, the call `range(a, b)`) and `a..=b` (inclusive, `range(a, b + 1)`): the lowest operators, not chained (AL-76, AL-86).
 fn ex_range(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
-    ro left = ex_coalesce(p, cx, sc)?
+    ro left = ex_or(p, cx, sc)?
     if p_is(p, "..") || p_is(p, "..=") {
         ro inclusive = p_is(p, "..=")
         p_adv(p)
-        ro right = ex_coalesce(p, cx, sc)?
+        ro right = ex_or(p, cx, sc)?
         if p_is(p, "..") || p_is(p, "..=") { return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "диапазоны не цепляются: `a..b..c` не бывает (AL-76); второй диапазон пишется в скобках")) }
         if inclusive { return Ok(x_call("range", [left, x_bin("+", right, x_lit(TxRaw("1")))])) }
         return Ok(x_call("range", [left, right]))
@@ -844,15 +844,9 @@ fn ex_match(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
 
 // ---- the operators -----------------------------------------------------------------------------------------------------------
 
-fn ex_coalesce(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
-    ro left = ex_or(p, cx, sc)?
-    if p_eat(p, "??") {
-        ro right = ex_coalesce(p, cx, sc)?
-        return Ok(x_bin("??", left, right))
-    }
-    Ok(left)
-}
-
+// The priorities of the operators follow Nova (D49), from the weakest to the strongest: the range `..`/`..=` (not chained); `или`; `и`; the comparisons and the equalities (`==`, `!=`, `<`, `<=`, `>`, `>=`, the membership
+// `в […]`) one level that does not chain; `??` (right to left); `+ -`; `* / %`; the prefix `-` and `не` (strong, like `!` of Nova); the postfix forms. AL-132: two comparisons in a row without brackets and `не` over
+// a comparison without brackets are errors.
 fn ex_or(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
     mut left = ex_and(p, cx, sc)?
     while p_is_kw(p, cx.words, "expr", "or") {
@@ -864,21 +858,13 @@ fn ex_or(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
 }
 
 fn ex_and(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
-    mut left = ex_not(p, cx, sc)?
+    mut left = ex_cmp(p, cx, sc)?
     while p_is_kw(p, cx.words, "expr", "and") {
         p_eat_kw(p, cx.words, "expr", "and")
-        ro right = ex_not(p, cx, sc)?
+        ro right = ex_cmp(p, cx, sc)?
         left = x_bin("and", left, right)
     }
     Ok(left)
-}
-
-fn ex_not(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
-    if p_eat_kw(p, cx.words, "expr", "not") {
-        ro inner = ex_not(p, cx, sc)?
-        return Ok(x_un("not", inner))
-    }
-    ex_cmp(p, cx, sc)
 }
 
 fn cmp_op(t TxTok) -> str {
@@ -887,13 +873,20 @@ fn cmp_op(t TxTok) -> str {
     ""
 }
 
+/// A comparison: one at a time (AL-132). A second comparison or a membership `в […]` after a comparison (`a < b < c`, `a == b != c`, `a == b < c`, `a < b == c`) is an error: the chain is bracketed. The left operand
+/// `не x` that is not bracketed is an error too: `не a == b` would be `(не a) == b`, and the brackets say which one is meant.
 fn ex_cmp(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
-    mut left = ex_add(p, cx, sc)?
+    ro from = p.pos
+    mut left = ex_coalesce(p, cx, sc)?
+    mut seen = 0
     while true {
         ro t = p_tok(p)
         if is_member_sign(p, cx.words) {
+            if seen > 0 { return Err(cmp_chain_error(t)) }
+            not_over_cmp_check(p, cx.words, from, left, t)?
             p_adv(p)
             left = ex_member(p, cx, sc, left)?
+            seen += 1
             continue
         }
         match member_former(p, cx.words) {
@@ -902,9 +895,31 @@ fn ex_cmp(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
         }
         ro op = cmp_op(t)
         if op == "" { break }
+        if seen > 0 { return Err(cmp_chain_error(t)) }
+        not_over_cmp_check(p, cx.words, from, left, t)?
         p_adv(p)
-        ro right = ex_add(p, cx, sc)?
+        ro right = ex_coalesce(p, cx, sc)?
         left = x_bin(op, left, right)
+        seen += 1
+    }
+    Ok(left)
+}
+
+fn cmp_chain_error(t TxTok) -> TranslateError => tx_err(t.line, t.col, "syntax", "цепочка сравнений без скобок: поставьте скобки (AL-132)")
+
+/// The first operand of a comparison is `не x` written without brackets: an error (AL-132).
+fn not_over_cmp_check(p TxP, w TxWords, from int, left TxJ, sign TxTok) -> Result[(), TranslateError] {
+    if el_str(left, "op") != "not" || from >= p.toks.len() { return Ok(()) }
+    if !t_is_kw(p.toks[from], w, "expr", "not") { return Ok(()) }
+    Err(tx_err(sign.line, sign.col, "syntax", "`${kw(w, "expr", "not")}` над сравнением без скобок: поставьте скобки (AL-132)"))
+}
+
+/// `a ?? b`: right to left, stronger than the comparisons and weaker than `+ -`, so `a ?? b + 1` is `a ?? (b + 1)` and `a + 1 ?? b` is `(a + 1) ?? b`.
+fn ex_coalesce(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    ro left = ex_add(p, cx, sc)?
+    if p_eat(p, "??") {
+        ro right = ex_coalesce(p, cx, sc)?
+        return Ok(x_bin("??", left, right))
     }
     Ok(left)
 }
@@ -978,6 +993,10 @@ fn ex_mul(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
 }
 
 fn ex_unary(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    if p_eat_kw(p, cx.words, "expr", "not") {
+        ro inner = ex_unary(p, cx, sc)?
+        return Ok(x_un("not", inner))
+    }
     if p_is(p, "-") {
         p_adv(p)
         ro t = p_tok(p)
