@@ -37,8 +37,8 @@ fn table_size(tsv str) -> int {
     n
 }
 
-// The format 2.24 pins the dictionary of the version 13 of the methodology (`glossary_names.tsv`, AL-131); the dictionary of the version 11 that 2.23 pinned is gone with the format.
-test "v217 the normative part of the dictionary of the format 2.24 has 1270 pairs" {
+// The format 2.25 pins the dictionary of the version 13 of the methodology (`glossary_names.tsv`, AL-131); the dictionary of the version 11 that 2.23 pinned is gone with the format.
+test "v217 the normative part of the dictionary of the format 2.25 has 1270 pairs" {
     assert(table_size(glossary_table_text()) == 1270)
 }
 
@@ -46,8 +46,8 @@ test "v217 the hash of the dictionary is the one of the format" {
     assert(glossary_hash_text(glossary_table_text()) == "35c571ccda17")
 }
 
-test "v217 the format 2.24 pins the hash 35c571ccda17 and no other format has a hash" {
-    assert(glossary_pinned_hash("2.24") == "35c571ccda17")
+test "v217 the format 2.25 pins the hash 35c571ccda17 and no other format has a hash" {
+    assert(glossary_pinned_hash("2.25") == "35c571ccda17")
     assert(glossary_pinned_hash("2.23") == "")
     assert(glossary_pinned_hash("2.14") == "")
 }
@@ -63,7 +63,7 @@ test "v217 the dictionary is checked by the translator" {
     assert(glossary_check() == "")
 }
 
-test "v217 the dictionary of 2.24 has three parse functions by role instead of one (AL-131)" {
+test "v217 the dictionary of 2.25 has three parse functions by role instead of one (AL-131)" {
     ro now = glossary_pairs_of(glossary_table_text())
     mut witness = false
     mut author = false
@@ -78,9 +78,9 @@ test "v217 the dictionary of 2.24 has three parse functions by role instead of o
     assert(witness && author && lens)
 }
 
-test "v217 the format 2.23 is not pinned and a changed dictionary does not fit the format 2.24" {
+test "v217 the format 2.23 is not pinned and a changed dictionary does not fit the format 2.25" {
     assert(glossary_check_text(glossary_table_text(), "2.23").contains("хеш словаря не закреплён"))
-    assert(glossary_check_text(glossary_table_text().replace("число_повторов\tretry_count", "число_повторов\tretries"), "2.24").contains("словарь изменён без смены формата"))
+    assert(glossary_check_text(glossary_table_text().replace("число_повторов\tretry_count", "число_повторов\tretries"), "2.25").contains("словарь изменён без смены формата"))
 }
 
 test "v217 a changed pair gives another hash" {
@@ -91,7 +91,7 @@ test "v217 a changed pair gives another hash" {
 
 test "v217 a changed pair is found by the check" {
     ro now = glossary_table_text().replace("число_повторов\tretry_count", "число_повторов\tretries")
-    assert(glossary_check_text(now, "2.24").contains("словарь изменён без смены формата"))
+    assert(glossary_check_text(now, "2.25").contains("словарь изменён без смены формата"))
 }
 
 test "v217 an added pair gives another hash" {
@@ -120,7 +120,7 @@ test "v217 the hash is the SHA-256 of the lines joined by LF" {
 }
 
 test "v217 the check of the hash is for the version of the format" {
-    assert(glossary_check_text(glossary_table_text(), "2.24") == "")
+    assert(glossary_check_text(glossary_table_text(), "2.25") == "")
     assert(glossary_check_text(glossary_table_text(), "2.99").contains("2.99"))
 }
 
@@ -347,10 +347,10 @@ test "v217 the table of words has 17 groups" {
     assert(methodology == 17)
 }
 
-test "v217 the table of the methodology has 217 words" {
+test "v217 the table of the methodology has 219 words" {
     mut n = 0
     for line in keywords_text().split("\n") {
         if line != "" && !line.starts_with("kind\t") { n += 1 }
     }
-    assert(n == 217)
+    assert(n == 219)
 }

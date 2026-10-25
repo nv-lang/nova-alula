@@ -279,7 +279,7 @@ test "ev dup key" {
     assert(eerr(d) == "duplicate_key@$.entries[1]")
 }
 
-// The norm of the dict order (format 2.24): the order of a dict is the order of the record, a repeated key is an error.
+// The norm of the dict order (format 2.25): the order of a dict is the order of the record, a repeated key is an error.
 test "ev dict order" {
     // the literal: the written order, not the order of the keys; `value_equal` does not see the order, the JSON text does
     ro d = DictLit([EntryExpr { key: lit_text("b"), value: ei(1) }, EntryExpr { key: lit_text("a"), value: ei(2) }, EntryExpr { key: lit_text("c"), value: ei(3) }])
@@ -447,7 +447,7 @@ test "fn keys values" {
 
 test "fn length" {
     assert(eis_in(ec("length", [er("xs")]), Int(5)))
-    // a text has no length (format 2.24): the check of the table says nothing, the evaluator refuses
+    // a text has no length (format 2.25): the check of the table says nothing, the evaluator refuses
     assert(eerr_in(ec("length", [er("name")])) == "type_mismatch@$.args[0]")
     assert(eerr(ec("length", [lit_text("a😀b")])) == "type_mismatch@$.args[0]")
     assert(eerr(ec("length", [lit_text("")])) == "type_mismatch@$.args[0]")
@@ -593,13 +593,13 @@ test "lm double" {
 
 test "ho calls" {
     mut host = EHost { calls: []str.new() }
-    ro e = en(Add, call_primitive("time_now", [ei(1), ei(2)]), call_primitive("other", []Expr.new()))
+    ro e = en(Add, call_primitive("first_call", [ei(1), ei(2)]), call_primitive("other", []Expr.new()))
     match eval_with(e, empty_scope(), host) {
         Ok(v) => assert(value_equal(v, Int(2)))
         Err(x) => assert(false)
     }
     assert(host.calls.len() == 2)
-    assert(host.calls[0] == "time_now" && host.calls[1] == "other")
+    assert(host.calls[0] == "first_call" && host.calls[1] == "other")
 }
 
 test "ho args first" {
@@ -620,7 +620,7 @@ test "ho args first" {
 }
 
 test "ho none" {
-    assert(eerr(call_primitive("time_now", []Expr.new())) == "primitive_failed@$")
+    assert(eerr(call_primitive("any_call", []Expr.new())) == "primitive_failed@$")
 }
 
 test "ho lazy" {

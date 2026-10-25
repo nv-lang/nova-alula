@@ -518,6 +518,8 @@ fn plain_arity(name str) -> int {
         "min" => 2
         "record_text" => 1
         "require_non_empty" => 1
+        "time_to_text" => 1
+        "text_to_time" => 1
         _ => -1
     }
 }
@@ -850,6 +852,20 @@ fn eval_plain(name str, v []Value) -> Result[Value, EvalError] {
         "record_text" => fn_record_text(v[0])
         "require_non_empty" => match v[0] {
             Text(s) => if s == "" { refuse(Unreachable, "a non-empty text is required") } else { Ok(v[0]) }
+            _ => wrong_at("args[0]", "text", v[0])
+        }
+        "time_to_text" => match v[0] {
+            Int(ms) => match time_to_text(ms) {
+                Some(s) => Ok(Text(s))
+                None => refuse(Overflow, "the time ${ms} is out of the range 0001-01-01T00:00:00Z ... 9999-12-31T23:59:59.999Z")
+            }
+            _ => wrong_at("args[0]", "int", v[0])
+        }
+        "text_to_time" => match v[0] {
+            Text(s) => match text_to_time(s) {
+                Some(ms) => Ok(Int(ms))
+                None => Ok(Null)
+            }
             _ => wrong_at("args[0]", "text", v[0])
         }
         _ => refuse(UnknownFunction, "no function ${name}")

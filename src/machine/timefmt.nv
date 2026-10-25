@@ -1,0 +1,125 @@
+// timefmt.nv - the functions of the time of the catalog (spec section 12, AL-133): milliseconds of the epoch (1970-01-01 UTC) to the text of ISO 8601 in UTC and back.
+//
+// Pure arithmetic on the proleptic Gregorian calendar (the days of the civil date: the algorithm of H. Hinnant), no clock, no time zone: a step stays reproducible.
+// The text is `YYYY-MM-DDTHH:MM:SSZ`, with `.fff` before the `Z` when the milliseconds are not zero. The range is 0001-01-01T00:00:00Z ... 9999-12-31T23:59:59.999Z.
+module alula.machine
+
+/// The first millisecond of the range of `time_to_text`: 0001-01-01T00:00:00Z.
+export const TIME_MIN_MS = -62135596800000
+
+/// The last millisecond of the range of `time_to_text`: 9999-12-31T23:59:59.999Z.
+export const TIME_MAX_MS = 253402300799999
+
+const MS_PER_DAY = 86400000
+
+type Civil { year int, month int, day int }
+
+// The division that rounds toward minus infinity (the `/` of the language truncates toward zero).
+fn floor_div(a int, b int) -> int {
+    ro q = a / b
+    if a % b != 0 && ((a < 0) != (b < 0)) { return q - 1 }
+    q
+}
+
+fn is_leap(year int) -> bool => (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+
+fn days_in_month(year int, month int) -> int {
+    if month == 2 {
+        if is_leap(year) { return 29 }
+        return 28
+    }
+    if month == 4 || month == 6 || month == 9 || month == 11 { return 30 }
+    31
+}
+
+// The number of the day (0 is 1970-01-01) of a civil date.
+fn days_from_civil(year int, month int, day int) -> int {
+    mut y = year
+    if month <= 2 { y = y - 1 }
+    ro era = floor_div(y, 400)
+    ro yoe = y - era * 400
+    mut shifted = month - 3
+    if month <= 2 { shifted = month + 9 }
+    ro doy = (153 * shifted + 2) / 5 + day - 1
+    ro doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+    era * 146097 + doe - 719468
+}
+
+// The civil date of the number of a day.
+fn civil_from_days(days int) -> Civil {
+    ro z = days + 719468
+    ro era = floor_div(z, 146097)
+    ro doe = z - era * 146097
+    ro yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+    ro doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+    ro mp = (5 * doy + 2) / 153
+    ro day = doy - (153 * mp + 2) / 5 + 1
+    mut month = mp - 9
+    if mp < 10 { month = mp + 3 }
+    mut year = yoe + era * 400
+    if month <= 2 { year = year + 1 }
+    Civil { year, month, day }
+}
+
+fn pad(n int, width int) -> str {
+    mut s = "${n}"
+    while s.byte_len() < width { s = "0${s}" }
+    s
+}
+
+/// `time_to_text`: the text of the moment; None when it is out of the range 0001-01-01 ... 9999-12-31.
+export fn time_to_text(ms int) -> Option[str] {
+    if ms < TIME_MIN_MS || ms > TIME_MAX_MS { return None }
+    ro days = floor_div(ms, MS_PER_DAY)
+    ro in_day = ms - days * MS_PER_DAY
+    ro civil = civil_from_days(days)
+    ro hour = in_day / 3600000
+    ro minute = (in_day % 3600000) / 60000
+    ro second = (in_day % 60000) / 1000
+    ro milli = in_day % 1000
+    mut fraction = ""
+    if milli != 0 { fraction = ".${pad(milli, 3)}" }
+    Some("${pad(civil.year, 4)}-${pad(civil.month, 2)}-${pad(civil.day, 2)}T${pad(hour, 2)}:${pad(minute, 2)}:${pad(second, 2)}${fraction}Z")
+}
+
+// The number written by `n` digits at `from`; -1 when a place is not a digit.
+fn digits_at(cs []str, from int, n int) -> int {
+    mut value = 0
+    mut i = from
+    while i < from + n {
+        ro d = "0123456789".find(cs[i]) ?? -1
+        if d < 0 { return -1 }
+        value = value * 10 + d
+        i += 1
+    }
+    value
+}
+
+/// `text_to_time`: the moment of a text of the record of `time_to_text` (the seconds and the `Z` are required, one to three digits of the fraction of a second may follow the seconds); None for any other text.
+export fn text_to_time(text str) -> Option[int] {
+    mut cs = []str.new()
+    for c in text.chars() { cs.push("${c}") }
+    ro n = cs.len()
+    if n != 20 && n != 22 && n != 23 && n != 24 { return None }
+    if cs[4] != "-" || cs[7] != "-" || cs[10] != "T" || cs[13] != ":" || cs[16] != ":" || cs[n - 1] != "Z" { return None }
+    ro year = digits_at(cs, 0, 4)
+    ro month = digits_at(cs, 5, 2)
+    ro day = digits_at(cs, 8, 2)
+    ro hour = digits_at(cs, 11, 2)
+    ro minute = digits_at(cs, 14, 2)
+    ro second = digits_at(cs, 17, 2)
+    if year < 1 || month < 1 || month > 12 || day < 1 || hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59 { return None }
+    if day > days_in_month(year, month) { return None }
+    mut milli = 0
+    if n > 20 {
+        if cs[19] != "." { return None }
+        ro places = n - 21
+        ro fraction = digits_at(cs, 20, places)
+        if fraction < 0 { return None }
+        milli = fraction
+        if places == 1 { milli = fraction * 100 }
+        if places == 2 { milli = fraction * 10 }
+    }
+    ro days = days_from_civil(year, month, day)
+    Some(days * MS_PER_DAY + hour * 3600000 + minute * 60000 + second * 1000 + milli)
+}

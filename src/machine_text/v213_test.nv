@@ -16,7 +16,7 @@ fn v213_lines(text str) -> int {
 
 test "v213 table has the rows of the methodology" {
     // the header and 217 rows (the table of the methodology at the state of 2.17, with the classes `volatile` and `acting` of AL-116 instead of three)
-    assert(v213_lines(keywords_text()) == 218)
+    assert(v213_lines(keywords_text()) == 220)
 }
 
 test "v213 table signals column" {
@@ -112,7 +112,7 @@ test "v213 table words are unique in a kind" {
         seen.push(a)
         seen_en.push(b)
     }
-    assert(seen.len() == 217)
+    assert(seen.len() == 219)
 }
 
 fn words_read_rows(text str) -> []TxWord {
@@ -222,10 +222,10 @@ test "v213 arrow check" {
 test "v213 definitions hashes" {
     ro ru = defs_file_text("арифметика_цикла")
     ro en = defs_file_text("cycle_arithmetic")
-    assert(definitions_hash(ru) == "818a4aaeef4f")
-    assert(definitions_hash(en) == "431e7018e2bb")
-    assert(translate_definitions(ru).hash == "818a4aaeef4f")
-    assert(translate_definitions(en).hash == "431e7018e2bb")
+    assert(definitions_hash(ru) == "f757b8aa7b08")
+    assert(definitions_hash(en) == "75062faf50d1")
+    assert(translate_definitions(ru).hash == "f757b8aa7b08")
+    assert(translate_definitions(en).hash == "75062faf50d1")
 }
 
 test "v213 definitions files are ascii" {

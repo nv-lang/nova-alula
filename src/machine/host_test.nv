@@ -57,9 +57,9 @@ fn hst_names(registry Registry) -> []str {
     out
 }
 
-test "host the language names two primitives and 35 codes" {
+test "host the language names one primitive and 35 codes" {
     ro reg = language_registry()
-    assert(hst_names(reg) == ["time_now", "new_id"])
+    assert(hst_names(reg) == ["new_id"])
     for p in reg.primitives { assert(class_word(p.class) == "volatile") }
     assert(language_journal().len() == 35)
     assert(reg.journal.len() == 35)
@@ -105,7 +105,7 @@ test "host a table of a file gives its rows" {
 
 test "host the registry of a host is the language and its data" {
     ro reg = hst_host()
-    assert(hst_names(reg) == ["time_now", "new_id", "stock_level", "reserve", "ship", "pick", "parse_note"])
+    assert(hst_names(reg) == ["new_id", "stock_level", "reserve", "ship", "pick", "parse_note"])
     assert(reg.journal.len() == 37)
     assert(journal_find(reg.journal, "item_reserved").is_some())
     assert(journal_find(reg.journal, "fork_no_match").is_some())
@@ -192,14 +192,14 @@ test "host the class of a primitive decides the places of its call" {
     assert(check_call_position(reg, "reserve", ActionPos).is_ok())
     assert(check_call_position(reg, "reserve", ConditionPos).is_err())
     assert(check_call_position(reg, "pick", ConditionPos).is_ok())
-    assert(check_call_position(reg, "time_now", ConditionPos).is_err())
+    assert(check_call_position(reg, "new_id", ConditionPos).is_err())
     assert(check_call_position(reg, "party_profile", ActionPos).is_err())
 }
 
 test "host no file is a host that gives nothing" {
     match load_host("", "") {
         Ok(reg) => {
-            assert(hst_names(reg) == ["time_now", "new_id"])
+            assert(hst_names(reg) == ["new_id"])
             assert(reg.journal.len() == 35)
         }
         Err(errors) => assert(false)
@@ -248,8 +248,8 @@ test "host a row with a wrong number of cells is refused" {
 }
 
 test "host a primitive of the host with a name of the language is refused" {
-    ro said = hst_errors("| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| time_now | — | int | volatile | — | — |\n", "")
-    assert(said.contains("time_now"))
+    ro said = hst_errors("| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| new_id | — | int | volatile | — | — |\n", "")
+    assert(said.contains("new_id"))
     assert(said.contains("registered already"))
 }
 
@@ -293,7 +293,7 @@ fn hst_parse_function(reg Registry, name str, result str) {
 test "host the samples of the specification have a registry that loads" {
     match load_host(embed_str("../../spec/samples/registry.md"), "") {
         Ok(reg) => {
-            assert(reg.primitives.len() == 24)
+            assert(reg.primitives.len() == 23)
             // AL-131: one function per role, no `parse_agent_reply`
             assert(find_primitive(reg, "parse_agent_reply").is_none())
             hst_parse_function(reg, "parse_witness_reply", "[]WitnessAnswer")
@@ -308,7 +308,7 @@ test "host the registry of the examples loads and the table of its codes does no
     match load_host(embed_str("../../examples/registry.md"), embed_str("../../examples/journal.md")) {
         Ok(reg) => {
             assert(find_primitive(reg, "close_agent_turn").is_some())
-            assert(find_primitive(reg, "time_now").is_some())
+            assert(find_primitive(reg, "new_id").is_some())
             assert(reg.journal.len() == 35 + parse_journal(embed_str("../../examples/journal.md")).len())
         }
         Err(errors) => panic(errors.join(" | "))
@@ -327,8 +327,8 @@ fn hst_section_7a(spec str, heading str, next str) -> str {
 
 fn hst_section_names_exactly_the_language(section str) -> bool {
     if section == "" { return false }
-    // the two standard external functions, written as calls (2.24)
-    if !section.contains("`time_now()`") || !section.contains("`new_id()`") { return false }
+    // the two standard external functions, written as calls (2.25)
+    if !section.contains("`new_id()`") { return false }
     // every code of the table of the language is named once
     for row in language_journal() {
         if !section.contains("`${row.code}`") { return false }
@@ -338,7 +338,7 @@ fn hst_section_names_exactly_the_language(section str) -> bool {
     for part in section.split("`") {
         if part.contains("_") && !part.contains(" ") && !part.contains("(") && !part.contains("-") {
             listed += 1
-            if part != "time_now" && part != "new_id" && part != "новый_ид" && part != "bind_pure" && part != "bind_volatile" && part != "bind_acting" && journal_find(language_journal(), part).is_none() { return false }
+            if part != "new_id" && part != "новый_ид" && part != "bind_pure" && part != "bind_volatile" && part != "bind_acting" && journal_find(language_journal(), part).is_none() { return false }
         }
     }
     listed >= 35

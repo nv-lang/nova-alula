@@ -105,21 +105,22 @@ test "non empty" {
 
 test "checked calls" {
     ro checked = DefTable { fns: []DefFn.new(), types: empty_type_defs(), globals: []Binding.new(), registry: language_registry(), checked: true }
-    mut ints = DHost { answer: Int(5) }
-    match eval_defs(call_primitive("time_now", []Expr.new()), empty_scope(), checked, ints) {
-        Ok(v) => assert(value_equal(v, Int(5)))
+    ro an_id = "019a1b2c-3d4e-7f50-8a6b-0123456789ab"
+    mut ids = DHost { answer: Text(an_id) }
+    match eval_defs(call_primitive("new_id", []Expr.new()), empty_scope(), checked, ids) {
+        Ok(v) => assert(value_equal(v, Text(an_id)))
         Err(x) => assert(false)
     }
-    match eval_defs(call_primitive("time_now", [lit_int(1)]), empty_scope(), checked, ints) {
+    match eval_defs(call_primitive("new_id", [lit_int(1)]), empty_scope(), checked, ids) {
         Ok(v) => assert(false)
         Err(x) => assert(x.kind == TypeMismatch)
     }
     mut texts = DHost { answer: Text("x") }
-    match eval_defs(call_primitive("time_now", []Expr.new()), empty_scope(), checked, texts) {
+    match eval_defs(call_primitive("new_id", []Expr.new()), empty_scope(), checked, texts) {
         Ok(v) => assert(false)
-        Err(x) => assert(x.message.contains("the result of time_now"))
+        Err(x) => assert(x.message.contains("the result of new_id"))
     }
-    match eval_defs(call_primitive("no_such", []Expr.new()), empty_scope(), checked, ints) {
+    match eval_defs(call_primitive("no_such", []Expr.new()), empty_scope(), checked, ids) {
         Ok(v) => assert(false)
         Err(x) => assert(x.kind == TypeMismatch)
     }

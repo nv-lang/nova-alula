@@ -1,0 +1,92 @@
+// v225_test.nv - task 225: what the evaluator owes to Alula 2.25 (AL-133): the catalog functions `time_to_text` and `text_to_time`, pure arithmetic on the calendar of ISO 8601 in UTC.
+module alula.machine
+
+fn t225(ms int) -> Expr => call("time_to_text", [lit_int(ms)])
+
+fn p225(text str) -> Expr => call("text_to_time", [lit_text(text)])
+
+test "ev225 the epoch and a day with seconds" {
+    assert(eis(t225(0), Text("1970-01-01T00:00:00Z")))
+    assert(eis(t225(1761402000000), Text("2025-10-25T14:20:00Z")))
+    assert(eis(t225(86399000), Text("1970-01-01T23:59:59Z")))
+}
+
+test "ev225 the milliseconds are written when they are not zero" {
+    assert(eis(t225(1500), Text("1970-01-01T00:00:01.500Z")))
+    assert(eis(t225(1), Text("1970-01-01T00:00:00.001Z")))
+    assert(eis(t225(1761402000123), Text("2025-10-25T14:20:00.123Z")))
+}
+
+test "ev225 before the epoch" {
+    assert(eis(t225(-1), Text("1969-12-31T23:59:59.999Z")))
+    assert(eis(t225(-86400000), Text("1969-12-31T00:00:00Z")))
+}
+
+test "ev225 the leap days" {
+    assert(eis(t225(951782400000), Text("2000-02-29T00:00:00Z")))
+    assert(eis(t225(951868800000), Text("2000-03-01T00:00:00Z")))
+    assert(eis(t225(4107542400000), Text("2100-03-01T00:00:00Z")))
+}
+
+test "ev225 the edges of the range" {
+    assert(eis(t225(-62135596800000), Text("0001-01-01T00:00:00Z")))
+    assert(eis(t225(253402300799999), Text("9999-12-31T23:59:59.999Z")))
+}
+
+test "ev225 out of the range is an error of the machine" {
+    assert(eerr(t225(-62135596800001)).starts_with("overflow@"))
+    assert(eerr(t225(253402300800000)).starts_with("overflow@"))
+}
+
+test "ev225 the argument of time_to_text is an int" {
+    assert(eerr(call("time_to_text", [lit_text("x")])).starts_with("type_mismatch@"))
+    assert(eerr(call("time_to_text", []Expr.new())).starts_with("bad_arity@"))
+}
+
+test "ev225 text_to_time reads the record back" {
+    assert(eis(p225("1970-01-01T00:00:00Z"), Int(0)))
+    assert(eis(p225("2025-10-25T14:20:00Z"), Int(1761402000000)))
+    assert(eis(p225("2025-10-25T14:20:00.123Z"), Int(1761402000123)))
+    assert(eis(p225("1970-01-01T00:00:01.5Z"), Int(1500)))
+    assert(eis(p225("0001-01-01T00:00:00Z"), Int(-62135596800000)))
+    assert(eis(p225("9999-12-31T23:59:59.999Z"), Int(253402300799999)))
+    assert(eis(p225("2000-02-29T00:00:00Z"), Int(951782400000)))
+}
+
+test "ev225 a text of another record is none" {
+    assert(eis(p225(""), Null))
+    assert(eis(p225("yesterday"), Null))
+    assert(eis(p225("2025-10-25T14:20:00"), Null))
+    assert(eis(p225("2025-10-25 14:20:00Z"), Null))
+    assert(eis(p225("2025-10-25T14:20Z"), Null))
+    assert(eis(p225("2025-10-25T14:20:00+03:00"), Null))
+    assert(eis(p225("2025-10-25T14:20:00.1234Z"), Null))
+    assert(eis(p225("2025-10-25T14:20:00.Z"), Null))
+    assert(eis(p225("2025-13-01T00:00:00Z"), Null))
+    assert(eis(p225("2025-02-29T00:00:00Z"), Null))
+    assert(eis(p225("2025-10-25T24:00:00Z"), Null))
+    assert(eis(p225("2025-10-25T14:60:00Z"), Null))
+    assert(eis(p225("2025-10-25T14:20:60Z"), Null))
+    assert(eis(p225("0000-01-01T00:00:00Z"), Null))
+    assert(eis(p225("2025-1a-25T14:20:00Z"), Null))
+}
+
+test "ev225 the argument of text_to_time is a text" {
+    assert(eerr(call("text_to_time", [lit_int(1)])).starts_with("type_mismatch@"))
+}
+
+test "ev225 time_to_text and text_to_time are inverse over a span of days" {
+    mut ms = -62135596800000
+    mut n = 0
+    while n < 400 {
+        match eval(t225(ms), empty_scope()) {
+            Ok(v) => match v {
+                Text(s) => assert(eis(p225(s), Int(ms)))
+                _ => assert(false)
+            }
+            Err(x) => assert(false)
+        }
+        ms = ms + 7919000000 + 123
+        n += 1
+    }
+}
