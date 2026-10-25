@@ -1188,7 +1188,7 @@ fn ex_call(mut p TxP, mut cx TxCx, sc TxScope, name TxTok) -> Result[TxJ, Transl
                     // a primitive that the machine names in `## Примитивы` is called as a function too (format 4.6, 2.12, AL-29): the same node as `вызвать(имя, арг)`; which class may stand where is the check's
                     match pair_get(cx.env.prims, name.text) {
                         Some(prim_en) => {
-                            if args.named.len() > 0 { return Err(tx_err(args.named_tokens[0].line, args.named_tokens[0].col, "syntax", "именованные аргументы — только у `${kw(cx.words, "catalog", "journal_event")}`")) }
+                            named_refused(cx, name.text, args.named_tokens)
                             return Ok(x_prim(prim_en, args.positional))
                         }
                         None => ()
@@ -1208,14 +1208,33 @@ fn ex_call(mut p TxP, mut cx TxCx, sc TxScope, name TxTok) -> Result[TxJ, Transl
     mut args_all = []TxJ.new()
     for a in args.positional { args_all.push(a) }
     if fn_en == "journal_event" {
+        mut seen = []str.new()
+        mut at = 0
         for n in args.named {
+            if seen.contains(n.key) { cx_error(cx, args.named_tokens[at], "check", "параметр `${n.key}` повторён в вызове `${name.text}` (AL-120)") }
+            seen.push(n.key)
             args_all.push(x_lit(js(n.key)))
             args_all.push(n.value)
+            at += 1
         }
-    } else if args.named.len() > 0 {
-        return Err(tx_err(args.named_tokens[0].line, args.named_tokens[0].col, "syntax", "именованные аргументы — только у `${kw(cx.words, "catalog", "journal_event")}`"))
+    } else {
+        named_refused(cx, name.text, args.named_tokens)
     }
     Ok(x_call(fn_en, args_all))
+}
+
+/// AL-120: the pairs `имя: значение` are read by every call, but only the forms of the journal take them (`журнал`, `событие_журнала`, `ошибка_машины`); any other callee refuses a pair by an error of the check
+/// that names the callee and the argument (the tree has no place for the pair, so it is not kept).
+fn named_refused(mut cx TxCx, callee str, named_tokens []TxTok) -> () {
+    for t in named_tokens {
+        cx_error(cx, t, "check", named_refused_message(cx.words, callee, t.text))
+    }
+}
+
+fn named_refused_message(w TxWords, callee str, key str) -> str {
+    ro forms = [kw(w, "action", "journal"), kw(w, "catalog", "journal_event"), kw(w, "action", "machine_error")]
+    ro message_named = "`${callee}` не принимает именованный аргумент `${key}: …`: пары `имя: значение` бывают только у `${forms[0]}`, `${forms[1]}`, `${forms[2]}` (AL-120)"
+    message_named
 }
 
 /// `вызвать(примитив, арг, …)`: the primitive is named by its word of the table `## Примитивы` or by the table of names.
@@ -1228,6 +1247,14 @@ fn ex_primitive_call(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, Translat
     ro en = tr_primitive(cx, n)
     mut args = []TxJ.new()
     while p_eat(p, ",") {
+        ro t = p_tok(p)
+        if t.kind == TK_NAME && t_is(p_ahead(p, 1), ":") && !is_keyword(cx.words, t.text) {
+            p_adv(p)
+            p_adv(p)
+            ro skipped = ex_expr(p, cx, sc)?
+            named_refused(cx, "${kw(cx.words, "action", "call")}(${n.text}, …)", [t])
+            continue
+        }
         args.push(ex_expr(p, cx, sc)?)
     }
     p_expect(p, ")")?

@@ -290,3 +290,15 @@ test "ex named args" {
     assert(is_err("строка(a: 1)"))
     assert(is_err("событие_журнала(a: 1, 2)"))
 }
+
+// AL-120: every call reads the pairs `имя: значение`; only the forms of the journal take them, any other callee is refused by the check with its own name and the name of the argument
+test "ex named args of another callee are refused by its name" {
+    ro e = errs("строка(a: 1)")
+    assert(e.len() == 1 && e[0].kind == "check")
+    assert(e[0].message.contains("`строка` не принимает именованный аргумент `a: …`"))
+    assert(e[0].message.contains("`журнал`, `событие_журнала`, `ошибка_машины` (AL-120)"))
+    ro two = errs("длина([1], б: 2, г: 3)")
+    assert(two.len() == 2 && two[0].message.contains("`длина` не принимает") && two[1].message.contains("`г: …`"))
+    ro dup = errs("событие_журнала(\"x\", a: 1, a: 2)")
+    assert(dup.len() == 1 && dup[0].message.contains("параметр `a` повторён в вызове `событие_журнала`"))
+}

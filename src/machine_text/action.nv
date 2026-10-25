@@ -226,7 +226,17 @@ fn ac_call(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError]
     p_adv(p)
     ro en = tr_primitive(cx, n)
     mut args = []TxJ.new()
-    while p_eat(p, ",") { args.push(ex_expr(p, cx, sc)?) }
+    while p_eat(p, ",") {
+        ro t = p_tok(p)
+        if t.kind == TK_NAME && t_is(p_ahead(p, 1), ":") && !is_keyword(cx.words, t.text) {
+            p_adv(p)
+            p_adv(p)
+            ro skipped = ex_expr(p, cx, sc)?
+            named_refused(cx, "${kw(cx.words, "action", "call")}(${n.text}, …)", [t])
+            continue
+        }
+        args.push(ex_expr(p, cx, sc)?)
+    }
     p_expect(p, ")")?
     Ok(stmt_of([a_call(en, args)]))
 }
