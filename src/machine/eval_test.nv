@@ -332,7 +332,7 @@ test "mt case type" {
 }
 
 test "mt binds" {
-    ro done = VariantLit { type_name: "Outcome", name: "Done", fields: [field_expr("text", lit_text("ok")), field_expr("count", ei(4))] }
+    ro done = VariantLit { type_name: "Outcome", name: "Done", fields: [field_expr("text", eint_list([1, 2])), field_expr("count", ei(4))] }
     ro binds = [Bind { field: "text", name: "t" }, Bind { field: "count", name: "n" }]
     ro arms = [arm([CasePattern { type_name: "", name: "Done", binds }], None, en(Add, en(Mul, er("n"), ei(10)), call("length", [er("t")]))), arm([AnyPattern], None, ei(0))]
     assert(eis(MatchOn { subject: done, arms }, Int(42)))
@@ -447,8 +447,10 @@ test "fn keys values" {
 
 test "fn length" {
     assert(eis_in(ec("length", [er("xs")]), Int(5)))
-    assert(eis_in(ec("length", [er("name")]), Int(3)))
-    assert(eis(ec("length", [lit_text("a😀b")]), Int(3)))
+    // a text has no length (format 2.23): the check of the table says nothing, the evaluator refuses
+    assert(eerr_in(ec("length", [er("name")])) == "type_mismatch@$.args[0]")
+    assert(eerr(ec("length", [lit_text("a😀b")])) == "type_mismatch@$.args[0]")
+    assert(eerr(ec("length", [lit_text("")])) == "type_mismatch@$.args[0]")
     assert(eis_in(ec("length", [er("d")]), Int(2)))
     assert(eerr(ec("length", [ei(1)])) == "type_mismatch@$.args[0]")
 }

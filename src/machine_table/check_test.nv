@@ -51,7 +51,7 @@ test "red ends not exhausted" {
     assert(says(tiny().replace("\"values\":[\"\"]", "\"values\":[\"q\"]"), "not in the set of stop"))
     ro no_rows = tiny_with("", "", tiny_wait_rows(), "{\"state\":\"Finished\",\"n\":1,\"when\":${jl("true")},\"answer\":{\"kind\":\"answer\",\"value\":${jn("n")}}}")
     assert(says(no_rows, "the end Stopped has no row"))
-    ro odd = tiny().replace(jb("==", jn("stop"), jl(jstr("b"))), jb(">", jcall("length", jn("stop")), jl("0")))
+    ro odd = tiny().replace(jb("==", jn("stop"), jl(jstr("b"))), jb("!=", jn("stop"), jl(jstr("b"))))
     assert(says(odd, "must be a row with when true"))
     ro twice = tiny().replace(jb("==", jn("stop"), jl(jstr("b"))), jb("or", jb("==", jn("stop"), jl(jstr("a"))), jb("==", jn("stop"), jl(jstr("b")))))
     assert(says(twice, "not exclusive"))

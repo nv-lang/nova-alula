@@ -372,7 +372,7 @@ so it needs no `## Имена`; the text literals are the same in both files so 
 - Срок тишины: 60_000
 
 | № | Событие | Условие | Действия | Куда |
-| 1 | ответ(т) | — | текст_ответа = т; журнал(callee_answered, label: "${длина(т)} chars") | КОНЕЦ |
+| 1 | ответ(т) | — | текст_ответа = т; журнал(callee_answered, label: т) | КОНЕЦ |
 | 2 | сбой(причина) | — | текст_ответа = "failed: ${причина}"; журнал(callee_failed, reason: строка(причина)) | КОНЕЦ |
 
 ### КОНЕЦ — конец
@@ -416,7 +416,7 @@ Initial state: AgentTurn
 - Idle term: 60_000
 
 | № | Event | Condition | Actions | To |
-| 1 | response(t) | — | reply_text = t; journal(callee_answered, label: "${length(t)} chars") | End |
+| 1 | response(t) | — | reply_text = t; journal(callee_answered, label: t) | End |
 | 2 | failure(reason) | — | reply_text = "failed: ${reason}"; journal(callee_failed, reason: text(reason)) | End |
 
 ### End — end
@@ -458,10 +458,7 @@ them and also writes every section, an empty one as `—`). The journal codes `c
         { "n": 1, "event": { "kind": "answer", "bind": "т" },
           "actions": [
             { "do": "assign", "target": "reply_text", "value": { "op": "name", "name": "т" } },
-            { "do": "journal", "code": "callee_answered", "params": [ { "name": "label", "value":
-              { "op": "call", "fn": "concat", "args": [
-                { "op": "call", "fn": "text", "args": [ { "op": "call", "fn": "length", "args": [ { "op": "name", "name": "т" } ] } ] },
-                { "op": "lit", "value": " chars" } ] } } ] }
+            { "do": "journal", "code": "callee_answered", "params": [ { "name": "label", "value": { "op": "name", "name": "т" } } ] }
           ],
           "to": "End" },
         { "n": 2, "event": { "kind": "failure", "bind": "reason" },
@@ -512,7 +509,7 @@ alula run ask.alula.json ask-answer.scenario.test.json
     { "do": "feed", "event": { "kind": "start" },
       "expect": { "state": "AgentTurn", "sent": ["agent-1"], "open": ["agent-1"] } },
     { "do": "feed", "event": { "kind": "answer", "request": "agent-1", "input": "hello" },
-      "expect": { "state": "End", "journal": [ { "code": "callee_answered", "params": { "label": "5 chars" } } ],
+      "expect": { "state": "End", "journal": [ { "code": "callee_answered", "params": { "label": "hello" } } ],
                   "data": { "reply_text": "hello" }, "open": [], "outcome": "answer:hello" } }
   ]
 }

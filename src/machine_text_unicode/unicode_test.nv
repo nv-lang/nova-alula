@@ -206,7 +206,7 @@ test "uc error column of an unknown state after cyrillic" {
 }
 
 test "uc error column of an unknown state after a four byte letter" {
-    ro text = tiny_named("ΑΝΑΜΟΝΗ", "ΑΠΟΦΑΣΗ", "ΤΕΛΟΣ", "ΣΤΟΠ").replace("| число_ходов += 1 | ΑΠΟΦΑΣΗ |", "| число_ходов += длина(\"😀𝒜\") | ΧΧΧΧ |")
+    ro text = tiny_named("ΑΝΑΜΟΝΗ", "ΑΠΟΦΑΣΗ", "ΤΕΛΟΣ", "ΣΤΟΠ").replace("| число_ходов += 1 | ΑΠΟΦΑΣΗ |", "| число_ходов += длина([\"😀\", \"𝒜\"]) | ΧΧΧΧ |")
     ro report = checked(text)
     ro place = place_of(report, "name")
     assert(place[0] > 0)

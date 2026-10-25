@@ -678,8 +678,6 @@ fn fn_to_int(x f64) -> Result[Value, EvalError] {
     Ok(Int(x as int))
 }
 
-fn fn_text_len(s str) -> int => s.chars().count()
-
 fn fn_journal_event(args []Value) -> Result[Value, EvalError] {
     ro code = match args[0] {
         Text(s) => s
@@ -814,9 +812,8 @@ fn eval_plain(name str, v []Value) -> Result[Value, EvalError] {
         }
         "length" => match v[0] {
             List(items) => Ok(Int(items.len()))
-            Text(s) => Ok(Int(fn_text_len(s)))
             Dict(entries) => Ok(Int(entries.len()))
-            _ => wrong_at("args[0]", "list, text or dict", v[0])
+            _ => wrong_at("args[0]", "list or dict", v[0])
         }
         "has" => match v[0] {
             Null => Ok(Bool(false))

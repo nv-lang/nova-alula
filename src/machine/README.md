@@ -152,7 +152,7 @@ Macros and functions (the `fn` of a `call` node; the catalog of the format, sect
 | `dict(list, x -> key, x -> value)` | a dict from a list; a repeated key is `DuplicateKey` |
 | `range(a, b)` | `[a, b)`, empty when `b <= a`; longer than `MAX_ITEMS` is `OutOfBudget` |
 | `keys(dict)`, `values(dict)` | in the order of the first record of a key |
-| `length(x)` | the items of a list or a dict, the letters (code points) of a text |
+| `length(x)` | the items of a list or a dict; a text is `TypeMismatch` (format 2.23: `length` is for a list and a dict only, a text has no length in the language) |
 | `has(x)`, `require(x)` | `x` is not `none`; the value, or the defect `Unreachable` on `none` |
 | `remove(list, item)` | the list without ALL items equal to `item` (owner, 2026-10-19) |
 | `without_key(dict, key)` | the dict without the key (an absent key: the same dict) |

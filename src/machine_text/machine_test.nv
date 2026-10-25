@@ -263,7 +263,7 @@ test "tm unreachable" {
 }
 
 test "tm read outside" {
-    ro cut = tiny_with("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить) | — | число_ходов = длина(остановка) | РЕШИТЬ |")
+    ro cut = tiny_with("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить) | — | число_ходов = если остановка == \"\" то { 0 } иначе { 1 } | РЕШИТЬ |")
     assert(note_says(cut, "the datum stop_reason is read but is not in the Input of the state (rule 11)"))
     assert(first_note(cut).contains("check $.states[0].rows[0].actions[0].value"))
 }
