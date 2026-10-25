@@ -187,7 +187,7 @@ fn tiny_agent() -> str => `# Машина: Малая
 
 | имя | тип | начальное | не убывает | пишет |
 |---|---|---|---|---|
-| text_reply | строка | "" | — | строки |
+| text_reply | строка | "" | — | действия |
 | agent_attempt | число>=0 | 0 | да | механика |
 
 ## Стороны
@@ -341,11 +341,11 @@ ${ticks()}
 
 | имя | тип | начальное | не убывает | пишет |
 |---|---|---|---|---|
-| order | []строка | вход.order | — | строки |
-| to_send | []строка | [] | — | строки и механика |
-| lenses | словарь[строка, Линза] | вход.order.словарь(л => л, л => Линза { идентификатор: л, попытка: 0 }) | — | строки |
+| order | []строка | вход.order | — | действия |
+| to_send | []строка | [] | — | действия и механика |
+| lenses | словарь[строка, Линза] | вход.order.словарь(л => л, л => Линза { идентификатор: л, попытка: 0 }) | — | действия |
 | lenses[*].attempt | число>=0 | — | да | механика |
-| answered | число>=0 | 0 | да | строки |
+| answered | число>=0 | 0 | да | действия |
 
 ## Стороны
 
@@ -419,14 +419,14 @@ test "nm set counter" {
 // ---- State and Signal ------------------------------------------------------------------------------------------------------------------------
 
 test "nm state type" {
-    ro text = tiny_agent().replace("| agent_attempt | число>=0 | 0 | да | механика |", "| agent_attempt | число>=0 | 0 | да | механика |\n| last | ?Состояние | пусто | — | строки |")
+    ro text = tiny_agent().replace("| agent_attempt | число>=0 | 0 | да | механика |", "| agent_attempt | число>=0 | 0 | да | механика |\n| last | ?Состояние | пусто | — | действия |")
     ro report = checked(text)
     if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
     assert(report.json.contains("\"type\":\"?State\""))
 }
 
 test "nm signal type" {
-    ro text = tiny_agent().replace("| agent_attempt | число>=0 | 0 | да | механика |", "| agent_attempt | число>=0 | 0 | да | механика |\n| last_signal | ?Сигнал | пусто | — | строки |")
+    ro text = tiny_agent().replace("| agent_attempt | число>=0 | 0 | да | механика |", "| agent_attempt | число>=0 | 0 | да | механика |\n| last_signal | ?Сигнал | пусто | — | действия |")
     ro report = checked(text)
     if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
     assert(report.json.contains("\"type\":\"?Signal\""))
@@ -434,13 +434,13 @@ test "nm signal type" {
 
 test "nm state value" {
     // a literal of the type State is the name of a state
-    ro text = tiny_agent().replace("| agent_attempt | число>=0 | 0 | да | механика |", "| agent_attempt | число>=0 | 0 | да | механика |\n| last | ?Состояние | пусто | — | строки |").replace("| 1 | ответ(ответ) | — | text_reply = ответ | DONE |", "| 1 | ответ(ответ) | — | text_reply = ответ; last = состояние | DONE |")
+    ro text = tiny_agent().replace("| agent_attempt | число>=0 | 0 | да | механика |", "| agent_attempt | число>=0 | 0 | да | механика |\n| last | ?Состояние | пусто | — | действия |").replace("| 1 | ответ(ответ) | — | text_reply = ответ | DONE |", "| 1 | ответ(ответ) | — | text_reply = ответ; last = состояние | DONE |")
     ro def = def_of(text)
     assert(find_state(def, "ASK") >= 0)
 }
 
 test "nm state bad" {
-    ro text = tiny_agent().replace("| agent_attempt | число>=0 | 0 | да | механика |", "| agent_attempt | число>=0 | 0 | да | механика |\n| last | ?Состояние | \"NOPE\" | — | строки |")
+    ro text = tiny_agent().replace("| agent_attempt | число>=0 | 0 | да | механика |", "| agent_attempt | число>=0 | 0 | да | механика |\n| last | ?Состояние | \"NOPE\" | — | действия |")
     assert(notes(text).len() >= 1)
 }
 

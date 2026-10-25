@@ -66,10 +66,10 @@ test "tb bar not escaped" {
 }
 
 test "tb bar in a string" {
-    ro escaped = checked(with_data_row("| свод | строка | \"x\\|y\" | — | строки |"))
+    ro escaped = checked(with_data_row("| свод | строка | \"x\\|y\" | — | действия |"))
     if escaped.errors.len() > 0 { panic(first_error_of(escaped)) }
     assert(escaped.json.contains("\"value\":\"x|y\""))
-    assert(same_json(with_data_row("| свод | строка | \"x|y\" | — | строки |"), escaped.json))
+    assert(same_json(with_data_row("| свод | строка | \"x|y\" | — | действия |"), escaped.json))
 }
 
 test "tb bar in a match" {

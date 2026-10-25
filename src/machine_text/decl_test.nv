@@ -160,35 +160,42 @@ test "dc input" {
 fn data_head() -> str => "## Данные\n\n| имя | тип | начальное | не убывает | пишет |\n|---|---|---|---|---|\n"
 
 test "dc data initial" {
-    ro text = jsn("## Вход\n\n| имя | тип | примечание |\n|---|---|---|\n| запрос_агента | строка | — |\n\n${data_head()}| запрос_агента | строка | вход.запрос_агента | — | строки |\n| ход | ?строка | пусто | — | строки |\n| число_ходов | число>=0 | 0 | да, <= 20 | механика |\n")
+    ro text = jsn("## Вход\n\n| имя | тип | примечание |\n|---|---|---|\n| запрос_агента | строка | — |\n\n${data_head()}| запрос_агента | строка | вход.запрос_агента | — | действия |\n| ход | ?строка | пусто | — | действия |\n| число_ходов | число>=0 | 0 | да, <= 20 | механика |\n")
     assert(text.contains("{\"name\":\"agent_request\",\"type\":\"text\",\"initial\":{\"from_input\":\"agent_request\"},\"writes\":\"rows\"}"))
     assert(text.contains("{\"name\":\"turn\",\"type\":\"?text\",\"initial\":{\"expr\":{\"op\":\"lit\",\"value\":null}},\"writes\":\"rows\"}"))
     assert(text.contains("\"monotonic\":{\"bound\":{\"op\":\"lit\",\"value\":20}},\"writes\":\"mechanics\""))
 }
 
 test "dc data writes" {
-    ro all_pairs = [["строки", "rows"], ["механика", "mechanics"], ["строки и механика", "rows_and_mechanics"], ["фрагмент", "fragment"], ["строки и фрагмент", "rows_and_fragment"]]
+    ro all_pairs = [["действия", "rows"], ["механика", "mechanics"], ["действия и механика", "rows_and_mechanics"], ["фрагмент", "fragment"], ["действия и фрагмент", "rows_and_fragment"]]
     for pair in all_pairs {
         ro text = jsn("${data_head()}| число_ходов | число>=0 | 0 | — | ${pair[0]} |\n")
         assert(text.contains("\"writes\":\"${pair[1]}\""))
     }
 }
 
+// AL-122: the words of the column `пишет` of 2.22 (`строки`, `строки и механика`, `строки и фрагмент`) are refused with the new word, there is no transition period
+test "dc data writes the former words" {
+    for pair in [["строки", "действия"], ["строки и механика", "действия и механика"], ["строки и фрагмент", "действия и фрагмент"]] {
+        assert(says("${data_head()}| число_ходов | число>=0 | 0 | — | ${pair[0]} |\n", "`${pair[0]}` в формате 2.22 не бывает (AL-122): пишется `${pair[1]}`; переходного периода нет"))
+    }
+}
+
 test "dc data path" {
-    ro text = jsn("## Типы\n\n```\nтип Линза { попытка число>=0 }\n```\n\n${data_head()}| линзы | словарь[строка, Линза] | [] | — | строки |\n| линзы[*].попытка | число>=0 | — | да | механика |\n")
+    ro text = jsn("## Типы\n\n```\nтип Линза { попытка число>=0 }\n```\n\n${data_head()}| линзы | словарь[строка, Линза] | [] | — | действия |\n| линзы[*].попытка | число>=0 | — | да | механика |\n")
     assert(text.contains("{\"name\":\"lenses\",\"type\":\"{text: Lens}\""))
     assert(text.contains("{\"name\":\"lenses[*].attempt\",\"type\":\"int>=0\",\"monotonic\":true,\"writes\":\"mechanics\"}"))
     assert(says("${data_head()}| линзы[*].попытка | число>=0 | — | да | механика |\n", "называет данное, которого нет выше"))
 }
 
 test "dc data dict literal" {
-    ro text = jsn("${data_head()}| ответы_свидетеля | словарь[число>=0, []строка] | [] | — | строки |\n")
+    ro text = jsn("${data_head()}| ответы_свидетеля | словарь[число>=0, []строка] | [] | — | действия |\n")
     assert(text.contains("\"initial\":{\"expr\":{\"op\":\"dict\",\"entries\":[]}}"))
 }
 
 test "dc data readable name" {
     // a readable name of the contract is the word `en` of the table of words and needs no brackets
-    ro text = jsn("${data_head()}| остановка | \"\" \\| \"a\" | \"\" | — | строки |\n| предыдущее | ?Состояние | пусто | — | фрагмент |\n")
+    ro text = jsn("${data_head()}| остановка | \"\" \\| \"a\" | \"\" | — | действия |\n| предыдущее | ?Состояние | пусто | — | фрагмент |\n")
     assert(text.contains("{\"name\":\"stop_reason\""))
     assert(text.contains("{\"name\":\"previous\""))
 }

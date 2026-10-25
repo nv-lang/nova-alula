@@ -32,36 +32,36 @@ test "v217 format 2.16 is refused" {
 // ---- AL-53: the JSON name is built by itself -------------------------------------------------------------------------------------------------
 
 test "v217 a name of the dictionary gives the English name" {
-    ro text = ru17_data("| число_повторов | число>=0 | 0 | да | строки |")
+    ro text = ru17_data("| число_повторов | число>=0 | 0 | да | действия |")
     assert(is_clean(text))
     assert(has17(text, "\"name\":\"retry_count\""))
 }
 
 test "v217 a Latin name is its own JSON name" {
-    ro text = ru17_data("| my_data | число>=0 | 0 | да | строки |")
+    ro text = ru17_data("| my_data | число>=0 | 0 | да | действия |")
     assert(is_clean(text))
     assert(has17(text, "\"name\":\"my_data\""))
 }
 
 test "v217 a name out of the dictionary is transliterated" {
-    ro text = ru17_data("| хвост_змеи | число>=0 | 0 | да | строки |")
+    ro text = ru17_data("| хвост_змеи | число>=0 | 0 | да | действия |")
     assert(is_clean(text))
     assert(has17(text, "\"name\":\"khvost_zmei\""))
 }
 
 test "v217 the soft and the hard sign are dropped" {
-    ro text = ru17_data("| объём_ящика | число>=0 | 0 | да | строки |")
+    ro text = ru17_data("| объём_ящика | число>=0 | 0 | да | действия |")
     assert(has17(text, "\"name\":\"obem_yashchika\""))
 }
 
 test "v217 the dictionary is searched for the whole name" {
-    ro text = ru17_data("| ход_змеи | число>=0 | 0 | да | строки |").replace("| число_ходов | число>=0 | 0 | да, <= 5 | строки |\n", "| число_ходов | число>=0 | 0 | да, <= 5 | строки |\n| ход | число>=0 | 0 | да | строки |\n")
+    ro text = ru17_data("| ход_змеи | число>=0 | 0 | да | действия |").replace("| число_ходов | число>=0 | 0 | да, <= 5 | действия |\n", "| число_ходов | число>=0 | 0 | да, <= 5 | действия |\n| ход | число>=0 | 0 | да | действия |\n")
     assert(has17(text, "\"name\":\"turn\""))
     assert(has17(text, "\"name\":\"khod_zmei\""))
 }
 
 test "v217 the empty words of a name are dropped" {
-    ro text = ru17_data("| ход__змеи | число>=0 | 0 | да | строки |")
+    ro text = ru17_data("| ход__змеи | число>=0 | 0 | да | действия |")
     assert(has17(text, "\"name\":\"khod_zmei\""))
 }
 
@@ -108,7 +108,7 @@ test "v217 an element of an enum is written in Pascal case" {
 }
 
 test "v217 a name with a mixed word is refused" {
-    ro text = ru17_data("| запросAgent | число>=0 | 0 | да | строки |")
+    ro text = ru17_data("| запросAgent | число>=0 | 0 | да | действия |")
     assert(!is_clean(text))
     assert(note_says(text, "смешаны"))
     assert(note_says(text, "запросAgent"))
@@ -120,7 +120,7 @@ test "v217 a mixed word in a state name is refused" {
 }
 
 test "v217 a Latin word between Cyrillic words is allowed" {
-    ro text = ru17_data("| запрос_Agent | число>=0 | 0 | да | строки |")
+    ro text = ru17_data("| запрос_Agent | число>=0 | 0 | да | действия |")
     assert(is_clean(text))
     assert(has17(text, "\"name\":\"zapros_agent\""))
 }
@@ -132,13 +132,13 @@ test "v217 a Latin word in a type name stays" {
 }
 
 test "v217 digits are allowed in a word" {
-    ro text = ru17_data("| находки_v3 | число>=0 | 0 | да | строки |")
+    ro text = ru17_data("| находки_v3 | число>=0 | 0 | да | действия |")
     assert(is_clean(text))
     assert(has17(text, "\"name\":\"nakhodki_v3\""))
 }
 
 test "v217 a sign outside the table needs a row" {
-    ro text = ru17_data("| α_данные | число>=0 | 0 | да | строки |")
+    ro text = ru17_data("| α_данные | число>=0 | 0 | да | действия |")
     assert(!is_clean(text))
     assert(note_says(text, "не латинское"))
     assert(note_says(text, "## Имена"))
@@ -150,7 +150,7 @@ test "v217 the dictionary gives a state name" {
 }
 
 test "v217 the dictionary is not read for a name with two English names" {
-    ro text = ru17_data("| расход | число>=0 | 0 | да | строки |")
+    ro text = ru17_data("| расход | число>=0 | 0 | да | действия |")
     assert(has17(text, "\"name\":\"raskhod\""))
 }
 

@@ -359,7 +359,7 @@ fn note_says_in(report TranslateReport, needle str) -> bool {
 
 // ---- a field of the request that is named as a datum (AL-28) --------------------------------------------------------------------------
 
-fn named_as_datum() -> str => boss212().replace("| reply | ?CallOutput | пусто | — | строки |", "| reply | ?CallOutput | пусто | — | строки |\n| label | строка | \"\" | — | строки |").replace("| label | \"m\" | сторона |", "| label | если reply == пусто то { \"first\" } иначе { \"again\" } | сторона |").replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | reply = итог; label = \"seen\" | DONE |")
+fn named_as_datum() -> str => boss212().replace("| reply | ?CallOutput | пусто | — | действия |", "| reply | ?CallOutput | пусто | — | действия |\n| label | строка | \"\" | — | действия |").replace("| label | \"m\" | сторона |", "| label | если reply == пусто то { \"first\" } иначе { \"again\" } | сторона |").replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | reply = итог; label = \"seen\" | DONE |")
 
 test "v212 field named as a datum with an if" {
     ro report = checked(named_as_datum())
@@ -425,7 +425,7 @@ test "v212 role without a literal" {
 
 test "v212 role reads join the input" {
     // the datum `reply` is read by the parse for the role `witness`: the rows of the state read it without a line of the table "Input"
-    ro witness = role_text("witness", "[]строка").replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | seen = reply | DONE |").replace("| reply | ?CallOutput | пусто | — | строки |", "| reply | ?CallOutput | пусто | — | строки |\n| seen | ?CallOutput | пусто | — | строки |")
+    ro witness = role_text("witness", "[]строка").replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | seen = reply | DONE |").replace("| reply | ?CallOutput | пусто | — | действия |", "| reply | ?CallOutput | пусто | — | действия |\n| seen | ?CallOutput | пусто | — | действия |")
     ro author = witness.replace("read_by_role(\"witness\") -> []строка", "read_by_role(\"author\") -> CallOutput")
     ro good = checked_roles(witness)
     if good.errors.len() > 0 { panic(notes_of(good).join(" ## ")) }
@@ -444,7 +444,7 @@ test "v212 role circle" {
 
 // ---- the bindings of the rows of the fragment against the data of the machine (AL-26) ---------------------------------------------------------------------
 
-fn meeting_with_datum(name str) -> str => meeting212().replace("| попытка_вратаря | число>=0 | 0 | да | механика |", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| ${name} | строка | \"\" | — | строки |")
+fn meeting_with_datum(name str) -> str => meeting212().replace("| попытка_вратаря | число>=0 | 0 | да | механика |", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| ${name} | строка | \"\" | — | действия |")
 
 test "v212 a datum named as a binding of the fragment" {
     // the rows of the fragment Pause bind `human_word`, `author`, `source`, `id` (the JSON names of the registry): after the fragment is put in they are bindings of the machine, a datum may not have such a JSON name

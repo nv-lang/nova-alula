@@ -83,7 +83,7 @@ test "rn set" {
 }
 
 test "rn state type" {
-    ro json = json_of(tiny_agent().replace("| agent_attempt | число>=0 | 0 | да | механика |", "| agent_attempt | число>=0 | 0 | да | механика |\n| last | ?Состояние | пусто | — | строки |\n| sig | ?Сигнал | пусто | — | строки |"))
+    ro json = json_of(tiny_agent().replace("| agent_attempt | число>=0 | 0 | да | механика |", "| agent_attempt | число>=0 | 0 | да | механика |\n| last | ?Состояние | пусто | — | действия |\n| sig | ?Сигнал | пусто | — | действия |"))
     ro ru = render(json, "ru")
     assert(ru.contains("?Состояние"))
     assert(ru.contains("?Сигнал"))

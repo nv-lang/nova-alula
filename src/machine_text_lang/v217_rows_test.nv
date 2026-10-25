@@ -6,7 +6,7 @@ import std.text
 // ---- AL-60: the section `## Имена` ------------------------------------------------------------------------------------------------------------
 
 test "v217 a row sets the JSON name" {
-    ro text = ru17_data("| число_повторов | число>=0 | 0 | да | строки |").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| число_повторов | retries |\n")
+    ro text = ru17_data("| число_повторов | число>=0 | 0 | да | действия |").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| число_повторов | retries |\n")
     assert(is_clean(text))
     assert(has17(text, "\"name\":\"retries\""))
     assert(!has17(text, "\"name\":\"retry_count\""))
@@ -46,7 +46,7 @@ test "v217 a qualified row is stronger than a simple one" {
 }
 
 test "v217 a simple row renames every declaration of the name" {
-    ro text = ru17_types_names("тип Итог { расход число }", "| расход | usage |").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| расход | число>=0 | 0 | да | строки |\n")
+    ro text = ru17_types_names("тип Итог { расход число }", "| расход | usage |").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| расход | число>=0 | 0 | да | действия |\n")
     assert(is_clean(text))
     assert(has17(text, "{\"name\":\"usage\",\"type\":\"int\"}"))
     assert(has17(text, "{\"name\":\"usage\",\"type\":\"int>=0\""))
@@ -60,7 +60,7 @@ test "v217 a row that changes nothing is an extra row" {
 }
 
 test "v217 a row for a Latin name that is its own name is extra" {
-    ro text = ru17_data("| start_x | число>=0 | 0 | да | строки |").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| start_x | start_x |\n")
+    ro text = ru17_data("| start_x | число>=0 | 0 | да | действия |").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| start_x | start_x |\n")
     assert(note_says(text, "лишняя строка"))
 }
 
@@ -158,7 +158,7 @@ test "v217 brackets at a datum are refused" {
 }
 
 test "v217 brackets at a Latin datum are refused too" {
-    ro text = ru17_data("| start_x (start_x) | число>=0 | 0 | да | строки |")
+    ro text = ru17_data("| start_x (start_x) | число>=0 | 0 | да | действия |")
     assert(note_says(text, "скобки"))
 }
 

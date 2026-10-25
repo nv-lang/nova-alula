@@ -38,24 +38,24 @@ fn cond154(text str, cond str, names str) -> str =>
 fn cond_en154(text str, cond str, names str) -> str =>
     text.replace("| 1 | turn_count >= 2 | — | Finished |", "| 1 | ${cond} | — | Finished |").replace("Reads: turn_count\n\n| № | Condition", "Reads: turn_count${names}\n\n| № | Condition")
 
-fn list_row154() -> str => "| список | []число | [1] | — | строки |"
+fn list_row154() -> str => "| список | []число | [1] | — | действия |"
 
 fn with_consts154(text str, rows str) -> str => text.replace("## Данные\n", "## Константы\n\n| имя | тип | значение |\n|---|---|---|\n${rows}\n\n## Данные\n")
 
 fn with_params154(text str, rows str) -> str => text.replace("## Данные\n", "## Параметры\n\n| имя | тип | по умолчанию | переопределение проектом |\n|---|---|---|---|\n${rows}\n\n## Данные\n")
 
-fn rec154() -> str => ru222_types("тип Заметка { теги []число }").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| заметка | Заметка | Заметка { теги: [1] } | — | строки |\n")
+fn rec154() -> str => ru222_types("тип Заметка { теги []число }").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| заметка | Заметка | Заметка { теги: [1] } | — | действия |\n")
 
 // ---- the places of the empty [] (AL-105): the positive tests -------------------------------------------------------------------------------------
 
 test "p154 a datum gives the type" {
-    ro text = ru222_data("| список | []число | [] | — | строки |")
+    ro text = ru222_data("| список | []число | [] | — | действия |")
     assert(is_clean(text))
     assert(has154(text, "\"initial\":{\"expr\":${list154()}}"))
 }
 
 test "p154 a datum of a map gives the type" {
-    ro text = ru222_data("| таблица | словарь[строка, число] | [] | — | строки |")
+    ro text = ru222_data("| таблица | словарь[строка, число] | [] | — | действия |")
     assert(is_clean(text))
     assert(has154(text, "\"initial\":{\"expr\":${dict154()}}"))
 }
@@ -79,7 +79,7 @@ test "p154 a field of a record literal gives the type" {
 }
 
 test "p154 a field of a form literal gives the type" {
-    ro text = act154(ru222_types("тип Итог перечисление\n  | Готово { теги []число }\n  | Пусто").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| итог | Итог | Итог.Пусто | — | строки |\n"), "итог = Итог.Готово { теги: [] }", ["итог"])
+    ro text = act154(ru222_types("тип Итог перечисление\n  | Готово { теги []число }\n  | Пусто").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| итог | Итог | Итог.Пусто | — | действия |\n"), "итог = Итог.Готово { теги: [] }", ["итог"])
     assert(is_clean(text))
     assert(has154(text, "\"op\":\"variant\",\"type\":\"Itog\",\"name\":\"Done\",\"fields\":{\"tegi\":${list154()}}"))
 }
@@ -160,14 +160,14 @@ test "p154 the other operand of a sum on the left gives the type" {
 }
 
 test "p154 the right operand of the missing-value sign takes the type of the place" {
-    ro text = act154(ru222_data(list_row154()).replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| слова | словарь[число, []число] | [1: [2]] | — | строки |\n"), "список = слова[1] ?? []", ["слова"])
+    ro text = act154(ru222_data(list_row154()).replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| слова | словарь[число, []число] | [1: [2]] | — | действия |\n"), "список = слова[1] ?? []", ["слова"])
     assert(is_clean(text))
     assert(has154(text, "\"op\":\"??\",\"left\":{\"op\":\"index\""))
     assert(has154(text, "\"right\":${list154()}"))
 }
 
 test "p154 the right operand of the missing-value sign takes the type of the left one without a place" {
-    ro data = "| попытка_вратаря | число>=0 | 0 | да | механика |\n| слова | словарь[число, []число] | [1: [2]] | — | строки |\n"
+    ro data = "| попытка_вратаря | число>=0 | 0 | да | механика |\n| слова | словарь[число, []число] | [1: [2]] | — | действия |\n"
     ro text = act154(tiny_ru().replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", data), "число_ходов += длина(слова[1] ?? [])", ["слова"])
     assert(is_clean(text))
     assert(has154(text, "\"op\":\"??\",\"left\":{\"op\":\"index\""))
@@ -194,7 +194,7 @@ test "p154 the call of remove has the type of its first argument" {
 }
 
 test "p154 the call of without_key has the type of its first argument" {
-    ro text = cond154(ru222_data("| слова | словарь[число, число] | [1: 2] | — | строки |"), "без_ключа(слова, 1) == []", ", слова")
+    ro text = cond154(ru222_data("| слова | словарь[число, число] | [1: 2] | — | действия |"), "без_ключа(слова, 1) == []", ", слова")
     assert(is_clean(text))
     assert(has154(text, "\"fn\":\"without_key\""))
     assert(has154(text, "\"right\":${dict154()}"))
@@ -280,7 +280,7 @@ test "n154 the message names the places" {
 
 // ---- bare names of the elements (AL-88, AL-104) ----------------------------------------------------------------------------------------------
 
-fn two154() -> str => ru222_types("тип Цвет перечисление Красный | Синий\nтип Флаг перечисление Красный | Белый").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| цвет | Цвет | Цвет.Красный | — | строки |\n")
+fn two154() -> str => ru222_types("тип Цвет перечисление Красный | Синий\nтип Флаг перечисление Красный | Белый").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| цвет | Цвет | Цвет.Красный | — | действия |\n")
 
 test "b154 a name of two enumerations asks for the type and names both" {
     ro text = cond154(two154(), "цвет == Красный", ", цвет")
@@ -311,13 +311,13 @@ test "b154 a name of one enumeration needs no place" {
 }
 
 test "b154 a name of a form without fields is found like an element" {
-    ro text = ru222_types("тип Итог перечисление\n  | Готово { число число }\n  | Пусто").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| итог | Итог | Пусто | — | строки |\n")
+    ro text = ru222_types("тип Итог перечисление\n  | Готово { число число }\n  | Пусто").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| итог | Итог | Пусто | — | действия |\n")
     assert(is_clean(text))
     assert(has154(text, "\"initial\":{\"expr\":{\"op\":\"variant\",\"type\":\"Itog\",\"name\":\"Pusto\"}}"))
 }
 
 test "b154 a name of an element written in capitals is found" {
-    ro text = ru222_types("тип Режим перечисление ВКЛ | ВЫКЛ").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| режим | Режим | ВКЛ | — | строки |\n")
+    ro text = ru222_types("тип Режим перечисление ВКЛ | ВЫКЛ").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| режим | Режим | ВКЛ | — | действия |\n")
     ro cond = cond154(text, "режим == ВЫКЛ", ", режим")
     assert(is_clean(cond))
     assert(has154(cond, "\"initial\":{\"expr\":{\"op\":\"variant\",\"type\":\"Rezhim\",\"name\":\"Vkl\"}}"))
@@ -334,7 +334,7 @@ test "b154 a name of an element written in capitals in English is found" {
 fn colors_file154() -> str => "# Функции: цвета\n\n- functions_version: 1\n- format: 2.22\n\n## Типы\n\n${fence222()}\nтип Фон перечисление Красный | Синий\n${fence222()}\n\n## Константы\n\n—\n\n## Функции\n\n—\n"
 
 fn with_colors154(text str, file str) -> str =>
-    text.replace("## Состояния\n", "## Подключения\n\n${fence222()}\nфункции: цвета версия 1 хеш ${definitions_hash(file)}\n${fence222()}\n\n## Состояния\n").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| фон | Фон | Красный | — | строки |\n")
+    text.replace("## Состояния\n", "## Подключения\n\n${fence222()}\nфункции: цвета версия 1 хеш ${definitions_hash(file)}\n${fence222()}\n\n## Состояния\n").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| фон | Фон | Красный | — | действия |\n")
 
 fn report154(text str, file str) -> TranslateReport => translate_checked_with(text, sample_registry(), [NamedText { name: "цвета", text: file }])
 
@@ -356,7 +356,7 @@ test "b154 a name of an element of a file of functions and of the machine asks f
 }
 
 // The divergence 10: a bare name that is also a datum, a constant, a parameter or a binding is an error of the check (AL-88, AL-104); the translator no longer reads it as that name.
-fn color_data154() -> str => ru222_types("тип Цвет перечисление Красный | Синий").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| Красный | число | 0 | — | строки |\n")
+fn color_data154() -> str => ru222_types("тип Цвет перечисление Красный | Синий").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| Красный | число | 0 | — | действия |\n")
 
 test "b154 a datum named as an element is an error when the bare name is read" {
     ro text = cond154(color_data154(), "Красный == 0", ", Красный")
@@ -399,7 +399,7 @@ test "b154 a binding of let named as an element is an error" {
 test "b154 a name of no enumeration is read as the datum or the binding as before" {
     ro text = act154(ru222_color(), "число_ходов += длина([1, 2].фильтр(х => х > 1))", [])
     assert(is_clean(text))
-    ro datum = cond154(ru222_data("| итого | число | 0 | — | строки |"), "итого == 0", ", итого")
+    ro datum = cond154(ru222_data("| итого | число | 0 | — | действия |"), "итого == 0", ", итого")
     assert(is_clean(datum))
 }
 
@@ -431,7 +431,7 @@ test "m154 a field named as a macro in English is a warning" {
 }
 
 test "m154 the field is read after a dot without brackets and the macro with them" {
-    ro text = act154(ru222_types("тип Заметка { количество число }").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| заметка | Заметка | Заметка { количество: 3 } | — | строки |\n"), "число_ходов += заметка.количество + [1].количество(х => х > 0)", ["заметка"])
+    ro text = act154(ru222_types("тип Заметка { количество число }").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| заметка | Заметка | Заметка { количество: 3 } | — | действия |\n"), "число_ходов += заметка.количество + [1].количество(х => х > 0)", ["заметка"])
     assert(is_clean(text))
     assert(has154(text, "\"op\":\"field\""))
     assert(has154(text, "\"fn\":\"count\""))

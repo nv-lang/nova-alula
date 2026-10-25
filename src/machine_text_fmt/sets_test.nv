@@ -19,12 +19,12 @@ fn with_data_row(row str) -> str => replaced(base_text(), "| попытка_вр
 fn with_definition(def str) -> str => replaced(base_text(), "функция пауза_повтора(п число>=0) -> число =>\n  п + 1\n", "функция пауза_повтора(п число>=0) -> число =>\n  п + 1\n\n${def}\n")
 
 test "st dict value" {
-    ro text = with_data_row("| свод | словарь[строка, \"allow\" \\| \"deny\"] | [] | — | строки |")
+    ro text = with_data_row("| свод | словарь[строка, \"allow\" \\| \"deny\"] | [] | — | действия |")
     assert(has_json(text, "{text: 'allow' | 'deny'}"))
 }
 
 test "st dict three" {
-    ro text = with_data_row("| свод | словарь[число>=0, \"a\" \\| \"b\" \\| \"c\"] | [] | — | строки |")
+    ro text = with_data_row("| свод | словарь[число>=0, \"a\" \\| \"b\" \\| \"c\"] | [] | — | действия |")
     assert(has_json(text, "{int>=0: 'a' | 'b' | 'c'}"))
 }
 
@@ -57,32 +57,32 @@ test "st definition both" {
 }
 
 test "st under option" {
-    ro bad = with_data_row("| свод | ?\"a\" \\| \"b\" | пусто | — | строки |")
+    ro bad = with_data_row("| свод | ?\"a\" \\| \"b\" | пусто | — | действия |")
     assert(errors_say(bad, "набор литералов под ? или [] пишется в скобках"))
-    assert(has_json(with_data_row("| свод | ?(\"a\" \\| \"b\") | пусто | — | строки |"), "?('a' | 'b')"))
+    assert(has_json(with_data_row("| свод | ?(\"a\" \\| \"b\") | пусто | — | действия |"), "?('a' | 'b')"))
 }
 
 test "st under list" {
-    ro bad = with_data_row("| свод | []\"a\" \\| \"b\" | [] | — | строки |")
+    ro bad = with_data_row("| свод | []\"a\" \\| \"b\" | [] | — | действия |")
     assert(errors_say(bad, "набор литералов под ? или [] пишется в скобках"))
-    assert(has_json(with_data_row("| свод | [](\"a\" \\| \"b\") | [] | — | строки |"), "[]('a' | 'b')"))
+    assert(has_json(with_data_row("| свод | [](\"a\" \\| \"b\") | [] | — | действия |"), "[]('a' | 'b')"))
 }
 
 test "st in brackets" {
-    ro text = checked(with_data_row("| свод | словарь[строка, (\"allow\" \\| \"deny\")] | [] | — | строки |"))
+    ro text = checked(with_data_row("| свод | словарь[строка, (\"allow\" \\| \"deny\")] | [] | — | действия |"))
     assert(text.errors.len() == 0)
     assert(text.json != base_json())
-    assert(same_json(with_data_row("| свод | словарь[строка, \"allow\" \\| \"deny\"] | [] | — | строки |"), text.json))
+    assert(same_json(with_data_row("| свод | словарь[строка, \"allow\" \\| \"deny\"] | [] | — | действия |"), text.json))
 }
 
 test "st nested" {
-    assert(has_json(with_data_row("| свод | словарь[строка, ?(\"a\" \\| \"b\")] | [] | — | строки |"), "{text: ?('a' | 'b')}"))
-    assert(has_json(with_data_row("| свод | словарь[строка, [](\"a\" \\| \"b\")] | [] | — | строки |"), "{text: []('a' | 'b')}"))
-    assert(has_json(with_data_row("| свод | словарь[строка, (\"a\" \\| \"b\", число)] | [] | — | строки |"), "{text: ('a' | 'b', int)}"))
+    assert(has_json(with_data_row("| свод | словарь[строка, ?(\"a\" \\| \"b\")] | [] | — | действия |"), "{text: ?('a' | 'b')}"))
+    assert(has_json(with_data_row("| свод | словарь[строка, [](\"a\" \\| \"b\")] | [] | — | действия |"), "{text: []('a' | 'b')}"))
+    assert(has_json(with_data_row("| свод | словарь[строка, (\"a\" \\| \"b\", число)] | [] | — | действия |"), "{text: ('a' | 'b', int)}"))
 }
 
 test "st one literal" {
-    ro one = with_data_row("| свод | словарь[строка, \"a\"] | [] | — | строки |")
+    ro one = with_data_row("| свод | словарь[строка, \"a\"] | [] | — | действия |")
     assert(errors_say(one, "набор литералов — два значения и больше"))
 }
 

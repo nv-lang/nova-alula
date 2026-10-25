@@ -106,7 +106,7 @@ test "l222 an old enumeration in English is refused" {
 
 fn ru222_color() -> str {
     ro with_type = ru222_types("тип Цвет перечисление Красный | Синий")
-    ro with_datum = with_type.replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| цвет | Цвет | Красный | — | строки |\n")
+    ro with_datum = with_type.replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| цвет | Цвет | Красный | — | действия |\n")
     with_datum.replace("Читает: число_ходов\n\n| № | Условие", "Читает: число_ходов, цвет\n\n| № | Условие")
 }
 
@@ -135,7 +135,7 @@ test "l222 a qualified name gives the same tree as a bare one" {
 }
 
 test "l222 a name of two types needs the type" {
-    ro text = ru222_types("тип Цвет перечисление Красный | Синий\nтип Флаг перечисление Красный | Белый").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| цвет | Цвет | Красный | — | строки |\n")
+    ro text = ru222_types("тип Цвет перечисление Красный | Синий\nтип Флаг перечисление Красный | Белый").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| цвет | Цвет | Красный | — | действия |\n")
     assert(!is_clean(text))
 }
 
@@ -221,37 +221,37 @@ test "l222 a record field named as the function length is allowed" {
 // ---- data: maps, lists and insertions ------------------------------------------------------------------------------------------------------------
 
 test "l222 empty brackets are an empty map by the type of the datum" {
-    ro text = ru222_data("| таблица | словарь[строка, число] | [] | — | строки |")
+    ro text = ru222_data("| таблица | словарь[строка, число] | [] | — | действия |")
     assert(is_clean(text))
     assert(tree222(text).contains("\"initial\":{\"expr\":{\"op\":\"dict\",\"entries\":[]}}"))
 }
 
 test "l222 empty brackets are an empty list by the type of the datum" {
-    ro text = ru222_data("| список | []строка | [] | — | строки |")
+    ro text = ru222_data("| список | []строка | [] | — | действия |")
     assert(is_clean(text))
     assert(tree222(text).contains("\"initial\":{\"expr\":{\"op\":\"list\",\"items\":[]}}"))
 }
 
 test "l222 the empty brackets of both languages give the same trees" {
-    ro ru = ru222_data("| таблица | словарь[строка, число] | [] | — | строки |")
+    ro ru = ru222_data("| таблица | словарь[строка, число] | [] | — | действия |")
     ro en = en222_data("| table | map[str, int] | [] | — | rows |")
     assert(is_clean(ru) && is_clean(en))
     assert(tree222(en).contains("\"initial\":{\"expr\":{\"op\":\"dict\",\"entries\":[]}}"))
 }
 
 test "l222 a map with pairs is the initial value" {
-    ro text = ru222_data("| таблица | словарь[строка, число] | [\"a\": 1, \"b\": 2] | — | строки |")
+    ro text = ru222_data("| таблица | словарь[строка, число] | [\"a\": 1, \"b\": 2] | — | действия |")
     assert(is_clean(text))
     assert(tree222(text).contains("\"op\":\"dict\",\"entries\":[{\"key\":{\"op\":\"lit\",\"value\":\"a\"},\"value\":{\"op\":\"lit\",\"value\":1}}"))
 }
 
 test "l222 the old braces of a map are refused" {
-    ro text = ru222_data("| таблица | словарь[строка, число] | {} | — | строки |")
+    ro text = ru222_data("| таблица | словарь[строка, число] | {} | — | действия |")
     assert(!is_clean(text))
 }
 
 test "l222 an insertion in an action" {
-    ro text = ru222_data("| заметка | строка | \"\" | — | строки |").replace("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить) | — | число_ходов += 1; заметка = \"ход \${число_ходов}\" | РЕШИТЬ |")
+    ro text = ru222_data("| заметка | строка | \"\" | — | действия |").replace("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить) | — | число_ходов += 1; заметка = \"ход \${число_ходов}\" | РЕШИТЬ |")
     assert(is_clean(text))
     assert(tree222(text).contains("\"fn\":\"concat\""))
 }
@@ -263,14 +263,14 @@ test "l222 an insertion in English" {
 }
 
 test "l222 the trees of an insertion agree in both languages" {
-    ro ru = ru222_data("| заметка | строка | \"\" | — | строки |").replace("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить) | — | число_ходов += 1; заметка = \"ход \${число_ходов}\" | РЕШИТЬ |")
+    ro ru = ru222_data("| заметка | строка | \"\" | — | действия |").replace("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить) | — | число_ходов += 1; заметка = \"ход \${число_ходов}\" | РЕШИТЬ |")
     ro en = en222_data("| note | str | \"\" | — | rows |").replace("| 1 | signal(allow) | — | turn_count += 1 | Decide |", "| 1 | signal(allow) | — | turn_count += 1; note = \"ход \${turn_count}\" | Decide |")
     assert(tree222(ru).contains("\"fn\":\"concat\",\"args\":[{\"op\":\"lit\",\"value\":\"ход \"}"))
     assert(tree222(en).contains("\"fn\":\"concat\",\"args\":[{\"op\":\"lit\",\"value\":\"ход \"}"))
 }
 
 test "l222 a loop in an action in both languages" {
-    ro ru = ru222_data("| сумма | число | 0 | — | строки |").replace("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить) | — | для н из 0..3 { сумма += н } | РЕШИТЬ |")
+    ro ru = ru222_data("| сумма | число | 0 | — | действия |").replace("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить) | — | для н из 0..3 { сумма += н } | РЕШИТЬ |")
     ro en = en222_data("| total | int | 0 | — | rows |").replace("| 1 | signal(allow) | — | turn_count += 1 | Decide |", "| 1 | signal(allow) | — | for n in 0..3 { total += n } | Decide |")
     assert(tree222(ru).contains("\"do\":\"for_each\""))
     assert(tree222(en).contains("\"do\":\"for_each\""))

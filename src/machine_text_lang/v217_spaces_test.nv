@@ -12,12 +12,12 @@ test "v217 two states with one JSON name collide" {
 }
 
 test "v217 two data with one JSON name collide" {
-    ro text = ru17_data("| хвост | число>=0 | 0 | да | строки |").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| хвост | turn_count |\n")
+    ro text = ru17_data("| хвост | число>=0 | 0 | да | действия |").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| хвост | turn_count |\n")
     assert(note_says(text, "коллизия"))
 }
 
 test "v217 a datum and a datum of the contract collide" {
-    ro text = ru17_data("| ожидание | число>=0 | 0 | да | строки |").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| ожидание | stop_reason |\n")
+    ro text = ru17_data("| ожидание | число>=0 | 0 | да | действия |").replace("| ЖДАТЬ | Wait |\n", "| ЖДАТЬ | Wait |\n| ожидание | stop_reason |\n")
     assert(note_says(text, "коллизия"))
 }
 
