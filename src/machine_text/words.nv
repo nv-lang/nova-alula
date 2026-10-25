@@ -123,9 +123,9 @@ fn kinds_foreign_names() -> []str => ["expr", "action", "type", "event", "destin
 // ---- the former forms (no transition period) -------------------------------------------------------------------------------------
 
 /// TxFormer: a word of a former format and what is written now.
-type TxFormer { word str, instead str, label str, shown str }
+type TxFormer { word str, instead str, label str, shown str, was str }
 
-/// The former form of a word under a kind (`type`, `call`, `decl`, `word`) in the language of the file (`former.tsv`): what to write instead, the label of the change. None when the word was never a form of the language.
+/// The former form of a word under a kind (`type`, `call`, `decl`, `word`) in the language of the file (`former.tsv`): what to write instead, the label of the change, the format that still had the form (the seventh column, `2.22` when it is absent). None when the word was never a form of the language.
 fn former_find(lang str, kind str, word str) -> Option[TxFormer] {
     for raw in embed_str("former.tsv").split("\n") {
         ro line = raw.strip_suffix("\r") ?? raw
@@ -134,13 +134,13 @@ fn former_find(lang str, kind str, word str) -> Option[TxFormer] {
         mut c = []str.new()
         for x in cells { c.push(x) }
         if c.len() < 6 || c[0] == "lang" { continue }
-        if c[0] == lang && c[1] == kind && c[2] == word { return Some(TxFormer { word: c[2], instead: c[3], label: c[4], shown: c[5] }) }
+        if c[0] == lang && c[1] == kind && c[2] == word { return Some(TxFormer { word: c[2], instead: c[3], label: c[4], shown: c[5], was: if c.len() >= 7 && c[6] != "" { c[6] } else { "2.22" } }) }
     }
     None
 }
 
 /// The text of the error about a former form: what it was, what to write now, the label; there is no transition period.
-fn former_message(f TxFormer) -> str => "`${f.shown}` в формате 2.22 не бывает (${f.label}): пишется `${f.instead}`; переходного периода нет"
+fn former_message(f TxFormer) -> str => "`${f.shown}` в формате ${f.was} не бывает (${f.label}): пишется `${f.instead}`; переходного периода нет"
 
 /// Is the word a former form under the kind?
 fn former_is(lang str, kind str, word str) -> bool {
