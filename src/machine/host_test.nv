@@ -285,12 +285,28 @@ test "host the faults of a table of codes: a bad word, a repeat, the language" {
     assert(issues.len() == 3)
 }
 
+// A parse function by role (AL-131): volatile, one parameter `AgentReply`, the result of the role.
+fn hst_parse_function(reg Registry, name str, result str) {
+    match find_primitive(reg, name) {
+        Some(p) => {
+            assert(p.class == Volatile)
+            assert(p.params.len() == 1 && spec_text(p.params[0].spec) == "AgentReply")
+            assert(spec_text(p.result) == result)
+        }
+        None => panic("no ${name}")
+    }
+}
+
 test "host the samples of the specification have a registry that loads" {
     match load_host(embed_str("../../spec/samples/registry.md"), "") {
         Ok(reg) => {
-            assert(reg.primitives.len() == 22)
-            assert(has_roles(reg, "parse_agent_reply"))
-            assert(find_role(reg, "parse_agent_reply", "witness").is_some())
+            assert(reg.primitives.len() == 24)
+            // AL-131: one function per role, no table by role, no `parse_agent_reply`
+            assert(find_primitive(reg, "parse_agent_reply").is_none())
+            assert(!has_roles(reg, "parse_witness_reply") && !has_roles(reg, "parse_author_reply") && !has_roles(reg, "parse_lens_reply"))
+            hst_parse_function(reg, "parse_witness_reply", "[]WitnessAnswer")
+            hst_parse_function(reg, "parse_author_reply", "EditResult")
+            hst_parse_function(reg, "parse_lens_reply", "LensResult")
         }
         Err(errors) => panic(errors.join(" | "))
     }

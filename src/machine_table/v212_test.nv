@@ -3,7 +3,7 @@
 module alula.machine_table
 
 import std.text
-import alula.machine.{new_registry, find_role, has_roles, JournalCode, journal_find, journal_table_issues}
+import alula.machine.{new_registry, find_role, has_roles, find_primitive, JournalCode, journal_find, journal_table_issues}
 import alula.machine.{schema_files, text_of_file, TextType, ListType, RecordType, IntMin, VariantType, add_role, register, Primitive, ParamSpec, Volatile}
 import alula.examples.{machine_files, sample_registry, example_registry}
 
@@ -165,24 +165,41 @@ test "v212 empty registry skips the table" {
     }
 }
 
-// ---- the table "by role" of the parse (AL-33) ------------------------------------------------------------------------------------------
+// ---- the table "by role" of the parse (AL-33; since 2.24 one function per role, AL-131; the table stays as a mechanism of a host) ------------------------------------------------------------------------------------------
 
-test "v212 role table of the host" {
+test "v212 parse functions by role in the registry of the host (AL-131)" {
     ro reg = sample_registry()
-    assert(has_roles(reg, "parse_agent_reply"))
-    assert(find_role(reg, "parse_agent_reply", "witness").is_some())
-    assert(find_role(reg, "parse_agent_reply", "author").is_some())
-    assert(find_role(reg, "parse_agent_reply", "lens").is_some())
-    assert(find_role(reg, "parse_agent_reply", "judge").is_none())
+    assert(find_primitive(reg, "parse_agent_reply").is_none())
+    for name in ["parse_witness_reply", "parse_author_reply", "parse_lens_reply"] {
+        assert(find_primitive(reg, name).is_some())
+        assert(!has_roles(reg, name))
+        assert(find_role(reg, name, "witness").is_none())
+    }
+    assert(find_role(reg, "parse_agent_reply", "witness").is_none())
 }
 
-test "v212 role result types" {
-    match find_role(sample_registry(), "parse_agent_reply", "witness") {
-        Some(row) => assert(row.result == ListType(VariantType("WitnessAnswer")))
+test "v212 parse function result types" {
+    match find_primitive(sample_registry(), "parse_witness_reply") {
+        Some(p) => assert(p.result == ListType(VariantType("WitnessAnswer")))
         None => assert(false)
     }
-    match find_role(sample_registry(), "parse_agent_reply", "lens") {
-        Some(row) => assert(row.result == RecordType("LensResult"))
+    match find_primitive(sample_registry(), "parse_author_reply") {
+        Some(p) => assert(p.result == VariantType("EditResult"))
+        None => assert(false)
+    }
+    match find_primitive(sample_registry(), "parse_lens_reply") {
+        Some(p) => assert(p.result == RecordType("LensResult"))
+        None => assert(false)
+    }
+}
+
+test "v212 the witness function reads the proposal, the others do not" {
+    match find_primitive(sample_registry(), "parse_witness_reply") {
+        Some(p) => assert(p.reads.contains("object: proposal"))
+        None => assert(false)
+    }
+    match find_primitive(sample_registry(), "parse_author_reply") {
+        Some(p) => assert(!p.reads.contains("object: proposal"))
         None => assert(false)
     }
 }
