@@ -10,6 +10,7 @@
   treesame ДЕРЕВО ДЕРЕВО               деревья равны с точностью до `title` (круг текст → дерево → текст теряет прозу, раздел 1б)
   primnames СТАРОЕ НОВОЕ               имена `primitives` нового дерева = имена старого, кроме стандартных (`time_now`, `new_id`)
   decls ТЕКСТ                          печатает объявления раздела внешних функций, по строке, пробелы сжаты
+  declcmp ТЕКСТ ЗАПИСАННЫЙ_ИЗ_ДЕРЕВА   объявления те же: строка из ASCII — слово в слово, иначе — по форме (число параметров, хвост, класс, результат)
 Код возврата 0 — всё в порядке; 1 — расхождения (печатаются); 2 — неверный вызов или нет предпосылки.
 Не проверяет: смысл деревьев (это тесты пакета).
 """
@@ -93,6 +94,11 @@ def first_diff(a, b, where="$"):
 
 
 def cmd_treeeq(args):
+    import os
+    for a in args[:2]:
+        if not os.path.isfile(a):
+            print("нет файла дерева: %s" % a)
+            return 1
     d = first_diff(strip(json.loads(read(args[0]))), strip(json.loads(read(args[1]))))
     if d:
         print("%s: %s" % (args[1], d))
@@ -101,6 +107,11 @@ def cmd_treeeq(args):
 
 
 def cmd_treesame(args):
+    import os
+    for a in args[:2]:
+        if not os.path.isfile(a):
+            print("нет файла дерева: %s" % a)
+            return 1
     d = first_diff(strip_title(json.loads(read(args[0]))), strip_title(json.loads(read(args[1]))))
     if d:
         print("%s: %s" % (args[1], d))
@@ -112,6 +123,11 @@ STANDARD = ("time_now", "new_id")
 
 
 def cmd_primnames(args):
+    import os
+    for a in args[:2]:
+        if not os.path.isfile(a):
+            print("нет файла дерева: %s" % a)
+            return 1
     old = json.loads(read(args[0])).get("primitives", [])
     new = json.loads(read(args[1])).get("primitives", [])
     old_names = [p if isinstance(p, str) else p.get("name") for p in old if (p if isinstance(p, str) else p.get("name")) not in STANDARD]
@@ -143,7 +159,58 @@ def cmd_decls(args):
     return 0
 
 
-COMMANDS = {"fill": cmd_fill, "schema": cmd_schema, "treeeq": cmd_treeeq, "treesame": cmd_treesame, "primnames": cmd_primnames, "decls": cmd_decls}
+def decl_lines(path):
+    lines = read(path).split("\n")
+    out = []
+    in_section = False
+    in_code = False
+    for line in lines:
+        if line.startswith("## "):
+            in_section = line[3:].strip() in ("Внешние функции", "External functions")
+            in_code = False
+            continue
+        if not in_section:
+            continue
+        if line.strip().startswith("```"):
+            in_code = not in_code
+            continue
+        if in_code and line.strip():
+            out.append(re.sub(r"\s+", " ", line.strip()))
+    return out
+
+
+def shape(line):
+    """The shape of a declaration: number of parameters, the tail, the class word, the result."""
+    m = re.match(r"^(?:внешняя функция|external fn) \S+\((.*)\)(.*)$", line)
+    if not m:
+        return line
+    params, rest = m.group(1), m.group(2)
+    n = 0 if params.strip() == "" else params.count(",") + 1
+    tail = "..." in params
+    if re.search(r"(^| )(изменчивая|volatile)( |$)", rest):
+        cls = "volatile"
+    elif re.search(r"(^| )(действующая|acting)( |$)", rest):
+        cls = "acting"
+    else:
+        cls = "pure"
+    return (n, tail, cls, "->" in rest)
+
+
+def cmd_declcmp(args):
+    """Объявления текста и текста, записанного из дерева: строка из ASCII — слово в слово, иначе — по форме (в дереве лежат JSON-имена, 1б (ж))."""
+    a, b = decl_lines(args[0]), decl_lines(args[1])
+    if len(a) != len(b):
+        print("число объявлений %d и %d" % (len(a), len(b)))
+        return 1
+    for x, y in zip(a, b):
+        same = (x == y) if x.isascii() else (shape(x) == shape(y))
+        if not same:
+            print("объявление: %r и %r" % (x, y))
+            return 1
+    return 0
+
+
+COMMANDS = {"fill": cmd_fill, "schema": cmd_schema, "treeeq": cmd_treeeq, "treesame": cmd_treesame, "primnames": cmd_primnames, "decls": cmd_decls, "declcmp": cmd_declcmp}
 
 if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:

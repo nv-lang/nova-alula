@@ -12,6 +12,7 @@
 #   ALULA=<путь>         готовая программа alula вместо сборки в target/alula.exe
 #   OLD_ALULA=<путь>     программа до задачи (база: коммит ACCEPT_175_BASE, по умолчанию cde532f) для сравнения деревьев; нет её — собирается из базы в временной папке
 #   ALULA_CORPUS=<папки> папки с таблицами хозяев (каждая со своим registry.md), уже переведёнными на 2.24, через пробел; без них шаг (9) красный
+#   ALULA_REGISTRY_FIXES=K, ALULA_LETTER_LINES=M  числа правок реестров продукта и строк письма Методике для итоговой строки (по умолчанию 0)
 #   ACCEPT_175_SKIP_NOVA_TEST=1  пропустить шаг (10) (только для разработки: приёмка идёт без пропуска)
 # Правило: doc/tasks/175-external-functions (репозиторий продукта), AC-1…AC-3.
 set -u
@@ -75,9 +76,9 @@ write_registry() {
   } >"$tmp/registry.md"
 }
 
-EN_ONE='external function record(code int, label str) acting'
+EN_ONE='external fn record(code int, label str) acting'
 RU_ONE='внешняя функция record(code число, label строка) действующая'
-EN_TAIL='external function record(code int, ...fields: str) acting'
+EN_TAIL='external fn record(code int, ...fields: str) acting'
 RU_TAIL='внешняя функция record(code число, ...fields: строка) действующая'
 REG_ONE='| record | code: int; label: text | — | acting | — | — |'
 REG_TAIL='| record | code: int; ...fields: text | — | acting | — | — |'
@@ -180,7 +181,7 @@ for f in $machines; do
      && "$alula" compile "$m2" --no-check -o "$t2" >>"$tmp/c$i.log" 2>&1 \
      && "$alula" render "$t2" --language "$lang" -o "$m3" >>"$tmp/c$i.log" 2>&1 \
      && "$PYTHON" "$tools" treesame "$t1" "$t2" && cmp -s "$m2" "$m3" \
-     && [ "$("$PYTHON" "$tools" decls "$f")" = "$("$PYTHON" "$tools" decls "$m2")" ]; then
+     && "$PYTHON" "$tools" declcmp "$f" "$m2"; then
     n_circle_ok=$((n_circle_ok + 1))
   else
     red "круг: $f"; head -3 "$tmp/c$i.log"
@@ -270,7 +271,7 @@ fi
 [ "$tail_ok" = "$tail_total" ] || red "пробы хвоста: $tail_ok из $tail_total"
 [ "$rec_ok" = "$rec_total" ] && [ "$rec_total" = 7 ] || red "виды сверки: $rec_ok из $rec_total"
 
-summary="пробы старых форм AL-123: $old_ok из $old_total; хвост: $tail_ok проб из $tail_total; $ex_line; вызвать( $n_call; Примитивы $n_prim; круг $n_circle_ok из $n_circle; схема $n_schema_ok из $n_schema; деревьев равных $n_eq_ok из $n_eq; сверка: видов $rec_ok из $rec_total, таблиц $n_tables, расхождений $n_diverge; $test_line"
+summary="пробы старых форм AL-123: $old_ok из $old_total; хвост: $tail_ok проб из $tail_total; $ex_line; вызвать( $n_call; Примитивы $n_prim; круг $n_circle_ok из $n_circle; схема $n_schema_ok из $n_schema; деревьев равных $n_eq_ok из $n_eq; сверка: видов $rec_ok из $rec_total, таблиц $n_tables, расхождений $n_diverge (исправлений реестров продукта ${ALULA_REGISTRY_FIXES:-0}, письмо Методике: ${ALULA_LETTER_LINES:-0} строк); $test_line"
 if [ "$fails" -eq 0 ]; then
   echo "ПРИНЯТО 175: $summary"
   exit 0
