@@ -97,9 +97,9 @@ test "ln foreign event" {
 }
 
 test "ln foreign action" {
-    ro text = ru_with("число_ходов += 1", "journal(x)")
+    ro text = ru_with("число_ходов += 1", "journal(\"x\")")
     assert(note_says(text, "language ключевое слово `journal`"))
-    ro en = en_with("turn_count += 1", "журнал(x)")
+    ro en = en_with("turn_count += 1", "журнал(\"x\")")
     assert(note_says(en, "language ключевое слово `журнал`"))
 }
 
@@ -133,7 +133,7 @@ test "ln foreign type" {
 
 test "ln mixed first line" {
     // two foreign words: the first error is the first foreign word of the file
-    ro text = ru_with("число_ходов += 1", "journal(x)").replace("## Данные", "## Data")
+    ro text = ru_with("число_ходов += 1", "journal(\"x\")").replace("## Данные", "## Data")
     ro all = notes(text)
     assert(all[0].contains("language"))
     assert(all[0].starts_with("${line_of(text, "## Data")}:"))
@@ -235,7 +235,7 @@ fn acts_en(text str) -> str {
 
 test "ln action words" {
     assert(acts_en("turn_count = 1; turn_count += 2") == acts_ru("число_ходов = 1; число_ходов += 2"))
-    assert(acts_en("journal(code_x, n: text(turn_count))") == acts_ru("журнал(code_x, n: строка(число_ходов))"))
+    assert(acts_en("journal(\"code_x\", n: text(turn_count))") == acts_ru("журнал(\"code_x\", n: строка(число_ходов))"))
     assert(acts_en("machine_error(\"fork_no_match\", fork: \"A\")") == acts_ru("ошибка_машины(\"fork_no_match\", fork: \"A\")"))
     assert(acts_en("if turn_count > 1 then { turn_count = 0 } else { turn_count = 1 }") == acts_ru("если число_ходов > 1 то { число_ходов = 0 } иначе { число_ходов = 1 }"))
     assert(acts_en("journal(all_data)") == acts_ru("журнал(все_данные)"))

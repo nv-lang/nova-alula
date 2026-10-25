@@ -88,8 +88,8 @@ Initial state: Prepare
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|
-| 1 | response(result) | — | answered += [party]; journal(job_answered, party: party, answer: result.answer) | Join |
-| 2 | failure(reason) | — | lost += [party]; journal(job_lost, party: party, code: text(reason)) | Join |
+| 1 | response(result) | — | answered += [party]; journal("job_answered", party: party, answer: result.answer) | Join |
+| 2 | failure(reason) | — | lost += [party]; journal("job_lost", party: party, code: text(reason)) | Join |
 
 ### Join — fork
 - Reads: answered, lost, names

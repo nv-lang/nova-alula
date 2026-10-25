@@ -42,8 +42,8 @@ Initial state: Wait
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|
-| 1 | signal(allow) | — | allowed += 1; journal(signal_allowed, count: text(allowed)) | Count |
-| 2 | signal(deny) | — | stop_reason = "denied"; journal(signal_denied) | Denied |
+| 1 | signal(allow) | — | allowed += 1; journal("signal_allowed", count: text(allowed)) | Count |
+| 2 | signal(deny) | — | stop_reason = "denied"; journal("signal_denied") | Denied |
 
 ### Count — fork
 - Reads: allowed

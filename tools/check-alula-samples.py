@@ -10,10 +10,10 @@
      число строк (типы — число объявлений и строк в блоке кода; функции — число и порядок объявлений `функция`/`fn`);
   2. состояния: одинаковые виды и порядок; JSON-имя состояния совпадает (строка `## Имена` или автоматическое имя, 1а); число строк переходов у каждого состояния,
      метки `№`, значения «куда» (русские имена состояний переведены в латинские по заголовкам, слова «куда» — по таблице слов),
-     число действий (разделитель `;`) и коды журнала `журнал(код, …)`/`journal(code, …)` в каждой строке;
+     число действий (разделитель `;`) и коды журнала `журнал("код", …)`/`journal("code", …)` в каждой строке;
   3. строки «Концов»: число, конец (имя переведено), метка `№`, число конструкторов `Отказ(…)`/`Refusal(…)` и `Ответ(…)`/`Response(…)`
      в ответе (имена кодов отказа в двух языках разные — по глоссарию — и не сверяются);
-  4. набор кодов журнала файла целиком (`журнал(код, …)`, кроме вызовов с выражением) одинаков;
+  4. набор кодов журнала файла целиком (`журнал("код", …)`, кроме вызовов с выражением) одинаков;
   5. JSON-имена объявленных имён, которые выходят из машины (состояния, поля входа, данные, примитивы, имя настройки вратаря,
      сигналы сторон и их поля, типы, элементы перечислений, варианты, поля): у русского образца — строка `## Имена` или
      автоматическое (спецификация, 1а, AL-53, AL-60: словарь, затем транслитерация; функция `json_names` из `check-alula-keywords.py`),
@@ -129,7 +129,7 @@ def states_in(lines, gloss, smap):
 
 
 def journal_codes(s):
-    return [c for c in re.findall(r'(?:журнал|journal)\(([a-z_]+)', s) if c not in NOT_CODES]
+    return [c for c in re.findall(r'(?:журнал|journal)\(\s*"([a-z_]+)"', s) if c not in NOT_CODES]
 
 
 def summarize(text, lang, words, gloss):
@@ -256,11 +256,11 @@ def mutations(en_text):
         assert a in en_text, a
         return en_text.replace(a, b, 1)
     muts = [
-        ('другое «куда»', sub('stop_reason = "no_result"; journal(agent_permanent_error) | Accounting |',
-                              'stop_reason = "no_result"; journal(agent_permanent_error) | Halted |')),
+        ('другое «куда»', sub('stop_reason = "no_result"; journal("agent_permanent_error") | Accounting |',
+                              'stop_reason = "no_result"; journal("agent_permanent_error") | Halted |')),
         ('удалённая строка перехода', en_text.replace(
             [l for l in en_text.split('\n') if l.startswith('| 6 | response: TransientError')][0] + '\n', '', 1)),
-        ('другой код журнала', sub('journal(model_refused)', 'journal(model_refusedd)')),
+        ('другой код журнала', sub('journal("model_refused")', 'journal("model_refusedd")')),
         ('лишнее действие', sub('turn_count += 1 | AgentTurn', 'turn_count += 1; turn_count += 1 | AgentTurn')),
         ('лишнее состояние', sub('### End — end', '### Extra — end\n- Reads: usage\n\n### End — end')),
         ('лишняя функция', sub('fn interactive(', 'fn extra(x int) -> int => x\n\nfn interactive(')),

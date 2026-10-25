@@ -31,8 +31,8 @@ Initial state: Idle
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|
-| 1 | signal(message { content: word }) | — | journal(echoed, text: word); messages += 1; last = word | same |
-| 2 | signal(close) | — | journal(closed_by_user); stop_reason = "closed" | Closed |
+| 1 | signal(message { content: word }) | — | journal("echoed", text: word); messages += 1; last = word | same |
+| 2 | signal(close) | — | journal("closed_by_user"); stop_reason = "closed" | Closed |
 
 ### Closed — end
 - Reads: messages, last

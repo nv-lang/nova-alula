@@ -47,8 +47,8 @@ Initial state: Work
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|
-| 1 | response(text) | — | reply = text; journal(worked, text: text) | Done |
-| 2 | failure(reason) | — | stop_reason = "failed"; journal(work_lost, reason: text(reason)) | Halted |
+| 1 | response(text) | — | reply = text; journal("worked", text: text) | Done |
+| 2 | failure(reason) | — | stop_reason = "failed"; journal("work_lost", reason: text(reason)) | Halted |
 
 ### Done — end
 - Reads: reply

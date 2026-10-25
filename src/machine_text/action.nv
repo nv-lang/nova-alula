@@ -174,11 +174,19 @@ fn ac_named(mut p TxP, mut cx TxCx, sc TxScope) -> Result[[]TxKV, TranslateError
     Ok(params)
 }
 
+// `журнал("код", имя: выр, …)`, `журнал("код")`, `журнал(все_данные)`, `журнал(выражение)` (AL-115): the code of an entry is a string literal in Latin lower case; the code without quotes (2.22) is refused with the new writing.
 fn ac_journal(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError] {
     p_adv(p)
     p_adv(p)
     ro first = p_tok(p)
     ro after = p_ahead(p, 1)
+    if first.kind == TK_STR && (t_is(after, ",") || t_is(after, ")")) {
+        p_adv(p)
+        if !is_latin_code(first.text) { cx_error(cx, first, "name", "код журнала — латиница в нижнем регистре (правило 34б)") }
+        ro params = ac_named(p, cx, sc)?
+        p_expect(p, ")")?
+        return Ok(stmt_of([a_journal(first.text, params)]))
+    }
     if first.kind == TK_NAME && (t_is(after, ",") || t_is(after, ")")) {
         if t_is_kw(first, cx.words, "readable", "all_data") {
             p_adv(p)
@@ -186,12 +194,9 @@ fn ac_journal(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateErr
             return Ok(stmt_of([a_journal_all()]))
         }
         ro known = pair_has(sc.names, first.text) || pair_has(cx.env.globals, first.text) || is_executor_word(cx, first.text)
-        if !known {
-            p_adv(p)
-            if !is_latin_code(first.text) { cx_error(cx, first, "name", "код журнала — латиница в нижнем регистре (правило 34б)") }
-            ro params = ac_named(p, cx, sc)?
-            p_expect(p, ")")?
-            return Ok(stmt_of([a_journal(first.text, params)]))
+        if !known && is_identifier_latin(first.text) {
+            ro message_tail = if t_is(after, ",") { ", имя: выр, …" } else { "" }
+            return Err(tx_err(first.line, first.col, "syntax", "код журнала без кавычек в формате 2.22 не бывает (AL-115): пишется `${kw(cx.words, "action", "journal")}(\"${first.text}\"${message_tail})`; переходного периода нет"))
         }
     }
     ro value = ex_expr(p, cx, sc)?

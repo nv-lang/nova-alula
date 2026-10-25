@@ -87,7 +87,7 @@ test "ae language line" {
 
 test "ae foreign words" {
     ro sample = en_sample()
-    ro action = sample.replace("journal(turn_requests_exhausted)", "журнал(turn_requests_exhausted)")
+    ro action = sample.replace("journal(\"turn_requests_exhausted\")", "журнал(\"turn_requests_exhausted\")")
     assert(has_error_at(translate_report(action), line_number(action, "| 3 | response: TurnRequestLimit"), "language"))
     ro section = sample.replace("## Ends", "## Концы")
     assert(has_error_at(translate_report(section), line_number(section, "## Концы"), "language"))
@@ -103,7 +103,7 @@ test "ae foreign words" {
 
 test "ae foreign first line" {
     // two foreign words: the first error is the line of the first one
-    ro text = en_sample().replace("## Ends", "## Концы").replace("journal(model_refused)", "журнал(model_refused)")
+    ro text = en_sample().replace("## Ends", "## Концы").replace("journal(\"model_refused\")", "журнал(\"model_refused\")")
     ro report = translate_report(text)
     mut first_language = 100000
     for e in report.errors {

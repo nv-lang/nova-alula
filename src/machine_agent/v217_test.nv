@@ -147,13 +147,16 @@ fn journal_codes17(text str) -> []str {
             ro at = rest.find(marker) ?? -1
             if at < 0 { break }
             rest = rest[at + marker.byte_len()..]
+            // AL-115: the code is a string literal, `журнал("код", …)`; a call with a name is a value, not a code
+            ro quoted = rest.starts_with("\"")
+            if quoted { rest = rest[1..] }
             mut code = []str.new()
             for c in rest.chars() {
                 ro one = "${c}"
                 if (one >= "a" && one <= "z") || one == "_" { code.push(one) } else { break }
             }
             ro word = code.join("")
-            ro end_ok = rest[word.byte_len()..].starts_with(",") || rest[word.byte_len()..].starts_with(")")
+            ro end_ok = quoted && rest[word.byte_len()..].starts_with("\"")
             if word != "" && end_ok && !["usage_event", "transition_note", "all_data"].contains(word) && !out.contains(word) { out.push(word) }
         }
     }

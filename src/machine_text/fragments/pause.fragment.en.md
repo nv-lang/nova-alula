@@ -31,11 +31,11 @@
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|
-| 1 | signal(human_stop { human_word, author, source }) | not end(state) and state != Pause | journal(human_stop, author: author, source: source, event: event.id); previous = state; pass(nested, stop); cancel_open(except: nested) | Pause |
-| 2 | signal(parent_stop { id }) | not end(state) and state != Pause and id == call_request_id | journal(pause_by_parent_stop, request: id, event: event.id); previous = state; pass(nested, stop); cancel_open(except: nested) | Pause |
-| 3 | signal(cancel_request { id }) | id != call_request_id | journal(cancel_discarded_foreign_request, request: id, event: event.id) | same |
-| 4 | signal(cancel_request { id }) | id == call_request_id and end(state) | journal(cancel_discarded_already_replied, request: id, event: event.id) | same |
-| 5 | signal(cancel_request { id }) | id == call_request_id and not end(state) | journal(request_cancelled, request: id, event: event.id); stop_reason = "cancel_request"; pass(nested, cancel); cancel_open | Halted |
+| 1 | signal(human_stop { human_word, author, source }) | not end(state) and state != Pause | journal("human_stop", author: author, source: source, event: event.id); previous = state; pass(nested, stop); cancel_open(except: nested) | Pause |
+| 2 | signal(parent_stop { id }) | not end(state) and state != Pause and id == call_request_id | journal("pause_by_parent_stop", request: id, event: event.id); previous = state; pass(nested, stop); cancel_open(except: nested) | Pause |
+| 3 | signal(cancel_request { id }) | id != call_request_id | journal("cancel_discarded_foreign_request", request: id, event: event.id) | same |
+| 4 | signal(cancel_request { id }) | id == call_request_id and end(state) | journal("cancel_discarded_already_replied", request: id, event: event.id) | same |
+| 5 | signal(cancel_request { id }) | id == call_request_id and not end(state) | journal("request_cancelled", request: id, event: event.id); stop_reason = "cancel_request"; pass(nested, cancel); cancel_open | Halted |
 | 6 | signal(cancel_request { id }) | else | machine_error("cancel_parse_no_match") | — |
 
 ## States
@@ -51,7 +51,7 @@
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|
-| 1 | signal(continue { author, source }) | — | journal(human_continue, previous: text(require(previous)), author: author, source: source, event: event.id); pass(nested, continue) | previous |
+| 1 | signal(continue { author, source }) | — | journal("human_continue", previous: text(require(previous)), author: author, source: source, event: event.id); pass(nested, continue) | previous |
 | 2 | signal(<halt_signal>) | — | stop_reason = <halt_code>; pass(nested, halt) | Halted |
-| 3 | signal(parent_continue { id }) | id == call_request_id | journal(parent_continue, previous: text(require(previous)), request: id, event: event.id); pass(nested, continue) | previous |
+| 3 | signal(parent_continue { id }) | id == call_request_id | journal("parent_continue", previous: text(require(previous)), request: id, event: event.id); pass(nested, continue) | previous |
 | 4 | signal(parent_halt { id }) | id == call_request_id | stop_reason = <halt_code>; pass(nested, halt) | Halted |

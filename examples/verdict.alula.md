@@ -46,10 +46,10 @@ Initial state: Judge
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|
-| 1 | response: Accepted { score: points } | — | total = points; journal(verdict_accepted, score: text(points)) | Passed |
-| 2 | response: Rejected { reason: why } | — | note = why; journal(verdict_rejected, reason: why) | Failed |
-| 3 | response: Unsure | — | journal(verdict_unsure) | Doubt |
-| 4 | failure(reason) | — | note = text(reason); journal(verdict_lost, reason: text(reason)) | Failed |
+| 1 | response: Accepted { score: points } | — | total = points; journal("verdict_accepted", score: text(points)) | Passed |
+| 2 | response: Rejected { reason: why } | — | note = why; journal("verdict_rejected", reason: why) | Failed |
+| 3 | response: Unsure | — | journal("verdict_unsure") | Doubt |
+| 4 | failure(reason) | — | note = text(reason); journal("verdict_lost", reason: text(reason)) | Failed |
 
 ### Passed — end
 - Reads: total

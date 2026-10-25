@@ -258,13 +258,13 @@ Initial state: Start
 |---|---|---|---|---|
 | 1 | response: Finished { text, artifact, transport_usage: received } | — | transport_usage = add_usage(transport_usage, received); reply_text = text; reply_artifact = artifact | ReplyValidation |
 | 2 | response: Truncated { transport_usage: received } | — | transport_usage = add_usage(transport_usage, received) | Continuation |
-| 3 | response: TurnRequestLimit { transport_usage: received } | — | transport_usage = add_usage(transport_usage, received); stop_reason = "max_turn_requests"; journal(turn_requests_exhausted) | Accounting |
-| 4 | response: ModelRefusal { transport_usage: received } | — | transport_usage = add_usage(transport_usage, received); stop_reason = "model_refused"; journal(model_refused) | Accounting |
-| 5 | response: Stopped { transport_usage: received } | — | transport_usage = add_usage(transport_usage, received); stop_reason = "stopped_by_agent"; journal(turn_cancelled) | Accounting |
+| 3 | response: TurnRequestLimit { transport_usage: received } | — | transport_usage = add_usage(transport_usage, received); stop_reason = "max_turn_requests"; journal("turn_requests_exhausted") | Accounting |
+| 4 | response: ModelRefusal { transport_usage: received } | — | transport_usage = add_usage(transport_usage, received); stop_reason = "model_refused"; journal("model_refused") | Accounting |
+| 5 | response: Stopped { transport_usage: received } | — | transport_usage = add_usage(transport_usage, received); stop_reason = "stopped_by_agent"; journal("turn_cancelled") | Accounting |
 | 6 | response: TransientError | — | — | Retry |
-| 7 | response: PermanentError | — | stop_reason = "no_result"; journal(agent_permanent_error) | Accounting |
+| 7 | response: PermanentError | — | stop_reason = "no_result"; journal("agent_permanent_error") | Accounting |
 | 8 | response: NeedsPermission { permission_request: request } | — | permission_request = request | Policy |
-| 9 | failure(reason in [FailCode.ConnectionLost, FailCode.Timeout, FailCode.NoResult]) | — | stop_reason = text(reason); journal(turn_failed, reason: text(reason)) | Accounting |
+| 9 | failure(reason in [FailCode.ConnectionLost, FailCode.Timeout, FailCode.NoResult]) | — | stop_reason = text(reason); journal("turn_failed", reason: text(reason)) | Accounting |
 
 The appeal has no "On accept" (in the code `on_accept` is empty). A form fix goes not as a return within the same request but as a new turn "fix" by the rows of ReplyValidation, hence `Form returns: 0`. A failure code outside the list of row 9 is brought by the executor to `NoResult`, which is in the list.
 
@@ -273,9 +273,9 @@ The appeal has no "On accept" (in the code `on_accept` is empty). A form fix goe
 
 | № | Condition | Actions | To |
 |---|---|---|---|
-| 1 | retry_count < RETRIES and turn != "retry" | retry_count += 1; turn_before_retry = turn; turn = "retry"; journal(agent_transient_error, retry: text(retry_count)) | Budget |
-| 2 | retry_count < RETRIES and turn == "retry" | retry_count += 1; journal(agent_transient_error, retry: text(retry_count)) | Budget |
-| 3 | retry_count >= RETRIES | stop_reason = "no_result"; journal(agent_transient_error_exhausted, retries: text(RETRIES)) | Accounting |
+| 1 | retry_count < RETRIES and turn != "retry" | retry_count += 1; turn_before_retry = turn; turn = "retry"; journal("agent_transient_error", retry: text(retry_count)) | Budget |
+| 2 | retry_count < RETRIES and turn == "retry" | retry_count += 1; journal("agent_transient_error", retry: text(retry_count)) | Budget |
+| 3 | retry_count >= RETRIES | stop_reason = "no_result"; journal("agent_transient_error_exhausted", retries: text(RETRIES)) | Accounting |
 | 4 | else | machine_error("fork_no_match", fork: "Retry") | — |
 
 ### Continuation — fork
@@ -283,8 +283,8 @@ The appeal has no "On accept" (in the code `on_accept` is empty). A form fix goe
 
 | № | Condition | Actions | To |
 |---|---|---|---|
-| 1 | continuation_count < CONTINUATIONS | continuation_count += 1; turn = "continue"; journal(output_truncated_continue) | Budget |
-| 2 | continuation_count >= CONTINUATIONS | stop_reason = "max_tokens"; journal(output_truncated_again) | Accounting |
+| 1 | continuation_count < CONTINUATIONS | continuation_count += 1; turn = "continue"; journal("output_truncated_continue") | Budget |
+| 2 | continuation_count >= CONTINUATIONS | stop_reason = "max_tokens"; journal("output_truncated_again") | Accounting |
 | 3 | else | machine_error("fork_no_match", fork: "Continuation") | — |
 
 ### ReplyValidation — fork
@@ -294,9 +294,9 @@ The appeal has no "On accept" (in the code `on_accept` is empty). A form fix goe
 | № | Condition | Actions | To |
 |---|---|---|---|
 | 1 | validation == ReplyCheck.Valid | — | Accounting |
-| 2 | validation == ReplyCheck.Empty | stop_reason = "no_result"; journal(agent_no_result) | Accounting |
-| 3 | validation == ReplyCheck.Violated and return_count < FORM_RETURNS | return_count += 1; turn = "fix"; journal(reply_form_violated) | Budget |
-| 4 | validation == ReplyCheck.Violated and return_count >= FORM_RETURNS | stop_reason = "form_not_fixed"; journal(reply_form_not_fixed) | Accounting |
+| 2 | validation == ReplyCheck.Empty | stop_reason = "no_result"; journal("agent_no_result") | Accounting |
+| 3 | validation == ReplyCheck.Violated and return_count < FORM_RETURNS | return_count += 1; turn = "fix"; journal("reply_form_violated") | Budget |
+| 4 | validation == ReplyCheck.Violated and return_count >= FORM_RETURNS | stop_reason = "form_not_fixed"; journal("reply_form_not_fixed") | Accounting |
 | 5 | else | machine_error("fork_no_match", fork: "ReplyValidation") | — |
 
 ### Policy — fork
@@ -307,8 +307,8 @@ The appeal has no "On accept" (in the code `on_accept` is empty). A form fix goe
 
 | № | Condition | Actions | To |
 |---|---|---|---|
-| 1 | decision == "allow" | permission_decision = "allow"; turn = "permission"; journal(permission_auto_allowed, action: text(request.action)) | Budget |
-| 2 | decision == "deny" | permission_decision = "deny"; turn = "permission"; journal(permission_auto_denied, action: text(request.action)) | Budget |
+| 1 | decision == "allow" | permission_decision = "allow"; turn = "permission"; journal("permission_auto_allowed", action: text(request.action)) | Budget |
+| 2 | decision == "deny" | permission_decision = "deny"; turn = "permission"; journal("permission_auto_denied", action: text(request.action)) | Budget |
 | 3 | decision == "ask" | — | Permission |
 | 4 | else | machine_error("fork_no_match", fork: "Policy") | — |
 
@@ -323,8 +323,8 @@ The appeal has no "On accept" (in the code `on_accept` is empty). A form fix goe
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|
-| 1 | signal(allow) | — | permission_decision = "allow"; turn = "permission"; journal(permission_human_allowed, action: text(require(permission_request).action)) | Budget |
-| 2 | signal(deny) | — | permission_decision = "deny"; turn = "permission"; journal(permission_human_denied, action: text(require(permission_request).action)) | Budget |
+| 1 | signal(allow) | — | permission_decision = "allow"; turn = "permission"; journal("permission_human_allowed", action: text(require(permission_request).action)) | Budget |
+| 2 | signal(deny) | — | permission_decision = "deny"; turn = "permission"; journal("permission_human_denied", action: text(require(permission_request).action)) | Budget |
 
 The request field `permission_request` is named as the data but with another expression: when building the request the code applies `require`, the rows read the data and take `require` themselves.
 
@@ -337,9 +337,9 @@ The request field `permission_request` is named as the data but with another exp
 
 | № | Condition | Actions | To |
 |---|---|---|---|
-| 1 | tokens_exhausted | stop_reason = "max_tokens"; journal(token_limit, spent: text(tokens_spent(transport_usage))) | Accounting |
-| 2 | not tokens_exhausted and cost_exhausted | stop_reason = "cost_limit"; journal(cost_limit, spent: text(cost_spent(transport_usage))) | Accounting |
-| 3 | not tokens_exhausted and not cost_exhausted and turns_exhausted | stop_reason = "max_turn_requests"; journal(turn_limit, sent: text(turn_count)) | Accounting |
+| 1 | tokens_exhausted | stop_reason = "max_tokens"; journal("token_limit", spent: text(tokens_spent(transport_usage))) | Accounting |
+| 2 | not tokens_exhausted and cost_exhausted | stop_reason = "cost_limit"; journal("cost_limit", spent: text(cost_spent(transport_usage))) | Accounting |
+| 3 | not tokens_exhausted and not cost_exhausted and turns_exhausted | stop_reason = "max_turn_requests"; journal("turn_limit", sent: text(turn_count)) | Accounting |
 | 4 | not tokens_exhausted and not cost_exhausted and not turns_exhausted | turn_count += 1 | AgentTurn |
 | 5 | else | machine_error("fork_no_match", fork: "Budget") | — |
 
@@ -373,7 +373,7 @@ The Pause state is brought by the "Pause" fragment (section "Includes"); it is n
   - let now = call(time_now);
   - call(close_agent_turn);
   - if not has(usage) then { journal(usage_event(collect_usage(agent_request, stop_reason, transport_usage, started, now))) };
-  - journal(agent_step_stopped, reason: stop_reason)
+  - journal("agent_step_stopped", reason: stop_reason)
 - Except: stop_reason in [""]
 
 ### Errored — end

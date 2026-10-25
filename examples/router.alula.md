@@ -60,8 +60,8 @@ Initial state: Pick
 
 | № | Condition | Actions | To |
 |---|---|---|---|
-| 1 | size < 10 | verdict = "small"; journal(measured, verdict: "small") | Small |
-| 2 | size < 100 | verdict = "large"; journal(measured, verdict: "large") | Large |
+| 1 | size < 10 | verdict = "small"; journal("measured", verdict: "small") | Small |
+| 2 | size < 100 | verdict = "large"; journal("measured", verdict: "large") | Large |
 | 3 | else | machine_error("fork_no_match", fork: "Measure") | — |
 
 ### Small — end

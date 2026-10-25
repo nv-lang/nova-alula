@@ -110,7 +110,7 @@ test "cs examples shape" {
 test "cs examples new id" {
     ro report = translate_checked(case_text("format-examples.alula.md"), examples_registry())
     assert(report.json.contains("\"entry\":[{\"do\":\"bind\",\"name\":\"новая\",\"value\":{\"op\":\"primitive_call\",\"name\":\"new_id\",\"args\":[]}}]"))
-    ro broken = case_text("format-examples.alula.md").replace("| 1 | сразу | — | ид_сессии = новая | ХОД_АГЕНТА |", "| 1 | сразу | — | журнал(opened) | ХОД_АГЕНТА |")
+    ro broken = case_text("format-examples.alula.md").replace("| 1 | сразу | — | ид_сессии = новая | ХОД_АГЕНТА |", "| 1 | сразу | — | журнал(\"opened\") | ХОД_АГЕНТА |")
     ro bad = translate_checked(broken, examples_registry())
     assert(has_message(bad, "of new_id is not written to the data by a row of the state"))
 }

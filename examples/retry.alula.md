@@ -42,9 +42,9 @@ Initial state: Ask
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|
-| 1 | response(answer) | — | reply = answer; journal(got_reply, text: answer) | Review |
-| 2 | failure(reason in [FailCode.Timeout]) | — | journal(asked_again_silent) | same, rerun |
-| 3 | failure(reason) | — | stop_reason = "failed"; journal(gave_up, reason: text(reason)) | Stopped |
+| 1 | response(answer) | — | reply = answer; journal("got_reply", text: answer) | Review |
+| 2 | failure(reason in [FailCode.Timeout]) | — | journal("asked_again_silent") | same, rerun |
+| 3 | failure(reason) | — | stop_reason = "failed"; journal("gave_up", reason: text(reason)) | Stopped |
 
 ### Review — appeal
 - Party: reviewer
@@ -56,10 +56,10 @@ Initial state: Ask
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|
-| 1 | signal(note { content: word }) | — | notes += 1; journal(noted, text: word) | same |
-| 2 | signal(again) | — | rounds += 1; journal(review_again) | same, rerun |
-| 3 | signal(accept) | — | journal(accepted) | Accepted |
-| 4 | signal(reject) | — | stop_reason = "rejected"; journal(rejected) | Stopped |
+| 1 | signal(note { content: word }) | — | notes += 1; journal("noted", text: word) | same |
+| 2 | signal(again) | — | rounds += 1; journal("review_again") | same, rerun |
+| 3 | signal(accept) | — | journal("accepted") | Accepted |
+| 4 | signal(reject) | — | stop_reason = "rejected"; journal("rejected") | Stopped |
 
 ### Accepted — end
 - Reads: reply

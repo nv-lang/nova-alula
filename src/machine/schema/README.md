@@ -223,7 +223,7 @@ declaration `s` or `s { field T, … }`.
 |---|---|---|
 | `assign` | **`target`**, **`value`** | `x = e`, `x[k] = e`, `x[k].f = e`; `target` is a datum name or `{name, path: [{key: E} \| {field: "f"}]}` |
 | `add` | **`target`**, **`value`** | `x += e` |
-| `journal` | **`code`**, `params` `[]{name, value: E}` | `journal(code, name: e, …)` |
+| `journal` | **`code`**, `params` `[]{name, value: E}` | `journal("code", name: e, …)` |
 | `journal_value` | **`value`** | `journal(value)` (`journal_event(…)`, `transition_note`) |
 | `journal_all` | — | `journal(all_data)` |
 | `for_each` | **`var`**, **`in`**, **`body`** (actions) | `for x in xs { … }` (Russian `для x из xs { … }`) |
@@ -302,7 +302,7 @@ One object per node with the key `op` (the list is the top of `src/machine/expr.
 | action `x = e`, `x += e`, `x[k].f = e` | `assign`, `add`, `assign` with a path |
 | `for x in xs { … }` / `для x из xs { … }` | `{"do":"for_each","var":"x","in":xs,"body":[…]}` |
 | `let x = e` in "On entry"/"On accept" | `{"do":"bind","name":"x","value":e}` |
-| `journal(c, k: v)`, `journal(v)`, `journal(all_data)` | `journal`, `journal_value`, `journal_all` |
+| `journal("c", k: v)`, `journal(value)`, `journal(all_data)` | `journal`, `journal_value`, `journal_all` |
 | `response(t)` / `ответ(т)` | `{"kind":"answer","bind":"t"}` (`"т"` in a Russian file) |
 | `failure(reason)` / `сбой(причина)` | `{"kind":"failure","bind":"reason"}` in both languages (AL-49) |
 | `Response(e)`, `Refusal(FailCode.X, t)` | `end_row.answer` |
@@ -372,8 +372,8 @@ so it needs no `## Имена`; the text literals are the same in both files so 
 - Срок тишины: 60_000
 
 | № | Событие | Условие | Действия | Куда |
-| 1 | ответ(т) | — | текст_ответа = т; журнал(callee_answered, label: т) | КОНЕЦ |
-| 2 | сбой(причина) | — | текст_ответа = "failed: ${причина}"; журнал(callee_failed, reason: строка(причина)) | КОНЕЦ |
+| 1 | ответ(т) | — | текст_ответа = т; журнал("callee_answered", label: т) | КОНЕЦ |
+| 2 | сбой(причина) | — | текст_ответа = "failed: ${причина}"; журнал("callee_failed", reason: строка(причина)) | КОНЕЦ |
 
 ### КОНЕЦ — конец
 - Читает: текст_ответа
@@ -416,8 +416,8 @@ Initial state: AgentTurn
 - Idle term: 60_000
 
 | № | Event | Condition | Actions | To |
-| 1 | response(t) | — | reply_text = t; journal(callee_answered, label: t) | End |
-| 2 | failure(reason) | — | reply_text = "failed: ${reason}"; journal(callee_failed, reason: text(reason)) | End |
+| 1 | response(t) | — | reply_text = t; journal("callee_answered", label: t) | End |
+| 2 | failure(reason) | — | reply_text = "failed: ${reason}"; journal("callee_failed", reason: text(reason)) | End |
 
 ### End — end
 - Reads: reply_text

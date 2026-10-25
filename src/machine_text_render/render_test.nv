@@ -362,8 +362,8 @@ test "rn actions" {
     assert(act(`{"do":"assign","target":"y","value":${lit("1")}}`) == "y = 1")
     assert(act(`{"do":"add","target":"y","value":${lit("1")}}`) == "y += 1")
     assert(act(`{"do":"assign","target":{"name":"y","path":[{"key":${nm("x")}},{"field":"a"}]},"value":${lit("1")}}`) == "y[x].a = 1")
-    assert(act(`{"do":"journal","code":"turn_failed","params":[{"name":"reason","value":${nm("x")}}]}`) == "journal(turn_failed, reason: x)")
-    assert(act(`{"do":"journal","code":"plain"}`) == "journal(plain)")
+    assert(act(`{"do":"journal","code":"turn_failed","params":[{"name":"reason","value":${nm("x")}}]}`) == "journal(\"turn_failed\", reason: x)")
+    assert(act(`{"do":"journal","code":"plain"}`) == "journal(\"plain\")")
     assert(act(`{"do":"journal_value","value":${nm("x")}}`) == "journal(x)")
     assert(act(`{"do":"journal_all"}`) == "journal(all_data)")
     assert(act(`{"do":"machine_error","code":"fork_no_match","params":[{"name":"fork","value":${lit("\"Retry\"")}}]}`) == "machine_error(\"fork_no_match\", fork: \"Retry\")")
@@ -434,6 +434,6 @@ test "rn english sample has the checked shape" {
     assert(made.contains("### Start — operation\n- On entry: let moment = call(time_now)\n"))
     assert(made.contains("### Halted — end\n- Reads: usage, agent_request, stop_reason, transport_usage, started\n- On entry:\n  - let now = call(time_now);\n"))
     assert(made.contains("- Except: stop_reason in [\"\"]\n"))
-    assert(made.contains("| 9 | failure(reason in [FailCode.ConnectionLost, FailCode.Timeout, FailCode.NoResult]) | — | stop_reason = text(reason); journal(turn_failed, reason: text(reason)) | Accounting |"))
+    assert(made.contains("| 9 | failure(reason in [FailCode.ConnectionLost, FailCode.Timeout, FailCode.NoResult]) | — | stop_reason = text(reason); journal(\"turn_failed\", reason: text(reason)) | Accounting |"))
     assert(made.contains("| Halted | 11 | stop_reason == \"cancel_request\" | Refusal(FailCode.Cancelled, stop_reason) |"))
 }

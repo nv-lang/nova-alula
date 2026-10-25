@@ -740,7 +740,7 @@ fn rn_action(mut cx RnCx, a RJ, locals []str) -> str {
         ro sign = if kind == "assign" { "=" } else { "+=" }
         return "${target} ${sign} ${value}"
     }
-    if kind == "journal" { return "${rn_kw(cx, "action", "journal")}(${rj_gstr(a, "code")}${rn_params(cx, a, locals)})" }
+    if kind == "journal" { return "${rn_kw(cx, "action", "journal")}(${rn_quote(rj_gstr(a, "code"))}${rn_params(cx, a, locals)})" }
     if kind == "journal_value" {
         ro value = match rj_get(a, "value") {
             Some(x) => rn_expr(cx, x, locals)

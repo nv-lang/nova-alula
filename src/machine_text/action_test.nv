@@ -46,13 +46,22 @@ test "ac assign paths" {
 }
 
 test "ac journal" {
-    assert(ac("журнал(agent_done)") == arr([a_journal("agent_done", [])]))
-    assert(ac("журнал(user_message, text: сессия)") == arr([a_journal("user_message", [kv("text", x_name("session"))])]))
-    assert(ac("журнал(a_b, p: 1, q: \"x\")") == arr([a_journal("a_b", [kv("p", x_lit(jint(1))), kv("q", x_lit(js("x")))])]))
+    assert(ac("журнал(\"agent_done\")") == arr([a_journal("agent_done", [])]))
+    assert(ac("журнал(\"user_message\", text: сессия)") == arr([a_journal("user_message", [kv("text", x_name("session"))])]))
+    assert(ac("журнал(\"a_b\", p: 1, q: \"x\")") == arr([a_journal("a_b", [kv("p", x_lit(jint(1))), kv("q", x_lit(js("x")))])]))
     assert(ac("журнал(все_данные)") == arr([a_journal_all()]))
     assert(ac("журнал(запись_перехода)") == arr([a_journal_value(x_name("transition_note"))]))
     assert(ac("журнал(событие_журнала(\"c\", k: 1))") == arr([a_journal_value(x_call("journal_event", [x_lit(js("c")), x_lit(js("k")), x_lit(jint(1))]))]))
-    assert(ac("журнал(retry_x, retry: строка(число_повторов))") == arr([a_journal("retry_x", [kv("retry", x_call("text", [x_name("retry_count")]))])]))
+    assert(ac("журнал(\"retry_x\", retry: строка(число_повторов))") == arr([a_journal("retry_x", [kv("retry", x_call("text", [x_name("retry_count")]))])]))
+}
+
+// AL-115: the code of an entry is a string literal; the code written as a name (2.22) is refused with the new writing, there is no transition period
+test "ac journal the code is a string" {
+    ro old = ac("журнал(agent_done)")
+    assert(old.starts_with("ERR syntax:") && old.contains("AL-115") && old.contains("журнал(\"agent_done\")"))
+    ro old_params = ac("журнал(user_message, text: сессия)")
+    assert(old_params.contains("журнал(\"user_message\", имя: выр, …)"))
+    assert(ac("журнал(\"Bad\")").starts_with("ERR name:"))
 }
 
 test "ac machine error" {
@@ -86,9 +95,9 @@ test "ac if for" {
     assert(ac("если число_повторов > 1 то { ход = \"a\" } иначе { ход = \"b\" }") == arr([a_if(cond, then_part, else_part)]))
     assert(ac("если число_повторов > 1 то { ход = \"a\" } иначе { ход = \"b\" }") == arr([a_if(cond, then_part, else_part)]))
     ro body = [a_journal("x_y", [kv("v", x_name("n"))])]
-    assert(ac("для n из линзы { журнал(x_y, v: n) }") == arr([a_for_each("n", x_name("lenses"), body)]))
+    assert(ac("для n из линзы { журнал(\"x_y\", v: n) }") == arr([a_for_each("n", x_name("lenses"), body)]))
     ro two = [a_journal("x_y", []), a_assign(tgt("turn"), x_lit(js("a")))]
-    assert(ac("для n из линзы { журнал(x_y); ход = \"a\" }") == arr([a_for_each("n", x_name("lenses"), two)]))
+    assert(ac("для n из линзы { журнал(\"x_y\"); ход = \"a\" }") == arr([a_for_each("n", x_name("lenses"), two)]))
     assert(ac("для n из линзы { ход = n }") == arr([a_for_each("n", x_name("lenses"), [a_assign(tgt("turn"), x_name("n"))])]))
 }
 
@@ -128,12 +137,12 @@ test "ac empty" {
 }
 
 test "ac errors" {
-    for t in ["= 1", "число_повторов", "число_повторов 1", "число_повторов = ", "журнал(", "журнал(a,", "если истина (ход = \"a\")", "для н в линзы: ход = н", "для каждого н линзы: ход = н", "пусть = 1", "ход = 1 2", "если", "(ход = 1)"] {
+    for t in ["= 1", "число_повторов", "число_повторов 1", "число_повторов = ", "журнал(", "журнал(\"a\",", "если истина (ход = \"a\")", "для н в линзы: ход = н", "для каждого н линзы: ход = н", "пусть = 1", "ход = 1 2", "если", "(ход = 1)"] {
         assert(ac(t).starts_with("ERR"))
     }
     assert(ac("неизвестное = 1").starts_with("ERR name:"))
     assert(ac("число_повторов.нет_поля = 1").starts_with("ERR name:"))
-    assert(ac("журнал(Plain)").starts_with("ERR name:"))
+    assert(ac("журнал(\"Plain\")").starts_with("ERR name:"))
 }
 
 test "ac places" {
