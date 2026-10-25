@@ -195,7 +195,7 @@ test "ex call" {
     assert(ex("наибольшее(1, число_повторов)") == tx_text(x_call("max", [li(1), nm("retry_count")])))
     assert(ex("длина(линзы)") == tx_text(x_call("length", [nm("lenses")])))
     assert(ex("конец(состояние)") == tx_text(x_call("end", [nm("state")])))
-    assert(ex("непустое(остановка)") == tx_text(x_call("non_empty", [nm("stop_reason")])))
+    assert(ex("обязательно_непустое(остановка)") == tx_text(x_call("require_non_empty", [nm("stop_reason")])))
     assert(ex("текст_записи(запись_перехода)") == tx_text(x_call("record_text", [nm("transition_note")])))
     assert(ex("вещественное(1)") == tx_text(x_call("float", [li(1)])))
     assert(ex("число(1.5)") == tx_text(x_call("int", [x_lit(TxRaw("1.5"))])))

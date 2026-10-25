@@ -160,7 +160,7 @@ List functions and functions (the `fn` of a `call` node; the catalog of the form
 | `max(a, b)`, `min(a, b)` | two ints or two floats |
 | `journal_event(code, name, text, ...)` | the record `JournalEvent { code, params }`, `params` a list of tuples (name, text) |
 
-Task 107 added to the evaluator: `eval_defs(expr, scope, table, host)` with a `DefTable { fns, types, globals, registry, checked }` - the definitions of a machine (`DefFn`: typed parameters, a typed result, a body that sees its parameters and the globals only, never the names of the caller), and, when `checked` is true, the check of the arguments and the result of every primitive call against the registry; the catalog got `record_text(e)` (`event <code>` or `event <code>: name=value, ...`, format 2.2) and `non_empty(x)` (a text that is not `""`, else the defect `Unreachable`).
+Task 107 added to the evaluator: `eval_defs(expr, scope, table, host)` with a `DefTable { fns, types, globals, registry, checked }` - the definitions of a machine (`DefFn`: typed parameters, a typed result, a body that sees its parameters and the globals only, never the names of the caller), and, when `checked` is true, the check of the arguments and the result of every primitive call against the registry; the catalog got `record_text(e)` (`event <code>` or `event <code>: name=value, ...`, format 2.2) and `require_non_empty(x)` (a text that is not `""`, else the defect `Unreachable`).
 
 Not here (the interpreter's, `src/machine_run`): `конец(state)` of the catalog (it needs the states of a machine), the names of the executor (`вход`, `событие`, `состояние`, ...), the actions (`поле = выр`, `журнал`, `для каждого`),
 the check "an `if` does not nest in the branch of another `if`", the sets of values of a closed text (3.2 of the format).
@@ -306,7 +306,7 @@ operations and forks to an appeal (it orders `SendOrder` to the party - to each 
 - **Start.** A machine with an `input` section, or whose initial state would order something, waits for the event `start` (a signal named `start`, its input is the object of the input; `input_rejected` with `reason` `json`, `missing`, `type` or `invariant` finishes it with `NoResult`). A machine whose initial state is
   an appeal to a gate is started at once. Events before the start are `event_ignored`.
 - **Machine errors** (an overflow, a division by zero, a repeated key, a missing key, a list index, a bound): the event `machine_error` with `reason` (or the event of the `machine_error` action, or `fork_no_match` with `fork`), then the end `error_end` (its entry runs with `transition_note` defined, then the table "Ends"); without an `error_end` the machine finishes with `NoResult`.
-  A **defect** (`require(none)`, `non_empty("")`, a type that the checks would have refused, a primitive that fails): `machine_defect`, the machine finishes with `NoResult`, the state stays as it was, and only those two orders are given.
+  A **defect** (`require(none)`, `require_non_empty("")`, a type that the checks would have refused, a primitive that fails): `machine_defect`, the machine finishes with `NoResult`, the state stays as it was, and only those two orders are given.
 - **Orders** are collected and given to the environment at the end of the step, in the order of giving: journal events, `order_send`, `order_cancel` (the action `cancel_open`), `order_finish`, then `order_save`.
 - **Determinism.** The step is a pure function of the state and the event; two runs give the same journal and data (tested on every scenario).
 
