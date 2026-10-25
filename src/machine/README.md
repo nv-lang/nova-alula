@@ -36,7 +36,7 @@ the CrewHarness product and stay in the product repository; they read the machin
 
 ## The registry and the journal of the host are data (task 158, AL-113)
 
-The language names two primitives, `time_now` and `new_id` (`language_registry()`), and 35 journal codes (`journal_language.md`, `language_journal()`; spec 7a): the codes of the format (5), of the fragment "Pause" (8), of the engine and of the executor (22). Everything else a host registers as data in two Markdown files beside its machines:
+The language names one primitive, `new_id` (`language_registry()`; the time is the stamp of the event, `event.at`, since 2.25), and 35 journal codes (`journal_language.md`, `language_journal()`; spec 7a): the codes of the format (5), of the fragment "Pause" (8), of the engine and of the executor (22). Everything else a host registers as data in two Markdown files beside its machines:
 
 - `registry.md` (`parse_registry_table`): the table of the primitives `name | parameters | result | class | reads | writes` (spec 7; the names are the JSON names; a parameter is `name: type`, several are separated by `;`, `—` is none; the types are written as the tree `machine/2` writes them, `parse_spec`; a bar inside a cell is `\|`), and the tables of the types `type | kind | members` (`record`: `field: type; field: type`, `variant`: `Case; Case(field: type, field: type)`) under `## Types` or `## Types: <set>` (`host_types(data, set)`). The header cell tells the table (`name`/`имя`, `type`/`тип`); a table `primitive | role | result | reads` (the table by role) is an error since 2.24 (AL-131).
 - `journal.md` (`parse_journal`): the table `Machine | Code | Russian template | Parameters` of the form of `journal_language.md`.
@@ -89,7 +89,7 @@ is refused by Oracle 0.1.0 (item 25 there), so the interpreter's units are sibli
 | `types.nv` | `TypeSpec`, `TypeDefs` (named records and variants), `check_value` with the path of the first mismatch |
 | `expr.nv` | `Expr`, the tree of an expression, its JSON form (`expr_from_json`, `expr_to_json`), builders, `expr_depth` |
 | `eval.nv` | `eval(expr, scope)`, `eval_with(expr, scope, host)`, `EvalError`, the protocol `PrimitiveHost` |
-| `registry.nv` | `Primitive`, `Registry` (the primitives and the table of the codes of the journal; no table "by role" since 2.24), the class of a primitive in the position of a call, `language_registry()` (the two primitives of the language, `time_now` and `new_id`, and the 35 codes) and `without_journal` |
+| `registry.nv` | `Primitive`, `Registry` (the primitives and the table of the codes of the journal; no table "by role" since 2.24), the class of a primitive in the position of a call, `language_registry()` (the primitive of the language, `new_id`, and the 35 codes) and `without_journal` |
 | `host.nv` | the registry and the journal of a host as data (task 158): `parse_registry_table` (`registry.md`), `host_registry`, `load_host`, `host_types`; the form of the files is in the section below |
 | `spec.nv` | `parse_spec`: a type as the tree `machine/2` writes it (`int>=0`, `?text`, `[]Finding`, `"a" \| "b"`), the reverse of `spec_text` (it lived in `alula.machine_table` until 0.3.2) |
 | `journal.nv`, `journal_language.md` | the codes of the journal that a machine may write (format 5 and 10, 2.12, AL-31; spec 7a, AL-113): the table of the language as data (35 codes), `parse_journal` for the table of a host, `language_journal()`, `journal_union(host)`, `journal_find`, `journal_table_issues(language, host)` (a code of a host that repeats a code of the language, a bad word, a code twice) |
@@ -214,7 +214,6 @@ The registry of the pilots (23 primitives of the meeting and of the agent step: 
 | `close_for_writing` | `object: text` | nothing | acting |
 | `open_for_writing` | `object: text` | nothing | acting |
 | `move_to_archive` | `number: int>=0, suffix: int>=0` | nothing | acting |
-| `time_now` | - | `int` | volatile |
 | `new_id` | - | `id` | volatile |
 | `reply_validation` | - | `ReplyCheck` | volatile |
 | `close_agent_turn` | - | nothing | acting |
@@ -295,7 +294,7 @@ the definitions (no recursion, no catalog name, the number of arguments); an `if
 
 ## The interpreter
 
-`alula_step(machine, state, event, environment, host)` is the whole `step` (`Machine[AlulaState].step` calls it with the default `ScriptedHost`). It reads its arguments only; the clock is the stamp of the event (`time_now` of the default
+`alula_step(machine, state, event, environment, host)` is the whole `step` (`Machine[AlulaState].step` calls it with the default `ScriptedHost`). It reads its arguments only; the time is the stamp of the event (`event.at`, read from the context of the step, AL-134; the stamp also seeds `new_id` of the default
 host), any other primitive goes to the `PrimitiveHost` that is passed in. The state is `AlulaState { name, started, input, data }` - values of the core, written as one JSON object under `state` of the snapshot.
 
 The order of a step: the event of the engine is read as the event of the machine (`Input` - a signal by name, with the fields decoded from `input`: one field is the text itself or a number or a JSON value by its type, several fields are a JSON object;
@@ -575,3 +574,12 @@ The marks AL-123, AL-128 ... AL-132 (the changelog is [spec/alula-changelog.md](
 - **The parse by role (AL-131).** `ParseDef { primitive, result }`: the tree holds no literal of a role (the key `role` is not in the schema); `Registry` is `{ primitives, journal }`, `RoleRow`, `find_role`, `has_roles`, `add_role` are gone, a table by role in `registry.md` is an error; the executor calls the function of the parse with the answer only (`apply_parse` in `machine_run/chain.nv`).
 - **The hashes.** The line `format` is a part of the hash of a file of functions, so the hashes of the samples became the Russian `818a4aaeef4f`, the English `431e7018e2bb`, the functions of the meeting in the tests `cf2a79073e96`; the hash of the dictionary is `35c571ccda17` (the dictionary of the version 13, 1270 pairs; the one of the version 11 went with the format 2.23).
 - **The data.** The examples, the samples of the methodology (the agent step in both languages, the machine "Meeting"), the cases, the files of functions and the fragments say `format: 2.24`; the machine "Meeting" names the three parse functions by role in `разбор:` and declares them in `## Внешние функции`.
+
+# Alula 2.25 (task 225, version 0.7.0)
+
+The marks AL-133, AL-134 (the changelog is [spec/alula-changelog.md](../../spec/alula-changelog.md)).
+
+- **The version.** `alula_versions()` is `["2.25"]`, `ALULA_VERSION` is `"2.25"`; the schema lists only `2.25`; the package and the program are `0.7.0` (`alula version` prints `alula 0.7.0 (Alula 2.25, machine/2)`). There is no transition period: a tree of 2.24 and a table with `format: 2.24` are refused with the version named.
+- **The stamp of the event (AL-134).** `Incoming.at` is the stamp of the engine (milliseconds of the epoch, put once at the arrival); `Ctx.stamp` carries it for the whole step and `event.at` reads it (`event_record` in `machine_run/step.nv`); the start event has it too; a kept answer that is taken again gets the stamp of the step that takes it (`held_incoming`); `accepts_signal` has no event (`has_stamp` is false), the field is then absent and a condition that reads it counts as taking the signal. `ScriptedHost.at` only seeds `new_id`. `language_registry()` has one primitive, `new_id`.
+- **The functions of the time (AL-133).** `time_to_text`, `text_to_time` in `eval.nv` over `timefmt.nv` (the calendar by days of the civil date; range 0001-01-01T00:00:00Z ... 9999-12-31T23:59:59.999Z; out of range is the error `overflow`; `text_to_time` reads the seconds and `Z`, one to three digits of the fraction, and gives none for any other text).
+- **The hashes.** The samples of the files of functions: the Russian `f757b8aa7b08`, the English `75062faf50d1`, the functions of the meeting in the tests `9fa0da4a6bdc`; the fingerprints of the samples "agent step" (ru `42d1027fbb57`, en `abafd26a12dc`) and "Meeting" (`fc1697009e68`); the hash of the dictionary is the same, `35c571ccda17`.

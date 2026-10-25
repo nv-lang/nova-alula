@@ -10,7 +10,7 @@ target/alula.exe test examples        # 66 of 66 scenarios passed
 ```
 
 `registry.md` and `journal.md` are the host "examples": the program takes them from the folder of the machines (spec 7a, AL-113; the form is in [src/machine/README.md](../src/machine/README.md)). The language itself holds
-two primitives (`time_now`, `new_id`) and 35 journal codes; the host of the examples adds the primitive `close_agent_turn` and 44 codes of the machines below (24 of the former examples and 20 of the new tables).
+one primitive (`new_id`) and 35 journal codes; the host of the examples adds the primitive `close_agent_turn` and 44 codes of the machines below (24 of the former examples and 20 of the new tables).
 
 | Machine | File | What it shows | Scenarios (`scenarios/`) |
 |---|---|---|---|

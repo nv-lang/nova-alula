@@ -52,7 +52,7 @@ default name of the output file: a file is written only for an explicit `-o`. A 
 
 ## The host: the registry and the journal as data (0.4.0, spec 7a, AL-113)
 
-The language names two primitives (`time_now`, `new_id`) and 35 journal codes (`src/machine/journal_language.md`). Everything else is the data of the host that owns the machine, two Markdown files (the form is in [src/machine/README.md](../machine/README.md), "The registry and the journal of the host are data"):
+The language names one primitive (`new_id`) and 35 journal codes (`src/machine/journal_language.md`). Everything else is the data of the host that owns the machine, two Markdown files (the form is in [src/machine/README.md](../machine/README.md), "The registry and the journal of the host are data"):
 
 | File | What it holds |
 |---|---|

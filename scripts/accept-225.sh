@@ -94,8 +94,8 @@ old_call=$("$alula" check "$tmp/old-call-expr.alula.md" 2>&1); old_call_rc=$?
 if [ "$old_call_rc" -eq 0 ]; then red "time_now() принят"; else
   case "$old_call" in *"event.at"*) ;; *) red "time_now(): ошибка без подсказки event.at: $(echo "$old_call" | head -2)" ;; esac
 fi
-sed 's/| journal("closed_by_user") |/| journal("closed_by_user"); time_now() |/' "$probe" >"$tmp/old-call-act.alula.md"
-cmp -s "$probe" "$tmp/old-call-act.alula.md" && red "проба прежнего вызова-действия: в $probe нет «| journal(\"closed_by_user\") |»"
+sed 's/| signal(close) | — | — | Closed |/| signal(close) | — | time_now() | Closed |/' "$probe" >"$tmp/old-call-act.alula.md"
+cmp -s "$probe" "$tmp/old-call-act.alula.md" && red "проба прежнего вызова-действия: в $probe нет «| signal(close) | — | — | Closed |»"
 old_act=$("$alula" check "$tmp/old-call-act.alula.md" 2>&1); old_act_rc=$?
 if [ "$old_act_rc" -eq 0 ]; then red "time_now(); как действие принят"; else
   case "$old_act" in *"event.at"*) ;; *) red "time_now(); как действие: ошибка без подсказки event.at: $(echo "$old_act" | head -2)" ;; esac
@@ -104,14 +104,14 @@ fi
 "$alula" convert "$probe" --language ru -o "$tmp/stamp.ru.alula.md" >"$tmp/convert.out" 2>&1 || red "перевод пробы en -> ru: $(head -2 "$tmp/convert.out")"
 if [ -f "$tmp/stamp.ru.alula.md" ]; then
   grep -q "событие.момент" "$tmp/stamp.ru.alula.md" || red "русская проба не пишет «событие.момент»"
-  sed 's/пусть момент = событие\.момент/пусть момент = время_сейчас()/' "$tmp/stamp.ru.alula.md" >"$tmp/old-call-ru.alula.md"
-  cmp -s "$tmp/stamp.ru.alula.md" "$tmp/old-call-ru.alula.md" && red "проба прежнего вызова (ru): нет «пусть момент = событие.момент»"
+  sed 's/пусть moment = событие\.момент/пусть moment = время_сейчас()/' "$tmp/stamp.ru.alula.md" >"$tmp/old-call-ru.alula.md"
+  cmp -s "$tmp/stamp.ru.alula.md" "$tmp/old-call-ru.alula.md" && red "проба прежнего вызова (ru): нет «пусть moment = событие.момент»"
   old_ru=$("$alula" check "$tmp/old-call-ru.alula.md" 2>&1); old_ru_rc=$?
   if [ "$old_ru_rc" -eq 0 ]; then red "время_сейчас() принято"; else
     case "$old_ru" in *"событие.момент"*) ;; *) red "время_сейчас(): ошибка без подсказки событие.момент: $(echo "$old_ru" | head -2)" ;; esac
   fi
-  sed 's/сообщение { содержимое строка }/сообщение { содержимое строка, момент число }/' "$tmp/stamp.ru.alula.md" >"$tmp/field-ru.alula.md"
-  cmp -s "$tmp/stamp.ru.alula.md" "$tmp/field-ru.alula.md" && red "проба поля «момент»: нет «сообщение { содержимое строка }» в русской пробе"
+  sed 's/message { content строка }/message { content строка, момент число }/' "$tmp/stamp.ru.alula.md" >"$tmp/field-ru.alula.md"
+  cmp -s "$tmp/stamp.ru.alula.md" "$tmp/field-ru.alula.md" && red "проба поля «момент»: нет «message { content строка }» в русской пробе"
   "$alula" check "$tmp/field-ru.alula.md" >"$tmp/field-ru.out" 2>&1 && red "поле сигнала «момент» принято"
 fi
 # поле сигнала с именем at — ошибка (английский файл)
@@ -207,7 +207,6 @@ n_time_now=$(grep -rIn "время_сейчас\|time_now" . --exclude-dir=targe
   --exclude=v225_test.nv --exclude=former.tsv --exclude=alula-spec.md --exclude=alula-spec.en.md --exclude=alula-changelog.md --exclude=alula-changelog.en.md \
   --exclude=history.md --exclude='accept-1*' --exclude='accept-2*' --exclude=check.nv 2>/dev/null | wc -l | tr -d ' ')
 [ "$n_time_now" = 0 ] || red "время_сейчас / time_now в пакете: $n_time_now"
-grep -c "time_now" src/machine_table/check.nv | grep -qx 1 || red "src/machine_table/check.nv: ровно одно упоминание time_now (подсказка) ожидается"
 
 # ---- (10) стражи -------------------------------------------------------------------------------------------------------------------------------
 

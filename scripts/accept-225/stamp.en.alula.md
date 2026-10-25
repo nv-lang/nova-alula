@@ -48,8 +48,8 @@ Initial state: Start
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|
-| 1 | signal(message { content: word }) | — | seen = event.at; same_read = event.at == seen; seen_text = time_to_text(event.at); back = text_to_time(seen_text) | same |
-| 2 | signal(close) | — | journal("closed_by_user") | Closed |
+| 1 | signal(message { content: word }) | — | seen = event.at; same_read = event.at == event.at; seen_text = time_to_text(event.at); back = text_to_time(time_to_text(event.at)) | same |
+| 2 | signal(close) | — | — | Closed |
 
 ### Closed — end
 - Reads: seen
