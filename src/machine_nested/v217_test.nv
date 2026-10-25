@@ -92,9 +92,11 @@ test "v217 a file of definitions refuses the brackets" {
     assert(report.errors[0].message.contains("скобки"))
 }
 
-test "v217 a file of definitions refuses the format 2.23" {
-    ro report = translate_definitions(defs_with_names().replace("format: 2.23", "format: 2.14"))
+test "v217 a file of definitions refuses the format 2.22" {
+    ro report = translate_definitions(defs_with_names().replace("format: 2.23", "format: 2.22"))
     assert(report.errors.len() > 0)
+    ro older = translate_definitions(defs_with_names().replace("format: 2.23", "format: 2.14"))
+    assert(older.errors.len() > 0)
 }
 
 test "v217 the hash of the sample file of definitions is that of 2.23" {
