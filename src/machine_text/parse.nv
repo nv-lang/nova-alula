@@ -996,7 +996,7 @@ fn ex_postfix_start(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, Translate
     ex_postfix(p, cx, sc, base)
 }
 
-// `.поле`, `.0`, `[ключ]`, the method of a macro `.фильтр(х => выр)` after an operand (AL-78).
+// `.поле`, `.0`, `[ключ]`, the method of a list function `.фильтр(х => выр)` after an operand (AL-78).
 fn ex_postfix(mut p TxP, mut cx TxCx, sc TxScope, e TxJ) -> Result[TxJ, TranslateError] {
     if p_is(p, ".") {
         p_adv(p)
@@ -1013,7 +1013,7 @@ fn ex_postfix(mut p TxP, mut cx TxCx, sc TxScope, e TxJ) -> Result[TxJ, Translat
         }
         if t.kind == TK_NAME {
             if t_is(p_ahead(p, 1), "(") {
-                // a name with a bracket after a dot is a method; only the eight macros are methods
+                // a name with a bracket after a dot is a method; only the eight list functions are methods
                 match macro_key(cx.words, t.text) {
                     Some(key) => {
                         p_adv(p)
@@ -1029,7 +1029,7 @@ fn ex_postfix(mut p TxP, mut cx TxCx, sc TxScope, e TxJ) -> Result[TxJ, Translat
                     Some(err) => return Err(err)
                     None => ()
                 }
-                return Err(tx_err(t.line, t.col, "syntax", "метод `.${t.text}(…)` бывает только у макросов (${macro_words(cx.words)}); остальные функции вызываются как `имя(…)` (AL-78)"))
+                return Err(tx_err(t.line, t.col, "syntax", "метод `.${t.text}(…)` бывает только у функций списка (${list_function_words(cx.words)}); остальные функции вызываются как `имя(…)` (AL-78)"))
             }
             p_adv(p)
             return ex_postfix(p, cx, sc, x_field(e, tr_field_name(cx, t)))
@@ -1045,10 +1045,10 @@ fn ex_postfix(mut p TxP, mut cx TxCx, sc TxScope, e TxJ) -> Result[TxJ, Translat
     Ok(e)
 }
 
-/// The eight macros of the catalog (section 12), by their English key: they are called as methods of a list (AL-78).
+/// The eight list functions of the catalog (section 12), by their English key: they are called as methods of a list (AL-78).
 fn macro_names_en() -> []str => ["filter", "map", "any", "all", "count", "first_where", "fold", "dict"]
 
-/// The key of a macro for a word of the catalog in the language of the file.
+/// The key of a list function for a word of the catalog in the language of the file.
 fn macro_key(w TxWords, word str) -> Option[str] {
     match kw_key(w, "catalog", word) {
         Some(k) => {
@@ -1059,7 +1059,7 @@ fn macro_key(w TxWords, word str) -> Option[str] {
     None
 }
 
-/// Is the word a macro of the catalog in the language of the file?
+/// Is the word a list function of the catalog in the language of the file?
 fn is_macro_word(w TxWords, word str) -> bool {
     match macro_key(w, word) {
         Some(k) => true
@@ -1067,7 +1067,7 @@ fn is_macro_word(w TxWords, word str) -> bool {
     }
 }
 
-fn macro_words(w TxWords) -> str => kw_all(w, "catalog", macro_names_en()).join(", ")
+fn list_function_words(w TxWords) -> str => kw_all(w, "catalog", macro_names_en()).join(", ")
 
 // ---- primary expressions -----------------------------------------------------------------------------------------------------
 
@@ -1170,7 +1170,7 @@ fn ex_args(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxArgs, TranslateError]
 /// A call `имя(арг, …)` of a function of the catalog or of a definition of the file; `событие_журнала(код, имя: выр, …)` carries the pairs flat.
 fn ex_call(mut p TxP, mut cx TxCx, sc TxScope, name TxTok) -> Result[TxJ, TranslateError] {
     match macro_key(cx.words, name.text) {
-        Some(key) => return Err(tx_err(name.line, name.col, "syntax", "макрос `${name.text}(…)` вызывается как метод списка: `список.${name.text}(…)` (AL-78); переходного периода нет"))
+        Some(key) => return Err(tx_err(name.line, name.col, "syntax", "функция списка `${name.text}(…)` вызывается как метод списка: `список.${name.text}(…)` (AL-78); переходного периода нет"))
         None => ()
     }
     match former_find(cx.words.lang, "call", name.text) {

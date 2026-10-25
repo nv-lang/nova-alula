@@ -409,7 +409,7 @@ test "b154 in English a datum named as an element is an error" {
     assert(note_says(cond, "AL-104"))
 }
 
-// ---- a field named as a macro (AL-106) ---------------------------------------------------------------------------------------------------------
+// ---- a field named as a list function (AL-106) ---------------------------------------------------------------------------------------------------------
 
 test "m154 the warning names AL-106 and the file is clean" {
     ro text = ru222_types("тип Заметка { количество число }")
@@ -418,19 +418,19 @@ test "m154 the warning names AL-106 and the file is clean" {
     assert(warn_says222(text, "предупреждение") || warn_says222(text, "`количество`"))
 }
 
-test "m154 a field of a form named as a macro is a warning too" {
+test "m154 a field of a form named as a list function is a warning too" {
     ro text = ru222_types("тип Итог перечисление\n  | Готово { фильтр число }\n  | Пусто")
     assert(is_clean(text))
     assert(warn_says222(text, "AL-106"))
 }
 
-test "m154 a field named as a macro in English is a warning" {
+test "m154 a field named as a list function in English is a warning" {
     ro text = en222_types("type Note { count int }")
     assert(is_clean(text))
     assert(warn_says222(text, "AL-106"))
 }
 
-test "m154 the field is read after a dot without brackets and the macro with them" {
+test "m154 the field is read after a dot without brackets and the list function with them" {
     ro text = act154(ru222_types("тип Заметка { количество число }").replace("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| заметка | Заметка | Заметка { количество: 3 } | — | действия |\n"), "число_ходов += заметка.количество + [1].количество(х => х > 0)", ["заметка"])
     assert(is_clean(text))
     assert(has154(text, "\"op\":\"field\""))

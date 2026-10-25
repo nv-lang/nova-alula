@@ -254,8 +254,8 @@ One object per node with the key `op` (the list is the top of `src/machine/expr.
 | `name` | `name` | a datum (JSON name), a constant/parameter/binding (as written), a readable name (`en` word) |
 | `field` | `of`, `name` | `e.f`; a tuple field `t.0` |
 | `index` | `of`, `index` | `e[k]` |
-| `call` | `fn`, `args` | a catalog function or macro (English name), an author function (as written); a lambda is an argument |
-| `lambda` | `params`, `body` | only as a macro argument |
+| `call` | `fn`, `args` | a catalog function or list function (English name), an author function (as written); a lambda is an argument |
+| `lambda` | `params`, `body` | only as a list function argument |
 | `primitive_call` | `name`, `args` | `call(primitive, …)` in an expression |
 | `match` | `on`, `arms: [{patterns, guard?, body}]` | patterns: `{"kind":"any"}` (`else`), `{"kind":"lit","value":V}`, `{"kind":"case","type"?,"name","bind"?:{field: name}}` |
 | `let` | `name`, `value`, `body` | a binding of a block expression |
@@ -285,7 +285,7 @@ One object per node with the key `op` (the list is the top of `src/machine/expr.
 | `f(a)` — catalog function | `{"op":"call","fn":"<en>","args":[…]}`: `строка(x)`/`text(x)` → `fn: "text"`, `вещественное(x)`/`float(x)` → `"float"`, `число(x)`/`int(x)` → `"int"` (the call names did not change, AL-94…AL-96) |
 | `f(a)` — author function | `{"op":"call","fn":"<name as written>","args":[…]}` |
 | `call(p, a)` in an expression | `{"op":"primitive_call","name":"p","args":[…]}` |
-| method `xs.filter(x => e)` (the 8 macros) | `{"op":"call","fn":"filter","args":[xs, {"op":"lambda","params":["x"],"body":e}]}` — the receiver is the first argument (AL-78) |
+| method `xs.filter(x => e)` (the 8 list functions) | `{"op":"call","fn":"filter","args":[xs, {"op":"lambda","params":["x"],"body":e}]}` — the receiver is the first argument (AL-78) |
 | `xs.fold(s, (m, x) => e)` | `call fn=fold args=[xs, s, lambda params ["m","x"]]` |
 | range `a..b` | `{"op":"call","fn":"range","args":[a, b]}` (AL-76) |
 | range `a..=b` | `call fn=range args=[a, {"op":"+","left":b,"right":{"op":"lit","value":1}}]` (AL-86) |

@@ -1,4 +1,4 @@
-// v222_test.nv - task 152: the side of the tree and of the checks in Alula 2.22: the version of the tree, the catalog with `concat` (AL-80), the macros that methods call (AL-78), the schema of the tree.
+// v222_test.nv - task 152: the side of the tree and of the checks in Alula 2.22: the version of the tree, the catalog with `concat` (AL-80), the list functions that methods call (AL-78), the schema of the tree.
 module alula.machine_table
 
 import std.text
@@ -11,14 +11,14 @@ test "t222 the catalog has range for the ranges" {
     assert(catalog_names().contains("range"))
 }
 
-test "t222 the macros are the eight of the methods" {
+test "t222 the list functions are the eight of the methods" {
     assert(macro_names().len() == 8)
     for m in ["filter", "map", "any", "all", "count", "first_where", "fold", "dict"] {
         assert(macro_names().contains(m))
     }
 }
 
-test "t222 a macro is in the catalog" {
+test "t222 a list function is in the catalog" {
     for m in macro_names() { assert(catalog_names().contains(m)) }
 }
 

@@ -117,7 +117,7 @@ object in the order of insertion; the rest is tagged with one `$` key: `{"$dict"
 
 ## The tree of an expression
 
-One JSON object per node, the key `op` (the full list with the keys is at the top of `expr.nv`): `lit`, `name`, `field`, `index`, `call` (a function or a macro of the language,
+One JSON object per node, the key `op` (the full list with the keys is at the top of `expr.nv`): `lit`, `name`, `field`, `index`, `call` (a function or a list function of the language,
 a `lambda` is an argument), `primitive_call`, `match`, `let`, `if`, `record`, `with_field` (a record with changed fields), `variant`, `list`, `tuple`, `dict`, the operators
 `+ - * / % == != < <= > >= and or ??` (their symbols are the `op`), `not`, `neg`. The draft form of a lambda `{"lambda":["x"],"body":E}` is read too. A tree deeper than 64 is refused
 by the reader and by the evaluator. An error of the reader is `{ path, message }` with the path in the tree (`$.args[1].body`).
@@ -138,10 +138,10 @@ same result on every run. The only door to the world is a primitive of the host:
 - Errors are values: `EvalError { kind, message, path }`, the kinds `TypeMismatch`, `UnknownName`, `UnknownField`, `UnknownFunction`, `BadArity`, `Overflow`, `DivisionByZero`, `NoMatchArm`, `Unreachable`,
   `DuplicateKey`, `LambdaMisplaced`, `TooDeep`, `OutOfBudget`, `PrimitiveFailed`; the path is the place in the tree (`$.args[1].body.left`). `Unreachable` is the DEFECT of the format (`require(none)`):
   the executor stops, it is not a machine error with an ERROR end.
-- Totality: the language has no loops and no recursion; a macro walks a finite list. A run is bounded all the same: the depth of a tree (`MAX_EXPR_DEPTH` 64), the number of nodes evaluated
+- Totality: the language has no loops and no recursion; a list function walks a finite list. A run is bounded all the same: the depth of a tree (`MAX_EXPR_DEPTH` 64), the number of nodes evaluated
   (`MAX_STEPS` 50000) and the length of a list built by `range`, `+` (`MAX_ITEMS` 10000) - `TooDeep`, `OutOfBudget`.
 
-Macros and functions (the `fn` of a `call` node; the catalog of the format, section 12; every one is pure):
+List functions and functions (the `fn` of a `call` node; the catalog of the format, section 12; every one is pure):
 
 | Name | Meaning |
 |---|---|
@@ -552,6 +552,6 @@ The semantics of the formats 2.15 - 2.17 (the marks AL-51 ... AL-64; the analysi
 The syntax of the formats 2.18 - 2.22 (the marks AL-65 ... AL-102; the analysis is `doc/tasks/152-alula-syntax-218-222/analysis.md` of the CrewHarness repository, the translator is described in [src/machine_text/README.md](../machine_text/README.md), the schemas in [schema/README.md](schema/README.md)).
 
 - **The version.** `alula_versions()` is `["2.22"]`, `ALULA_VERSION` is `"2.22"`; the schema lists only `2.22`; every machine of `machines/` says `format: 2.22`, `machine_version: alula-2.22` and `alula_version` `2.22`; the package and the program are `0.3.0`.
-- **The catalog.** The function `concat` (`склеить`) is new: `concat(a, b, …)` joins two texts or more (`fn_concat` in `eval.nv`, `catalog_names` in `machine_table/check.nv`); the insertion `"ход ${номер}"` of a file is unfolded by the translator into `concat` of the parts and `text(x)` of the inserted values. A range `a..=b` is `range(a, b + 1)`; the eight macros are called as methods in a file and as calls with the list first in the tree. The tree has no new node.
+- **The catalog.** The function `concat` (`склеить`) is new: `concat(a, b, …)` joins two texts or more (`fn_concat` in `eval.nv`, `catalog_names` in `machine_table/check.nv`); the insertion `"ход ${номер}"` of a file is unfolded by the translator into `concat` of the parts and `text(x)` of the inserted values. A range `a..=b` is `range(a, b + 1)`; the eight list functions are called as methods in a file and as calls with the list first in the tree. The tree has no new node.
 - **The number (AL-101).** `int` is a signed 64 bit number: `+`, `-`, `*` are checked and an overflow is the error `overflow` of the evaluator; a float whose result is not finite is `overflow` too; `/` and `%` of ints truncate toward zero. The JSON reader refuses an integer beyond 64 bits.
 - **The machines.** The 15 tables, the fragment "Pause", the files of functions (`defs/`), the cases of the equality and the samples of the methodology (`machine_agent/cases/`) are written in 2.22; their trees are equal to those of 2.17 but for the version, the hashes of the files of functions are the Russian sample `642e1f78f0f7`, the English `928cd807453a`, the functions of the meeting `36b3b4c585c6`. The 626 scenarios (621 of the folder and 5 of the program) pass without a change of the expectations.

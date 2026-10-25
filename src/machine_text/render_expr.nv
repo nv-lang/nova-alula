@@ -483,7 +483,7 @@ fn rn_call(mut cx RnCx, v RJ, locals []str) -> str {
     }
     // a range (AL-76): the call `range(a, b)` is `a..b`
     if fn_en == "range" && args.len() == 2 { return "${rn_sub(cx, args[0], locals, 1)}..${rn_sub(cx, args[1], locals, 1)}" }
-    // a macro is a method of its first argument (AL-78)
+    // a list function is a method of its first argument (AL-78)
     if macro_names_en().contains(fn_en) && args.len() >= 1 {
         mut rest = []str.new()
         mut k = 1

@@ -203,7 +203,7 @@ test "ex call" {
     assert(ex("убрать([1, 2], 2)") == tx_text(x_call("remove", [x_list([li(1), li(2)]), li(2)])))
 }
 
-test "ex macros" {
+test "ex list functions" {
     assert(ex("[1, 2].фильтр(kh => kh > 1)") == tx_text(x_call("filter", [x_list([li(1), li(2)]), x_lambda(["kh"], x_bin(">", nm("kh"), li(1)))])))
     assert(ex("[1].отобразить(n => n * 2)") == tx_text(x_call("map", [x_list([li(1)]), x_lambda(["n"], x_bin("*", nm("n"), li(2)))])))
     assert(ex("[1].любой(n => n == 1)") == tx_text(x_call("any", [x_list([li(1)]), x_lambda(["n"], x_bin("==", nm("n"), li(1)))])))

@@ -1,4 +1,4 @@
-// v222_expr_test.nv - task 152: the expressions of Alula 2.22 (AL-71 ... AL-100): blocks, ranges, methods of the macros, insertions, the literal of a map, `in […]`, `выбор` with commas and lines, bare names, numbers and
+// v222_expr_test.nv - task 152: the expressions of Alula 2.22 (AL-71 ... AL-100): blocks, ranges, methods of the list functions, insertions, the literal of a map, `in […]`, `выбор` with commas and lines, bare names, numbers and
 // strings. Every test reads a text with the translator (`ex`, support of expr_test.nv) and looks at the JSON of the tree or at the message.
 module alula.machine_text
 
@@ -51,9 +51,9 @@ test "x222 an inclusive range of names" {
     assert(has222("число_повторов..=бюджет_токенов", "'fn':'range'"))
 }
 
-// ---- methods of the macros (AL-78) -----------------------------------------------------------------------------------------------------------
+// ---- methods of the list functions (AL-78) -----------------------------------------------------------------------------------------------------------
 
-test "x222 the method filter is the call of the macro with the list first" {
+test "x222 the method filter is the call of the list function with the list first" {
     assert(same222("[1, 2, 3].фильтр(х => х > 1)", "{'op':'call','fn':'filter','args':[{'op':'list','items':[{'op':'lit','value':1},{'op':'lit','value':2},{'op':'lit','value':3}]},{'op':'lambda','params':['х'],'body':{'op':'>','left':{'op':'name','name':'х'},'right':{'op':'lit','value':1}}}]}"))
 }
 
@@ -86,10 +86,10 @@ test "x222 a method chain is read from the left" {
 }
 
 test "x222 a function of the catalog is not a method" {
-    assert(says222("[1, 2].длина()", "только у макросов"))
+    assert(says222("[1, 2].длина()", "только у функций списка"))
 }
 
-test "x222 a macro written as a function is refused" {
+test "x222 a list function written as a function is refused" {
     assert(says222("фильтр([1], х => х)", "вызывается как метод списка"))
 }
 

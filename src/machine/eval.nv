@@ -19,7 +19,7 @@
 //  - totality: no loops and no recursion in the language; the depth of a tree is limited (`MAX_EXPR_DEPTH`), the number of
 //    nodes one run may evaluate is limited (`MAX_STEPS`) and so is the length of a list (`MAX_ITEMS`).
 //
-// Macros and functions (name in the "call" node; the catalog of the format, section 12): filter, map, any, all, count,
+// List functions and functions (name in the "call" node; the catalog of the format, section 12): filter, map, any, all, count,
 // first_where, fold, dict (a dict from a list, a repeated key is the error `DuplicateKey`), range, keys, values (in the
 // order of the first record of a key), length, has, require, remove (all equal items), without_key, text, float, int
 // (the fraction is cut toward zero), max, min, journal_event.
@@ -129,7 +129,7 @@ export fn no_defs() -> DefTable => {
 // The state of one run: the names in force (a stack: a later one hides an earlier one), the count of nodes evaluated and the definitions.
 type Env { names []Binding, steps int, table DefTable }
 
-// A lambda taken apart: the macros apply its body to their values.
+// A lambda taken apart: the list functions apply its body to their values.
 type Lam { params []str, body Expr }
 
 // What a pattern says about a value: matched or not, and the names it binds.
@@ -484,7 +484,7 @@ fn eval_match(subject Expr, arms []MatchArm, mut env Env, mut host PrimitiveHost
     refuse(NoMatchArm, "no arm accepts the value")
 }
 
-// ---- functions and macros -------------------------------------------------------------------------------------------
+// ---- functions and list functions -------------------------------------------------------------------------------------------
 
 fn is_macro(name str) -> bool {
     match name {
@@ -537,7 +537,7 @@ fn bad_count(name str, want int, got int) -> Result[Value, EvalError] {
 fn lambda_at(args []Expr, i int, params int) -> Result[Lam, EvalError] {
     match args[i] {
         Lambda { params: names, body } => {
-            if names.len() != params { return Err(at(flaw(BadArity, "this lambda takes ${names.len()} parameters, the macro needs ${params}"), "args[${i}]")) }
+            if names.len() != params { return Err(at(flaw(BadArity, "this lambda takes ${names.len()} parameters, the list function needs ${params}"), "args[${i}]")) }
             Ok(Lam { params: names, body })
         }
         _ => Err(at(flaw(TypeMismatch, "expected a lambda"), "args[${i}]"))
@@ -973,7 +973,7 @@ fn ev(e Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, E
             index_access(t, i)
         }
         CallFn { name, args } => eval_call(name, args, env, host, depth)
-        Lambda { params, body } => refuse(LambdaMisplaced, "a lambda may stand only as an argument of a macro")
+        Lambda { params, body } => refuse(LambdaMisplaced, "a lambda may stand only as an argument of a list function")
         CallPrimitive { name, args } => {
             ro values = eval_args(args, env, host, depth)?
             call_host(name, values, env, host)

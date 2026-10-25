@@ -119,14 +119,14 @@ fn warned222(sections str, needle str) -> bool {
     false
 }
 
-test "d222 a field named as a macro is a warning" {
+test "d222 a field named as a list function is a warning" {
     ro fence = "```"
     assert(warned222("## Типы\n\n${fence}\nтип Т { фильтр число }\n${fence}\n", "AL-78"))
     assert(warned222("## Типы\n\n${fence}\nтип Т { любой число }\n${fence}\n", "AL-78"))
     assert(warned222("## Типы\n\n${fence}\nтип Т { количество число }\n${fence}\n", "AL-78"))
 }
 
-test "d222 a field named as a function that is no macro is allowed" {
+test "d222 a field named as a function that is no list function is allowed" {
     assert(!warned222("## Типы\n\n```\nтип Т { длина число }\n```\n", "AL-78"))
 }
 

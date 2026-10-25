@@ -297,8 +297,8 @@ test "ev dict dup lit" {
     assert(eerr(d) == "duplicate_key@$.entries[2]")
 }
 
-test "ev dict dup macro" {
-    // the macro `dict`: the order of the list is the order of the dict, a key made twice is the error (not a later write)
+test "ev dict dup list function" {
+    // the list function `dict`: the order of the list is the order of the dict, a key made twice is the error (not a later write)
     ro key_of = lambda1("v", en(Mod, er("v"), ei(3)))
     ro same = lambda1("v", er("v"))
     assert(eis(ec("keys", [ec("dict", [eint_list([3, 1, 4]), same, same])]), eints([3, 1, 4])))
