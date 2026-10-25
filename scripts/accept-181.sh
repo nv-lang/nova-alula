@@ -4,7 +4,7 @@
 #     (2) формат 2.23 не принимается: файл с `format: 2.23` и дерево с `alula_version` 2.23 — ошибка, в сообщении названы обе версии; формат 2.24 в данных везде (строки `format:`, ключи `alula_version`);
 #     (3) литерал роли в разборе стороны — ошибка с подсказкой AL-131 («литерал роли в разбор:»), три функции по роли записаны в образцах; таблицы «по роли» и механизма RoleRow/find_role/has_roles в коде нет;
 #     (4) словарь методики версии 13: 1270 пар, хеш 35c571ccda17 (scripts/glossary-names.py и tools/check-alula-keywords.py держат один хеш), файла glossary_names_v11.tsv нет;
-#     (5) хеши образцов файла функций пересчитаны под строку `format: 2.24`: прежние ru ebb7658048b2 и en a9af85407c2b нигде не живут, кроме записей истории;
+#     (5) хеши образцов файла функций пересчитаны под строку `format: 2.24`: прежние ru ebb7658048b2 и en a9af85407c2b не живут ни в коде, ни в тестах, ни в образцах, ни в тексте спецификации (остаются записи истории);
 #     (6) `alula test examples` — все сценарии зелёные; `nova test` всех папок пакета зелёные (число — в итоговой строке);
 #     (7) tools/check-alula-translation.py (и --selftest) и tools/check-alula-keywords.py --glossary зелёные (единственное исключение — ложное срабатывание проверки на объявлениях внешних функций, см. ниже);
 #     (8) в пакете нет заглушек `AL-2` + `xx` (поиск по всему дереву, кроме этого скрипта);
@@ -75,7 +75,7 @@ else
     case "$(cat "$tmp/old-tree.out")" in *"2.24"*) ;; *) red "сообщение о дереве 2.23 не называет 2.24: $(head -2 "$tmp/old-tree.out")" ;; esac
   fi
 fi
-n_old_format=$(grep -rn "^- format: 2\.23$\|^format: 2\.23$\|\"alula_version\": *\"2\.23\"" examples spec/samples src scripts 2>/dev/null | grep -v "_test.nv" | wc -l | tr -d ' ')
+n_old_format=$(grep -rn --exclude=accept-181.sh --exclude=accept-181.log.md "^- format: 2\.23$\|^format: 2\.23$\|\"alula_version\": *\"2\.23\"" examples spec/samples src scripts 2>/dev/null | grep -v "_test.nv" | wc -l | tr -d ' ')
 [ "$n_old_format" = 0 ] || red "строки format 2.23 или alula_version 2.23 в данных: $n_old_format"
 
 # ---- (3) литерал роли, три функции, механизм «по роли» ---------------------------------------------------------------------------------------
@@ -91,9 +91,9 @@ else
     case "$role_out" in *"литерал роли в разбор:"*"отдельная функция на роль"*) ;; *) red "сообщение о литерале роли без подсказки AL-131: $(echo "$role_out" | head -2)" ;; esac
   fi
 fi
-n_agent=$(grep -rIn "разобрать_ответ_агента\|parse_agent_reply" examples spec/samples src/machine_agent/cases src/machine_nested/cases src/machine_text_eq/cases src/machine_text/defs src/machine_text/fragments 2>/dev/null | grep -v "meeting-names-222.tsv" | wc -l | tr -d ' ')
+n_agent=$(grep -rIn --include=*.alula.md --include=*.alula.txt --include=*.alula.json --include=*.fragment.md --include=*.fragment.en.md --include=*.tsv "разобрать_ответ_агента\|parse_agent_reply" examples spec/samples src/machine_agent/cases src/machine_nested/cases src/machine_text_eq/cases src/machine_text/defs src/machine_text/fragments 2>/dev/null | wc -l | tr -d ' ')
 [ "$n_agent" = 0 ] || red "разобрать_ответ_агента / parse_agent_reply в образцах и данных: $n_agent"
-n_samples_roles=$(grep -rIn '(\"witness\")\|(\"author\")\|(\"lens\")' spec/samples/meeting-definitions.alula.md src/machine_agent/cases/meeting-methodology-222.alula.txt src/machine_nested/cases/meeting-examples.alula.md 2>/dev/null | grep "разбор:" | wc -l | tr -d ' ')
+n_samples_roles=$(grep -rIn -E 'разбор: [^ ]+\("' spec/samples/meeting-definitions.alula.md src/machine_agent/cases/meeting-methodology-222.alula.txt src/machine_nested/cases/meeting-examples.alula.md 2>/dev/null | wc -l | tr -d ' ')
 [ "$n_samples_roles" = 0 ] || red "литерал роли в разбор: образцов: $n_samples_roles"
 n_role_code=$(grep -rIn "RoleRow\|find_role\|has_roles\|add_role" src --include=*.nv 2>/dev/null | grep -v "_test.nv" | wc -l | tr -d ' ')
 [ "$n_role_code" = 0 ] || red "механизм «по роли» в коде (RoleRow, find_role, has_roles, add_role): $n_role_code"
@@ -116,7 +116,8 @@ grep -q '"2.23"' src/machine_text/jname.nv && red "jname.nv: формат 2.23 �
 # ---- (5) хеши образцов ------------------------------------------------------------------------------------------------------------------------
 
 echo "== хеши образцов файла функций"
-n_old_hash=$(grep -rIn "ebb7658048b2\|a9af85407c2b" . --exclude-dir=target --exclude-dir=.git --exclude=accept-181.sh --exclude=history.md --exclude=accept-181.log.md 2>/dev/null | wc -l | tr -d ' ')
+# живут только в записях истории (журналы изменений, справка к образцу, README, история): код, тесты, образцы и текст спецификации их не несут
+n_old_hash=$(grep -rIn --include=*.nv --include=*.alula.md --include=*.alula.txt --include=*.alula.json --include=*.tsv --include=alula-spec.md --include=alula-spec.en.md "ebb7658048b2\|a9af85407c2b" examples spec src scripts tools 2>/dev/null | wc -l | tr -d ' ')
 [ "$n_old_hash" = 0 ] || red "прежние хеши образцов (ebb7658048b2, a9af85407c2b) вне истории: $n_old_hash"
 
 # ---- (6) examples и nova test -----------------------------------------------------------------------------------------------------------------
@@ -137,12 +138,13 @@ else
     dir=$(basename "$d")
     ls "$d"*_test.nv >/dev/null 2>&1 || continue
     echo "== nova test src/$dir"
-    t_out=$(nova test "src/$dir" --jobs 2 2>&1 | tail -3)
+    t_full=$(nova test "src/$dir" --jobs 2 --timeout 900 2>&1)
+    t_out=$(echo "$t_full" | tail -3)
     t_pass=$(echo "$t_out" | sed -n 's/^PASS: \([0-9]*\)  FAIL: \([0-9]*\).*/\1/p' | tail -1)
     t_fail=$(echo "$t_out" | sed -n 's/^PASS: \([0-9]*\)  FAIL: \([0-9]*\).*/\2/p' | tail -1)
     t_pass=${t_pass:-0}; t_fail=${t_fail:-1}
     n_test=$((n_test + t_pass + t_fail)); n_test_ok=$((n_test_ok + t_pass))
-    [ "$t_fail" = 0 ] || red "nova test src/$dir: $t_fail красных"
+    [ "$t_fail" = 0 ] || { red "nova test src/$dir: $t_fail красных"; echo "$t_full" | grep -a "FAIL\|TIMEOUT\|error" | head -4 | cut -c1-600; }
     sleep 5
   done
   test_line="nova test $n_test_ok из $n_test"

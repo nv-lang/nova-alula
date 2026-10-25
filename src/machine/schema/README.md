@@ -1,8 +1,8 @@
 # The schemas of the Alula tree: `machine/2` and `scenario/0`
 
-> The schemas of the package `alula` at the language **Alula 2.23**, the state of the specification `spec/alula-spec.md` (the text of 2.23 of this repository, changelog AL-115 ... AL-122). The text was
+> The schemas of the package `alula` at the language **Alula 2.24**, the state of the specification `spec/alula-spec.md` (the text of 2.24 of this repository, changelog AL-123, AL-128 ... AL-132). The text was
 > written by the methodology and finished with the package: every tree below was compiled and run by the program `alula` of the
-> package (version 0.5.0), the questions that were left to the package are answered at the end ("Answered and open points").
+> package (version 0.6.0), the questions that were left to the package are answered at the end ("Answered and open points").
 
 ## What is here
 
@@ -28,14 +28,14 @@ Who is the authority for what:
 |---|---|---|
 | tree format | `machine/2` | the root key `format` of the tree (a constant; it does not change with the language version, spec AL-19) |
 | scenario format | `scenario/0` | the root key `format` of a scenario (does not change with the language version, spec AL-50) |
-| language version | **2.23** | `- format: 2.23` in the header of a machine file, a functions file and a fragment file; the root key `alula_version` of the tree (the schema accepts only `"2.23"`); the recommended `- machine_version: alula-2.23` (spec 1), which becomes the root key `version` |
-| package `alula` | `0.5.0` | `alula version` prints `alula 0.5.0 (Alula 2.23, machine/2)` |
-| glossary of automatic names | hash **`60383c370415`** | pinned by the format (spec AL-62); the translator recomputes it from its copy of the normative part of the glossary |
-| word table | `spec/alula-keywords.tsv` of 2.23 (218 rows, 17 kinds) | the words of both file languages; the tree does not hold them |
+| language version | **2.24** | `- format: 2.24` in the header of a machine file, a functions file and a fragment file; the root key `alula_version` of the tree (the schema accepts only `"2.24"`); the recommended `- machine_version: alula-2.24` (spec 1), which becomes the root key `version` |
+| package `alula` | `0.6.0` | `alula version` prints `alula 0.6.0 (Alula 2.24, machine/2)` |
+| glossary of automatic names | hash **`35c571ccda17`** (the dictionary of the version 13, 1270 pairs) | pinned by the format (spec AL-62); the translator recomputes it from its copy of the normative part of the glossary |
+| word table | `spec/alula-keywords.tsv` of 2.24 (17 kinds) | the words of both file languages; the tree does not hold them |
 
 One package version reads exactly one language version: there is no transition period (the owner's word, 2026-10-20). A file with
-`format` other than 2.23 and a tree with another `alula_version` are refused with a message that names the version. The versions 2.15–2.23
-added **no node** to the tree (spec, section 6); the key changes of the whole line are those of 2.13 (`values`, signals) and the optional
+`format` other than 2.24 and a tree with another `alula_version` are refused with a message that names the version. The versions 2.15–2.23
+added **no node** to the tree (spec, section 6); 2.24 changed the list `primitives` (a record for each external function, AL-123) and removed the key `role` of `parse` (one function per role, AL-131); the key changes of the whole line are those of 2.13 (`values`, signals) and the optional
 party `counter` of 2.15 (see "Answered and open points").
 
 ## The tree does not depend on the language of the file
@@ -94,7 +94,7 @@ file says `map[K, V]`/`словарь[K, V]`), `full {K: V}`, `(T1, T2)`, or the
 | Key | Type | Req. | Meaning (spec section) |
 |---|---|---|---|
 | `format` | `"machine/2"` | yes | the tree format |
-| `alula_version` | `"2.23"` | no | the language version; absent means the version of the package `]` |
+| `alula_version` | `"2.24"` | no | the language version; absent means the version of the package `]` |
 | `machine` | string `^[A-Za-z][A-Za-z0-9_]*$` | yes | the Latin name of the machine (`- machine:`; the name in the journal, `machine_started`) |
 | `version` | string | no | `- machine_version:` |
 | `title` | string | no | the text of the header line `# Machine: <text>` (see "Answered and open points") |
@@ -158,7 +158,7 @@ file says `map[K, V]`/`словарь[K, V]`), `full {K: V}`, `(T1, T2)`, or the
 | `nested` | string | no | `machine <name>(…)`: the name of the nested machine in the registry of the caller |
 | `input_type` | type | no | `machine …(input Type, …)` |
 | `result` | type | no | `agent(result T)`, `machine …(…, result T)` (the checks require it for `agent` and `machine`) |
-| `parse` | `{primitive, role?, type}` | no | `; parse: primitive("role") -> Type` of a `machine` party |
+| `parse` | `{primitive, type}` | no | `; parse: primitive -> Type` of a `machine` party (one function per role, AL-131: no literal of a role) |
 | `counter` | string | no | the datum of the attempt counter (the column "counter"); **absent for a `human` party with free input** (`—`, AL-52) |
 
 `signal_def` (`$defs/signal_def`): `name` (req., the JSON name of the signal), `fields` (`[]field`) — the
@@ -349,8 +349,8 @@ so it needs no `## Имена`; the text literals are the same in both files so 
 # Машина: ask
 
 - machine: ask
-- machine_version: alula-2.23
-- format: 2.23
+- machine_version: alula-2.24
+- format: 2.24
 
 ## Данные
 
@@ -392,8 +392,8 @@ so it needs no `## Имена`; the text literals are the same in both files so 
 # Machine: ask
 
 - machine: ask
-- machine_version: alula-2.23
-- format: 2.23
+- machine_version: alula-2.24
+- format: 2.24
 - language: en
 
 ## Data
@@ -438,9 +438,9 @@ them and also writes every section, an empty one as `—`). The journal codes `c
 ```json
 {
   "format": "machine/2",
-  "alula_version": "2.23",
+  "alula_version": "2.24",
   "machine": "ask",
-  "version": "alula-2.23",
+  "version": "alula-2.24",
   "title": "ask",
   "data": [
     { "name": "reply_text", "type": "text", "initial": { "expr": { "op": "lit", "value": "" } }, "writes": "rows" },
@@ -488,7 +488,7 @@ them and also writes every section, an empty one as `—`). The journal codes `c
 The tree of the English file is the same except the internal names: `"name": "agent"` of the party and `"party": "agent"` of the
 state, `"bind": "t"` and `{"op": "name", "name": "t"}` instead of `т`. `title` is the text of the header line `# Машина: ask`; the `concat`/`text` unfolding and `60_000` → `60000` follow spec AL-80 and AL-91.
 
-Check it (run with the program `alula 0.5.0`: the two files compile to the two trees, the converted English file gives the English tree, both trees pass the scenario below):
+Check it (run with the program `alula 0.6.0`: the two files compile to the two trees, the converted English file gives the English tree, both trees pass the scenario below):
 
 ```
 alula compile ask.alula.md -o ask.alula.json

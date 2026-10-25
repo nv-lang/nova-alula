@@ -1,6 +1,6 @@
 # Типы данных в Алуле: как они взаимодействуют и для чего нужны
 
-**Пояснение, не норма.** Этот файл ничего не определяет и новых правил не вводит. Единственное определение языка — [spec/alula-spec.md](../spec/alula-spec.md) (версия 2.23); при расхождении прав он. «Раздел N» ниже — раздел спецификации. Примеры — точные строки образцов с номером строки: «Шаг агента» — [spec/samples/agent-step.alula.md](../spec/samples/agent-step.alula.md), «Совещание» — [spec/samples/meeting-definitions.alula.md](../spec/samples/meeting-definitions.alula.md). Общая схема языка — [docs/overview.md](overview.md).
+**Пояснение, не норма.** Этот файл ничего не определяет и новых правил не вводит. Единственное определение языка — [spec/alula-spec.md](../spec/alula-spec.md) (версия 2.24); при расхождении прав он. «Раздел N» ниже — раздел спецификации. Примеры — точные строки образцов с номером строки: «Шаг агента» — [spec/samples/agent-step.alula.md](../spec/samples/agent-step.alula.md), «Совещание» — [spec/samples/meeting-definitions.alula.md](../spec/samples/meeting-definitions.alula.md). Общая схема языка — [docs/overview.md](overview.md).
 
 ## 1. Карта типов
 
@@ -271,7 +271,6 @@
 | `ид` | `id` |
 | `словарь` | `map` |
 | `полный словарь` | `full map` |
-| `по роли` | `by role` |
 | `Состояние` | `State` |
 | `Сигнал` | `Signal` |
 | `СобытиеЖурнала` | `JournalEvent` |
