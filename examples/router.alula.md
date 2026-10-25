@@ -2,7 +2,7 @@
 
 - machine: Router
 - machine_version: 1
-- format: 2.22
+- format: 2.23
 - language: en
 
 The exhaustion of a fork (spec 4.1, AL-57). The fork `Pick` compares one datum with all the values of its enumeration and has no row `else`: the type proves that a row is always found. The fork `Measure` compares

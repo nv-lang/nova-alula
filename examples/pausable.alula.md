@@ -2,7 +2,7 @@
 
 - machine: Pausable
 - machine_version: 1
-- format: 2.22
+- format: 2.23
 - language: en
 
 The fragment `Pause` (spec 9): a human stops the machine in the middle of the work of the agent, the open request is cancelled and the machine waits in `Pause`; `continue` enters the state it was stopped
