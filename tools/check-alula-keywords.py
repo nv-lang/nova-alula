@@ -274,7 +274,9 @@ def structural(text, lang='ru'):
 
 
 UNICODE_OPS = '≥≤≠→⇒∈‥'
-DEF_HEAD = re.compile(r'^\s*(?:функция|fn|определение|define|definition)\s+[^\s(]+\s*\(')  # начало заголовка функции (AL-83); прежнее слово — чтобы знаки заголовка читались верно, ошибку даёт `check_v221`
+DEF_HEAD = re.compile(r'^\s*(?:(?:внешняя|external)\s+)?(?:функция|fn|определение|define|definition)\s+[^\s(]+\s*\(')
+EXTERNAL_HEAD = re.compile(r'^\s*(?:внешняя|external)\s+')  # объявление внешней функции без тела (AL-123)
+EXTERNAL_CLASS = re.compile(r'\s*(?:изменчивая|действующая|volatile|acting)(?!\w)')  # необязательное слово класса после списка параметров (AL-123)  # начало заголовка функции (AL-83); прежнее слово — чтобы знаки заголовка читались верно, ошибку даёт `check_v221`
 OLD_DEF_HEAD = re.compile(r'^\s*(?:определение|define|definition)\s+[^\s(]+\s*\(')  # прежнее слово объявления (до 2.21)
 OLD_INCLUDE = re.compile(r'^\s*(?:определения|definitions):')  # прежняя строка подключения (до 2.21; с 2.21 — файл функций)
 PARSE_ARROW = re.compile(r'(?:разбор|parse):\s*[\w.]+\s*(?:\([^()]*\))?\s*(->)')  # `разбор: примитив[("роль")] -> Тип`
@@ -296,6 +298,7 @@ class DefHeader:
         # seek: None, 'arrow' (скобка закрыта, ждём `->`), 'eq' (ждём `{` или `=>`), 'body' (после `=>` ждём начало тела),
         # 'block' (после `{` тела-блока ждём его содержимое: `}` первым — пустое тело-блок, AL-84)
         self.depth, self.seek = 0, None
+        self.external = False
 
     def line(self, line):
         """Возвращает (позиция стрелки типа результата в строке или None, тело записано через `=`, `=> {`); пустое
@@ -313,6 +316,7 @@ class DefHeader:
         m = DEF_HEAD.match(line)
         if m:
             self.depth, self.seek, pos = 1, None, m.end()
+            self.external = bool(EXTERNAL_HEAD.match(line))
         if self.depth:
             i = pos
             while i < len(line) and self.depth:
@@ -322,7 +326,18 @@ class DefHeader:
                 return None, False, False
             self.seek, pos = 'arrow', i
         if self.seek == 'arrow':
+            if getattr(self, 'external', False):
+                c = EXTERNAL_CLASS.match(line[pos:])
+                if c:
+                    pos += c.end()
             r = re.match(r'\s*->', line[pos:])
+            if r and getattr(self, 'external', False):
+                arrow = pos + r.end() - 2  # тип результата внешней функции; тела нет
+                self.reset()
+                return arrow, False, False
+            if getattr(self, 'external', False):
+                self.reset()  # внешняя функция без результата и без тела
+                return None, False, False
             if r:
                 arrow, pos, self.seek = pos + r.end() - 2, pos + r.end(), 'eq'
             elif line[pos:].strip():
@@ -1162,13 +1177,13 @@ def old_type_words(text, lang='en'):
                 for body in re.findall(r'\{([^{}]*)\}', line):
                     for t in field_types(body):
                         scan(n, t)
-            m = DEF_NAME.match(line)
+            m = DEF_NAME.match(line) or re.match(r'^\s*(?:внешняя|external)\s+(?:функция|fn)\s+([^\s(]+)\s*\(', line)  # и объявление внешней функции (AL-123)
             if m:
                 open_ = line.index('(', m.end() - 1)
                 close = block_close(line, open_)
                 for t in field_types(line[open_ + 1:close]):
                     scan(n, t)
-                r = re.match(r'\s*->\s*(.*?)\s*(?:=>|\{|$)', line[close + 1:])
+                r = re.match(r'\s*(?:(?:изменчивая|действующая|volatile|acting)\s+)?->\s*(.*?)\s*(?:=>|\{|$)', line[close + 1:])
                 if r:
                     scan(n, r.group(1))
             continue
@@ -1442,6 +1457,10 @@ def declarations(text, lang, readable=()):
             continue
         if in_code:
             line = strip_comment(line)  # комментарий `//` (AL-90)
+            if sec == sec_prim:  # объявление внешней функции (AL-123): имя выходит в реестр хозяина, как прежняя строка «Примитивов»
+                dm = re.match(r'^\s*(?:внешняя|external)\s+(?:функция|fn)\s+([^\s(]+)\s*\(', line)
+                if dm:
+                    out.append((n, 'примитива', False, dm.group(1), (dm.group(1),), None))
             if sec == sec_types and line.strip():
                 st = line.strip()
                 if in_variant:
@@ -1698,7 +1717,7 @@ MUTATIONS = {
         ('литерал со вставкой в `в […]`', '- Кроме: остановка в [""]', '- Кроме: остановка в ["${число_ходов}"]'),
         ('функция с английским именем функции каталога по словарю (`добавить` → `concat`)', 'функция пауза_повтора(п число>=0) -> число =>', 'функция добавить(а число) -> число =>\n  а\n\nфункция пауза_повтора(п число>=0) -> число =>'),
         ('функция с именем функции каталога', 'функция пауза_повтора(п число>=0) -> число =>', 'функция склеить(а строка, б строка) -> строка =>\n  а + б\n\nфункция пауза_повтора(п число>=0) -> число =>'),
-        ('функция с именем примитива реестра образца', 'функция пауза_повтора(п число>=0) -> число =>', 'функция time_now(а число) -> число =>\n  а\n\nфункция пауза_повтора(п число>=0) -> число =>'),
+        ('функция с именем примитива реестра образца', 'функция пауза_повтора(п число>=0) -> число =>', 'функция reply_validation(а число) -> число =>\n  а\n\nфункция пауза_повтора(п число>=0) -> число =>'),
         ('настоящее множество `в […]` со вставкой в условии', '| число_ходов += 1 | ХОД_АГЕНТА |', '| если остановка в ["a${число_ходов}"] то { число_ходов += 1 } | ХОД_АГЕНТА |'),
         ('ветка с текстовым образцом через `->`', 'ВидДействия.СменаРежима => истина\n', 'ВидДействия.СменаРежима => истина\n    "ask" -> "ask"\n'),
         ('ветка со стражем через `->`', 'ВидДействия.СменаРежима => истина\n', 'ВидДействия.СменаРежима если есть(вид_действия) -> истина\n'),
@@ -1805,7 +1824,7 @@ MUTATIONS = {
         ('тип результата `дробное` функции', 'функция израсходовано_стоимости(р ?РасходТранспорта) -> вещественное =>', 'функция израсходовано_стоимости(р ?РасходТранспорта) -> дробное =>'),
         ('тип параметра `текст` функции', 'ход_запроса строка,', 'ход_запроса текст,'),
         ('тип поля сигнала `текст`', 'продолжить { слово_человека строка,', 'продолжить { слово_человека текст,'),
-        ('тип `текст` в столбце «результат» примитива', '| time_now | — | число |', '| time_now | — | текст |'),
+        ('тип `текст` в столбце «результат» примитива', 'внешняя функция reply_validation() изменчивая -> ПроверкаОтвета', 'внешняя функция reply_validation() изменчивая -> текст'),
         ('вызов `текст(x)` (до 2.22)', 'остановка = строка(причина)', 'остановка = текст(причина)'),
         ('вызов `дробное(x)` (до 2.22)', '| число_ходов += 1 | ХОД_АГЕНТА |', '| число_ходов += число(дробное(1)) | ХОД_АГЕНТА |'),
         ('цикл `для каждого` (до 2.22)', '| число_ходов += 1 | ХОД_АГЕНТА |', '| для каждого x из [1] { число_ходов += x } | ХОД_АГЕНТА |'),
@@ -1844,7 +1863,7 @@ MUTATIONS = {
         ('литерал со вставкой в `in […]`', '- Except: stop_reason in [""]', '- Except: stop_reason in ["${turn_count}"]'),
         ('функция с именем функции каталога `concat`', 'fn retry_pause(n int>=0) -> int =>', 'fn concat(a int) -> int =>\n  a\n\nfn retry_pause(n int>=0) -> int =>'),
         ('функция с именем вызова диапазона `range`', 'fn retry_pause(n int>=0) -> int =>', 'fn range(a int) -> int =>\n  a\n\nfn retry_pause(n int>=0) -> int =>'),
-        ('функция с именем примитива реестра образца', 'fn retry_pause(n int>=0) -> int =>', 'fn time_now(a int) -> int =>\n  a\n\nfn retry_pause(n int>=0) -> int =>'),
+        ('функция с именем примитива реестра образца', 'fn retry_pause(n int>=0) -> int =>', 'fn reply_validation(a int) -> int =>\n  a\n\nfn retry_pause(n int>=0) -> int =>'),
         ('настоящее множество `in […]` со вставкой в условии', '| turn_count += 1 | AgentTurn |', '| if stop_reason in ["a${turn_count}"] then { turn_count += 1 } | AgentTurn |'),
         ('ветка с текстовым образцом через `->`', 'ActionKind.SwitchMode => true\n', 'ActionKind.SwitchMode => true\n    "ask" -> "ask"\n'),
         ('ветка со стражем через `->`', 'ActionKind.SwitchMode => true\n', 'ActionKind.SwitchMode if has(action) -> true\n'),
@@ -1905,7 +1924,7 @@ MUTATIONS = {
         ('тип результата `float` функции', 'fn cost_spent(tu ?TransportUsage) -> f64 =>', 'fn cost_spent(tu ?TransportUsage) -> float =>'),
         ('тип параметра `text` функции', 'request_turn str,', 'request_turn text,'),
         ('тип поля сигнала `text`', 'continue { human_word str,', 'continue { human_word text,'),
-        ('тип `text` в столбце `result` примитива', '| time_now | — | int |', '| time_now | — | text |'),
+        ('тип `text` в столбце `result` примитива', 'external fn reply_validation() volatile -> ReplyCheck', 'external fn reply_validation() volatile -> text'),
         ('тип `float` в виде стороны', 'agent(result TurnResult)', 'agent(result float)'),
         ('начальное состояние', 'Initial state: Start', 'Initial stat: Start'),
         ('ключ шапки', '- machine_version:', '- machine_ver:'),
@@ -1919,7 +1938,7 @@ MUTATIONS = {
 }
 CLEAN = {  # порча, которая ошибки давать не должна
     'ru': [
-        ('примитив `новый_ид` в реестре машины (AL-107, AL-116: класс `изменчивая`)', '| time_now | — | число | изменчивая | — | — |', '| time_now | — | число | изменчивая | — | — |\n| новый_ид | — | ид | изменчивая | — | — |'),
+        ('примитив `новый_ид` в объявлениях внешних функций (AL-107, AL-116: класс `изменчивая`)', 'внешняя функция reply_validation() изменчивая -> ПроверкаОтвета', 'внешняя функция reply_validation() изменчивая -> ПроверкаОтвета\nвнешняя функция новый_ид() изменчивая -> ид'),
         ('одно JSON-имя в разных пространствах (поле записи и данное)', ROW_RU, ROW_RU + '| Токены.вход | retry_count |\n'),
         ('смешение письменностей через `_`', '| начато | ?число |', '| начато_at | ?число |'),
         ('однострочное тело-блок с `пусть`, `>=` и `==`', '-> число =>\n  (1..п).свёртка(ПАУЗА_ПОВТОРА, (н, _) => н * 2)', '-> число { пусть к = п >= 0; если к == истина то { (1..п).свёртка(ПАУЗА_ПОВТОРА, (н, _) => н * 2) } иначе { 0 } }'),
@@ -1988,7 +2007,7 @@ CLEAN = {  # порча, которая ошибки давать не долж�
          'ВидДействия.СменаРежима => {\n      пусть x = истина\n      x\n    }\n'),
     ],
     'en': [
-        ('примитив `new_id` в реестре машины (AL-107, AL-116: класс `volatile`)', '| time_now | — | int | volatile | — | — |', '| time_now | — | int | volatile | — | — |\n| new_id | — | id | volatile | — | — |'),
+        ('примитив `new_id` в объявлениях внешних функций (AL-107, AL-116: класс `volatile`)', 'external fn reply_validation() volatile -> ReplyCheck', 'external fn reply_validation() volatile -> ReplyCheck\nexternal fn new_id() volatile -> id'),
         ('функция с именем `new_id` (AL-107)', 'fn retry_pause(n int>=0) -> int =>', 'fn new_id(a int) -> int =>\n  a\n\nfn retry_pause(n int>=0) -> int =>'),
         ('однострочное тело-блок с `let`, `>=` и `==`', '-> int =>\n  (1..n).fold(RETRY_PAUSE, (m, _) => m * 2)', '-> int { let k = n >= 0; if k == true then { (1..n).fold(RETRY_PAUSE, (m, _) => m * 2) } else { 0 } }'),
         ('включающий диапазон `..=`', '(1..n).fold(', '(1..=n).fold('),

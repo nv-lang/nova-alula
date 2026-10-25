@@ -10,8 +10,6 @@
 #     (8) в пакете нет заглушек `AL-2` + `xx` (поиск по всему дереву, кроме этого скрипта);
 #     (9) стражи дерева: scripts/guards/run-all.sh.
 # Не проверяет: правила 182, 175, 179, 180 (их команды-критерии: accept-175.sh, accept-179.sh, accept-180.sh), публикацию пакета (метка v0.6.0 — отдельный шаг по слову владельца).
-# Известное расхождение: tools/check-alula-keywords.py (инструмент Методики, здесь не правится) на объявлении внешней функции с результатом (`внешняя функция имя(…) изменчивая -> Тип`)
-#     пишет «`->` — только перед типом результата»: он знает `->` лишь в заголовке определения, в `разбор:` и в каталоге. Такие строки (и только они) из вывода исключены, остальное — красное; число исключённых — в итоговой строке не печатается, а в журнале задачи.
 # Предпосылки: Nova Oracle 0.1.0 в окружении (nova в PATH, setup-env.ps1), Python 3.9+, git. Тяжёлые шаги идут по одному.
 # Использование: sh scripts/accept-181.sh        (из корня дерева пакета; результат — последняя строка «ПРИНЯТО 181: …» и код 0, иначе «НЕ ПРИНЯТО 181 …» и код 1)
 #   ALULA=<путь>            готовая программа alula вместо сборки в target/alula.exe
@@ -162,31 +160,8 @@ if [ -z "$glossary" ] || [ ! -f "$glossary" ]; then
   red "ALULA_GLOSSARY должен называть state-machine-glossary.md (версия 13)"
 else
   "$PYTHON" tools/check-alula-keywords.py --glossary "$glossary" >"$tmp/keywords.out" 2>&1; kw_rc=$?
-  # исключение: ложное срабатывание на объявлениях внешних функций (см. шапку): сообщение «`->` — только перед типом результата» на строке,
-  # что сама начинается с `внешняя функция ` / `external fn `; любое другое замечание, и это сообщение на другой строке, остаются красными
-  "$PYTHON" - "$tmp/keywords.out" "$tmp/keywords.rest" "$tmp/keywords.false" <<'PYEOF'
-import io, re, sys
-msg = '`->` — только перед типом результата'
-rest, false = [], []
-for line in io.open(sys.argv[1], encoding='utf-8').read().splitlines():
-    m = re.match(r'^(.+?):(\d+): (.*)$', line)
-    if m and msg in m.group(3):
-        try:
-            src = io.open(m.group(1), encoding='utf-8').read().splitlines()[int(m.group(2)) - 1]
-        except (OSError, IndexError):
-            src = ''
-        if src.startswith(('внешняя функция ', 'external fn ')):
-            false.append(line)
-            continue
-    rest.append(line)
-io.open(sys.argv[2], 'w', encoding='utf-8', newline='\n').write('\n'.join(rest) + '\n')
-io.open(sys.argv[3], 'w', encoding='utf-8', newline='\n').write('\n'.join(false) + '\n')
-PYEOF
-  n_false=$(grep -c . "$tmp/keywords.false" | tr -d ' ')
-  n_rest=$(grep -c '^[^ ]*:[0-9][0-9]*: ' "$tmp/keywords.rest" | tr -d ' ')
-  if [ "$kw_rc" -ne 0 ] && [ "$n_rest" -gt 0 ]; then red "check-alula-keywords.py --glossary: $n_rest замечаний сверх известного расхождения"; head -5 "$tmp/keywords.rest"; fi
-  if [ "$kw_rc" -ne 0 ] && [ "$n_rest" -eq 0 ] && [ "$n_false" -eq 0 ]; then red "check-alula-keywords.py --glossary: код $kw_rc без замечаний"; tail -3 "$tmp/keywords.out"; fi
-  echo "   известное расхождение (->, объявления внешних функций): $n_false"
+  if [ "$kw_rc" -ne 0 ]; then red "check-alula-keywords.py --glossary: код $kw_rc"; head -5 "$tmp/keywords.out"; fi
+  "$PYTHON" tools/check-alula-keywords.py --selftest --glossary "$glossary" >"$tmp/keywords-self.out" 2>&1 || { red "check-alula-keywords.py --selftest"; tail -5 "$tmp/keywords-self.out"; }
   grep -q 'словарь версии 13: [0-9]* имён, хеш 35c571ccda17' "$tmp/keywords.out" || red "check-alula-keywords.py: словарь версии 13 с хешем 35c571ccda17 не назван"
 fi
 
