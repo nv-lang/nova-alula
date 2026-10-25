@@ -145,20 +145,20 @@ Initial state: S
 `
 
 test "rn includes line by default" {
-    ro first = json_of(inc_en("928cd807453a"))
+    ro first = json_of(inc_en("a9af85407c2b"))
     assert(!first.starts_with("ERROR "))
     ro made = render_machine(first, "en")
     assert(made.notes.len() == 0)
-    assert(made.text.contains("## Includes\n\n```\nfunctions: cycle_arithmetic version 1 hash 928cd807453a\n```\n"))
+    assert(made.text.contains("## Includes\n\n```\nfunctions: cycle_arithmetic version 1 hash a9af85407c2b\n```\n"))
     assert(!made.text.contains("define ceiling_reached"))
     assert(same_tree(first, json_of(made.text)) == "")
     ro ru = render(first, "ru")
-    assert(ru.contains("функции: cycle_arithmetic версия 1 хеш 928cd807453a"))
+    assert(ru.contains("функции: cycle_arithmetic версия 1 хеш a9af85407c2b"))
     assert(same_tree(first, json_of(ru)) == "")
 }
 
 test "rn includes as copy" {
-    ro first = json_of(inc_en("928cd807453a"))
+    ro first = json_of(inc_en("a9af85407c2b"))
     ro made = render_machine_with(first, "en", true)
     assert(made.text.contains("fn ceiling_reached(pass_number int>=1, origin int>=1, limit int>=0) -> bool =>\n  pass_number - 1 - origin + 1 >= limit"))
     assert(made.text.contains("## Includes\n—\n"))

@@ -151,30 +151,35 @@ fn ru_with_include(hash str) -> str {
 }
 
 test "nw include en" {
-    ro good = checked(en_with_include("928cd807453a"))
+    ro good = checked(en_with_include("a9af85407c2b"))
     if good.errors.len() > 0 { panic("${good.errors[0].line}: ${good.errors[0].message}") }
     assert(good.errors.len() == 0)
-    assert(good.json.contains("\"includes\":[{\"name\":\"cycle_arithmetic\",\"version\":\"1\",\"hash\":\"928cd807453a\"}]"))
+    assert(good.json.contains("\"includes\":[{\"name\":\"cycle_arithmetic\",\"version\":\"1\",\"hash\":\"a9af85407c2b\"}]"))
     assert(good.json.contains("\"definitions\":[{\"name\":\"ceiling_reached\""))
-    assert(note_says(en_with_include("afe05e9a1e4c"), "хеш файла cycle_arithmetic — 928cd807453a, а в подключении afe05e9a1e4c"))
-    assert(note_says(en_with_include("642e1f78f0f7"), "хеш файла cycle_arithmetic"))
+    assert(note_says(en_with_include("afe05e9a1e4c"), "хеш файла cycle_arithmetic — a9af85407c2b, а в подключении afe05e9a1e4c"))
+    assert(note_says(en_with_include("ebb7658048b2"), "хеш файла cycle_arithmetic"))
 }
 
 test "nw include ru" {
-    ro good = checked(ru_with_include("642e1f78f0f7"))
+    ro good = checked(ru_with_include("ebb7658048b2"))
     if good.errors.len() > 0 { panic("${good.errors[0].line}: ${good.errors[0].message}") }
     assert(good.errors.len() == 0)
-    assert(good.json.contains("\"includes\":[{\"name\":\"арифметика_цикла\",\"version\":\"1\",\"hash\":\"642e1f78f0f7\"}]"))
-    assert(note_says(ru_with_include("4de98da759eb"), "хеш файла арифметика_цикла — 642e1f78f0f7, а в подключении 4de98da759eb"))
+    assert(good.json.contains("\"includes\":[{\"name\":\"арифметика_цикла\",\"version\":\"1\",\"hash\":\"ebb7658048b2\"}]"))
+    assert(note_says(ru_with_include("4de98da759eb"), "хеш файла арифметика_цикла — ebb7658048b2, а в подключении 4de98da759eb"))
+}
+
+// the hash of the format 2.22 (642e1f78f0f7) looks like a number with an exponent: a wrong hash of this shape is a mismatch of the hash, not a broken token
+test "nw include ru a hash that looks like a number" {
+    assert(note_says(ru_with_include("642e1f78f0f7"), "хеш файла арифметика_цикла — ebb7658048b2, а в подключении 642e1f78f0f7"))
 }
 
 test "nw include words" {
     // the words of the include line are of the language of the file
-    ro foreign = ru_with_include("642e1f78f0f7").replace("версия 1 хеш", "version 1 hash")
+    ro foreign = ru_with_include("ebb7658048b2").replace("версия 1 хеш", "version 1 hash")
     assert(!is_clean(foreign))
-    ro bad_en = en_with_include("928cd807453a").replace("version 1", "версия 1")
+    ro bad_en = en_with_include("a9af85407c2b").replace("version 1", "версия 1")
     assert(!is_clean(bad_en))
-    assert(note_says(en_with_include("928cd807453a").replace("hash 928cd807453a", "hash zz"), "12 шестнадцатеричных знаков"))
+    assert(note_says(en_with_include("a9af85407c2b").replace("hash a9af85407c2b", "hash zz"), "12 шестнадцатеричных знаков"))
 }
 
 // The canonical file writes the section `Input` always, an empty one as a dash: a section that holds only a dash declares no input.

@@ -194,10 +194,10 @@ test "v212 defs hashes" {
     ro en = defs_file_text("cycle_arithmetic")
     assert(ru.contains("- format: 2.23"))
     assert(en.contains("- format: 2.23") && en.contains("- language: en"))
-    assert(definitions_hash(ru) == "642e1f78f0f7")
-    assert(definitions_hash(en) == "928cd807453a")
-    assert(translate_definitions(ru).hash == "642e1f78f0f7")
-    assert(translate_definitions(en).hash == "928cd807453a")
+    assert(definitions_hash(ru) == "ebb7658048b2")
+    assert(definitions_hash(en) == "a9af85407c2b")
+    assert(translate_definitions(ru).hash == "ebb7658048b2")
+    assert(translate_definitions(en).hash == "a9af85407c2b")
     assert(translate_definitions(ru).errors.len() == 0)
     assert(translate_definitions(en).errors.len() == 0)
 }
@@ -226,13 +226,13 @@ fn en_include(hash str) -> str {
 }
 
 test "v212 include ru" {
-    assert(is_clean(ru_include("642e1f78f0f7")))
+    assert(is_clean(ru_include("ebb7658048b2")))
     assert(note_says(ru_include("fad927a77d32"), "хеш файла арифметика_цикла"))
-    assert(json_of(ru_include("642e1f78f0f7")).contains("\"hash\":\"642e1f78f0f7\""))
+    assert(json_of(ru_include("ebb7658048b2")).contains("\"hash\":\"ebb7658048b2\""))
 }
 
 test "v212 include en" {
-    assert(is_clean(en_include("928cd807453a")))
+    assert(is_clean(en_include("a9af85407c2b")))
     assert(note_says(en_include("afe05e9a1e4d"), "хеш файла cycle_arithmetic"))
-    assert(json_of(en_include("928cd807453a")).contains("\"hash\":\"928cd807453a\""))
+    assert(json_of(en_include("a9af85407c2b")).contains("\"hash\":\"a9af85407c2b\""))
 }
