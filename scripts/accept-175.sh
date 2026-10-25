@@ -237,7 +237,9 @@ else
     for t in "$d"/*.alula.md; do
       [ -f "$t" ] || continue
       n_tables=$((n_tables + 1))
-      c_out=$("$alula" check "$t" --registry "$d/registry.md" 2>&1); c_rc=$?
+      c_journal=""; [ -f "$d/journal.md" ] && c_journal="--journal $d/journal.md"
+      # shellcheck disable=SC2086
+      c_out=$("$alula" check "$t" --registry "$d/registry.md" $c_journal 2>&1); c_rc=$?
       if [ "$c_rc" -ne 0 ]; then n_diverge=$((n_diverge + 1)); echo "  $t"; echo "$c_out" | head -4; fi
     done
   done
