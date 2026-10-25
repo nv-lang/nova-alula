@@ -4,7 +4,7 @@
 module alula.machine_run
 
 import std.text
-import alula.machine.{Value, Null, Bool, Text, RecordField, make_record, enum_value, value_json, Registry, Primitive, ParamSpec, RecordType, Reading, BoolType, register}
+import alula.machine.{Value, Null, Bool, Text, RecordField, make_record, enum_value, value_json, Registry, Primitive, ParamSpec, RecordType, Volatile, BoolType, register}
 import alula.engine.{Incoming, EventKind}
 import alula.examples.{sample_registry}
 
@@ -310,8 +310,8 @@ fn fixer() -> str => `{"format":"machine/2","machine":"Fixer","version":"1",
 fn fixer_registry() -> Registry {
     mut reg = sample_registry()
     ro out = ParamSpec { name: "out", spec: RecordType("Out") }
-    ro parse = Primitive { name: "parse_out", params: [out], result: RecordType("Out"), class: Reading, reads: []str.new(), writes: []str.new() }
-    ro changed = Primitive { name: "changed", params: []ParamSpec.new(), result: BoolType, class: Reading, reads: []str.new(), writes: []str.new() }
+    ro parse = Primitive { name: "parse_out", params: [out], result: RecordType("Out"), class: Volatile, reads: []str.new(), writes: []str.new() }
+    ro changed = Primitive { name: "changed", params: []ParamSpec.new(), result: BoolType, class: Volatile, reads: []str.new(), writes: []str.new() }
     ro first = register(reg, parse)
     ro second = register(reg, changed)
     reg

@@ -271,8 +271,8 @@ test "tm read outside" {
 test "tm class" {
     ro in_cond = tiny_with("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | вызвать(close_agent_turn) == 1 | — | КОНЕЦ |")
     assert(note_says(in_cond, "примитива `close_agent_turn` нет в таблице `## Примитивы`"))
-    assert(note_says(in_cond, "the irreversible primitive close_agent_turn may not stand in condition"))
-    ro listed = tiny_with("## Концы", "## Примитивы\n\n| имя | параметры | результат | класс | читает | пишет |\n|---|---|---|---|---|---|\n| close_agent_turn | — | — | irreversible | — | — |\n\n## Концы")
+    assert(note_says(in_cond, "the acting primitive close_agent_turn may not stand in condition"))
+    ro listed = tiny_with("## Концы", "## Примитивы\n\n| имя | параметры | результат | класс | читает | пишет |\n|---|---|---|---|---|---|\n| close_agent_turn | — | — | действующая | — | — |\n\n## Концы")
     ro both = listed.replace("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | вызвать(close_agent_turn) == 1 | — | КОНЕЦ |")
     assert(note_says(both, "may not stand in condition"))
 }
@@ -280,7 +280,7 @@ test "tm class" {
 test "tm new id outside" {
     ro in_cond = tiny_with("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | строка(вызвать(новый_ид)) == \"\" | — | КОНЕЦ |")
     assert(note_says(in_cond, "new_id may stand only in a binding of the entry of an operation"))
-    assert(note_says(in_cond, "the reading primitive new_id may not stand in condition"))
+    assert(note_says(in_cond, "the volatile primitive new_id may not stand in condition"))
 }
 
 test "tm summary" {

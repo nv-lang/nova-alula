@@ -4,7 +4,7 @@
 module alula.machine_table
 
 import alula.machine.{Value, IdType, IntType, TextType, TextSet, OptionalType, ListType, DictType, FullDictType, TupleType, Text, Int, Null}
-import alula.machine.{spec_text, check_value, empty_type_defs, make_tuple, parse_spec, find_primitive, Reading, record_get, Record, text_of_file}
+import alula.machine.{spec_text, check_value, empty_type_defs, make_tuple, parse_spec, find_primitive, Volatile, record_get, Record, text_of_file}
 import std.text
 import alula.examples.{machine_files, sample_registry}
 
@@ -89,7 +89,7 @@ test "v25 set value" {
 test "v25 new_id reg" {
     match find_primitive(sample_registry(), "new_id") {
         Some(p) => {
-            assert(p.class == Reading)
+            assert(p.class == Volatile)
             assert(p.params.len() == 0)
             assert(spec_text(p.result) == "id")
             assert(p.reads.len() == 0 && p.writes.len() == 0)

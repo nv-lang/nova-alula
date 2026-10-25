@@ -129,18 +129,18 @@ test "a154 the meeting keeps its numbers" {
         assert(translate_names(meeting17s()).len() == 225)
 }
 
-// The fingerprint of a sample is the hash of its text by the rule of the hash of a file of functions (section 8): the samples are the files of the commit 87f59cb of the methodology.
+// The fingerprint of a sample is the hash of its text by the rule of the hash of a file of functions (section 8): the samples are the files of the commit 87f59cb of the methodology with the classes of the primitives migrated by task 170 (AL-115: `reading` is `volatile`, `writing` and `irreversible` are `acting`); the fingerprints of the files as they came were a2812af20cde, 9652269ab7b7 and 126641e835c7 (these are fingerprints of the whole text, not the hashes of the files of functions of section 8, which the migration does not touch).
 test "a154 the samples are the files of the methodology" {
-    assert(definitions_hash(ru17s()) == "a2812af20cde")
-    assert(definitions_hash(en17s()) == "9652269ab7b7")
-    assert(definitions_hash(meeting17s()) == "126641e835c7")
+    assert(definitions_hash(ru17s()) == "769975e59825")
+    assert(definitions_hash(en17s()) == "3b3dac81b2d7")
+    assert(definitions_hash(meeting17s()) == "a1944bfac4fb")
 }
 
 // ---- the primitive new_id and the names of the calls (AL-107) ---------------------------------------------------------------------------------
 
-fn ru_new_id154() -> str => ru17s().replace("| time_now | — | число | reading | — | — |", "| time_now | — | число | reading | — | — |\n| новый_ид | — | ид | reading | — | — |")
+fn ru_new_id154() -> str => ru17s().replace("| time_now | — | число | изменчивая | — | — |", "| time_now | — | число | изменчивая | — | — |\n| новый_ид | — | ид | изменчивая | — | — |")
 
-fn en_new_id154() -> str => en17s().replace("| time_now | — | int | reading | — | — |", "| time_now | — | int | reading | — | — |\n| new_id | — | id | reading | — | — |")
+fn en_new_id154() -> str => en17s().replace("| time_now | — | int | volatile | — | — |", "| time_now | — | int | volatile | — | — |\n| new_id | — | id | volatile | — | — |")
 
 fn clash154(text str) -> bool {
     for e in translate_checked(text, sample_registry()).errors {
@@ -172,7 +172,7 @@ test "a154 a function named as a function of the catalog is still a clash" {
 }
 
 test "a154 a primitive named as a function of the catalog is still a clash" {
-    ro text = ru17s().replace("| time_now | — | число | reading | — | — |", "| time_now | — | число | reading | — | — |\n| склеить | — | число | reading | — | — |")
+    ro text = ru17s().replace("| time_now | — | число | изменчивая | — | — |", "| time_now | — | число | изменчивая | — | — |\n| склеить | — | число | изменчивая | — | — |")
     assert(text != ru17s())
     assert(clash154(text))
 }

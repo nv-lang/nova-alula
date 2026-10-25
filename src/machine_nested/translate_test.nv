@@ -171,7 +171,7 @@ test "nm profile input" {
 }
 
 test "nm profile read" {
-    // a profile may not write: a writing call is not allowed in the profile of a party
+    // a profile may not write: an acting call is not allowed in the profile of a party
     ro text = with_prims(boss_with("| machine callee(вход CallInput, итог CallOutput) | — | — |", "| machine callee(вход CallInput, итог CallOutput) | вызвать(close_for_writing, \"x\") | — |"), ["close_for_writing"])
     assert(note_says(text, "close_for_writing"))
 }
@@ -233,6 +233,15 @@ test "nm edits" {
     assert(count_kind(text, "unsupported") == 0)
     assert(report.json.contains("\"edits\":\"text_reply\""))
     assert(report.json.contains("\"edit_check\":\"proposal_changed_since_attempt\""))
+}
+
+// AL-115: "On accept" has volatile calls (the result is a value of the answer), no acting ones
+test "nm accept has no acting call" {
+    ro accept = tiny_agent().replace("- Запрос:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| prompt | text_reply | сторона |\n", "- Запрос:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| prompt | text_reply | сторона |\n\n- При приёме:\n\n| событие | действия |\n|---|---|\n| ответ(ответ) | text_reply = вызвать(PRIM) |\n")
+    ro acting = with_prims(accept.replace("вызвать(PRIM)", "вызвать(close_for_writing, \"x\")"), ["close_for_writing"])
+    assert(note_says(acting, "the acting primitive close_for_writing may not stand in accept"))
+    ro volatile = with_prims(accept.replace("вызвать(PRIM)", "вызвать(proposal_read)"), ["proposal_read"])
+    assert(!note_says(volatile, "may not stand in accept"))
 }
 
 test "nm form returns" {

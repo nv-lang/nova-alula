@@ -3,7 +3,7 @@
 module alula.machine_nested
 
 import std.text
-import alula.machine.{Registry, Primitive, ParamSpec, TextType, IntType, BoolType, RecordType, ListType, Reading, Pure, register, add_role}
+import alula.machine.{Registry, Primitive, ParamSpec, TextType, IntType, BoolType, RecordType, ListType, Volatile, Pure, register, add_role}
 import alula.examples.{sample_registry}
 import alula.machine_text.{translate_checked, render, render_machine, TranslateReport}
 
@@ -319,15 +319,15 @@ test "v212 pure call inside an expression" {
     assert(report.errors.len() == 0)
 }
 
-test "v212 reading call as a function in a condition" {
+test "v212 volatile call as a function in a condition" {
     ro text = fork_text("time_now() > 0")
     ro report = checked_pure(text)
     assert(report.errors.len() > 0)
-    assert(note_says_in(report, "reading"))
+    assert(note_says_in(report, "volatile"))
     assert(note_says_in(report, "time_now"))
 }
 
-test "v212 reading call word in a condition" {
+test "v212 volatile call word in a condition" {
     ro report = checked_pure(fork_text("вызвать(time_now) > 0"))
     assert(report.errors.len() > 0)
     assert(note_says_in(report, "time_now"))
@@ -388,7 +388,7 @@ fn roles_registry() -> Registry {
     mut reg = sample_registry()
     ro answer = ParamSpec { name: "answer", spec: RecordType("CallOutput") }
     ro role = ParamSpec { name: "role", spec: TextType }
-    ro p = Primitive { name: "read_by_role", params: [answer, role], result: RecordType("CallOutput"), class: Reading, reads: []str.new(), writes: []str.new() }
+    ro p = Primitive { name: "read_by_role", params: [answer, role], result: RecordType("CallOutput"), class: Volatile, reads: []str.new(), writes: []str.new() }
     ro r1 = register(reg, p)
     ro r2 = add_role(reg, "read_by_role", "author", RecordType("CallOutput"), []str.new())
     ro r3 = add_role(reg, "read_by_role", "witness", ListType(TextType), ["reply"])

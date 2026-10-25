@@ -5,8 +5,6 @@ fn rprim(name str, params []ParamSpec, result TypeSpec, class PrimitiveClass) ->
     Primitive { name, params, result, class, reads: []str.new(), writes: []str.new() }
 }
 
-fn rwriting_classes() -> []PrimitiveClass => [Writing, Irreversible]
-
 fn rall_positions() -> []Position {
     [ConditionPos, InputPos, ProfilePos, ForkEntryPos, OperationEntryPos, EndEntryPos, AcceptPos, ActionPos]
 }
@@ -27,21 +25,22 @@ fn rpos_path(registry Registry, e Expr, position Position) -> str {
 
 fn rtext(s str) -> Value => Text(s)
 
-// The registry of the tests: the language and five primitives of the classes of the four kinds; the types of their signatures.
+// The registry of the tests: the language and primitives of the three classes (`finish_turn` is acting with no result, the other acting ones give a value); the types of their signatures.
 fn rfixture() -> Registry {
     mut reg = language_registry()
     for p in [
-        rprim("commit_turn", []ParamSpec.new(), NothingType, Irreversible),
-        rprim("read_note", []ParamSpec.new(), BoolType, Reading),
-        rprim("step_number", []ParamSpec.new(), IntMin(0), Reading),
-        rprim("seal", [param("object", TextType)], NothingType, Irreversible),
-        rprim("log_all", []ParamSpec.new(), NothingType, Writing),
-        rprim("profile_of", [param("party", TextType)], RecordType("Profile"), Reading),
-        rprim("log_items", [param("items", ListType(RecordType("Item")))], NothingType, Writing),
-        rprim("archive", [param("number", IntMin(0)), param("suffix", IntMin(0))], NothingType, Irreversible),
-        rprim("context_of", [param("context", VariantType("Context"))], TextType, Reading),
-        rprim("summarize", [param("number", IntMin(0))], OptionalType(RecordType("Summary")), Writing),
-        rprim("validate", []ParamSpec.new(), VariantType("Check"), Reading)
+        rprim("commit_turn", []ParamSpec.new(), BoolType, Acting),
+        rprim("finish_turn", []ParamSpec.new(), NothingType, Acting),
+        rprim("read_note", []ParamSpec.new(), BoolType, Volatile),
+        rprim("step_number", []ParamSpec.new(), IntMin(0), Volatile),
+        rprim("seal", [param("object", TextType)], BoolType, Acting),
+        rprim("log_all", []ParamSpec.new(), IntType, Acting),
+        rprim("profile_of", [param("party", TextType)], RecordType("Profile"), Volatile),
+        rprim("log_items", [param("items", ListType(RecordType("Item")))], NothingType, Acting),
+        rprim("archive", [param("number", IntMin(0)), param("suffix", IntMin(0))], NothingType, Acting),
+        rprim("context_of", [param("context", VariantType("Context"))], TextType, Volatile),
+        rprim("summarize", [param("number", IntMin(0))], OptionalType(RecordType("Summary")), Acting),
+        rprim("validate", []ParamSpec.new(), VariantType("Check"), Volatile)
     ] {
         match register(reg, p) {
             Ok(u) => ()
@@ -89,13 +88,13 @@ fn ritem(severity str) -> Value {
 
 test "rg register" {
     mut reg = new_registry()
-    ro p = rprim("time_now", []ParamSpec.new(), IntType, Reading)
+    ro p = rprim("time_now", []ParamSpec.new(), IntType, Volatile)
     match register(reg, p) {
         Ok(u) => assert(true)
         Err(x) => assert(false)
     }
     match find_primitive(reg, "time_now") {
-        Some(found) => assert(found.name == "time_now" && class_word(found.class) == "reading")
+        Some(found) => assert(found.name == "time_now" && class_word(found.class) == "volatile")
         None => assert(false)
     }
     match find_primitive(reg, "other") {
@@ -107,7 +106,7 @@ test "rg register" {
 
 test "rg bad" {
     mut reg = new_registry()
-    ro p = rprim("p", [param("a", IntType)], NothingType, Writing)
+    ro p = rprim("p", [param("a", IntType)], NothingType, Acting)
     match register(reg, p) { Ok(u) => assert(true), Err(x) => assert(false) }
     match register(reg, p) { Ok(u) => assert(false), Err(x) => assert(x.message == "the primitive p is registered already") }
     match register(reg, rprim("", []ParamSpec.new(), NothingType, Pure)) { Ok(u) => assert(false), Err(x) => assert(x.message == "the name of a primitive is empty") }
@@ -119,8 +118,7 @@ test "rg bad" {
 }
 
 test "rg words" {
-    assert(class_word(Pure) == "pure" && class_word(Reading) == "reading")
-    assert(class_word(Writing) == "writing" && class_word(Irreversible) == "irreversible")
+    assert(class_word(Pure) == "pure" && class_word(Volatile) == "volatile" && class_word(Acting) == "acting")
     assert(position_word(ConditionPos) == "condition" && position_word(InputPos) == "input")
     assert(position_word(ProfilePos) == "profile" && position_word(ForkEntryPos) == "fork_entry")
     assert(position_word(OperationEntryPos) == "operation_entry" && position_word(EndEntryPos) == "end_entry")
@@ -131,28 +129,27 @@ test "cs pure" {
     for pos in rall_positions() { assert(class_allowed(Pure, pos)) }
 }
 
-test "cs reading" {
-    assert(!class_allowed(Reading, ConditionPos))
-    assert(class_allowed(Reading, InputPos))
-    assert(class_allowed(Reading, ProfilePos))
-    assert(class_allowed(Reading, ForkEntryPos))
-    assert(class_allowed(Reading, OperationEntryPos))
-    assert(class_allowed(Reading, EndEntryPos))
-    assert(class_allowed(Reading, AcceptPos))
-    assert(!class_allowed(Reading, ActionPos))
+test "cs volatile" {
+    assert(!class_allowed(Volatile, ConditionPos))
+    assert(class_allowed(Volatile, InputPos))
+    assert(class_allowed(Volatile, ProfilePos))
+    assert(class_allowed(Volatile, ForkEntryPos))
+    assert(class_allowed(Volatile, OperationEntryPos))
+    assert(class_allowed(Volatile, EndEntryPos))
+    assert(class_allowed(Volatile, AcceptPos))
+    // AL-115: the actions of the chosen row run once, a volatile call may stand in them
+    assert(class_allowed(Volatile, ActionPos))
 }
 
-test "cs writing" {
-    for class in rwriting_classes() {
-        assert(!class_allowed(class, ConditionPos))
-        assert(!class_allowed(class, InputPos))
-        assert(!class_allowed(class, ProfilePos))
-        assert(!class_allowed(class, ForkEntryPos))
-        assert(class_allowed(class, OperationEntryPos))
-        assert(class_allowed(class, EndEntryPos))
-        assert(!class_allowed(class, AcceptPos))
-        assert(class_allowed(class, ActionPos))
-    }
+test "cs acting" {
+    assert(!class_allowed(Acting, ConditionPos))
+    assert(!class_allowed(Acting, InputPos))
+    assert(!class_allowed(Acting, ProfilePos))
+    assert(!class_allowed(Acting, ForkEntryPos))
+    assert(class_allowed(Acting, OperationEntryPos))
+    assert(class_allowed(Acting, EndEntryPos))
+    assert(!class_allowed(Acting, AcceptPos))
+    assert(class_allowed(Acting, ActionPos))
 }
 
 test "ps call" {
@@ -163,7 +160,7 @@ test "ps call" {
     assert(!rpos_ok(reg, call_primitive("commit_turn", []Expr.new()), ForkEntryPos))
     match check_call_position(reg, "commit_turn", InputPos) {
         Ok(u) => assert(false)
-        Err(x) => assert(x.message == "the irreversible primitive commit_turn may not stand in input")
+        Err(x) => assert(x.message == "the acting primitive commit_turn may not stand in input")
     }
     match check_call_position(reg, "no_such", ActionPos) {
         Ok(u) => assert(false)
@@ -187,7 +184,7 @@ test "ps inside" {
     assert(rpos_ok(reg, in_lambda, OperationEntryPos))
     assert(rpos_path(reg, in_lambda, ForkEntryPos) == "$.args[1].body")
     ro in_arm = MatchOn { subject: name_ref("r"), arms: [arm([AnyPattern], Some(call_primitive("read_note", []Expr.new())), call_primitive("step_number", []Expr.new()))] }
-    assert(rpos_path(reg, in_arm, ActionPos) == "$.arms[0].guard")
+    assert(rpos_path(reg, in_arm, ConditionPos) == "$.arms[0].guard")
     assert(rpos_ok(reg, in_arm, EndEntryPos))
     ro in_let = let_in("a", lit_int(1), if_else(lit_bool(true), call_primitive("log_all", []Expr.new()), lit_int(0)))
     assert(rpos_path(reg, in_let, InputPos) == "$.body.then")
@@ -202,13 +199,50 @@ test "ps unknown" {
 }
 
 test "ps language" {
-    // the two primitives of the language (spec 7a) are always there: both of the class reading, no parameters
+    // the two primitives of the language (spec 7a) are always there: both of the class volatile, no parameters
     ro reg = language_registry()
     assert(reg.primitives.len() == 2)
     assert(rpos_ok(reg, call_primitive("time_now", []Expr.new()), OperationEntryPos))
     assert(rpos_ok(reg, call_primitive("new_id", []Expr.new()), OperationEntryPos))
-    assert(!rpos_ok(reg, call_primitive("new_id", []Expr.new()), ActionPos))
+    // new_id in the actions of a row is allowed by the class (volatile, AL-115); its own rule (a binding of the entry of an operation) is a check of the table
+    assert(rpos_ok(reg, call_primitive("new_id", []Expr.new()), ActionPos))
+    assert(!rpos_ok(reg, call_primitive("new_id", []Expr.new()), ConditionPos))
     assert(!rpos_ok(reg, call_primitive("party_profile", []Expr.new()), OperationEntryPos))
+}
+
+test "ps acting without a result" {
+    // AL-115: an acting primitive without a result is not a value: its call is an action, not an expression and not the value of a binding
+    ro reg = rfixture()
+    assert(rpos_ok(reg, call_primitive("commit_turn", []Expr.new()), ActionPos))
+    match check_call_position(reg, "finish_turn", ActionPos) {
+        Ok(u) => assert(true)
+        Err(x) => assert(false)
+    }
+    match check_expr_positions(reg, call_primitive("finish_turn", []Expr.new()), ActionPos) {
+        Ok(u) => assert(false)
+        Err(x) => {
+            assert(x.primitive == "finish_turn")
+            assert(x.message.contains("the acting primitive finish_turn has no result"))
+        }
+    }
+    ro inside = bin(Add, lit_int(1), call("max", [lit_int(2), call_primitive("finish_turn", []Expr.new())]))
+    assert(rpos_path(reg, inside, OperationEntryPos) == "$.right.args[1]")
+    // an acting primitive that gives a value stands in an expression
+    assert(rpos_ok(reg, call_primitive("seal", [lit_text("x")]), EndEntryPos))
+}
+
+test "rg pure reads its arguments only" {
+    mut reg = new_registry()
+    ro with_reads = Primitive { name: "p", params: []ParamSpec.new(), result: IntType, class: Pure, reads: ["a"], writes: []str.new() }
+    match register(reg, with_reads) {
+        Ok(u) => assert(false)
+        Err(x) => assert(x.message.contains("the pure primitive p reads its arguments only"))
+    }
+    ro with_writes = Primitive { name: "p", params: []ParamSpec.new(), result: IntType, class: Pure, reads: []str.new(), writes: ["b"] }
+    match register(reg, with_writes) { Ok(u) => assert(false), Err(x) => assert(true) }
+    match register(reg, rprim("p", []ParamSpec.new(), IntType, Pure)) { Ok(u) => assert(true), Err(x) => assert(false) }
+    ro volatile = Primitive { name: "v", params: []ParamSpec.new(), result: IntType, class: Volatile, reads: ["a"], writes: []str.new() }
+    match register(reg, volatile) { Ok(u) => assert(true), Err(x) => assert(false) }
 }
 
 test "ag count types" {
@@ -237,8 +271,9 @@ test "ag variant" {
 test "rs checked" {
     assert(rresult("time_now", Int(1000)))
     assert(!rresult("time_now", Text("1000")))
-    assert(rresult("commit_turn", Null))
-    assert(!rresult("commit_turn", Int(1)))
+    assert(rresult("finish_turn", Null))
+    assert(rresult("commit_turn", Bool(true)))
+    assert(!rresult("finish_turn", Int(1)))
     assert(rresult("validate", enum_value("Check", "Valid")))
     assert(!rresult("validate", enum_value("Check", "Maybe")))
     assert(rresult("summarize", Null))

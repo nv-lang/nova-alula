@@ -27,8 +27,11 @@ test "red unreachable" {
 test "red primitive class" {
     ro in_cond = tiny().replace(jb(">=", jn("n"), jl("2")), jprim("close_agent_turn", ""))
     assert(says(in_cond, "may not stand in condition"))
+    // AL-115: a volatile call may stand in the actions of a row (they run once), not in a condition
     ro read_in_action = tiny_rows(wait_rows_with(jprim("time_now", "")))
-    assert(says(read_in_action, "the reading primitive time_now may not stand in action"))
+    assert(ok_text(read_in_action.replace("\"parties\":", "\"primitives\":[\"time_now\"],\"parties\":")))
+    ro read_in_cond = tiny().replace(jb(">=", jn("n"), jl("2")), jb(">=", jprim("time_now", ""), jl("2")))
+    assert(says(read_in_cond, "the volatile primitive time_now may not stand in condition"))
     ro unregistered = tiny_rows(wait_rows_with(jprim("no_such", "")))
     assert(says(unregistered, "the primitive no_such is not registered"))
     ro unlisted = tiny().replace("\"parties\":", "\"primitives\":[\"time_now\"],\"parties\":")
@@ -39,7 +42,34 @@ test "red primitive class" {
     assert(ok_text(in_row.replace("\"parties\":", "\"primitives\":[\"close_agent_turn\"],\"parties\":")))
     ro reading_call = call.replace("close_agent_turn", "time_now")
     ro bad_call = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"actions\":[${reading_call}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"signal\",\"name\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
-    assert(says(bad_call.replace("\"parties\":", "\"primitives\":[\"time_now\"],\"parties\":"), "the reading primitive time_now may not stand in action"))
+    // a volatile call as an action has no effect (it only reads): the result is bound
+    assert(says(bad_call.replace("\"parties\":", "\"primitives\":[\"time_now\"],\"parties\":"), "the call of the volatile primitive time_now as an action has no effect"))
+}
+
+// The class of a primitive and the place of its call (AL-115): an acting call is not in a condition, not in the request, not in the entry of a fork; a call of an acting primitive without a result is not a value.
+test "red acting in the places of the reading" {
+    ro act = jprim("close_agent_turn", "")
+    ro in_request = tiny().replace("\"inputs\":[{\"field\":\"n\",\"value\":${jn("n")}", "\"inputs\":[{\"field\":\"n\",\"value\":${act}")
+    assert(says(in_request, "the acting primitive close_agent_turn may not stand in input"))
+    ro entry = `"entry":[{"do":"bind","name":"z","value":${act}}],`
+    ro in_fork = tiny().replace("\"kind\":\"fork\",\"reads\":[\"n\"],", "\"kind\":\"fork\",\"reads\":[\"n\"],${entry}")
+    assert(says(in_fork, "the acting primitive close_agent_turn may not stand in fork_entry"))
+    ro in_cond = tiny().replace(jb(">=", jn("n"), jl("2")), act)
+    assert(says(in_cond, "the acting primitive close_agent_turn may not stand in condition"))
+    ro volatile_in_request = tiny().replace("\"inputs\":[{\"field\":\"n\",\"value\":${jn("n")}", "\"inputs\":[{\"field\":\"n\",\"value\":${jprim("time_now", "")}")
+    assert(!says(volatile_in_request, "may not stand in input"))
+}
+
+test "red acting without a result is not a value" {
+    // `close_agent_turn` gives no result: its call is an action, not an expression and not the value of an assignment or of a binding
+    ro act = jprim("close_agent_turn", "")
+    ro in_assign = tiny_rows(wait_rows_with(act))
+    assert(says(in_assign, "the acting primitive close_agent_turn has no result"))
+    ro bound = `{"do":"bind","name":"z","value":${act}}`
+    ro in_entry = tiny().replace("\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[\"n\"]", "\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[\"n\"],\"entry\":[${bound}]")
+    assert(says(in_entry, "the acting primitive close_agent_turn has no result"))
+    ro as_action = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"actions\":[{\"do\":\"call\",\"primitive\":\"close_agent_turn\"}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"signal\",\"name\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
+    assert(!says(as_action.replace("\"parties\":", "\"primitives\":[\"close_agent_turn\"],\"parties\":"), "has no result"))
 }
 
 test "red ends not exhausted" {

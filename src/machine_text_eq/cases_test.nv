@@ -3,7 +3,7 @@
 module alula.machine_text_eq
 
 import std.text
-import alula.machine.{Registry, Primitive, ParamSpec, TextType, ListType, Reading, register, NamedText, find_primitive}
+import alula.machine.{Registry, Primitive, ParamSpec, TextType, ListType, Volatile, register, NamedText, find_primitive}
 import alula.machine_table.{parse_machine, load_machine}
 import alula.machine_run.{load_alula_machine}
 import alula.machine_text.{translate_report, translate_checked, translate_checked_with, TranslateReport, TranslateError, translate_definitions, DefsReport, definitions_hash, normalize_definitions, render_summary, error_text}
@@ -12,9 +12,9 @@ import alula.examples.{sample_registry}
 // The registry of the examples: the standard one and the two primitives of the meeting that it lacks.
 fn examples_registry() -> Registry {
     mut reg = sample_registry()
-    ro fingerprint = Primitive { name: "proposal_fingerprint", params: []ParamSpec.new(), result: TextType, class: Reading, reads: []str.new(), writes: []str.new() }
+    ro fingerprint = Primitive { name: "proposal_fingerprint", params: []ParamSpec.new(), result: TextType, class: Volatile, reads: []str.new(), writes: []str.new() }
     ro none = register(reg, fingerprint)
-    ro without = Primitive { name: "lenses_without_critical", params: []ParamSpec.new(), result: ListType(TextType), class: Reading, reads: ["lens_order", "lens_findings", "number"], writes: []str.new() }
+    ro without = Primitive { name: "lenses_without_critical", params: []ParamSpec.new(), result: ListType(TextType), class: Volatile, reads: ["lens_order", "lens_findings", "number"], writes: []str.new() }
     ro again = register(reg, without)
     reg
 }

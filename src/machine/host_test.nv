@@ -9,11 +9,11 @@ fn hst_registry_text() -> str => `# a host
 
 | name | parameters | result | class | reads | writes |
 |---|---|---|---|---|---|
-| stock_level | item: text | int>=0 | reading | objects: the stock | — |
-| reserve | item: text; count: int>=1 | — | writing | — | objects: the reserve |
-| ship | order: Order | ?Receipt | irreversible | objects: the reserve; the clock | objects: the shipment; the log |
+| stock_level | item: text | int>=0 | volatile | objects: the stock | — |
+| reserve | item: text; count: int>=1 | — | acting | — | objects: the reserve |
+| ship | order: Order | ?Receipt | acting | objects: the reserve; the clock | objects: the shipment; the log |
 | pick | mode: "fast" \| "slow" | text | pure | — | — |
-| parse_note | note: text; role: text | NoteResult | reading | — | — |
+| parse_note | note: text; role: text | NoteResult | volatile | — | — |
 
 ## Roles
 
@@ -67,7 +67,7 @@ fn hst_names(registry Registry) -> []str {
 test "host the language names two primitives and 35 codes" {
     ro reg = language_registry()
     assert(hst_names(reg) == ["time_now", "new_id"])
-    for p in reg.primitives { assert(class_word(p.class) == "reading") }
+    for p in reg.primitives { assert(class_word(p.class) == "volatile") }
     assert(reg.roles.len() == 0)
     assert(language_journal().len() == 35)
     assert(reg.journal.len() == 35)
@@ -124,7 +124,7 @@ test "host the signature of a primitive" {
     ro reg = hst_host()
     match find_primitive(reg, "ship") {
         Some(p) => {
-            assert(class_word(p.class) == "irreversible")
+            assert(class_word(p.class) == "acting")
             assert(p.params.len() == 1)
             assert(p.params[0].name == "order")
             assert(spec_text(p.params[0].spec) == "Order")
@@ -192,7 +192,10 @@ test "host the sets of types" {
 
 test "host the class of a primitive decides the places of its call" {
     ro reg = hst_host()
-    assert(check_call_position(reg, "stock_level", ActionPos).is_err())
+    assert(check_call_position(reg, "stock_level", ActionPos).is_ok())
+    assert(check_call_position(reg, "stock_level", ConditionPos).is_err())
+    assert(check_call_position(reg, "ship", AcceptPos).is_err())
+    assert(check_call_position(reg, "stock_level", AcceptPos).is_ok())
     assert(check_call_position(reg, "reserve", ActionPos).is_ok())
     assert(check_call_position(reg, "reserve", ConditionPos).is_err())
     assert(check_call_position(reg, "pick", ConditionPos).is_ok())
@@ -211,10 +214,33 @@ test "host no file is a host that gives nothing" {
 }
 
 test "host an unknown class is refused with the line" {
-    ro text = hst_registry_text().replace("| reserve | item: text; count: int>=1 | — | writing |", "| reserve | item: text; count: int>=1 | — | sleeping |")
+    ro text = hst_registry_text().replace("| reserve | item: text; count: int>=1 | — | acting |", "| reserve | item: text; count: int>=1 | — | sleeping |")
     ro said = hst_errors(text, "")
     assert(said.contains("registry.md:"))
     assert(said.contains("sleeping"))
+    assert(said.contains("pure, volatile or acting"))
+}
+
+// AL-115: the words of the classes of the format 2.22 are refused with the new word (no transition period)
+test "host the former classes are refused with the new word" {
+    ro head = "| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n"
+    ro reading = hst_errors("${head}| r | — | int | reading | — | — |\n", "")
+    assert(reading.contains("registry.md:3: `reading` в формате 2.22 не бывает (AL-115): пишется `volatile`; переходного периода нет"))
+    ro writing = hst_errors("${head}| w | — | — | writing | — | — |\n", "")
+    assert(writing.contains("`writing` в формате 2.22 не бывает (AL-115): пишется `acting`"))
+    ro irreversible = hst_errors("${head}| i | — | — | irreversible | — | — |\n", "")
+    assert(irreversible.contains("`irreversible` в формате 2.22 не бывает (AL-115): пишется `acting`"))
+    assert(hst_errors("${head}| v | — | int | volatile | — | — |\n| a | — | — | acting | — | — |\n| p | — | int | pure | — | — |\n", "") == "ok")
+}
+
+// AL-115: a pure primitive reads its arguments only: its columns `reads` and `writes` are `—`
+test "host a pure primitive with reads or writes is refused" {
+    ro head = "| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n"
+    ro reads = hst_errors("${head}| p | x: int | int | pure | objects: the stock | — |\n", "")
+    assert(reads.contains("registry.md:3: the pure primitive p reads its arguments only"))
+    ro writes = hst_errors("${head}| p | x: int | int | pure | — | objects: the log |\n", "")
+    assert(writes.contains("the pure primitive p reads its arguments only"))
+    assert(hst_errors("${head}| p | x: int | int | volatile | objects: the stock | — |\n", "") == "ok")
 }
 
 test "host a type that is not declared is refused" {
@@ -224,20 +250,20 @@ test "host a type that is not declared is refused" {
 }
 
 test "host a row with a wrong number of cells is refused" {
-    ro said = hst_errors("| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| lone | — | int | reading |\n", "")
+    ro said = hst_errors("| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| lone | — | int | volatile |\n", "")
     assert(said.contains("six cells"))
 }
 
 test "host a primitive of the host with a name of the language is refused" {
-    ro said = hst_errors("| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| time_now | — | int | reading | — | — |\n", "")
+    ro said = hst_errors("| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| time_now | — | int | volatile | — | — |\n", "")
     assert(said.contains("time_now"))
     assert(said.contains("registered already"))
 }
 
 test "host the same name twice and the same parameter twice are refused" {
-    ro twice = "| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| a | — | int | reading | — | — |\n| a | — | int | reading | — | — |\n"
+    ro twice = "| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| a | — | int | volatile | — | — |\n| a | — | int | volatile | — | — |\n"
     assert(hst_errors(twice, "").contains("registered already"))
-    ro same = "| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| b | x: int; x: int | int | reading | — | — |\n"
+    ro same = "| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| b | x: int; x: int | int | volatile | — | — |\n"
     assert(hst_errors(same, "").contains("twice"))
 }
 

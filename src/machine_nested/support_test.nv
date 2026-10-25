@@ -4,7 +4,7 @@ module alula.machine_nested
 
 import std.text
 import std.encoding.json.{Json, JsonValue, JsonObject}
-import alula.machine.{Registry, Primitive, ParamSpec, TextType, RecordType, Reading, register}
+import alula.machine.{Registry, Primitive, ParamSpec, TextType, RecordType, Volatile, register}
 import alula.examples.{sample_registry}
 import alula.machine_text.{translate_checked, translate_report, TranslateReport, TranslateError, error_text, render_machine, RenderReport}
 import alula.machine_table.{load_machine, parse_machine, MachineDef, LoadError, issue_text}
@@ -79,7 +79,7 @@ fn meeting_json() -> str => json_of(meeting_examples())
 // The section of the primitives of the host for a text: the names are listed (the translator wants them named), the classes are the registry's.
 fn with_prims(text str, names []str) -> str {
     mut rows = []str.new()
-    for n in names { rows.push("| ${n} | — | — | reading | — | — |") }
+    for n in names { rows.push("| ${n} | — | — | изменчивая | — | — |") }
     ro table = rows.join("\n")
     text.replace("## Концы", "## Примитивы\n\n| имя | параметры | результат | класс | читает | пишет |\n|---|---|---|---|---|---|\n${table}\n\n## Концы")
 }
@@ -252,8 +252,8 @@ fn parse_registry() -> Registry {
     mut reg = sample_registry()
     ro answer = ParamSpec { name: "answer", spec: RecordType("CallOutput") }
     ro role = ParamSpec { name: "role", spec: TextType }
-    ro plain = Primitive { name: "parse_call", params: [answer], result: RecordType("CallOutput"), class: Reading, reads: []str.new(), writes: []str.new() }
-    ro with_role = Primitive { name: "parse_call_role", params: [answer, role], result: RecordType("CallOutput"), class: Reading, reads: []str.new(), writes: []str.new() }
+    ro plain = Primitive { name: "parse_call", params: [answer], result: RecordType("CallOutput"), class: Volatile, reads: []str.new(), writes: []str.new() }
+    ro with_role = Primitive { name: "parse_call_role", params: [answer, role], result: RecordType("CallOutput"), class: Volatile, reads: []str.new(), writes: []str.new() }
     ro first = register(reg, plain)
     ro second = register(reg, with_role)
     reg

@@ -8,14 +8,14 @@ fn hc_tick() -> str => "\u{60}"
 // The text with the sign ' read as a backtick (a table of the journal writes its codes between backticks).
 fn hc_ticked(text str) -> str => text.replace("'", hc_tick())
 
-// A machine of a shop: its action calls the writing primitive `reserve` of the host and journals the code `item_reserved` of the host.
+// A machine of a shop: its action calls the acting primitive `reserve` of the host and journals the code `item_reserved` of the host.
 fn hc_shop() -> str {
-    ro table = "\n## Primitives\n\n| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| reserve | — | — | writing | — | — |\n"
+    ro table = "\n## Primitives\n\n| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| reserve | — | — | acting | — | — |\n"
     ro machine = tiny_en().replace("turn_count += 1", "turn_count += 1; call(reserve, \"tea\", 1); journal(item_reserved, item: \"tea\")").replace("Machine: Малая", "Machine: Shop").replace("- machine: Tiny", "- machine: Shop")
     "${machine}${table}"
 }
 
-fn hc_registry() -> str => "# the shop\n\n| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| reserve | item: text; count: int>=1 | — | writing | — | objects: the reserve |\n"
+fn hc_registry() -> str => "# the shop\n\n| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| reserve | item: text; count: int>=1 | — | acting | — | objects: the reserve |\n"
 
 fn hc_journal() -> str => hc_ticked("# the codes of the shop\n\n| Машина | Код события | Русский шаблон | Параметры |\n|---|---|---|---|\n| склад | 'item_reserved' | зарезервировано: {item} | 'item' |\n")
 
@@ -59,7 +59,7 @@ test "host cli the options name the files of the host" {
 }
 
 test "host cli an option wins over the file beside the machine" {
-    ro files = [NamedText { name: "/work/shop.alula.md", text: hc_shop() }, NamedText { name: "/work/registry.md", text: "| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| other | — | int | reading | — | — |\n" }, NamedText { name: "/data/shop-registry.md", text: hc_registry() }, NamedText { name: "/work/journal.md", text: hc_journal() }]
+    ro files = [NamedText { name: "/work/shop.alula.md", text: hc_shop() }, NamedText { name: "/work/registry.md", text: "| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| other | — | int | volatile | — | — |\n" }, NamedText { name: "/data/shop-registry.md", text: hc_registry() }, NamedText { name: "/work/journal.md", text: hc_journal() }]
     assert(run_with(["check", "/work/shop.alula.md"], files).code == 1)
     assert(run_with(["check", "/work/shop.alula.md", "--registry", "/data/shop-registry.md"], files).code == 0)
 }
@@ -74,7 +74,7 @@ test "host cli a file of an option that is not there is a wrong use" {
 }
 
 test "host cli a wrong registry is a wrong use with the line" {
-    ro files = [NamedText { name: "/work/shop.alula.md", text: hc_shop() }, NamedText { name: "/work/registry.md", text: "| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| reserve | item: Parcel | — | writing | — | — |\n" }]
+    ro files = [NamedText { name: "/work/shop.alula.md", text: hc_shop() }, NamedText { name: "/work/registry.md", text: "| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| reserve | item: Parcel | — | acting | — | — |\n" }]
     ro ran = run_with(["check", "/work/shop.alula.md"], files)
     assert(ran.code == 2)
     assert(ran.err.contains("registry.md:3"))
@@ -104,9 +104,9 @@ test "host cli render writes the class of a primitive from the registry of the h
     ro files = [NamedText { name: "/work/shop.alula.json", text: compiled.out }, NamedText { name: "/work/registry.md", text: hc_registry() }]
     ro shown = run_with(["render", "/work/shop.alula.json"], files)
     assert(shown.code == 0)
-    assert(shown.out.contains("| reserve | — | — | writing | — | — |"))
+    assert(shown.out.contains("| reserve | — | — | действующая | — | — |"))
     ro plain = run_with(["render", "/work/shop.alula.json"], one("/work/shop.alula.json", compiled.out))
-    assert(plain.out.contains("| reserve | — | — | reading | — | — |"))
+    assert(plain.out.contains("| reserve | — | — | изменчивая | — | — |"))
 }
 
 test "host cli test reads the host from the folder" {
