@@ -184,6 +184,8 @@ allowed in the place (section 7 of the format):
 | `Reading` | `InputPos` (the table "Input" of an appeal), `ProfilePos`, `ForkEntryPos`, `OperationEntryPos`, `EndEntryPos`, `AcceptPos`; not in a condition (`ConditionPos`), not in an action (`ActionPos`) |
 | `Writing`, `Irreversible` | `OperationEntryPos`, `EndEntryPos`, `ActionPos`; not in a condition, not in "Input", not in the profile, not in "On entry" of a fork, not in "On accept" |
 
+An honest retreat from the format (section 5: an irreversible call is the last stage of a commit): an irreversible function is called at once, in its place in the actions, BEFORE the step is written (the `PrimitiveHost` is called from the action, `machine_run/step.nv`). Repeatability without harm is a requirement to the host. A step that fails after such a call is rolled back, and the call has been made. A queue run after the step is written is built when a real host with files and processes appears, or at the first case of a double call.
+
 `check_call_args` and `check_call_result` check the count and the types of the arguments and the type of the result of a call against the signature. `reads` and `writes` name what a primitive reads or writes without an
 argument (rule 11 of the specification): they join the "Input" of the state of the call.
 
@@ -334,6 +336,7 @@ The data view is the one both can show: `Awaiting` the message and the reply, `D
 
 ## Not implemented (and why)
 
+- The last stage of a commit for an irreversible call (section 5, rule 13): the call is made at once, before the step is written; the queue after the write is built when a real host with files and processes appears or at the first case of a double call (see "The registry of the primitives of the host").
 - `@prepare_return` (rule 24: the preparation is the executor's) - refused by the checks.
 - A writing primitive that changes data of the machine (`writes` in the registry): `PrimitiveHost` gives back a value only.
 - `includes` are checked for shape (name, version, 12-digit hash); the file of definitions is not read; a fragment is the expanded tree.

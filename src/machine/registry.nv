@@ -10,7 +10,10 @@
 //                 "On accept"; not in conditions and not in the actions of a row;
 //   Writing       in "On entry" of an operation and of an end and in the actions of a row; not in conditions, not in "Input",
 //                 not in "On entry" of a fork, not in "On accept";
-//   Irreversible  as Writing (the host runs it as the last stage of a commit; it may be repeated without harm).
+//   Irreversible  as Writing for the positions. The format says the host runs it as the last stage of a commit and that it may be repeated without harm;
+//                 in this implementation a call of any class is made at once, in its place in the actions, BEFORE the step is written (`PrimitiveHost`
+//                 is called from `run_actions`), so repeatability is the host's duty: a step that fails after the call is rolled back and the call has been made.
+//                 A queue run after the write is not built; it comes with a real host with files and processes, or with the first case of a double call.
 // The positions are `Position`: ConditionPos (a condition of a row, an expression of the data and of the definitions), InputPos,
 // ProfilePos, ForkEntryPos, OperationEntryPos, EndEntryPos, AcceptPos, ActionPos.
 // A primitive also names what it reads without an argument (`reads`: they join the "Input" of the state of the call, rule 11)
