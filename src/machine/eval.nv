@@ -974,8 +974,17 @@ fn ev(e Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, E
         }
         CallFn { name, args } => eval_call(name, args, env, host, depth)
         Lambda { params, body } => refuse(LambdaMisplaced, "a lambda may stand only as an argument of a list function")
-        CallPrimitive { name, args } => {
-            ro values = eval_args(args, env, host, depth)?
+        CallPrimitive { name, args, named } => {
+            mut values = eval_args(args, env, host, depth)?
+            // the named tail (AL-129) goes to the host as the last argument, the list of the pairs `(name, value)` in the order of the writing
+            if named.len() > 0 || has_tail(env.table.registry, name) {
+                mut pairs = []Value.new()
+                for f in named {
+                    ro v = part(f.value, "named.${f.name}", env, host, depth)?
+                    pairs.push(make_tuple([Text(f.name), v]))
+                }
+                values.push(List(pairs))
+            }
             call_host(name, values, env, host)
         }
         MatchOn { subject, arms } => eval_match(subject, arms, env, host, depth)
