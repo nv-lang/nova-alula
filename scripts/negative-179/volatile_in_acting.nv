@@ -1,0 +1,13 @@
+// expect: E_NO_MATCHING_OVERLOAD
+// Negative compilation of task 179 (AL-130): a volatile function (takes `ReadEnv`) does not fit `bind_acting`.
+module alula.negative_179
+
+import alula.machine.{Value, Null}
+import alula.host.{Host, new_host, ReadEnv}
+
+fn volatile(env ReadEnv, args []Value) -> Value => Null
+
+fn main() {
+    mut h = new_host()
+    h.bind_acting("x", volatile)
+}

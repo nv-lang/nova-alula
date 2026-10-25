@@ -1,0 +1,89 @@
+// impls.nv - the reference implementations of external functions, one per class (spec section 7a, AL-130).
+//
+// The module of the implementations is a separate module on purpose: it is the only place where the bodies of the functions live, and the guard of the imports
+// (`scripts/guards/check-impl-effects.py`) reads exactly these files. The rules for a body here:
+//   - a named `export fn`, not a closure made where a world is in sight (a closure would capture it);
+//   - no import of an effectful module of `std` (`std.io`, `std.fs`, `std.os`, `std.net`, `std.db`, `std.time`, `std.random`, `std.proc`, `std.testing`, ...), no
+//     `println`, no raw effect (`Io.`, `Fs.`, `Time.`, ...), no `with <Effect>`, no `extern`, `unsafe`, `spawn`, `detach`, `parallel for`;
+//   - no global of the module that changes (a `const` is fine);
+//   - the class tells the signature: pure takes `[]Value` only; volatile takes `ReadEnv` first; acting takes `mut ActEnv` first.
+// `nova check --strict-effects` is green on this module and `nova info` shows an empty effect surface.
+//
+// These are the functions of the reference host: the two standard external functions of the language (`time_now`, `new_id`; the host puts the clock and the next identifier
+// into its world under the keys `clock` and `next_id` before a step - the body here only reads them) and a few small ones that show each class. A host of a product binds its own
+// bodies the same way.
+module alula.host_impls
+
+import alula.machine.{Value, Null, Int, Text}
+import alula.host.{Host, ReadEnv, ActEnv}
+
+/// pure: the integer of the first argument plus one; `Null` for another value.
+export fn add_one(args []Value) -> Value {
+    if args.len() == 0 { return Null }
+    match args[0] {
+        Int(n) => Int(n + 1)
+        _ => Null
+    }
+}
+
+/// pure: the texts of the arguments joined; a value that is not a text is left out.
+export fn join_text(args []Value) -> Value {
+    mut out = ""
+    for a in args {
+        match a {
+            Text(s) => { out = "${out}${s}" }
+            _ => ()
+        }
+    }
+    Text(out)
+}
+
+/// volatile, the standard `time_now`: milliseconds of the clock of the world.
+export fn time_now(env ReadEnv, args []Value) -> Value => env.read("clock")
+
+/// volatile, the standard `new_id`: the identifier that the host prepared in its world.
+export fn new_id(env ReadEnv, args []Value) -> Value => env.read("next_id")
+
+/// volatile: the value of the key named by the first argument.
+export fn lookup(env ReadEnv, args []Value) -> Value {
+    if args.len() == 0 { return Null }
+    match args[0] {
+        Text(key) => env.read(key)
+        _ => Null
+    }
+}
+
+/// acting: write the second argument under the key named by the first; the result is the value written.
+export fn store(mut env ActEnv, args []Value) -> Value {
+    if args.len() < 2 { return Null }
+    match args[0] {
+        Text(key) => {
+            env.write(key, args[1])
+            args[1]
+        }
+        _ => Null
+    }
+}
+
+/// acting: move the clock of the world forward by the integer of the first argument; the result is the new time.
+export fn advance_clock(mut env ActEnv, args []Value) -> Value {
+    if args.len() == 0 { return Null }
+    match (env.read("clock"), args[0]) {
+        (Int(now), Int(step)) => {
+            env.write("clock", Int(now + step))
+            Int(now + step)
+        }
+        _ => Null
+    }
+}
+
+/// Bind all of the reference implementations to a host, each by the binding of its class.
+export fn bind_reference(mut host Host) -> () {
+    host.bind_pure("add_one", add_one)
+    host.bind_pure("join_text", join_text)
+    host.bind_volatile("time_now", time_now)
+    host.bind_volatile("new_id", new_id)
+    host.bind_volatile("lookup", lookup)
+    host.bind_acting("store", store)
+    host.bind_acting("advance_clock", advance_clock)
+}

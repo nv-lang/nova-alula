@@ -1,0 +1,13 @@
+// expect: E_NO_MATCHING_OVERLOAD
+// Negative compilation of task 179 (AL-130): a function that takes an environment does not fit `bind_pure`: a pure function gets its arguments only.
+module alula.negative_179
+
+import alula.machine.{Value, Null}
+import alula.host.{Host, new_host, ReadEnv}
+
+fn wants_env(env ReadEnv, args []Value) -> Value => env.read("a")
+
+fn main() {
+    mut h = new_host()
+    h.bind_pure("x", wants_env)
+}

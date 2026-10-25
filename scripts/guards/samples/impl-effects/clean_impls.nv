@@ -1,0 +1,28 @@
+// A sample for the guard check-impl-effects.py: a clean module of implementations (0 violations).
+// The words println, Fs.read( and with Time stand in this comment on purpose: the guard cuts comments.
+module sample.clean_impls
+
+import std.text
+import alula.machine.{Value, Null, Int, Text}
+import alula.host.{ReadEnv, ActEnv}
+
+const GREETING = "hello // a string, not a comment"
+
+export fn add_one(args []Value) -> Value {
+    match args[0] {
+        Int(n) => Int(n + 1)
+        _ => Null
+    }
+}
+
+export fn lookup(env ReadEnv, args []Value) -> Value {
+    match args[0] {
+        Text(key) => env.read(key)
+        _ => Null
+    }
+}
+
+export fn store(mut env ActEnv, args []Value) -> Value {
+    env.write("a", args[0])
+    args[0]
+}

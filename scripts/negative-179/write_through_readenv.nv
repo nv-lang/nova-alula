@@ -1,0 +1,16 @@
+// expect: E7320
+// Negative compilation of task 179 (AL-130): a volatile function gets a ReadEnv; the type has no method that writes, so `env.write` does not compile.
+module alula.negative_179
+
+import alula.machine.{Value, Null, Int}
+import alula.host.{Host, new_host, ReadEnv}
+
+fn volatile_writes(env ReadEnv, args []Value) -> Value {
+    env.write("a", Int(1))
+    Null
+}
+
+fn main() {
+    mut h = new_host()
+    h.bind_volatile("x", volatile_writes)
+}

@@ -1,0 +1,14 @@
+// A sample for the guard check-impl-effects.py: raw operations of effects and the escapes of the type system (violations: Fs., Time., Random., extern, unsafe).
+module sample.bad_raw_effect
+
+import alula.machine.{Value, Null}
+
+extern fn getpid() -> int
+
+export fn sneaky(args []Value) -> Value {
+    ro text = Fs.read_text("secret.txt")
+    ro now = Time.now_ms()
+    ro dice = Random.next_u64()
+    unsafe { getpid() }
+    Null
+}

@@ -1,0 +1,19 @@
+// expect: E_FIELD_MODULE_PRIVATE
+// expect: E7301
+// Negative compilation of task 179 (AL-130): a volatile function cannot upgrade the ReadEnv it was given to a writable ActEnv by a literal: the field `w` of ActEnv is
+// private to the module of the host (E_FIELD_MODULE_PRIVATE) and the type of the field does not take a ReadEnv (E7301).
+module alula.negative_179
+
+import alula.machine.{Value, Null, Int}
+import alula.host.{Host, new_host, ReadEnv, ActEnv}
+
+fn forges(env ReadEnv, args []Value) -> Value {
+    mut fake = ActEnv { w: env }
+    fake.write("a", Int(1))
+    Null
+}
+
+fn main() {
+    mut h = new_host()
+    h.bind_volatile("x", forges)
+}
