@@ -1,0 +1,34 @@
+// v224_test.nv - task 173 (Alula 2.24): the renamed catalog function `обязательно_непустое` / `require_non_empty` (the former `непустое` / `non_empty` is an error with the new name), the refusal of the mixes of `??` and of the chains of comparisons
+// without brackets, the section `Внешние функции` and the call of an external function as an operator. The label `AL-2xx` is a placeholder: the numbers of the decisions of 2.24 are not named yet.
+module alula.machine_text
+
+import std.text
+
+// ---- the catalog function `обязательно_непустое` (the owner's decision of 2.24) ---------------------------------------------------------------
+
+test "v224 the former non_empty is refused with the new name in both languages" {
+    ro ru = exr222("непустое(остановка)", "ru")
+    assert(ru.starts_with("ERR"))
+    assert(ru.contains("`непустое(…)` в формате 2.23 не бывает (AL-2xx): пишется `обязательно_непустое`; переходного периода нет"))
+    ro en = exr222("non_empty(stop_reason)", "en")
+    assert(en.starts_with("ERR"))
+    assert(en.contains("`non_empty(…)` в формате 2.23 не бывает (AL-2xx): пишется `require_non_empty`; переходного периода нет"))
+}
+
+test "v224 the new name reads to the same node in both languages" {
+    ro ru = exr222("обязательно_непустое(остановка)", "ru")
+    ro en = exr222("require_non_empty(stop_reason)", "en")
+    assert(ru.contains("\"fn\":\"require_non_empty\""))
+    assert(en.contains("\"fn\":\"require_non_empty\""))
+}
+
+test "v224 the older formats keep their column was" {
+    match former_find("ru", "type", "текст") {
+        Some(f) => assert(f.was == "2.22")
+        None => assert(false)
+    }
+    match former_find("ru", "call", "непустое") {
+        Some(f) => assert(f.was == "2.23")
+        None => assert(false)
+    }
+}

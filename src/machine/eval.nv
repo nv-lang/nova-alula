@@ -517,7 +517,7 @@ fn plain_arity(name str) -> int {
         "max" => 2
         "min" => 2
         "record_text" => 1
-        "non_empty" => 1
+        "require_non_empty" => 1
         _ => -1
     }
 }
@@ -848,7 +848,7 @@ fn eval_plain(name str, v []Value) -> Result[Value, EvalError] {
         "max" => fn_max_min(name, v[0], v[1])
         "min" => fn_max_min(name, v[0], v[1])
         "record_text" => fn_record_text(v[0])
-        "non_empty" => match v[0] {
+        "require_non_empty" => match v[0] {
             Text(s) => if s == "" { refuse(Unreachable, "a non-empty text is required") } else { Ok(v[0]) }
             _ => wrong_at("args[0]", "text", v[0])
         }

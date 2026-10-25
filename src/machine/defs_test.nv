@@ -1,4 +1,4 @@
-// defs_test.nv - what task 107 added to the evaluator: the definitions of a machine, `record_text`, `non_empty`, the registry that checks the calls.
+// defs_test.nv - what task 107 added to the evaluator: the definitions of a machine, `record_text`, `require_non_empty`, the registry that checks the calls.
 module alula.machine
 
 fn dcall(name str, args []Expr) -> Expr => call(name, args)
@@ -89,15 +89,15 @@ test "record text" {
 }
 
 test "non empty" {
-    match eval(call("non_empty", [lit_text("a")]), empty_scope()) {
+    match eval(call("require_non_empty", [lit_text("a")]), empty_scope()) {
         Ok(v) => assert(value_equal(v, Text("a")))
         Err(x) => assert(false)
     }
-    match eval(call("non_empty", [lit_text("")]), empty_scope()) {
+    match eval(call("require_non_empty", [lit_text("")]), empty_scope()) {
         Ok(v) => assert(false)
         Err(x) => assert(x.kind == Unreachable)
     }
-    match eval(call("non_empty", [lit_int(1)]), empty_scope()) {
+    match eval(call("require_non_empty", [lit_int(1)]), empty_scope()) {
         Ok(v) => assert(false)
         Err(x) => assert(x.kind == TypeMismatch)
     }

@@ -154,8 +154,8 @@ test "ac places" {
 
 test "ac format examples" {
     // format 3.2, 4.4, 4.5
-    ro join = a_assign(tgt("stop_reason"), x_bin("+", x_call("non_empty", [x_name("failed_appeal")]), x_lit(js("_halt_meeting"))))
-    assert(ac("остановка = непустое(сбойное_обращение) + \"_halt_meeting\"") == arr([join]))
+    ro join = a_assign(tgt("stop_reason"), x_bin("+", x_call("require_non_empty", [x_name("failed_appeal")]), x_lit(js("_halt_meeting"))))
+    assert(ac("остановка = обязательно_непустое(сбойное_обращение) + \"_halt_meeting\"") == arr([join]))
     ro lens_key = a_target("lenses", [a_step_key(x_name("party"))])
     ro copy = x_with(x_name("l"), [kv("lost", x_lit(jint(0)))])
     ro local = a_let("l", x_call("require", [x_index(x_name("lenses"), x_name("party"))]), [a_assign(lens_key, copy)])
