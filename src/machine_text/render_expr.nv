@@ -12,7 +12,7 @@ type RnCx { lang str, words TxWords, names TxNames, notes []str, catalog []str, 
 
 fn rn_cx(lang str) -> RnCx => rn_cx_in(lang, language_registry())
 
-// The context of a generation with the registry of the host (it tells the class of a primitive for the table "Primitives").
+// The context of a generation with the registry of the host (the tree T1 holds the class of an external function itself since 2.24; the registry is kept for the callers).
 fn rn_cx_in(lang str, registry Registry) -> RnCx {
     mut catalog = []str.new()
     for r in words_rows() {
@@ -535,7 +535,7 @@ fn rn_expr(mut cx RnCx, v RJ, locals []str) -> str {
         return "${base}[${at}]"
     }
     if op == "call" { return rn_call(cx, v, locals) }
-    if op == "primitive_call" { return "${rn_kw(cx, "action", "call")}(${rn_prim_args(cx, rj_gstr(v, "name"), rj_garr(v, "args"), locals)})" }
+    if op == "primitive_call" { return rn_prim_call(cx, rj_gstr(v, "name"), rj_garr(v, "args"), rj_garr(v, "named"), locals) }
     if op == "not" {
         ro inner = match rj_get(v, "operand") {
             Some(x) => rn_sub(cx, x, locals, 8)
@@ -652,7 +652,6 @@ fn rn_expr(mut cx RnCx, v RJ, locals []str) -> str {
     "none"
 }
 
-// The arguments of a primitive call: the name of the primitive (as the registry writes it) and the arguments.
 // A list of nested machines: `[a, b]` with the names of the registry as the file writes them (the reader takes a name without quotes); a list that is computed is written as an expression.
 fn rn_nested_list(mut cx RnCx, v RJ, locals []str) -> str {
     if rj_gstr(v, "op") == "list" {
@@ -678,9 +677,19 @@ fn rn_nested_list(mut cx RnCx, v RJ, locals []str) -> str {
     rn_expr(cx, v, locals)
 }
 
-fn rn_prim_args(mut cx RnCx, name str, args []RJ, locals []str) -> str {
-    if args.len() == 0 { return name }
-    "${name}, ${rn_args(cx, args, locals)}"
+// A call of an external function (AL-123): `имя(арг, …)`, then the pairs `ключ: значение` of the named tail in the order of the writing (AL-129). The standard `time_now` and `new_id` are the words of the table (`время_сейчас`, `новый_ид`).
+fn rn_prim_call(mut cx RnCx, name str, args []RJ, named []RJ, locals []str) -> str {
+    mut parts = []str.new()
+    for a in args { parts.push(rn_expr(cx, a, locals)) }
+    for pair in named {
+        ro value = match rj_get(pair, "value") {
+            Some(x) => rn_expr(cx, x, locals)
+            None => "none"
+        }
+        parts.push("${rj_gstr(pair, "name")}: ${value}")
+    }
+    ro shown = if name == "time_now" || name == "new_id" { rn_kw(cx, "catalog", name) } else { name }
+    "${shown}(${parts.join(", ")})"
 }
 
 /// An expression given as a JSON text, in the language; `locals` are the names bound outside it (they stay as they are).
@@ -770,10 +779,7 @@ fn rn_action(mut cx RnCx, a RJ, locals []str) -> str {
         if party == "" { return rn_kw(cx, "action", "cancel_open") }
         return "${rn_kw(cx, "action", "cancel_open")}(${rn_kw(cx, "action", "party")}: ${party})"
     }
-    if kind == "call" {
-        ro args = rj_garr(a, "args")
-        return "${rn_kw(cx, "action", "call")}(${rn_prim_args(cx, rj_gstr(a, "primitive"), args, locals)})"
-    }
+    if kind == "call" { return rn_prim_call(cx, rj_gstr(a, "primitive"), rj_garr(a, "args"), rj_garr(a, "named"), locals) }
     if kind == "for_each" {
         ro var = rj_gstr(a, "var")
         ro items = match rj_get(a, "in") {

@@ -47,7 +47,10 @@
         "rows": { "type": "array", "items": { "$ref": "#/$defs/end_row" } }
       }
     },
-    "primitives": { "type": "array", "items": { "type": "string" }, "description": "the primitives of the host that the machine calls (the section Primitives)" }
+    "primitives": {
+      "type": "array", "items": { "$ref": "#/$defs/external_function" },
+      "description": "the external functions of the host that the machine declares and calls (the section External functions, spec 7, AL-123): one record for each; `time_now` and `new_id` belong to the language and are not here (7a)"
+    }
   },
   "$defs": {
     "type": {
@@ -56,9 +59,34 @@
     },
     "expr": {
       "type": "object",
-      "description": "a node of the tree of an expression of the core (src/machine/expr.nv): lit, name, field, index, call, lambda, primitive_call, match, let, if, record, with_field, variant, list, tuple, dict, the operators + - * / % == != < <= > >= and or ??, not, neg",
+      "description": "a node of the tree of an expression of the core (src/machine/expr.nv): lit, name, field, index, call, lambda, primitive_call (with the optional `named` pairs of an external function with a tail, AL-129), match, let, if, record, with_field, variant, list, tuple, dict, the operators + - * / % == != < <= > >= and or ??, not, neg",
       "required": ["op"],
       "properties": { "op": { "type": "string" } }
+    },
+    "external_function": {
+      "type": "object", "additionalProperties": false, "required": ["name", "params", "class"],
+      "description": "the declaration of an external function (spec 7, AL-123): the JSON name, the parameters in order, the type of the result (absent: no result) and the class; at the load every declaration is checked against the registry of the host (name, number and types of the parameters, result, class)",
+      "properties": {
+        "name": { "type": "string" },
+        "params": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["name", "type"],
+            "properties": {
+              "name": { "type": "string" },
+              "type": { "$ref": "#/$defs/type" },
+              "tail": { "const": true, "description": "the named tail `...name: Type` (AL-129): the last parameter, `type` is the type of its values; the call gives the pairs `named`" }
+            }
+          }
+        },
+        "result": { "$ref": "#/$defs/type" },
+        "class": { "enum": ["pure", "volatile", "acting"], "description": "the class of the function; the file writes no word for `pure`" }
+      }
+    },
+    "named_pairs": {
+      "type": "array",
+      "description": "the pairs `key: value` of the named tail of a call of an external function (AL-129), in the order of the writing; the same key `named` is on the expression node `primitive_call`",
+      "items": { "type": "object", "additionalProperties": false, "required": ["name", "value"], "properties": { "name": { "type": "string" }, "value": { "$ref": "#/$defs/expr" } } }
     },
     "field": {
       "type": "object", "additionalProperties": false, "required": ["name", "type"],
@@ -221,7 +249,7 @@
         { "properties": { "do": { "const": "let" }, "name": { "type": "string" }, "value": { "$ref": "#/$defs/expr" }, "body": { "$ref": "#/$defs/actions" } }, "required": ["name", "value", "body"], "additionalProperties": false },
         { "properties": { "do": { "const": "bind" }, "name": { "type": "string" }, "value": { "$ref": "#/$defs/expr" } }, "required": ["name", "value"], "additionalProperties": false },
         { "properties": { "do": { "const": "if" }, "cond": { "$ref": "#/$defs/expr" }, "then": { "$ref": "#/$defs/actions" }, "else": { "$ref": "#/$defs/actions" } }, "required": ["cond", "then"], "additionalProperties": false },
-        { "properties": { "do": { "const": "call" }, "primitive": { "type": "string" }, "args": { "type": "array", "items": { "$ref": "#/$defs/expr" } } }, "required": ["primitive"], "additionalProperties": false },
+        { "properties": { "do": { "const": "call" }, "primitive": { "type": "string" }, "args": { "type": "array", "items": { "$ref": "#/$defs/expr" } }, "named": { "$ref": "#/$defs/named_pairs" } }, "required": ["primitive"], "additionalProperties": false },
         { "properties": { "do": { "const": "machine_error" }, "code": { "type": "string" }, "params": { "$ref": "#/$defs/params_list" } }, "required": ["code"], "additionalProperties": false },
         { "properties": { "do": { "const": "cancel_open" }, "party": { "type": "string" }, "except": { "type": "array", "items": { "$ref": "#/$defs/expr" } } }, "additionalProperties": false },
         { "properties": { "do": { "const": "pass" }, "nested": { "$ref": "#/$defs/expr" }, "signal": { "type": "string" } }, "required": ["nested", "signal"], "additionalProperties": false }
