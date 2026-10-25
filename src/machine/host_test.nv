@@ -319,8 +319,8 @@ fn hst_section_7a(spec str, heading str, next str) -> str {
 
 fn hst_section_names_exactly_the_language(section str) -> bool {
     if section == "" { return false }
-    // the two standard primitives
-    if !section.contains("`time_now`") || !section.contains("`new_id`") { return false }
+    // the two standard external functions, written as calls (2.24)
+    if !section.contains("`time_now()`") || !section.contains("`new_id()`") { return false }
     // every code of the table of the language is named once
     for row in language_journal() {
         if !section.contains("`${row.code}`") { return false }
@@ -330,7 +330,7 @@ fn hst_section_names_exactly_the_language(section str) -> bool {
     for part in section.split("`") {
         if part.contains("_") && !part.contains(" ") && !part.contains("(") && !part.contains("-") {
             listed += 1
-            if part != "time_now" && part != "new_id" && part != "новый_ид" && journal_find(language_journal(), part).is_none() { return false }
+            if part != "time_now" && part != "new_id" && part != "новый_ид" && part != "bind_pure" && part != "bind_volatile" && part != "bind_acting" && journal_find(language_journal(), part).is_none() { return false }
         }
     }
     listed >= 35
