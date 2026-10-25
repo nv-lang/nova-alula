@@ -9,9 +9,10 @@
 //   - the class tells the signature: pure takes `[]Value` only; volatile takes `ReadEnv` first; acting takes `mut ActEnv` first.
 // `nova check --strict-effects` is green on this module and `nova info` shows an empty effect surface.
 //
-// These are the functions of the reference host: the two standard external functions of the language (`time_now`, `new_id`; the host puts the clock and the next identifier
-// into its world under the keys `clock` and `next_id` before a step - the body here only reads them) and a few small ones that show each class. A host of a product binds its own
-// bodies the same way.
+// These are the functions of the reference host: the one standard external function of the language (`new_id`; the host puts the next identifier into its world under the key
+// `next_id` before a step - the body here only reads it; the time is not a function since 2.25 but the stamp of the event, `event.at`, AL-134) and a few small ones that show each class,
+// among them the reads and the moves of the clock of the world (`lookup`, `advance_clock`: a host may keep a clock of its own for other things than the time of the machine). A host of a
+// product binds its own bodies the same way.
 module alula.host_impls
 
 import alula.machine.{Value, Null, Int, Text}
@@ -37,9 +38,6 @@ export fn join_text(args []Value) -> Value {
     }
     Text(out)
 }
-
-/// volatile, the standard `time_now`: milliseconds of the clock of the world.
-export fn time_now(env ReadEnv, args []Value) -> Value => env.read("clock")
 
 /// volatile, the standard `new_id`: the identifier that the host prepared in its world.
 export fn new_id(env ReadEnv, args []Value) -> Value => env.read("next_id")
@@ -81,7 +79,6 @@ export fn advance_clock(mut env ActEnv, args []Value) -> Value {
 export fn bind_reference(mut host Host) -> () {
     host.bind_pure("add_one", add_one)
     host.bind_pure("join_text", join_text)
-    host.bind_volatile("time_now", time_now)
     host.bind_volatile("new_id", new_id)
     host.bind_volatile("lookup", lookup)
     host.bind_acting("store", store)

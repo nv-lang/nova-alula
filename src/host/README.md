@@ -40,7 +40,7 @@ The negative compilations are in `scripts/negative-179/` (each file names its ex
 
 ## Implementations
 
-The module `alula.host_impls` (`impls.nv`) holds the bodies as named `export fn`, not closures: the standard `time_now` and `new_id` (they read the keys `clock` and `next_id` of the world) and a few small ones, one per class. The rules for a body are in the head of the file. `bind_reference(host)` binds them all.
+The module `alula.host_impls` (`impls.nv`) holds the bodies as named `export fn`, not closures: the standard `new_id` (it reads the key `next_id` of the world; since 2.25 the time is the stamp of the event, `event.at`, not a function) and a few small ones, one per class (`advance_clock` moves the key `clock` of the world and `lookup` reads it: a host may keep a clock for other things than the time of a machine). The rules for a body are in the head of the file. `bind_reference(host)` binds them all.
 
 ## Not here (task 181)
 

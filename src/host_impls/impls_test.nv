@@ -55,11 +55,10 @@ test "pure" {
 test "volatile" {
     mut h = hi_host()
     ro v0 = h.world_version()
-    assert(hi_is(h.call_primitive("time_now", []), Int(1000)))
     assert(hi_is(h.call_primitive("new_id", []), Text("id-1")))
     assert(hi_is(h.call_primitive("lookup", [Text("clock")]), Int(1000)))
     assert(hi_is(h.call_primitive("lookup", [Text("none")]), Null))
-    assert(h.stats().volatile == 4)
+    assert(h.stats().volatile == 3)
     assert(h.world_version() == v0)
     assert(h.stats().violations == 0)
 }
@@ -70,7 +69,7 @@ test "acting" {
     assert(hi_is(h.call_primitive("store", [Text("k"), Text("v")]), Text("v")))
     assert(hi_is(h.call_primitive("lookup", [Text("k")]), Text("v")))
     assert(hi_is(h.call_primitive("advance_clock", [Int(50)]), Int(1050)))
-    assert(hi_is(h.call_primitive("time_now", []), Int(1050)))
+    assert(hi_is(h.call_primitive("lookup", [Text("clock")]), Int(1050)))
     assert(h.stats().acting == 2)
     assert(h.world_version() == v0 + 2)
     assert(h.stats().violations == 0)
