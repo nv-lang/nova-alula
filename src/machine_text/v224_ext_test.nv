@@ -1,0 +1,93 @@
+// v224_ext_test.nv - task 175 (Alula 2.24, AL-123, AL-129): the section `Внешние функции`, the call `имя(арг)` in an expression and as an action, the refusal of the former forms, the file of functions, the named tail and the pairs.
+module alula.machine_text
+
+import std.text
+
+fn ext_section(lines str) -> str => "## Внешние функции\n\n```\n${lines}\n```\n\n## Концы"
+
+fn with_ext(lines str, action str) -> str {
+    ro made = tiny_with("## Концы", ext_section(lines))
+    made.replace("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить) | — | число_ходов += 1${action} | РЕШИТЬ |")
+}
+
+fn json_of_ext(lines str, action str) -> str => translate_report(with_ext(lines, action)).json
+
+test "v224 the former heading and the former call are refused with the hint, once for all" {
+    ro old_section = tiny_with("## Концы", "## Примитивы\n\n| имя | параметры | результат | класс | читает | пишет |\n|---|---|---|---|---|---|\n| close_agent_turn | — | — | действующая | — | — |\n\n## Концы")
+    assert(note_says(old_section, "`## Примитивы` в формате 2.23 не бывает (AL-123): пишется `## Внешние функции`; переходного периода нет"))
+    ro old_call = with_ext("внешняя функция close_agent_turn() действующая", "; вызвать(close_agent_turn)")
+    assert(note_says(old_call, "`вызвать(…)` в формате 2.23 не бывает (AL-123): пишется `имя(арг)`; переходного периода нет"))
+    ro old_in_expr = tiny_with("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | вызвать(время_сейчас) > 0 | — | КОНЕЦ |")
+    assert(note_says(old_in_expr, "`вызвать(…)` в формате 2.23 не бывает (AL-123)"))
+}
+
+test "v224 a declaration has no body, is not repeated, names a class of the file and a function" {
+    assert(note_says(with_ext("внешняя функция f() => 1", ""), "объявление внешней функции — без тела (AL-123)"))
+    assert(note_says(with_ext("внешняя функция f() { 1 }", ""), "объявление внешней функции — без тела (AL-123)"))
+    assert(note_says(with_ext("внешняя функция f() действующая\nвнешняя функция f() действующая", ""), "внешняя функция `f` объявлена повторно (AL-123)"))
+    assert(note_says(with_ext("функция f() действующая", ""), "объявление начинается со слова `внешняя`"))
+    assert(note_says(with_ext("внешняя функция f() чистая", ""), "класс внешней функции"))
+}
+
+test "v224 the call of an external function is a call by name, in an expression and as an action" {
+    ro as_action = json_of_ext("внешняя функция close_agent_turn() действующая", "; close_agent_turn()")
+    assert(as_action.contains("{\"do\":\"call\",\"primitive\":\"close_agent_turn\",\"args\":[]}"))
+    ro in_expr = translate_report(tiny_with("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | время_сейчас() > 0 | — | КОНЕЦ |")).json
+    assert(in_expr.contains("{\"op\":\"primitive_call\",\"name\":\"time_now\",\"args\":[]}"))
+    // a name that nobody declares is an error, an action too
+    assert(note_says(with_ext("", "; close_agent_turn()"), "внешняя функция `close_agent_turn` не объявлена"))
+}
+
+test "v224 a file of functions has no external functions, the standard ones either" {
+    assert(defs_says("внешняя функция читать(x число) изменчивая -> число", "в файле функций внешних функций нет (AL-123)"))
+    assert(defs_says("функция f() -> число =>\n  время_сейчас()", "в файле функций нет внешних функций (AL-123)"))
+    assert(defs_says("функция f() -> ид =>\n  новый_ид()", "в файле функций нет внешних функций (AL-123)"))
+}
+
+fn defs_says(body str, needle str) -> bool {
+    ro text = "# Функции: проба\n\nfunctions_version: 1\nformat: 2.23\n\n## Типы\n—\n\n## Константы\n—\n\n## Функции\n\n```\n${body}\n```\n"
+    for e in translate_definitions(text).errors {
+        if e.message.contains(needle) { return true }
+    }
+    false
+}
+
+test "v224 the named tail is the last parameter, the call gives the pairs in the order of the writing" {
+    ro decl = "внешняя функция record_note(код число, ...поля: строка) действующая"
+    ro tree = json_of_ext(decl, "; record_note(7, ключ: \"a\", второй: \"b\")")
+    assert(tree.contains("\"params\":[{\"name\":\"код\",\"type\":\"int\"},{\"name\":\"поля\",\"type\":\"text\",\"tail\":true}]"))
+    assert(tree.contains("\"named\":[{\"name\":\"ключ\",\"value\":{\"op\":\"lit\",\"value\":\"a\"}},{\"name\":\"второй\",\"value\":{\"op\":\"lit\",\"value\":\"b\"}}]"))
+    // a call without pairs is allowed: the tail is empty
+    assert(!note_says(with_ext(decl, "; record_note(7)"), "AL-129"))
+    assert(!json_of_ext(decl, "; record_note(7)").contains("\"named\""))
+    // a repeated key and a pair for a function without the tail are errors
+    assert(note_says(with_ext(decl, "; record_note(7, ключ: \"a\", ключ: \"b\")"), "ключ `ключ` повторён в вызове `record_note` (AL-129)"))
+    assert(note_says(with_ext("внешняя функция close_agent_turn(код число) действующая", "; close_agent_turn(7, ключ: \"a\")"), "не принимает именованный аргумент"))
+    // the tail stands last
+    assert(note_says(with_ext("внешняя функция f(...поля: строка, код число) действующая", ""), "именованный хвост `...имя: Тип` — последний параметр (AL-129)"))
+}
+
+test "v224 the tail of a function of the author is refused" {
+    ro made = tiny_with("## Концы", "## Функции\n\n```\nфункция f(а число, ...остальные: строка) -> число =>\n  а\n```\n\n## Концы")
+    assert(note_says(made, "именованный хвост `...имя: Тип` бывает только у внешней функции"))
+    assert(note_says(made, "AL-129"))
+}
+
+test "v224 an external function is not mistaken for a function of the author by the pre-scan of the names" {
+    // `функция имя` after `внешняя` declares an external function: the author's name `f` is free for the author
+    ro made = with_ext("внешняя функция читать() изменчивая -> число", "").replace("## Внешние функции", "## Функции\n\n```\nфункция читать_ещё() -> число =>\n  1\n```\n\n## Внешние функции")
+    assert(!note_says(made, "повторена"))
+    assert(!note_says(made, "совпадает с функцией"))
+}
+
+
+test "v224 a tree with the records renders back to the section, and the section reads again to the same tree" {
+    ro decl = "внешняя функция record_note(код число, ...поля: строка) действующая\nвнешняя функция сколько(метка строка) изменчивая -> число\nвнешняя функция сложить(а число, б число) -> число"
+    ro first = translate_report(with_ext(decl, "; record_note(7, ключ: \"a\")")).json
+    ro text = render(first, "ru")
+    assert(text.contains("## Внешние функции\n\n```\nвнешняя функция record_note(код число, ...поля: строка) действующая\n"))
+    assert(text.contains("record_note(7, ключ: \"a\")"))
+    ro second = translate_report(text).json
+    assert(second.contains("\"named\":[{\"name\":\"ключ\""))
+    assert(second.contains("\"primitives\":[{\"name\":\"record_note\""))
+}

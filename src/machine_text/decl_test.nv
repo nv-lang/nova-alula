@@ -272,14 +272,15 @@ test "dc reserved name" {
 // ---- the primitives ----------------------------------------------------------------------------------------------------------------------
 
 test "dc primitives" {
-    ro text = jsn("## Имена\n\n| имя | JSON-имя |\n|---|---|\n| время_сейчас | time_here |\n\n## Примитивы\n\n| имя | параметры | результат | класс | читает | пишет |\n|---|---|---|---|---|---|\n| time_now | — | число | изменчивая | — | — |\n| close_agent_turn | — | — | действующая | — | — |\n| время_сейчас | — | число | изменчивая | — | — |\n")
-    assert(text.contains("\"primitives\":[\"time_now\",\"close_agent_turn\",\"time_here\"]"))
-    assert(says("## Примитивы\n\n| имя | параметры | результат | класс | читает | пишет |\n|---|---|---|---|---|---|\n| time_now | — | число | чтение | — | — |\n", "класс примитива: pure, изменчивая, действующая"))
+    // AL-123: an external function is a line of the block of code under `## Внешние функции`; its JSON name is the row of `## Имена` or is built by itself; `время_сейчас` is the language's and is not written
+    ro text = jsn("## Имена\n\n| имя | JSON-имя |\n|---|---|\n| прочитать_часы | read_clock |\n\n## Внешние функции\n\n```\nвнешняя функция close_agent_turn() действующая\nвнешняя функция прочитать_часы(зона строка) изменчивая -> число\nвнешняя функция сложить(а число, б число) -> число\n```\n")
+    assert(text.contains("\"primitives\":[{\"name\":\"close_agent_turn\",\"params\":[],\"class\":\"acting\"},{\"name\":\"read_clock\",\"params\":[{\"name\":\"зона\",\"type\":\"text\"}],\"result\":\"int\",\"class\":\"volatile\"},{\"name\":\"slozhit\",\"params\":[{\"name\":\"а\",\"type\":\"int\"},{\"name\":\"б\",\"type\":\"int\"}],\"result\":\"int\",\"class\":\"pure\"}]"))
+    assert(says("## Внешние функции\n\n```\nвнешняя функция время_сейчас() изменчивая -> число\n```\n", "стандартная внешняя функция языка"))
 }
 
-fn prim_ru(class str) -> str => "## Примитивы\n\n| имя | параметры | результат | класс | читает | пишет |\n|---|---|---|---|---|---|\n| time_now | — | число | ${class} | — | — |\n"
+fn prim_ru(class str) -> str => "## Внешние функции\n\n```\nвнешняя функция читать() ${class} -> число\n```\n"
 
-fn prim_en(class str) -> str => "# Machine: Probe\n\n- machine: Probe\n- machine_version: 1\n- format: 2.23\n- language: en\n\n## Primitives\n\n| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| time_now | — | int | ${class} | — | — |\n"
+fn prim_en(class str) -> str => "# Machine: Probe\n\n- machine: Probe\n- machine_version: 1\n- format: 2.23\n- language: en\n\n## External functions\n\n```\nexternal fn read() ${class} -> int\n```\n"
 
 fn says_en(text str, needle str) -> bool {
     for e in translate_report(text).errors {
@@ -288,31 +289,38 @@ fn says_en(text str, needle str) -> bool {
     false
 }
 
-// AL-116: the classes of a primitive are `pure`, `изменчивая` (`volatile`) and `действующая` (`acting`); the words of the format 2.22 are refused with the new word, there is no transition period
-test "dc the classes of a primitive are read in the words of the file" {
-    assert(!says(prim_ru("pure"), "класс примитива"))
-    assert(!says(prim_ru("изменчивая"), "класс примитива"))
-    assert(!says(prim_ru("действующая"), "класс примитива"))
-    assert(!says_en(prim_en("pure"), "класс примитива"))
-    assert(!says_en(prim_en("volatile"), "класс примитива"))
-    assert(!says_en(prim_en("acting"), "класс примитива"))
-    assert(jsn(prim_ru("изменчивая")).contains("\"primitives\":[\"time_now\"]"))
-    assert(jsn(prim_ru("действующая")).contains("\"primitives\":[\"time_now\"]"))
+// AL-116, AL-123: the class is a word after the parameters: `изменчивая` (`volatile`) or `действующая` (`acting`); a pure function has no word, the word `pure` is an error; the words of the format 2.22 are refused with the new word, there is no transition period
+test "dc the classes of an external function are read in the words of the file" {
+    assert(!says(prim_ru(""), "класс"))
+    assert(!says(prim_ru("изменчивая"), "класс"))
+    assert(!says(prim_ru("действующая"), "класс"))
+    assert(!says_en(prim_en(""), "класс"))
+    assert(!says_en(prim_en("volatile"), "класс"))
+    assert(!says_en(prim_en("acting"), "класс"))
+    assert(jsn(prim_ru("изменчивая")).contains("\"class\":\"volatile\""))
+    assert(jsn(prim_ru("действующая")).contains("\"class\":\"acting\""))
+    assert(jsn(prim_ru("")).contains("\"class\":\"pure\""))
+    assert(translate_report(prim_en("acting")).json.contains("\"class\":\"acting\""))
 }
 
-test "dc the former classes of a primitive are refused with the new word" {
+test "dc the word pure is no class of a file" {
+    assert(kind_says(prim_ru("pure"), "syntax", "слово класса `pure` в файле не пишется: у чистой внешней функции слова класса нет (AL-123)"))
+    assert(says_en(prim_en("pure"), "слово класса `pure` в файле не пишется"))
+}
+
+test "dc the former classes of an external function are refused with the new word" {
     assert(kind_says(prim_ru("reading"), "syntax", "`reading` в формате 2.22 не бывает (AL-116): пишется `изменчивая`; переходного периода нет"))
     assert(kind_says(prim_ru("writing"), "syntax", "`writing` в формате 2.22 не бывает (AL-116): пишется `действующая`; переходного периода нет"))
     assert(kind_says(prim_ru("irreversible"), "syntax", "`irreversible` в формате 2.22 не бывает (AL-116): пишется `действующая`; переходного периода нет"))
-    // the word of the other language is no class of a Russian file: the list of the classes is told
-    assert(says(prim_ru("volatile"), "класс примитива: pure, изменчивая, действующая"))
-    assert(says(prim_ru("acting"), "класс примитива: pure, изменчивая, действующая"))
+    // the word of the other language is no class of a Russian file: the error of the language
+    assert(says(prim_ru("volatile"), "не из языка файла"))
+    assert(says(prim_ru("acting"), "не из языка файла"))
 }
 
-test "dc the former classes of a primitive of an English file are refused with the new word" {
+test "dc the former classes of an external function of an English file are refused with the new word" {
     assert(says_en(prim_en("reading"), "`reading` в формате 2.22 не бывает (AL-116): пишется `volatile`; переходного периода нет"))
     assert(says_en(prim_en("writing"), "`writing` в формате 2.22 не бывает (AL-116): пишется `acting`; переходного периода нет"))
     assert(says_en(prim_en("irreversible"), "`irreversible` в формате 2.22 не бывает (AL-116): пишется `acting`; переходного периода нет"))
     // the word of the other language is no class of an English file
-    assert(says_en(prim_en("изменчивая"), "класс примитива: pure, volatile, acting"))
+    assert(says_en(prim_en("изменчивая"), "не из языка файла"))
 }

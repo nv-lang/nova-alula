@@ -479,9 +479,8 @@ test "v213 form and enum element names are built by themselves" {
 }
 
 test "v213 primitive name is built by itself" {
-    ro head = "| имя | параметры | результат | класс | читает | пишет |\n|---|---|---|---|---|---|\n"
-    ro text = ru13("\n## Состояния\n", "\n## Примитивы\n\n${head}| время_сейчас | — | число | изменчивая | — | — |\n\n## Состояния\n")
-    assert(json_of(text).contains("\"primitives\":[\"vremya_seychas\"]"))
+    ro text = ru13("\n## Состояния\n", "\n## Внешние функции\n\n```\nвнешняя функция время_запуска() изменчивая -> число\n```\n\n## Состояния\n")
+    assert(json_of(text).contains("\"primitives\":[{\"name\":\"vremya_zapuska\",\"params\":[],\"result\":\"int\",\"class\":\"volatile\"}]"))
 }
 
 test "v213 setting name is the row of the names" {

@@ -409,8 +409,9 @@ fn call_clash(mut cx TxCx, n TxTok, json str) -> () {
     ro en_words = words_load("en")
     // AL-107: `new_id` (`новый_ид`) is the built-in primitive of the host; it stands in the table of words under the kind `catalog` (section 12) but is no function of the catalog, so the name, as written and as JSON, is not checked
     ro ru_new_id = kw(ru_words, "catalog", "new_id")
+    ro ru_time_now = kw(ru_words, "catalog", "time_now")
     for cand in [n.text, json] {
-        if cand == "new_id" || cand == ru_new_id { continue }
+        if cand == "new_id" || cand == ru_new_id || cand == "time_now" || cand == ru_time_now { continue }
         if cand == "range" || kw_has(ru_words, "catalog", cand) || kw_has(en_words, "catalog", cand) {
             cx_error(cx, n, "check", "имя `${cand}` совпадает с функцией каталога (AL-81): определение и примитив называются иначе, чем `фильтр`/`filter`, `склеить`/`concat`, `range` и другие функции каталога")
             return
@@ -425,7 +426,8 @@ fn defs_register(entries []TxEntry, sec TxSection, mut cx TxCx) -> () {
         Ok(p0) => {
             mut k = 0
             while k + 1 < p0.toks.len() {
-                if t_is_kw(p0.toks[k], cx.words, "decl", "fn") && p0.toks[k + 1].kind == TK_NAME {
+                // `внешняя функция имя` declares an external function (AL-123), not a function of the author: the word before `функция` tells
+                if t_is_kw(p0.toks[k], cx.words, "decl", "fn") && p0.toks[k + 1].kind == TK_NAME && !(k > 0 && t_is_kw(p0.toks[k - 1], cx.words, "decl", "external")) {
                     ro n = p0.toks[k + 1]
                     ro en = decl_internal(cx, n)
                     call_clash(cx, n, en)
@@ -456,6 +458,7 @@ fn def_one(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
     mut scope = sc_empty()
     while !p_is(p, ")") {
         ro a = p_tok(p)
+        if t_is(a, "...") { return Err(tx_err(a.line, a.col, "check", "именованный хвост `...имя: Тип` бывает только у внешней функции, у функции автора его нет (AL-129)")) }
         if a.kind != TK_NAME { return Err(p_fail(p, "ожидается имя параметра")) }
         p_adv(p)
         ro a_en = tr_binder(cx, a)
@@ -486,6 +489,9 @@ fn def_one(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
     Ok(jobj([kv("name", js(en)), kv("params", TxArr(params)), kv("result", js(result)), kv("body", body)]))
 }
 
+// Does a function of the author start under the reader? The word `функция` after `внешняя` begins a declaration of an external function, not this.
+fn fn_starts(p TxP, cx TxCx) -> bool => p_is_kw(p, cx.words, "decl", "fn") && !(p.pos > 0 && t_is_kw(p.toks[p.pos - 1], cx.words, "decl", "external"))
+
 /// The section `## Функции`: `функция имя(арг тип, …) -> тип => выр` or with a block body (AL-83, AL-84).
 fn decl_definitions(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
     mut out = []TxJ.new()
@@ -498,10 +504,18 @@ fn decl_definitions(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
                 if !t_is_kw(head, cx.words, "decl", "fn") {
                     match former_find(cx.words.lang, "decl", head.text) {
                         Some(f) => note(cx, tx_err(head.line, head.col, "syntax", former_message(f)))
-                        None => note(cx, tx_err(head.line, head.col, "syntax", "ожидается `${kw(cx.words, "decl", "fn")}`, найдено: ${t_shown(head)}"))
+                        None => {
+                            if t_is_kw(head, cx.words, "decl", "external") && cx.env.in_defs_file {
+                                note(cx, tx_err(head.line, head.col, "syntax", "в файле функций внешних функций нет (AL-123): внешняя функция объявляется в машине, в разделе `## ${kw(cx.words, "section", "External functions")}`; файл функций — чистые типы, константы и функции"))
+                            } else if t_is_kw(head, cx.words, "decl", "external") {
+                                note(cx, tx_err(head.line, head.col, "syntax", "внешняя функция объявляется в разделе `## ${kw(cx.words, "section", "External functions")}`, в `## ${kw(cx.words, "section", "Functions")}` пишутся функции с телом (AL-123)"))
+                            } else {
+                                note(cx, tx_err(head.line, head.col, "syntax", "ожидается `${kw(cx.words, "decl", "fn")}`, найдено: ${t_shown(head)}"))
+                            }
+                        }
                     }
                     p_adv(p)
-                    while !p_done(p) && !(p_is_kw(p, cx.words, "decl", "fn") || (p_tok(p).col == 1 && p_tok(p).kind == TK_NAME && former_is(cx.words.lang, "decl", p_tok(p).text))) { p_adv(p) }
+                    while !p_done(p) && !(fn_starts(p, cx) || (p_tok(p).col == 1 && p_tok(p).kind == TK_NAME && former_is(cx.words.lang, "decl", p_tok(p).text))) { p_adv(p) }
                     continue
                 }
                 p_adv(p)
@@ -514,7 +528,7 @@ fn decl_definitions(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
                     }
                     Err(e) => {
                         note(cx, e)
-                        while !p_done(p) && !p_is_kw(p, cx.words, "decl", "fn") { p_adv(p) }
+                        while !p_done(p) && !fn_starts(p, cx) { p_adv(p) }
                     }
                 }
                 if cx.errors.len() > before { cx.rows_noted += 1 }
@@ -525,40 +539,137 @@ fn decl_definitions(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
     out
 }
 
-// ---- the primitives ---------------------------------------------------------------------------------------------------------------------
+// ---- the external functions ---------------------------------------------------------------------------------------------------------------
 
-/// The keys of the classes of a primitive of the host (AL-116); the words of a file are `kw(.., "enum_value", key)`: `pure`, `изменчивая`, `действующая` in a Russian file and `pure`, `volatile`, `acting` in an English one.
+/// The keys of the classes of an external function of the host (AL-116); the words of a file are `kw(.., "enum_value", key)`. The file writes `volatile` and `acting`; a pure function has no class word (AL-123).
 fn primitive_classes() -> []str => ["pure", "volatile", "acting"]
 
-fn prim_row(r TxEntry, mut cx TxCx) -> Result[str, TranslateError] {
-    ro d = cell_decl_json(r.cells[0], r.line, cx, "примитива", "примитивы")?
-    ro class_cell = r.cells[3]
-    ro class_key = kw_key(cx.words, "enum_value", class_cell.text) ?? ""
-    if !primitive_classes().contains(class_key) {
-        match former_find(cx.words.lang, "class", class_cell.text) {
-            Some(f) => return Err(tx_err(r.line, class_cell.col, "syntax", former_message(f)))
-            None => ()
-        }
-        return Err(tx_err(r.line, class_cell.col, "syntax", "класс примитива: ${kw_all(cx.words, "enum_value", primitive_classes()).join(", ")}"))
-    }
-    call_clash(cx, d.tok, d.json)
-    pair_add(cx.env.prims, d.tok.text, d.json)
-    Ok(d.json)
+/// The tokens of the next declaration are skipped up to the next `внешняя` (or the end): after an error in a declaration the next one is read.
+fn ext_skip(mut p TxP, cx TxCx) -> () {
+    p_adv(p)
+    while !p_done(p) && !p_is_kw(p, cx.words, "decl", "external") { p_adv(p) }
 }
 
-/// The section `## Примитивы`: the names of the primitives (the host's registry has their signatures).
-fn decl_primitives(entries []TxEntry, sec TxSection, mut cx TxCx) -> []str {
-    mut out = []str.new()
-    for r in section_table(entries, sec, ["name", "parameters", "result", "class", "reads", "writes"], cx) {
-        cx.rows_total += 1
-        ro before = cx.errors.len()
-        match prim_row(r, cx) {
-            Ok(en) => {
-                if !out.contains(en) { out.push(en) }
-            }
-            Err(e) => note(cx, e)
+/// A parameter of a declaration: `имя тип`, or the named tail `...имя: Тип` (AL-129), which is the last one. Returns the JSON of the parameter and whether it is the tail.
+fn ext_param(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
+    ro tail = p_eat(p, "...")
+    ro a = p_tok(p)
+    if a.kind != TK_NAME { return Err(p_fail(p, if tail { "после `...` ожидается имя хвоста" } else { "ожидается имя параметра" })) }
+    p_adv(p)
+    ro a_en = tr_binder(cx, a)
+    if tail {
+        p_expect(p, ":")?
+        ro type_text = ty_parse(p, cx)?
+        return Ok(jobj([kv("name", js(a_en)), kv("type", js(type_text)), kv("tail", TxBool(true))]))
+    }
+    ro type_text = ty_parse(p, cx)?
+    Ok(jobj([kv("name", js(a_en)), kv("type", js(type_text))]))
+}
+
+/// One declaration `внешняя функция имя(арг тип, …) [класс] [-> тип]` without a body (AL-123).
+fn ext_one(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
+    ro head = p_tok(p)
+    if !t_is_kw(head, cx.words, "decl", "external") {
+        match former_find(cx.words.lang, "decl", head.text) {
+            Some(f) => return Err(tx_err(head.line, head.col, "syntax", former_message(f)))
+            None => ()
         }
-        if cx.errors.len() > before { cx.rows_noted += 1 }
+        if t_is_kw(head, cx.words, "decl", "fn") {
+            return Err(tx_err(head.line, head.col, "syntax", "в разделе `## ${kw(cx.words, "section", "External functions")}` объявление начинается со слова `${kw(cx.words, "decl", "external")}`: `${kw(cx.words, "decl", "external")} ${kw(cx.words, "decl", "fn")} имя(арг тип, …) [класс] [-> тип]` (AL-123)"))
+        }
+        return Err(tx_err(head.line, head.col, "syntax", "ожидается `${kw(cx.words, "decl", "external")} ${kw(cx.words, "decl", "fn")}`, найдено: ${t_shown(head)}"))
+    }
+    p_adv(p)
+    p_expect_kw(p, cx.words, "decl", "fn")?
+    ro n = p_tok(p)
+    if n.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "decl", "external")} ${kw(cx.words, "decl", "fn")}` ожидается имя")) }
+    p_adv(p)
+    mut json = n.text
+    match readable_json(cx.words, n.text) {
+        Some(key) => {
+            if !p_is(p, "(") { jn_declare_fixed(cx, n.line, n.col, n.text, "примитива", "примитивы", [n.text], key) }
+            json = key
+        }
+        None => { json = decl_json(p, cx, n, "примитива", "примитивы", [n.text])? }
+    }
+    if standard_call(cx, n.text) || json == "time_now" || json == "new_id" {
+        return Err(tx_err(n.line, n.col, "syntax", "`${n.text}` — стандартная внешняя функция языка (7а): она заранее объявлена и в разделе `## ${kw(cx.words, "section", "External functions")}` не пишется (AL-123)"))
+    }
+    if pair_has(cx.env.prims, n.text) { cx_error(cx, n, "name", "внешняя функция `${n.text}` объявлена повторно (AL-123)") }
+    call_clash(cx, n, json)
+    p_expect(p, "(")?
+    mut params = []TxJ.new()
+    mut names = []str.new()
+    mut tail = false
+    while !p_is(p, ")") {
+        if tail { return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "именованный хвост `...имя: Тип` — последний параметр (AL-129)")) }
+        ro at = p_tok(p)
+        tail = t_is(at, "...")
+        ro pname = if tail { p_ahead(p, 1).text } else { at.text }
+        ro one = ext_param(p, cx)?
+        if names.contains(pname) { cx_error(cx, at, "name", "параметр `${pname}` повторён") }
+        names.push(pname)
+        params.push(one)
+        if p_eat(p, ",") { continue }
+        break
+    }
+    p_expect(p, ")")?
+    mut class = "pure"
+    ro ct = p_tok(p)
+    if ct.kind == TK_NAME && !t_is_kw(ct, cx.words, "decl", "external") {
+        ro key = kw_key(cx.words, "enum_value", ct.text) ?? ""
+        if key == "volatile" || key == "acting" {
+            class = key
+        } else if key == "pure" {
+            return Err(tx_err(ct.line, ct.col, "syntax", "слово класса `${ct.text}` в файле не пишется: у чистой внешней функции слова класса нет (AL-123); пишутся `${kw(cx.words, "enum_value", "volatile")}` и `${kw(cx.words, "enum_value", "acting")}`"))
+        } else {
+            match former_find(cx.words.lang, "class", ct.text) {
+                Some(f) => return Err(tx_err(ct.line, ct.col, "syntax", former_message(f)))
+                None => return Err(tx_err(ct.line, ct.col, "syntax", "класс внешней функции: ${kw_all(cx.words, "enum_value", ["volatile", "acting"]).join(", ")} (у чистой слова нет), найдено: ${t_shown(ct)}"))
+            }
+        }
+        p_adv(p)
+    }
+    mut pairs = [kv("name", js(json)), kv("params", TxArr(params))]
+    if tx_arrow(p_tok(p)) {
+        p_adv(p)
+        pairs.push(kv("result", js(ty_parse(p, cx)?)))
+    }
+    pairs.push(kv("class", js(class)))
+    if tx_fat(p_tok(p)) || p_is(p, "{") {
+        return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "объявление внешней функции — без тела (AL-123): тело у неё в хозяине; функция с телом пишется в разделе `## ${kw(cx.words, "section", "Functions")}`"))
+    }
+    if !p_done(p) && !p_is_kw(p, cx.words, "decl", "external") { return Err(p_fail(p, "после объявления ожидается следующее объявление")) }
+    pair_add(cx.env.prims, n.text, json)
+    if tail { pair_add(cx.env.tails, n.text, json) }
+    Ok(jobj(pairs))
+}
+
+/// The section `## Внешние функции`: the declarations of the external functions of the host that the machine calls, in the order of the file (AL-123). The section is a block of code, as `## Функции` is.
+fn decl_externals(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
+    mut out = []TxJ.new()
+    ro segs = def_segs(entries, sec, cx)
+    match lex_segs(segs) {
+        Ok(p0) => {
+            mut p = p_copy(p0)
+            while !p_done(p) {
+                ro head = p_tok(p)
+                cx.rows_total += 1
+                ro before = cx.errors.len()
+                match ext_one(p, cx) {
+                    Ok(j) => {
+                        out.push(j)
+                        cx_place(cx, "$.primitives[${out.len() - 1}]", head.line)
+                    }
+                    Err(e) => {
+                        note(cx, e)
+                        ext_skip(p, cx)
+                    }
+                }
+                if cx.errors.len() > before { cx.rows_noted += 1 }
+            }
+        }
+        Err(e) => note(cx, e)
     }
     out
 }
