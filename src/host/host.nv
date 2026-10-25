@@ -1,0 +1,183 @@
+// host.nv - the host of the primitives with the contract of the binding by class (spec section 7a, AL-130).
+//
+// The host binds the implementations of external functions one at a time:
+//   bind_pure(name, f fn([]Value) -> Value)                    a pure function: gets its arguments only;
+//   bind_volatile(name, f fn(ReadEnv, []Value) -> Value)       a volatile one: gets an environment without write methods;
+//   bind_acting(name, f fn(mut ActEnv, []Value) -> Value)      an acting one: gets an environment with writes.
+// The INVARIANT: a volatile implementation does not write the environment; a pure one does not read it.
+//
+// Proved by types (the compiler refuses the rest, `scripts/negative-179/`): a wrong class in `bind_*` (a function that takes `mut ActEnv` does not fit
+// `bind_volatile`, one that takes an environment does not fit `bind_pure`); a write through `ReadEnv`; an `ActEnv` made outside this module.
+// NOT proved by types: a closure that captured a mutable world, a global of a module, output, files, clock, network, `extern`, `unsafe`. Three covers:
+//   - the guard of the imports of the module of the implementations (`scripts/guards/check-impl-effects.py`, in `scripts/guards/run-all.sh`);
+//   - `nova check --strict-effects` and `nova info` (the effect surface of the module is empty), partly: it sees effects in the signatures only;
+//   - this host: around every call of a pure or a volatile function it compares the version of the world before and after; a changed version is a
+//     violation, the call fails (`PrimitiveFailed`) and the violation is kept (`violations_list`); the counters by class (`stats`) say what was called.
+// What the host cannot see: a pure function that READS the world through a capture (reading does not change the version) - only the guard and a review
+// catch it. The contract belongs to the host, not to a machine file: a file declares the external functions, the host binds them.
+//
+// The table of the bindings is a list of records with a field of a function type, and a bound function is called through a local (`ro g = b.f; g(args)`):
+// Oracle 0.1.0 does not build a `HashMap[str, fn(...)]`, nor a call `(b.f)(args)` through an alias of a function type.
+module alula.host
+
+import alula.machine.{Value, EvalError, PrimitiveFailed, Registry, PrimitiveClass, Pure, Volatile, Acting, class_word}
+
+type PureBinding { name str, f fn([]Value) -> Value }
+type VolatileBinding { name str, f fn(ReadEnv, []Value) -> Value }
+type ActingBinding { name str, f fn(mut ActEnv, []Value) -> Value }
+
+/// HostStats: how many calls of each class the host made and how many broken contracts it saw.
+export type HostStats { pure int, volatile int, acting int, violations int }
+
+/// Host: the tables of the bound implementations, the world and the counters. It is a `PrimitiveHost` (`call_primitive`), so `alula_step` and `eval_with` can take it.
+export type Host {
+    priv pures []PureBinding,
+    priv vols []VolatileBinding,
+    priv acts []ActingBinding,
+    priv world World,
+    priv n_pure int,
+    priv n_vol int,
+    priv n_act int,
+    priv violations []str,
+    priv problems []str,
+}
+
+/// A host with no bindings and an empty world.
+export fn new_host() -> Host => {
+    pures: []PureBinding.new(), vols: []VolatileBinding.new(), acts: []ActingBinding.new(),
+    world: new_world(), n_pure: 0, n_vol: 0, n_act: 0, violations: []str.new(), problems: []str.new(),
+}
+
+/// The class under which a name is bound, `None` when it is not bound.
+export fn Host @bound_class(name str) -> Option[PrimitiveClass] {
+    for p in @pures {
+        if p.name == name { return Some(Pure) }
+    }
+    for v in @vols {
+        if v.name == name { return Some(Volatile) }
+    }
+    for a in @acts {
+        if a.name == name { return Some(Acting) }
+    }
+    None
+}
+
+// A name bound twice (in the same class or in another) is a problem of the host; the first binding stays.
+fn Host mut @note_twice(name str, now PrimitiveClass) -> bool {
+    match @bound_class(name) {
+        Some(first) => {
+            @problems.push("${name}: bound twice (first by bind_${class_word(first)}, now by bind_${class_word(now)})")
+            true
+        }
+        None => false
+    }
+}
+
+/// Bind a pure implementation: it gets the arguments and nothing else.
+export fn Host mut @bind_pure(name str, f fn([]Value) -> Value) -> () {
+    if @note_twice(name, Pure) { return }
+    @pures.push(PureBinding { name, f })
+}
+
+/// Bind a volatile implementation: it gets an environment that reads and cannot write.
+export fn Host mut @bind_volatile(name str, f fn(ReadEnv, []Value) -> Value) -> () {
+    if @note_twice(name, Volatile) { return }
+    @vols.push(VolatileBinding { name, f })
+}
+
+/// Bind an acting implementation: it gets an environment that reads and writes.
+export fn Host mut @bind_acting(name str, f fn(mut ActEnv, []Value) -> Value) -> () {
+    if @note_twice(name, Acting) { return }
+    @acts.push(ActingBinding { name, f })
+}
+
+/// Put a value into the world before a run (the setup of the host, not an external function).
+export fn Host mut @world_put(key str, v Value) -> () {
+    @world.put(key, v)
+}
+
+/// The value of a key of the world.
+export fn Host @world_get(key str) -> Value => @world.get(key)
+
+/// The version of the world: the number of writes.
+export fn Host @world_version() -> int => @world.version()
+
+fn violation(name str, kind str, before int, after int) -> str => "${kind} function ${name} changed the world (version ${before} -> ${after})"
+
+fn Host mut @broken(message str) -> Result[Value, EvalError] {
+    @violations.push(message)
+    Err(EvalError { kind: PrimitiveFailed, message: "the contract of the host is broken: ${message}", path: "" })
+}
+
+/// A call by name: the class is the class of the binding. A name that is not bound fails (`PrimitiveFailed`). A pure or a volatile function that changed the world
+/// fails and is recorded.
+export fn Host mut @call_primitive(name str, args []Value) -> Result[Value, EvalError] {
+    for p in @pures {
+        if p.name == name {
+            @n_pure = @n_pure + 1
+            ro before = @world.version()
+            ro g = p.f
+            ro out = g(args)
+            ro after = @world.version()
+            if after != before { return @broken(violation(name, "pure", before, after)) }
+            return Ok(out)
+        }
+    }
+    for v in @vols {
+        if v.name == name {
+            @n_vol = @n_vol + 1
+            ro before = @world.version()
+            ro env = ReadEnv { w: @world }
+            ro g = v.f
+            ro out = g(env, args)
+            ro after = @world.version()
+            if after != before { return @broken(violation(name, "volatile", before, after)) }
+            return Ok(out)
+        }
+    }
+    for a in @acts {
+        if a.name == name {
+            @n_act = @n_act + 1
+            mut env = ActEnv { w: @world }
+            ro g = a.f
+            return Ok(g(env, args))
+        }
+    }
+    Err(EvalError { kind: PrimitiveFailed, message: "the host has no implementation bound for the external function ${name}", path: "" })
+}
+
+/// The counters by class and the number of broken contracts.
+export fn Host @stats() -> HostStats => { pure: @n_pure, volatile: @n_vol, acting: @n_act, violations: @violations.len() }
+
+/// The broken contracts seen so far, one line each.
+export fn Host @violations_list() -> []str => @violations
+
+fn Host @unknown(reg Registry, name str) -> []str {
+    mut out = []str.new()
+    mut known = false
+    for p in reg.primitives {
+        if p.name == name { known = true }
+    }
+    if !known { out.push("${name}: bound, but the registry names no such external function") }
+    out
+}
+
+/// The check of the bindings against the registry (the load of the host): every external function of the registry is bound; the class of the binding is the class
+/// of the registry; nothing is bound that the registry does not name; no name is bound twice. A list of lines naming the function; empty means the host is whole.
+/// The signature (parameters and result) is not compared here: an implementation takes `[]Value` and the types of the arguments are checked by the registry before the call.
+export fn Host @check_bindings(reg Registry) -> []str {
+    mut out = []str.new()
+    for problem in @problems { out.push(problem) }
+    for p in reg.primitives {
+        match @bound_class(p.name) {
+            Some(c) => {
+                if c != p.class { out.push("${p.name}: bound by bind_${class_word(c)}, the registry says ${class_word(p.class)}") }
+            }
+            None => out.push("${p.name}: the external function is not bound (class ${class_word(p.class)})")
+        }
+    }
+    for b in @pures { for line in @unknown(reg, b.name) { out.push(line) } }
+    for b in @vols { for line in @unknown(reg, b.name) { out.push(line) } }
+    for b in @acts { for line in @unknown(reg, b.name) { out.push(line) } }
+    out
+}
