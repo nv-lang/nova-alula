@@ -104,9 +104,9 @@ export type InputField { field str, value Expr, to_party bool }
 /// SignalDef: a signal of a party or of the machine, with its fields; a part of an answer (`progress`) has the same shape and is kept in the same type.
 export type SignalDef { name str, fields []FieldDef }
 
-/// ParseDef: the `разбор` of a party of the kind `machine` (format section 1): the volatile primitive that turns the answer into the value of the answer, the literal of the role
-/// (empty when there is none) and the type of its result.
-export type ParseDef { primitive str, role str, result TypeSpec }
+/// ParseDef: the `разбор` of a party of the kind `machine` (format section 1): the volatile primitive that turns the answer into the value of the answer (one function per role, AL-131:
+/// it takes the answer only, the tree holds no literal of a role) and the type of its result.
+export type ParseDef { primitive str, result TypeSpec }
 
 /// PartyDef: a party (format section 1); `profile` is zero or one expression. A party of the kind `machine` names the nested machine (`nested`, a name of the registry of the caller),
 /// the record type of the input of the call (`input_spec`, zero or one) and may have `parse` (zero or one).

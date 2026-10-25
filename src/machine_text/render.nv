@@ -272,8 +272,7 @@ fn rn_party_kind(mut cx RnCx, p RJ, path str) -> str {
         mut text = "${rn_kw(cx, "kind_party", "machine")} ${nested}(${rn_kw(cx, "kind_party", "input")} ${input}, ${rn_kw(cx, "kind_party", "result")} ${result})"
         match rj_get(p, "parse") {
             Some(pr) => {
-                ro role = if rj_gstr(pr, "role") == "" { "" } else { "(${rn_quote(rj_gstr(pr, "role"))})" }
-                text = "${text}; ${rn_kw(cx, "kind_party", "parse")}: ${rj_gstr(pr, "primitive")}${role} -> ${rn_type(cx, rj_gstr(pr, "type"))}"
+                text = "${text}; ${rn_kw(cx, "kind_party", "parse")}: ${rj_gstr(pr, "primitive")} -> ${rn_type(cx, rj_gstr(pr, "type"))}"
             }
             None => ()
         }

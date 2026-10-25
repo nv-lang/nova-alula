@@ -1,10 +1,10 @@
 // v212_test.nv - Alula 2.12 on the side of the tree and of the checks (task 125): the version of the language, the key `fragments`, the journal tables of the methodology and of the product
-// (AL-31), the table "by role" of the parse (AL-33). Every check is red on the broken tree and green on the good one.
+// (AL-31), the parse of a role (AL-33; one function per role since 2.24, AL-131). Every check is red on the broken tree and green on the good one.
 module alula.machine_table
 
 import std.text
-import alula.machine.{new_registry, find_role, has_roles, find_primitive, JournalCode, journal_find, journal_table_issues}
-import alula.machine.{schema_files, text_of_file, TextType, ListType, RecordType, IntMin, VariantType, add_role, register, Primitive, ParamSpec, Volatile}
+import alula.machine.{new_registry, find_primitive, JournalCode, journal_find, journal_table_issues}
+import alula.machine.{schema_files, text_of_file, ListType, RecordType, VariantType}
 import alula.examples.{machine_files, sample_registry, example_registry}
 
 fn with_version(version str) -> str => tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"alula_version\":\"${version}\",")
@@ -49,14 +49,14 @@ fn with_fragments(call_args str) -> str => tiny().replace("\"initial\":\"Wait\""
 // ---- the version of the language ---------------------------------------------------------------------------------------------------------
 
 test "v212 version accepted" {
-    assert(ok_text(with_version("2.23")))
+    assert(ok_text(with_version("2.24")))
     assert(ok_text(tiny()))
 }
 
 test "v212 version 2.11 refused" {
     assert(!ok_text(with_version("2.11")))
     assert(says(with_version("2.11"), "alula_version"))
-    assert(says(with_version("2.11"), "2.23"))
+    assert(says(with_version("2.11"), "2.24"))
 }
 
 test "v212 older versions refused" {
@@ -67,18 +67,18 @@ test "v212 older versions refused" {
 
 test "v212 versions list" {
     assert(alula_versions().len() == 1)
-    assert(alula_versions()[0] == "2.23")
-    assert(ALULA_VERSION == "2.23")
+    assert(alula_versions()[0] == "2.24")
+    assert(ALULA_VERSION == "2.24")
 }
 
 test "v212 schema versions" {
     ro schema = text_of_file(schema_files(), "machine-2.schema.json")
-    assert(schema.contains("\"2.23\""))
+    assert(schema.contains("\"2.24\""))
     assert(!schema.contains("\"2.11\""))
     assert(!schema.contains("\"2.5\""))
 }
 
-test "v212 machines are 2.23" {
+test "v212 machines are 2.24" {
     for f in machine_files() {
         ro tree = decoded(f.text)
         assert(tree.states.len() > 0)
@@ -165,17 +165,14 @@ test "v212 empty registry skips the table" {
     }
 }
 
-// ---- the table "by role" of the parse (AL-33; since 2.24 one function per role, AL-131; the table stays as a mechanism of a host) ------------------------------------------------------------------------------------------
+// ---- the parse of a role (AL-33; since 2.24 one function per role and no table by role, AL-131) ------------------------------------------------------------------------------------------
 
 test "v212 parse functions by role in the registry of the host (AL-131)" {
     ro reg = sample_registry()
     assert(find_primitive(reg, "parse_agent_reply").is_none())
     for name in ["parse_witness_reply", "parse_author_reply", "parse_lens_reply"] {
         assert(find_primitive(reg, name).is_some())
-        assert(!has_roles(reg, name))
-        assert(find_role(reg, name, "witness").is_none())
     }
-    assert(find_role(reg, "parse_agent_reply", "witness").is_none())
 }
 
 test "v212 parse function result types" {
@@ -202,14 +199,4 @@ test "v212 the witness function reads the proposal, the others do not" {
         Some(p) => assert(!p.reads.contains("object: proposal"))
         None => assert(false)
     }
-}
-
-test "v212 add role" {
-    mut reg = new_registry()
-    ro p = Primitive { name: "pr", params: [ParamSpec { name: "reply", spec: TextType, tail: false }, ParamSpec { name: "role", spec: TextType, tail: false }], result: TextType, class: Volatile, reads: []str.new(), writes: []str.new() }
-    assert(register(reg, p).is_ok())
-    assert(add_role(reg, "pr", "a", IntMin(0), ["x"]).is_ok())
-    assert(add_role(reg, "pr", "a", IntMin(0), []str.new()).is_err())
-    assert(add_role(reg, "ghost", "a", IntMin(0), []str.new()).is_err())
-    assert(find_role(reg, "pr", "a").is_some())
 }

@@ -1,7 +1,7 @@
 // host.nv - the data of a host: the registry of its primitives and the table of its journal codes, read from the files that the host registers (spec sections 7 and 7a, AL-113).
 //
 // The language names two primitives (`time_now`, `new_id`) and 35 journal codes; everything else a host gives as data, in two Markdown files beside its machines:
-//   `registry.md`  the tables of the section 7: the primitives `name | parameters | result | class | reads | writes`, the roles of a parse primitive `primitive | role | result | reads`, and the
+//   `registry.md`  the tables of the section 7: the primitives `name | parameters | result | class | reads | writes`, and the
 //                  records and the variants that the signatures use `type | kind | members`. The names are the JSON names of the registry of the host; the types are written as the tree
 //                  `machine/2` writes them (`int>=0`, `?text`, `[]Finding`, `"a" | "b"`, see `parse_spec`); a bar inside a cell is `\|`; `—` is an empty list; a list of reads and writes is
 //                  separated by `;`; the last parameter may be the named tail `...name: type` (AL-129). The tables are told apart by the first cell of the header (`name`/`имя`, `primitive`/`примитив`, `type`/`тип`); the sets of types are told apart by the heading
@@ -16,10 +16,10 @@ import std.text
 export type HostTypeSet { name str, defs TypeDefs }
 
 /// HostRegistryData: what a file `registry.md` holds, in the order of the file.
-export type HostRegistryData { primitives []Primitive, roles []RoleRow, type_sets []HostTypeSet }
+export type HostRegistryData { primitives []Primitive, type_sets []HostTypeSet }
 
 /// The data of a host that gives nothing.
-export fn host_registry_empty() -> HostRegistryData => { primitives: []Primitive.new(), roles: []RoleRow.new(), type_sets: []HostTypeSet.new() }
+export fn host_registry_empty() -> HostRegistryData => { primitives: []Primitive.new(), type_sets: []HostTypeSet.new() }
 
 // The cells of a row of a table: `| a | b |` -> ["a", "b"]; `\|` is a bar inside a cell.
 fn hs_cells(line str) -> []str {
@@ -108,7 +108,7 @@ fn hs_class_former(word str) -> Option[str] {
     None
 }
 
-// The kind of a table by the first cell of its header: 1 primitives, 2 roles, 3 types, 0 none.
+// The kind of a table by the first cell of its header: 1 primitives, 2 the table by role (gone since 2.24, AL-131: an error), 3 types, 0 none.
 fn hs_table_kind(first str) -> int {
     if first == "name" || first == "имя" { return 1 }
     if first == "primitive" || first == "примитив" { return 2 }
@@ -134,7 +134,6 @@ fn hs_set_name(heading str) -> Option[str] {
 /// A row of a table of types, before the types are known: the set it is in, the name, the kind, the members, the line.
 type HostTypeRow { set str, name str, kind str, members str, line int }
 type HostPrimRow { cells []str, line int }
-type HostRoleRow { cells []str, line int }
 
 fn hs_err(line int, message str) -> str => "registry.md:${line}: ${message}"
 
@@ -262,7 +261,6 @@ fn hs_primitive(row HostPrimRow, known TypeDefs) -> Result[Primitive, str] {
 export fn parse_registry_table(text str) -> Result[HostRegistryData, []str] {
     mut type_rows = []HostTypeRow.new()
     mut prim_rows = []HostPrimRow.new()
-    mut role_rows = []HostRoleRow.new()
     mut errors = []str.new()
     mut heading = ""
     mut kind = 0
@@ -292,7 +290,7 @@ export fn parse_registry_table(text str) -> Result[HostRegistryData, []str] {
         if kind == 1 {
             prim_rows.push(HostPrimRow { cells, line: line_no })
         } else if kind == 2 {
-            role_rows.push(HostRoleRow { cells, line: line_no })
+            errors.push(hs_err(line_no, "the table by role (`primitive | role | result | reads`) is gone since 2.24 (AL-131): a parse is one function per role, each a row of the table of primitives"))
         } else if kind == 3 {
             if cells.len() != 3 {
                 errors.push(hs_err(line_no, "a type is `type | kind | members`, three cells, got ${cells.len()}"))
@@ -318,17 +316,6 @@ export fn parse_registry_table(text str) -> Result[HostRegistryData, []str] {
             Err(message) => errors.push(message)
         }
     }
-    for r in role_rows {
-        ro c = r.cells
-        if c.len() != 4 {
-            errors.push(hs_err(r.line, "a role is `primitive | role | result | reads`, four cells, got ${c.len()}"))
-            continue
-        }
-        match hs_result(c[2], known, r.line) {
-            Ok(result) => data.roles.push(RoleRow { primitive: c[0], role: c[1], result, reads: hs_list(c[3]) })
-            Err(message) => errors.push(message)
-        }
-    }
     if errors.len() > 0 { return Err(errors) }
     Ok(data)
 }
@@ -341,19 +328,13 @@ export fn host_types(data HostRegistryData, name str) -> TypeDefs {
     TypeDefs { records: []RecordDef.new(), variants: []VariantDef.new() }
 }
 
-/// The registry of a host: the registry of the language and the primitives and the roles of the data, and the table of the journal: the codes of the language and the codes of the host. A primitive
-/// or a code of the host that repeats one of the language, a name twice, a role of a primitive that is not registered are errors (a list of lines).
+/// The registry of a host: the registry of the language and the primitives of the data, and the table of the journal: the codes of the language and the codes of the host. A primitive
+/// or a code of the host that repeats one of the language, a name twice are errors (a list of lines).
 export fn host_registry(data HostRegistryData, journal []JournalCode) -> Result[Registry, []str] {
     mut reg = language_registry()
     mut errors = []str.new()
     for p in data.primitives {
         match register(reg, p) {
-            Ok(u) => ()
-            Err(x) => errors.push("registry.md: ${x.message}")
-        }
-    }
-    for r in data.roles {
-        match add_role(reg, r.primitive, r.role, r.result, r.reads) {
             Ok(u) => ()
             Err(x) => errors.push("registry.md: ${x.message}")
         }

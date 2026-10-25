@@ -14,13 +14,13 @@ export const MACHINE_FORMAT = "machine/2"
 
 /// The version of the language Alula of the methodology that the tree follows (the optional key `alula_version`; absent means this one). The key was named `table_format`
 /// before task 113 and `alula_version` before task 148; neither old name is accepted (the language is called Alula, there is no transition period).
-export const ALULA_VERSION = "2.23"
+export const ALULA_VERSION = "2.24"
 
 /// The former name of the key of the version (the language was called Alula before 2.14): a tree that holds it is refused with its own message, not with "not in the schema".
 const FORMER_VERSION_KEY = "portolan_version" // guard-allow(legacy-name): the former key is named here to be refused
 
 /// The versions of the language whose tree this decoder reads: one. There is no transition period (the word of the owner, 2026-10-20), so a tree of 2.12 or of an older version is refused.
-export fn alula_versions() -> []str => ["2.23"]
+export fn alula_versions() -> []str => ["2.24"]
 
 fn le(path str, message str) -> LoadError => { path, message }
 
@@ -763,13 +763,12 @@ fn dec_signals_or_empty(o JsonObject, key str, defs TypeDefs, path str) -> Resul
     dec_signals(v, defs, "${path}.${key}")
 }
 
-// The `разбор` of a party: {"primitive": "name", "role": "literal" (optional), "type": "T"}.
+// The `разбор` of a party: {"primitive": "name", "type": "T"} (a key `role` is not in the tree since 2.24: one function per role, AL-131).
 fn dec_parse(o JsonObject, defs TypeDefs, path str) -> Result[ParseDef, LoadError] {
-    j_only(o, ["primitive", "role", "type"], path)?
+    j_only(o, ["primitive", "type"], path)?
     ro primitive = j_need_str(o, "primitive", path)?
-    ro role = j_str_or(o, "role", "", path)?
     ro result = j_type(o, "type", defs, path)?
-    Ok(ParseDef { primitive, role, result })
+    Ok(ParseDef { primitive, result })
 }
 
 fn dec_parties(root JsonObject, defs TypeDefs) -> Result[[]PartyDef, LoadError] {
@@ -1165,7 +1164,7 @@ fn dec_machine(root JsonObject) -> Result[MachineDef, LoadError] {
     if format != MACHINE_FORMAT { return Err(le("$.format", "the format must be ${MACHINE_FORMAT}, got ${format}")) }
     ro language_version = j_str_or(root, "alula_version", ALULA_VERSION, "$")?
     if !alula_versions().contains(language_version) {
-        return Err(le("$.alula_version", "the alula_version must be 2.23 (the version of the language of the methodology; there is no transition period), got ${language_version}"))
+        return Err(le("$.alula_version", "the alula_version must be 2.24 (the version of the language of the methodology; there is no transition period), got ${language_version}"))
     }
     ro name = j_need_str(root, "machine", "$")?
     ro version = j_str_or(root, "version", "", "$")?

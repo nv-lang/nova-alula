@@ -28,19 +28,14 @@ test "rn no note" {
     assert(render_machine(json_of(fan_text()), "en").notes.len() == 0)
 }
 
-test "rn parse ru" {
-    ro tree = parse_tree("parse_call_role", "witness")
-    ro text = render(tree, "ru")
-    assert(text.contains("; разбор: parse_call_role(\"witness\") -> "))
-    assert(circle_with(tree, "ru", parse_registry()) == "")
-    assert(circle_with(tree, "en", parse_registry()) == "")
-}
-
-test "rn parse plain" {
-    ro tree = parse_tree("parse_call", "")
+test "rn parse names the function without brackets and a role (AL-131)" {
+    ro tree = parse_tree("parse_call")
     assert(render(tree, "ru").contains("; разбор: parse_call -> "))
     assert(render(tree, "en").contains("; parse: parse_call -> "))
+    assert(!render(tree, "ru").contains("parse_call(\""))
+    assert(!render(tree, "en").contains("parse_call(\""))
     assert(circle_with(tree, "ru", parse_registry()) == "")
+    assert(circle_with(tree, "en", parse_registry()) == "")
 }
 
 test "rn profile" {

@@ -18,7 +18,7 @@ fn boss_text() -> str => `# Машина: Босс
 
 - machine: Boss
 - machine_version: 1
-- format: 2.23
+- format: 2.24
 
 ## Типы
 
@@ -270,15 +270,12 @@ fn circle(json str, lang str) -> str {
     tree_diff(json, again.json)
 }
 
-// The standard registry with two parses of the type CallOutput of the small parent: `parse_call` takes the answer, `parse_call_role` the answer and the role.
+// The standard registry with a parse of the type CallOutput of the small parent: `parse_call` takes the answer (one function per role, AL-131: there is no second parameter).
 fn parse_registry() -> Registry {
     mut reg = sample_registry()
     ro answer = ParamSpec { name: "answer", spec: RecordType("CallOutput"), tail: false }
-    ro role = ParamSpec { name: "role", spec: TextType, tail: false }
     ro plain = Primitive { name: "parse_call", params: [answer], result: RecordType("CallOutput"), class: Volatile, reads: []str.new(), writes: []str.new() }
-    ro with_role = Primitive { name: "parse_call_role", params: [answer, role], result: RecordType("CallOutput"), class: Volatile, reads: []str.new(), writes: []str.new() }
     ro first = register(reg, plain)
-    ro second = register(reg, with_role)
     reg
 }
 
@@ -291,15 +288,13 @@ fn circle_with(json str, lang str, reg Registry) -> str {
     tree_diff(json, again.json)
 }
 
-// The record of the parse in the key `primitives` of the tree (AL-123): the answer, and the role when the parse takes one; the result is `CallOutput`, the class `volatile`.
-fn parse_declaration(primitive str, role str) -> str {
+// The record of the parse in the key `primitives` of the tree (AL-123): the answer; the result is `CallOutput`, the class `volatile`.
+fn parse_declaration(primitive str) -> str {
     ro answer = "{\"name\":\"answer\",\"type\":\"CallOutput\"}"
-    ro params = if role == "" { answer } else { "${answer},{\"name\":\"role\",\"type\":\"text\"}" }
-    "{\"name\":\"${primitive}\",\"params\":[${params}],\"result\":\"CallOutput\",\"class\":\"volatile\"}"
+    "{\"name\":\"${primitive}\",\"params\":[${answer}],\"result\":\"CallOutput\",\"class\":\"volatile\"}"
 }
 
 // The tree of the small parent with a parse of the party.
-fn parse_tree(primitive str, role str) -> str {
-    ro role_pair = if role == "" { "" } else { "\"role\":\"${role}\"," }
-    json_of(boss_text()).replace("\"nested\":\"callee\",", "\"nested\":\"callee\",\"parse\":{\"primitive\":\"${primitive}\",${role_pair}\"type\":\"CallOutput\"},").replace("\"initial\":\"CALL\"", "\"primitives\":[${parse_declaration(primitive, role)}],\"initial\":\"CALL\"")
+fn parse_tree(primitive str) -> str {
+    json_of(boss_text()).replace("\"nested\":\"callee\",", "\"nested\":\"callee\",\"parse\":{\"primitive\":\"${primitive}\",\"type\":\"CallOutput\"},").replace("\"initial\":\"CALL\"", "\"primitives\":[${parse_declaration(primitive)}],\"initial\":\"CALL\"")
 }

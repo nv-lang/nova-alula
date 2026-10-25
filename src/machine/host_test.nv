@@ -13,14 +13,7 @@ fn hst_registry_text() -> str => `# a host
 | reserve | item: text; count: int>=1 | — | acting | — | objects: the reserve |
 | ship | order: Order | ?Receipt | acting | objects: the reserve; the clock | objects: the shipment; the log |
 | pick | mode: "fast" \| "slow" | text | pure | — | — |
-| parse_note | note: text; role: text | NoteResult | volatile | — | — |
-
-## Roles
-
-| primitive | role | result | reads |
-|---|---|---|---|
-| parse_note | plain | text | — |
-| parse_note | long | []text | objects: the note |
+| parse_note | note: text | NoteResult | volatile | objects: the note | — |
 
 ## Types
 
@@ -68,7 +61,6 @@ test "host the language names two primitives and 35 codes" {
     ro reg = language_registry()
     assert(hst_names(reg) == ["time_now", "new_id"])
     for p in reg.primitives { assert(class_word(p.class) == "volatile") }
-    assert(reg.roles.len() == 0)
     assert(language_journal().len() == 35)
     assert(reg.journal.len() == 35)
 }
@@ -155,18 +147,19 @@ test "host a bar in a cell is written with a backslash" {
     }
 }
 
-test "host the table by role" {
+test "host the table by role is gone: one function per role (AL-131)" {
+    ro said = hst_errors("${hst_registry_text()}\n## Roles\n\n| primitive | role | result | reads |\n|---|---|---|---|\n| parse_note | plain | text | — |\n", "")
+    assert(said.contains("the table by role"))
+    assert(said.contains("AL-131"))
+    assert(said.contains("registry.md:"))
     ro reg = hst_host()
-    assert(has_roles(reg, "parse_note"))
-    assert(!has_roles(reg, "ship"))
-    match find_role(reg, "parse_note", "long") {
-        Some(r) => {
-            assert(spec_text(r.result) == "[]text")
-            assert(r.reads == ["objects: the note"])
+    match find_primitive(reg, "parse_note") {
+        Some(p) => {
+            assert(p.params.len() == 1)
+            assert(p.reads == ["objects: the note"])
         }
         None => assert(false)
     }
-    assert(find_role(reg, "parse_note", "none").is_none())
 }
 
 test "host the sets of types" {
@@ -267,9 +260,9 @@ test "host the same name twice and the same parameter twice are refused" {
     assert(hst_errors(same, "").contains("twice"))
 }
 
-test "host a role of a primitive that is not registered is refused" {
+test "host a row of the table by role is refused whatever the primitive (AL-131)" {
     ro text = "| primitive | role | result | reads |\n|---|---|---|---|\n| ghost | r | text | — |\n"
-    assert(hst_errors(text, "").contains("not registered"))
+    assert(hst_errors(text, "").contains("the table by role"))
 }
 
 test "host a code of the host that repeats a code of the language is refused" {
@@ -301,9 +294,8 @@ test "host the samples of the specification have a registry that loads" {
     match load_host(embed_str("../../spec/samples/registry.md"), "") {
         Ok(reg) => {
             assert(reg.primitives.len() == 24)
-            // AL-131: one function per role, no table by role, no `parse_agent_reply`
+            // AL-131: one function per role, no `parse_agent_reply`
             assert(find_primitive(reg, "parse_agent_reply").is_none())
-            assert(!has_roles(reg, "parse_witness_reply") && !has_roles(reg, "parse_author_reply") && !has_roles(reg, "parse_lens_reply"))
             hst_parse_function(reg, "parse_witness_reply", "[]WitnessAnswer")
             hst_parse_function(reg, "parse_author_reply", "EditResult")
             hst_parse_function(reg, "parse_lens_reply", "LensResult")

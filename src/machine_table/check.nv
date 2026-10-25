@@ -11,7 +11,7 @@ module alula.machine_table
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
 import std.unicode.{GeneralCategory}
-import alula.machine.{Expr, TypeDefs, FieldDef, Bind, DefFn, Registry, Position, check_expr_positions, check_call_position, find_primitive, primitive_names, has_tail, class_word, journal_find, find_role, has_roles}
+import alula.machine.{Expr, TypeDefs, FieldDef, Bind, DefFn, Registry, Position, check_expr_positions, check_call_position, find_primitive, primitive_names, has_tail, class_word, journal_find}
 import alula.machine.{ConditionPos, InputPos, ProfilePos, ForkEntryPos, OperationEntryPos, EndEntryPos, AcceptPos, ActionPos}
 import alula.machine.{Pure, Volatile, Value, Text, TypeSpec, TextSet, IdType, OptionalType, VariantType, spec_text, is_uuid}
 
@@ -1034,16 +1034,16 @@ fn state_input_names(def MachineDef, st StateDef) -> []str {
     out
 }
 
-// The names a state reads with what the parse of its party reads for the role (the table "by role", 2.12, AL-33): the hidden reads of the primitive join the Input of the state (rule 11).
-fn state_names_with_roles(cx Checker, st StateDef) -> []str {
+// The names a state reads with what the parse of its party reads (the column `reads` of the function of the parse, AL-131): the hidden reads of the function join the Input of the state (rule 11).
+fn state_names_with_parse(cx Checker, st StateDef) -> []str {
     mut out = state_input_names(cx.def, st)
     if st.kind != AppealKind { return out }
     ro pi = find_party(cx.def, st.party)
     if pi < 0 { return out }
     for pr in cx.def.parties[pi].parse {
-        match find_role(cx.registry, pr.primitive, pr.role) {
-            Some(row) => {
-                for r in row.reads { push_unique(out, r) }
+        match find_primitive(cx.registry, pr.primitive) {
+            Some(p) => {
+                for r in p.reads { push_unique(out, r) }
             }
             None => ()
         }
@@ -1090,7 +1090,7 @@ fn check_reads(mut cx Checker) -> () {
     // the names of the executor and where they stand
     for s in cx.sites {
         ro free = expr_free(s.expr, s.bound)
-        ro allowed = if s.state >= 0 { state_names_with_roles(cx, def.states[s.state]) } else if s.area == area_body() { fragment_data_names(def) } else { []str.new() }
+        ro allowed = if s.state >= 0 { state_names_with_parse(cx, def.states[s.state]) } else if s.area == area_body() { fragment_data_names(def) } else { []str.new() }
         for n in free {
             if consts.contains(n) { continue }
             if roots.contains(n) {
@@ -1098,7 +1098,7 @@ fn check_reads(mut cx Checker) -> () {
                     cx_issue(cx, s.place, "a constant, a definition or an initial value does not read the datum ${n}")
                 } else if s.area == area_body() && !allowed.contains(n) {
                     cx_issue(cx, s.place, "the datum ${n} is read but is not in the Input of the state (rule 11)")
-                } else if s.area == area_input() && s.state >= 0 && !state_names_with_roles(cx, def.states[s.state]).contains(n) {
+                } else if s.area == area_input() && s.state >= 0 && !state_names_with_parse(cx, def.states[s.state]).contains(n) {
                     cx_issue(cx, s.place, "the datum ${n} is read but is not in the Input of the state (rule 11)")
                 }
                 continue
@@ -2171,7 +2171,8 @@ fn check_edits_state(mut cx Checker, st StateDef, path str) -> () {
     }
 }
 
-// The `разбор` of a party: a volatile primitive of one parameter (the answer) or two (the answer and the role), the first one of the type of the result of the party.
+// The `разбор` of a party (AL-131, sections 1, 7 and 10): a volatile function of one parameter, the answer, of the type `итог` of the party; its result is the type after `->` of the parse.
+// One function per role: there is no second parameter and no literal of a role.
 fn check_party_parse(mut cx Checker, pt PartyDef, path str) -> () {
     if pt.parse.len() == 0 { return }
     if pt.kind != MachineParty { cx_issue(cx, "${path}.parse", "only a party of the kind machine has a parse") }
@@ -2180,39 +2181,14 @@ fn check_party_parse(mut cx Checker, pt PartyDef, path str) -> () {
         None => cx_issue(cx, "${path}.parse.primitive", "the primitive ${pr.primitive} is not registered")
         Some(p) => {
             if p.class != Volatile { cx_issue(cx, "${path}.parse.primitive", "the parse ${pr.primitive} must be a volatile primitive, it is ${class_word(p.class)}") }
-            ro wanted = if pr.role == "" { 1 } else { 2 }
-            if p.params.len() != wanted {
-                if pr.role == "" {
-                    cx_issue(cx, "${path}.parse.primitive", "the parse ${pr.primitive} takes ${p.params.len()} parameters: without a role it takes the answer only")
-                } else {
-                    cx_issue(cx, "${path}.parse.role", "the role ${pr.role} is the second parameter of the parse: the primitive ${pr.primitive} takes ${p.params.len()} parameters")
-                }
+            if p.params.len() != 1 {
+                cx_issue(cx, "${path}.parse.primitive", "the parse ${pr.primitive} takes ${p.params.len()} parameters: it takes the answer only (one function per role, AL-131)")
             } else {
                 if pt.result_spec.len() > 0 && spec_text(p.params[0].spec) != spec_text(pt.result_spec[0]) {
                     cx_issue(cx, "${path}.parse.primitive", "the first parameter of the parse ${pr.primitive} is ${spec_text(p.params[0].spec)}, the result of the party is ${spec_text(pt.result_spec[0])}")
                 }
-                if pr.role != "" {
-                    match p.params[1].spec {
-                        TextSet(words) => {
-                            if !words.contains(pr.role) { cx_issue(cx, "${path}.parse.role", "the role ${pr.role} is not in ${spec_text(p.params[1].spec)}") }
-                        }
-                        _ => ()
-                    }
-                }
-                // the table "by role" (format 7, 2.12, AL-33): the type of the value is chosen by the literal of the role, and the type after `->` is that type
-                if has_roles(cx.registry, pr.primitive) {
-                    if pr.role == "" {
-                        cx_issue(cx, "${path}.parse.role", "the primitive ${pr.primitive} has a table by role: the parse names the role")
-                    } else {
-                        match find_role(cx.registry, pr.primitive, pr.role) {
-                            None => cx_issue(cx, "${path}.parse.role", "the role ${pr.role} is not in the table by role of the primitive ${pr.primitive}")
-                            Some(row) => {
-                                if spec_text(row.result) != spec_text(pr.result) {
-                                    cx_issue(cx, "${path}.parse.type", "the role ${pr.role} of ${pr.primitive} gives ${spec_text(row.result)}, the parse says ${spec_text(pr.result)}")
-                                }
-                            }
-                        }
-                    }
+                if spec_text(p.result) != spec_text(pr.result) {
+                    cx_issue(cx, "${path}.parse.type", "the parse ${pr.primitive} gives ${spec_text(p.result)}, the type after `->` of the parse is ${spec_text(pr.result)}")
                 }
             }
         }

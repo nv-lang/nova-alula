@@ -46,12 +46,9 @@ export type ParamSpec { name str, spec TypeSpec, tail bool }
 /// Primitive: the signature and the class of a primitive of the host.
 export type Primitive { name str, params []ParamSpec, result TypeSpec, class PrimitiveClass, reads []str, writes []str }
 
-/// RoleRow: one row of the table "by role" of a parse primitive (format 7, 2.12, AL-33): the result for the literal of the role and the data that the primitive reads for that role.
-export type RoleRow { primitive str, role str, result TypeSpec, reads []str }
-
 /// Registry: the primitives, in the order of registration; the codes of the journal that a machine may write (the table of the language and the table of the host, format 5, 2.12, AL-31;
-/// empty means that the codes are not checked against a table); the tables "by role" of the parse primitives.
-export type Registry { primitives []Primitive, journal []JournalCode, roles []RoleRow }
+/// empty means that the codes are not checked against a table). There is no table "by role" since 2.24 (AL-131): a parse is one function per role.
+export type Registry { primitives []Primitive, journal []JournalCode }
 
 /// RegistryError: a primitive cannot be registered.
 export type RegistryError { message str }
@@ -66,7 +63,7 @@ export fn param(name str, spec TypeSpec) -> ParamSpec => { name, spec, tail: fal
 export fn tail_param(name str, spec TypeSpec) -> ParamSpec => { name, spec, tail: true }
 
 /// An empty registry.
-export fn new_registry() -> Registry => { primitives: []Primitive.new(), journal: []JournalCode.new(), roles: []RoleRow.new() }
+export fn new_registry() -> Registry => { primitives: []Primitive.new(), journal: []JournalCode.new() }
 
 /// Put the table of the codes of the journal into the registry (the union of the table of the language and of the table of the host).
 export fn with_journal(mut registry Registry, codes []JournalCode) -> () {
@@ -74,38 +71,7 @@ export fn with_journal(mut registry Registry, codes []JournalCode) -> () {
 }
 
 /// The same registry with no table of the journal: the codes of a machine are not checked against a table (a host that names no table, the samples of the specification).
-export fn without_journal(registry Registry) -> Registry => { primitives: registry.primitives, journal: []JournalCode.new(), roles: registry.roles }
-
-/// Register a row of the table "by role" of a parse primitive; the primitive must be registered and its second parameter a text.
-export fn add_role(mut registry Registry, primitive str, role str, result TypeSpec, reads []str) -> Result[(), RegistryError] {
-    match find_primitive(registry, primitive) {
-        Some(p) => {
-            if p.params.len() != 2 { return Err(RegistryError { message: "the primitive ${primitive} takes the answer and the role: two parameters" }) }
-        }
-        None => return Err(RegistryError { message: "the primitive ${primitive} is not registered" })
-    }
-    for r in registry.roles {
-        if r.primitive == primitive && r.role == role { return Err(RegistryError { message: "the role ${role} of ${primitive} is registered already" }) }
-    }
-    registry.roles.push(RoleRow { primitive, role, result, reads })
-    Ok(())
-}
-
-/// The row of the table "by role" for the primitive and the role literal.
-export fn find_role(registry Registry, primitive str, role str) -> Option[RoleRow] {
-    for r in registry.roles {
-        if r.primitive == primitive && r.role == role { return Some(r) }
-    }
-    None
-}
-
-/// Does the primitive have a table "by role"?
-export fn has_roles(registry Registry, primitive str) -> bool {
-    for r in registry.roles {
-        if r.primitive == primitive { return true }
-    }
-    false
-}
+export fn without_journal(registry Registry) -> Registry => { primitives: registry.primitives, journal: []JournalCode.new() }
 
 /// Register a primitive; a second one with the same name, a repeated parameter name, an empty name are errors.
 export fn register(mut registry Registry, primitive Primitive) -> Result[(), RegistryError] {
@@ -345,7 +311,7 @@ fn nothing() -> []str => []str.new()
 fn no_params() -> []ParamSpec => []ParamSpec.new()
 
 /// The registry of the language (spec section 7a, AL-113): the two standard primitives that every host and every executor must give, `time_now` (milliseconds of the clock of the executor) and
-/// `new_id` (a new identifier, format 2.5), both of the class `volatile`, and the table of the 35 codes of the language. A host adds its own primitives, roles and codes (`host_registry` of `alula.machine_table`):
+/// `new_id` (a new identifier, format 2.5), both of the class `volatile`, and the table of the 35 codes of the language. A host adds its own primitives and codes (`host_registry` of `alula.machine_table`):
 /// the registry of a host is this one and the data of the host.
 export fn language_registry() -> Registry {
     mut reg = new_registry()

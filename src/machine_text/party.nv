@@ -84,9 +84,9 @@ fn party_counter(cell TxCell, line int, mut cx TxCx) -> Result[str, TranslateErr
 
 // The cell `вид`: agent(итог Тип), human(итог ИсходВорот), enhanced(итог ИсходВорот), human или agent по настройке имя(итог ИсходВорот), machine имя(вход Тип, итог Тип)[; разбор: примитив[("роль")] -> Тип].
 // A party of the kind `machine` is a nested machine (rule 35): the name of the machine of the registry of the caller, the record type of its input, the type of its result and the parse.
-type TxKind { kind str, result str, setting str, nested str, input_type str, parse_primitive str, parse_role str, parse_type str }
+type TxKind { kind str, result str, setting str, nested str, input_type str, parse_primitive str, parse_type str }
 
-fn kind_plain(kind str, result str, setting str) -> TxKind => { kind, result, setting, nested: "", input_type: "", parse_primitive: "", parse_role: "", parse_type: "" }
+fn kind_plain(kind str, result str, setting str) -> TxKind => { kind, result, setting, nested: "", input_type: "", parse_primitive: "", parse_type: "" }
 
 // The name of the nested machine in the registry of the caller: the registry of the host (kind `machine` of `names_host.tsv`), else a Latin name as it is.
 fn nested_name(mut cx TxCx, t TxTok) -> str => nested_name_text(cx, t, t.text)
@@ -100,6 +100,13 @@ fn nested_name_text(mut cx TxCx, at TxTok, name str) -> str {
     if is_identifier_latin(name) { return name }
     cx_error(cx, at, "name", "вложенной машины `${name}` нет в реестре хозяина; латинское имя читается само")
     name
+}
+
+// The message about a literal of the role in `разбор:` (AL-131, section 7 of the specification): the hint names the three functions in the language of the file.
+fn role_literal_message(lang str) -> str {
+    ro message_names = if lang == "en" { "`parse_witness_reply`, `parse_author_reply`, `parse_lens_reply`" } else { "`разобрать_ответ_свидетеля`, `разобрать_ответ_автора`, `разобрать_ответ_линзы`" }
+    ro message_text = "литерал роли в разбор: с 2.24 — отдельная функция на роль: ${message_names}; разбор называется именем без скобок и аргументов; переходного периода нет"
+    message_text
 }
 
 fn party_machine(mut p TxP, mut cx TxCx) -> Result[TxKind, TranslateError] {
@@ -116,7 +123,6 @@ fn party_machine(mut p TxP, mut cx TxCx) -> Result[TxKind, TranslateError] {
     ro result = ty_parse(p, cx)?
     p_expect(p, ")")?
     mut prim = ""
-    mut role = ""
     mut parse_type = ""
     if p_eat(p, ";") {
         p_expect_kw(p, words, "kind_party", "parse")?
@@ -124,20 +130,15 @@ fn party_machine(mut p TxP, mut cx TxCx) -> Result[TxKind, TranslateError] {
         ro f = p_tok(p)
         if f.kind != TK_NAME { return Err(p_fail(p, "после `${kw(words, "kind_party", "parse")}:` ожидается имя примитива")) }
         p_adv(p)
+        // a literal of the role after the name of the parse is an error since 2.24 (AL-131): the parse is one function per role and takes the answer only
+        if p_eat(p, "(") { return Err(p_fail(p, role_literal_message(cx.words.lang))) }
         prim = tr_primitive(cx, f)
-        if p_eat(p, "(") {
-            ro r = p_tok(p)
-            if r.kind != TK_STR { return Err(p_fail(p, "роль — текст в кавычках")) }
-            p_adv(p)
-            role = r.text
-            p_expect(p, ")")?
-        }
         if !tx_arrow(p_tok(p)) { return Err(p_fail(p, "после разбора ожидается `->` и тип его результата")) }
         p_adv(p)
         parse_type = ty_parse(p, cx)?
     }
     p_end(p)?
-    Ok(TxKind { kind: "machine", result, setting: "", nested, input_type, parse_primitive: prim, parse_role: role, parse_type })
+    Ok(TxKind { kind: "machine", result, setting: "", nested, input_type, parse_primitive: prim, parse_type })
 }
 
 fn party_kind(cell TxCell, line int, mut cx TxCx) -> Result[TxKind, TranslateError] {
@@ -204,7 +205,6 @@ fn party_row(r TxEntry, mut cx TxCx) -> Result[TxPartyRow, TranslateError] {
     if k.result != "" { pairs.push(kv("result", js(k.result))) }
     if k.parse_primitive != "" {
         mut parse_pairs = [kv("primitive", js(k.parse_primitive))]
-        if k.parse_role != "" { parse_pairs.push(kv("role", js(k.parse_role))) }
         parse_pairs.push(kv("type", js(k.parse_type)))
         pairs.push(kv("parse", jobj(parse_pairs)))
     }
