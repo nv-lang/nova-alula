@@ -25,25 +25,25 @@ fn warnings17(text str) -> []str {
 
 // ---- the version -------------------------------------------------------------------------------------------------------------------------------
 
-test "v217 the version of the language is 2.22" {
-    assert(ALULA_VERSION == "2.22")
-    assert(alula_versions() == ["2.22"])
+test "v217 the version of the language is 2.23" {
+    assert(ALULA_VERSION == "2.23")
+    assert(alula_versions() == ["2.23"])
 }
 
-test "v217 a tree of the version 2.22 loads" {
-    assert(ok_text(tiny().replace("\"format\":\"machine/2\"", "\"format\":\"machine/2\",\"alula_version\":\"2.22\"")))
+test "v217 a tree of the version 2.23 loads" {
+    assert(ok_text(tiny().replace("\"format\":\"machine/2\"", "\"format\":\"machine/2\",\"alula_version\":\"2.23\"")))
 }
 
-test "v217 a tree of the version 2.22 is refused" {
+test "v217 a tree of the version 2.23 is refused" {
     ro text = tiny().replace("\"format\":\"machine/2\"", "\"format\":\"machine/2\",\"alula_version\":\"2.14\"")
     assert(!ok_text(text))
     assert(says(text, "2.14"))
-    assert(says(text, "2.22"))
+    assert(says(text, "2.23"))
 }
 
-test "v217 the schema names the version 2.22" {
+test "v217 the schema names the version 2.23" {
     ro schema = text_of_file(schema_files(), "machine-2.schema.json")
-    assert(schema.contains("\"enum\": [\"2.22\"]"))
+    assert(schema.contains("\"enum\": [\"2.23\"]"))
     assert(!schema.contains("2.14"))
 }
 

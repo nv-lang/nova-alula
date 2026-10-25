@@ -7,7 +7,7 @@ import std.text
 import alula.machine_text.{definitions_hash, normalize_definitions, translate_definitions, defs_file_text}
 
 // The shipped file of definitions is of format 2.14 (the hash `642e1f78f0f7`).
-fn cycle() -> str => defs_file_text("арифметика_цикла").replace("- format: 2.22", "- format: 2.22")
+fn cycle() -> str => defs_file_text("арифметика_цикла").replace("- format: 2.23", "- format: 2.23")
 
 // The text of 2.5: no list markers, the key lines at the first column.
 fn old_style(text str) -> str {
@@ -24,17 +24,17 @@ fn old_style(text str) -> str {
 
 test "fm versions" {
     ro v212 = base_json()
-    assert(v212.contains("\"alula_version\":\"2.22\""))
-    assert(json_of(replaced(base_text(), "- format: 2.22", "format: 2.22")) == v212)
+    assert(v212.contains("\"alula_version\":\"2.23\""))
+    assert(json_of(replaced(base_text(), "- format: 2.23", "format: 2.23")) == v212)
 }
 
 test "fm unknown version" {
     for v in ["2.4", "2.11", "3", "2.7.1", ""] {
-        ro report = checked(replaced(base_text(), "- format: 2.22", "- format: ${v}"))
+        ro report = checked(replaced(base_text(), "- format: 2.23", "- format: ${v}"))
         assert(report.errors.len() > 0)
-        assert(report_says(report, "читает формат 2.22"))
+        assert(report_says(report, "читает формат 2.23"))
     }
-    ro missing = replaced(base_text(), "- format: 2.22\n", "")
+    ro missing = replaced(base_text(), "- format: 2.23\n", "")
     assert(errors_say(missing, "формат не указан"))
 }
 
@@ -52,7 +52,7 @@ test "fm old style" {
 
 test "fm sample hash" {
     ro text = cycle()
-    assert(text.contains("- format: 2.22"))
+    assert(text.contains("- format: 2.23"))
     ro hash = definitions_hash(text)
     assert(hash.byte_len() == 12)
     assert(definitions_hash(text.replace("\n", "\r\n")) == hash)
@@ -63,7 +63,7 @@ test "fm sample hash" {
 
 test "fm line format is a part of the hash" {
     ro text = cycle()
-    assert(definitions_hash(text.replace("format: 2.22", "format: 2.11")) != definitions_hash(text))
+    assert(definitions_hash(text.replace("format: 2.23", "format: 2.11")) != definitions_hash(text))
     assert(normalize_definitions(text).ends_with("предел\n"))
 }
 
@@ -76,9 +76,9 @@ test "fm defs report" {
 
 test "fm defs unknown" {
     for v in ["2.4", "2.11", "3"] {
-        ro report = translate_definitions(cycle().replace("format: 2.22", "format: ${v}"))
+        ro report = translate_definitions(cycle().replace("format: 2.23", "format: ${v}"))
         assert(report.errors.len() == 1)
-        assert(report.errors[0].message.contains("формат файла определений должен быть 2.22"))
+        assert(report.errors[0].message.contains("формат файла определений должен быть 2.23"))
     }
 }
 

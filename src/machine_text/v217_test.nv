@@ -42,8 +42,8 @@ test "v217 the hash of the dictionary is the one of the format" {
     assert(glossary_hash_text(glossary_table_text()) == "60383c370415")
 }
 
-test "v217 the format 2.22 pins the hash 60383c370415" {
-    assert(glossary_pinned_hash("2.22") == "60383c370415")
+test "v217 the format 2.23 pins the hash 60383c370415" {
+    assert(glossary_pinned_hash("2.23") == "60383c370415")
     assert(glossary_pinned_hash("2.14") == "")
 }
 
@@ -65,7 +65,7 @@ test "v217 a changed pair gives another hash" {
 
 test "v217 a changed pair is found by the check" {
     ro text = glossary_table_text().replace("число_повторов\tretry_count", "число_повторов\tretries")
-    assert(glossary_check_text(text, "2.22").contains("словарь изменён без смены формата"))
+    assert(glossary_check_text(text, "2.23").contains("словарь изменён без смены формата"))
 }
 
 test "v217 an added pair gives another hash" {
@@ -94,7 +94,7 @@ test "v217 the hash is the SHA-256 of the lines joined by LF" {
 }
 
 test "v217 the check of the hash is for the version of the format" {
-    assert(glossary_check_text(glossary_table_text(), "2.22") == "")
+    assert(glossary_check_text(glossary_table_text(), "2.23") == "")
     assert(glossary_check_text(glossary_table_text(), "2.99").contains("2.99"))
 }
 

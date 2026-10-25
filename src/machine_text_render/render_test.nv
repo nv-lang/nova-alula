@@ -24,27 +24,27 @@ test "rn header ru" {
     assert(first[1] == "")
     assert(first[2] == "- machine: Calc")
     assert(first[3] == "- machine_version: 1")
-    assert(first[4] == "- format: 2.22")
+    assert(first[4] == "- format: 2.23")
     assert(first[5] == "- language: ru")
     assert(first[6] == "")
 }
 
 test "rn header en" {
     ro text = render(calc_json(), "en")
-    assert(text.starts_with("# Machine: Calc\n\n- machine: Calc\n- machine_version: 1\n- format: 2.22\n- language: en\n\n"))
+    assert(text.starts_with("# Machine: Calc\n\n- machine: Calc\n- machine_version: 1\n- format: 2.23\n- language: en\n\n"))
 }
 
 test "rn former key and former version refused" {
-    ro former = calc_json().replace("\"alula_version\": \"2.22\"", "\"portolan_version\": \"2.22\"") // guard-allow(legacy-name): the former key of the version is named to be refused
+    ro former = calc_json().replace("\"alula_version\": \"2.23\"", "\"portolan_version\": \"2.23\"") // guard-allow(legacy-name): the former key of the version is named to be refused
     assert(former != calc_json())
     ro report = render_machine(former, "ru")
     assert(report.text == "")
     assert(report.notes.len() == 1 && report.notes[0].contains("the former name of `alula_version`"))
-    ro older = calc_json().replace("\"alula_version\": \"2.22\"", "\"alula_version\": \"2.12\"")
+    ro older = calc_json().replace("\"alula_version\": \"2.23\"", "\"alula_version\": \"2.12\"")
     assert(older != calc_json())
     ro refused = render_machine(older, "en")
     assert(refused.text == "")
-    assert(refused.notes[0].contains("the version 2.22 only is read and written"))
+    assert(refused.notes[0].contains("the version 2.23 only is read and written"))
 }
 
 test "rn eleven sections" {
@@ -108,7 +108,7 @@ fn inc_en(hash str) -> str => `# Machine: Inc
 
 - machine: Inc
 - machine_version: 1
-- format: 2.22
+- format: 2.23
 - language: en
 
 ## Data
