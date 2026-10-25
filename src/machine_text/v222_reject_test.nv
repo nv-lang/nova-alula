@@ -29,7 +29,7 @@ test "r222 the table has the rows of both languages" {
     assert(former_is("en", "decl", "define"))
 }
 
-test "r222 the table has no word that 2.24 still has" {
+test "r222 the table has no word that 2.25 still has" {
     assert(!former_is("ru", "type", "строка"))
     assert(!former_is("ru", "decl", "функция"))
     assert(!former_is("en", "type", "str"))
@@ -173,16 +173,16 @@ test "r222 ru record and en record agree" {
 
 test "r222 an older format is not read" {
     for version in ["2.5", "2.11", "2.14", "2.17", "2.21", "3.0"] {
-        ro text = tiny_text().replace("format: 2.24", "format: ${version}")
+        ro text = tiny_text().replace("format: 2.25", "format: ${version}")
         assert(note_says(text, "переходного периода нет"))
     }
 }
 
 test "r222 no format is not read" {
-    assert(note_says(tiny_text().replace("format: 2.24\n", ""), "формат не указан"))
+    assert(note_says(tiny_text().replace("format: 2.25\n", ""), "формат не указан"))
 }
 
-test "r222 the tiny machine of 2.24 is clean" {
+test "r222 the tiny machine of 2.25 is clean" {
     assert(is_clean(tiny_text()))
 }
 

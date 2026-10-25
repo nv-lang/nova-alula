@@ -20,7 +20,7 @@ test "c222 the version names the program and the language" {
     ro ran = run0(["version"])
     assert(ran.code == 0)
     assert(ran.out.starts_with("alula 0.6.0"))
-    assert(ran.out.contains("Alula 2.24"))
+    assert(ran.out.contains("Alula 2.25"))
 }
 
 test "c222 the version of the program is a constant" {
@@ -38,10 +38,10 @@ test "c222 a file with types and functions is checked" {
     assert(ran.code == 0)
 }
 
-test "c222 the compiled tree says 2.24" {
+test "c222 the compiled tree says 2.25" {
     ro ran = run222(["compile", path222()], tiny_ru())
     assert(ran.code == 0)
-    assert(ran.out.contains("\"alula_version\":\"2.24\""))
+    assert(ran.out.contains("\"alula_version\":\"2.25\""))
 }
 
 test "c222 the tree of a file with an enumeration has the variants" {
@@ -98,7 +98,7 @@ test "c222 a former type word is refused" {
 
 test "c222 a former version of the file is not read" {
     for version in ["2.14", "2.17", "2.21"] {
-        ro ran = run222(["check", path222()], tiny_ru().replace("format: 2.24", "format: ${version}"))
+        ro ran = run222(["check", path222()], tiny_ru().replace("format: 2.25", "format: ${version}"))
         assert(ran.code == 1)
         assert(ran.err.contains("версия не известна"))
     }

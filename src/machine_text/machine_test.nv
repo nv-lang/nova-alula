@@ -8,7 +8,7 @@ import alula.examples.{sample_registry}
 test "tm clean" {
     ro report = checked(tiny_text())
     assert(report.errors.len() == 0)
-    assert(report.json.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.24\",\"machine\":\"Tiny\""))
+    assert(report.json.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.25\",\"machine\":\"Tiny\""))
     assert(report.rows_total > 0 && report.rows_noted == 0)
 }
 
@@ -51,8 +51,8 @@ test "tm names of the states" {
 
 test "tm header" {
     assert(note_says(tiny_with("# Машина: Малая", "# Что-то: Малая"), "начинается со строки `# Машина:"))
-    assert(note_says(tiny_with("format: 2.24", "format: 2.4"), "формат 2.4: версия не известна переводчику, он читает формат 2.24"))
-    assert(note_says(tiny_with("format: 2.24\n", ""), "формат не указан"))
+    assert(note_says(tiny_with("format: 2.25", "format: 2.4"), "формат 2.4: версия не известна переводчику, он читает формат 2.25"))
+    assert(note_says(tiny_with("format: 2.25\n", ""), "формат не указан"))
     assert(note_says(tiny_with("machine: Tiny\n", ""), "нет строки `machine:"))
     assert(note_says(tiny_with("machine: Tiny", "machine: Малая"), "латинский идентификатор"))
     assert(note_says(tiny_with("machine_version: 1", "machine_version: 1\nлишнее: слово"), "лишняя строка в шапке"))
@@ -60,7 +60,7 @@ test "tm header" {
 }
 
 test "tm header places" {
-    ro all = notes(tiny_with("format: 2.24", "format: 2.4"))
+    ro all = notes(tiny_with("format: 2.25", "format: 2.4"))
     assert(all[0].starts_with("1:1 structure"))
 }
 

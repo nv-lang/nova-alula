@@ -1,7 +1,7 @@
 # Functions: cycle_arithmetic
 
 - functions_version: 1
-- format: 2.24
+- format: 2.25
 - language: en
 
 ## Types

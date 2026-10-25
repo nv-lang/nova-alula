@@ -13,10 +13,10 @@ fn meet222s() -> str => meeting17s()
 
 fn count222(text str, part str) -> int => text.match_indices(part).len()
 
-test "s222 the samples say format 2.24" {
-    assert(ru222s().contains("format: 2.24"))
-    assert(en222s().contains("format: 2.24"))
-    assert(meet222s().contains("format: 2.24"))
+test "s222 the samples say format 2.25" {
+    assert(ru222s().contains("format: 2.25"))
+    assert(en222s().contains("format: 2.25"))
+    assert(meet222s().contains("format: 2.25"))
 }
 
 test "s222 the samples are translated without errors" {
@@ -38,7 +38,7 @@ test "s222 no sample declares a type the former way" {
     }
 }
 
-test "s222 the samples write functions with the word of 2.24" {
+test "s222 the samples write functions with the word of 2.25" {
     assert(ru222s().contains("\nфункция "))
     assert(en222s().contains("\nfn "))
     assert(!ru222s().contains("\nопределение "))
@@ -59,13 +59,13 @@ test "s222 the samples have no escaped dollar" {
     for text in [ru222s(), en222s(), meet222s()] { assert(!text.contains("\\\${")) }
 }
 
-test "s222 the samples have the words of the types of 2.24" {
+test "s222 the samples have the words of the types of 2.25" {
     assert(ru222s().contains("строка"))
     assert(!ru222s().contains(" ?текст") && !ru222s().contains(" []текст"))
     assert(en222s().contains(" str"))
 }
 
-test "s222 the sample of the meeting has the booleans in words of 2.24" {
+test "s222 the sample of the meeting has the booleans in words of 2.25" {
     assert(!meet222s().contains("да/нет"))
 }
 
@@ -76,6 +76,6 @@ test "s222 the trees of the two samples have one number of states" {
     assert(count222(ru, "\"kind\":\"fork\"") == count222(en, "\"kind\":\"fork\""))
 }
 
-test "s222 the tree says 2.24" {
-    assert(translate_report(ru222s()).json.contains("\"alula_version\":\"2.24\""))
+test "s222 the tree says 2.25" {
+    assert(translate_report(ru222s()).json.contains("\"alula_version\":\"2.25\""))
 }

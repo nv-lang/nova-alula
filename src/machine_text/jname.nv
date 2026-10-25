@@ -2,7 +2,7 @@
 //
 // A name that leaves the machine (a state, a datum, a field of the input, a type, a field, a form of an enumeration, an element of an enum, a signal of a party and its field, a primitive, the setting of a keeper) has a Latin JSON name
 // in the tree. The JSON name is built by itself, in this order (spec 1a): the row of the section `## Имена` (the qualified name `Тип.поле` is stronger than the simple one and a simple row renames every declaration of
-// the name), the Latin name as it is, the English name of the dictionary of the methodology for the WHOLE name (the dictionary of the format that is read: the version 13 of the methodology for 2.24, 1270 pairs, the hash `35c571ccda17`; AL-62, AL-131), the transliteration
+// the name), the Latin name as it is, the English name of the dictionary of the methodology for the WHOLE name (the dictionary of the format that is read: the version 13 of the methodology for 2.25, 1270 pairs, the hash `35c571ccda17`; AL-62, AL-131), the transliteration
 // word by word (the types and the states in Pascal case, the others in snake case). A word of two alphabets is an error (AL-59). The brackets after a name of 2.14 are an error (AL-60). The JSON names of one space are
 // different (AL-58, ten spaces); a row that changes nothing, a row for a name that is not declared, a repeated row, a JSON name that is not Latin are errors of the section.
 //
@@ -22,7 +22,7 @@ export type JsonName { line int, where str, name str, path str, json str }
 /// TxGlossary: the names of the dictionary that have one English name (a name with two English names is not in it, spec 1a).
 type TxGlossary { names HashMap[str, str] }
 
-/// The normative part of the dictionary as the file of the package (the version 13, the format 2.24): the lines `русское<TAB>английское` in the order of the glossary of the methodology.
+/// The normative part of the dictionary as the file of the package (the version 13, the format 2.25): the lines `русское<TAB>английское` in the order of the glossary of the methodology.
 fn glossary_table_text() -> str => embed_str("glossary_names.tsv")
 
 // The pairs of a table, in order; a comment `#` and an empty line are skipped.
@@ -50,7 +50,7 @@ fn glossary_hash_text(tsv str) -> str {
 
 /// The hash that a version of the format pins (AL-62); the version and the hash change only together. "" for a version that is not read.
 fn glossary_pinned_hash(format str) -> str {
-    if format == "2.24" { return "35c571ccda17" }
+    if format == "2.25" { return "35c571ccda17" }
     ""
 }
 

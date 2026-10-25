@@ -2,7 +2,7 @@
 
 - machine: Retry
 - machine_version: 1
-- format: 2.24
+- format: 2.25
 - language: en
 
 The destination `same` and the destination `same, rerun` (spec 4.1, AL-111). The agent that is silent is asked again by the row `same, rerun` of its appeal: the state is entered anew, the open request is cancelled and a new one is sent

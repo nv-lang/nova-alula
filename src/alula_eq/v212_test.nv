@@ -10,18 +10,18 @@ fn product_tables() -> []str => ["callee.alula.md", "caller.alula.md", "fan.alul
 
 fn json_of_table(name str) -> str => name.replace(".alula.md", ".alula.json").replace(".alula.txt", ".alula.json")
 
-test "v212 table files say 2.24" {
+test "v212 table files say 2.25" {
     for name in product_tables() {
         ro text = text_of_file(table_files(), name)
-        assert(text.contains("format: 2.24\n"))
+        assert(text.contains("format: 2.25\n"))
         assert(!text.contains("format: 2.11"))
         assert(!text.contains("alula-2.11"))
     }
 }
 
-test "v212 json files say 2.24" {
+test "v212 json files say 2.25" {
     for f in machine_files() {
-        assert(f.text.contains("\"alula_version\":\"2.24\"") || f.text.contains("\"alula_version\": \"2.24\""))
+        assert(f.text.contains("\"alula_version\":\"2.25\"") || f.text.contains("\"alula_version\": \"2.25\""))
     }
 }
 

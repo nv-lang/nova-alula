@@ -1,7 +1,7 @@
 # Функции: арифметика_цикла
 
 - functions_version: 1
-- format: 2.24
+- format: 2.25
 
 ## Типы
 —

@@ -102,15 +102,15 @@ test "mk nested columns" {
     assert(name_note(text).ends_with(":15"))
 }
 
-test "mk format 2.24" {
+test "mk format 2.25" {
     ro report = checked(tiny_text())
     assert(report.errors.len() == 0)
-    assert(report.json.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.24\",\"machine\":\"Tiny\""))
-    assert(note_says(tiny_text().replace("format: 2.24", "format: 2.11"), "читает формат 2.24"))
+    assert(report.json.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.25\",\"machine\":\"Tiny\""))
+    assert(note_says(tiny_text().replace("format: 2.25", "format: 2.11"), "читает формат 2.25"))
 }
 
 test "mk format 2.12 and 2.13 are refused" {
-    assert(note_says(tiny_text().replace("format: 2.24", "format: 2.12"), "формат 2.12: версия не известна переводчику, он читает формат 2.24"))
-    assert(note_says(tiny_text().replace("format: 2.24", "format: 2.13"), "формат 2.13: версия не известна переводчику, он читает формат 2.24"))
-    assert(note_says(tiny_text().replace("format: 2.24", "format: 2.12"), "переходного периода нет"))
+    assert(note_says(tiny_text().replace("format: 2.25", "format: 2.12"), "формат 2.12: версия не известна переводчику, он читает формат 2.25"))
+    assert(note_says(tiny_text().replace("format: 2.25", "format: 2.13"), "формат 2.13: версия не известна переводчику, он читает формат 2.25"))
+    assert(note_says(tiny_text().replace("format: 2.25", "format: 2.12"), "переходного периода нет"))
 }

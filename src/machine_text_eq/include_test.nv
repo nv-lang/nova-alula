@@ -35,7 +35,7 @@ test "in meeting defs" {
     assert(d.version == "1")
     assert(d.rows_total == 15)
     assert(d.rows_noted == 0)
-    assert(d.hash == "cf2a79073e96")
+    assert(d.hash == "9fa0da4a6bdc")
     assert(d.json.contains("\"definitions\":[{\"name\":\"есть_критические\""))
 }
 
@@ -49,7 +49,7 @@ test "in wrapper" {
     ro report = wrapped(wrapper())
     if report.errors.len() > 0 { panic("${report.errors[0].line}: ${report.errors[0].message}") }
     assert(report.errors.len() == 0)
-    assert(report.json.contains("\"includes\":[{\"name\":\"арифметика_цикла\",\"version\":\"1\",\"hash\":\"818a4aaeef4f\"},{\"name\":\"определения_совещания\",\"version\":\"1\",\"hash\":\"cf2a79073e96\"}]"))
+    assert(report.json.contains("\"includes\":[{\"name\":\"арифметика_цикла\",\"version\":\"1\",\"hash\":\"f757b8aa7b08\"},{\"name\":\"определения_совещания\",\"version\":\"1\",\"hash\":\"9fa0da4a6bdc\"}]"))
     assert(report.json.contains("{\"name\":\"потолок_исчерпан\",\"params\":"))
     assert(report.json.contains("{\"name\":\"слово_да_нет\",\"params\""))
 }
@@ -68,17 +68,17 @@ test "in wrapper loads" {
 }
 
 test "in hash errors" {
-    assert(says_any(wrapped(wrapper().replace("818a4aaeef4f", "fad927a77d33")), "хеш файла арифметика_цикла — 818a4aaeef4f, а в подключении fad927a77d33"))
+    assert(says_any(wrapped(wrapper().replace("f757b8aa7b08", "fad927a77d33")), "хеш файла арифметика_цикла — f757b8aa7b08, а в подключении fad927a77d33"))
     assert(says_any(wrapped(wrapper().replace("арифметика_цикла версия 1", "арифметика_цикла версия 2")), "версия файла арифметика_цикла — 1, а в подключении 2"))
     assert(says_any(wrapped(wrapper().replace("функции: арифметика_цикла", "функции: нет_такого_файла")), "файла определений `нет_такого_файла` нет в реестре"))
-    assert(says_any(wrapped(wrapper().replace("функции: определения_совещания версия 1 хеш cf2a79073e96", "функции: арифметика_цикла версия 1 хеш 818a4aaeef4f")), "подключён дважды"))
+    assert(says_any(wrapped(wrapper().replace("функции: определения_совещания версия 1 хеш 9fa0da4a6bdc", "функции: арифметика_цикла версия 1 хеш f757b8aa7b08")), "подключён дважды"))
 }
 
 test "in line errors" {
-    assert(says_any(wrapped(wrapper().replace("хеш 818a4aaeef4f", "хеш fb15")), "после `хеш` ожидается 12 шестнадцатеричных знаков"))
-    assert(says_any(wrapped(wrapper().replace("хеш 818a4aaeef4f", "хеш 446DDF8041C0")), "после `хеш` ожидается 12 шестнадцатеричных знаков"))
-    assert(says_any(wrapped(wrapper().replace("версия 1 хеш 818a4aaeef4f", "хеш 818a4aaeef4f")), "ожидается `версия`"))
-    assert(says_any(wrapped(wrapper().replace("версия 1 хеш 818a4aaeef4f", "версия один хеш 818a4aaeef4f")), "после `версия` ожидается целое число"))
+    assert(says_any(wrapped(wrapper().replace("хеш f757b8aa7b08", "хеш fb15")), "после `хеш` ожидается 12 шестнадцатеричных знаков"))
+    assert(says_any(wrapped(wrapper().replace("хеш f757b8aa7b08", "хеш 446DDF8041C0")), "после `хеш` ожидается 12 шестнадцатеричных знаков"))
+    assert(says_any(wrapped(wrapper().replace("версия 1 хеш f757b8aa7b08", "хеш f757b8aa7b08")), "ожидается `версия`"))
+    assert(says_any(wrapped(wrapper().replace("версия 1 хеш f757b8aa7b08", "версия один хеш f757b8aa7b08")), "после `версия` ожидается целое число"))
 }
 
 test "in name clash" {
@@ -100,7 +100,7 @@ fn defs_says(report DefsReport, needle str) -> bool {
 test "in defs file" {
     assert(defs_with("# Функции: арифметика_цикла", "# Что-то: арифметика_цикла").errors.len() >= 1)
     assert(defs_says(defs_with("functions_version: 1", "functions_version: x"), "functions_version: <целое>"))
-    assert(defs_says(defs_with("format: 2.24", "format: 2.3"), "формат файла определений должен быть 2.24"))
+    assert(defs_says(defs_with("format: 2.25", "format: 2.3"), "формат файла определений должен быть 2.25"))
     assert(defs_says(defs_with("## Константы\n—\n\n", ""), "три раздела по порядку"))
     assert(defs_says(defs_with("## Типы\n—", "## Типы\n—\n\n## Подключения\n—"), "три раздела по порядку"))
     assert(defs_says(defs_with("functions_version: 1", "functions_version: 1\nлишнее: слово"), "в шапке файла определений"))
@@ -108,9 +108,9 @@ test "in defs file" {
 
 test "in defs hash stable" {
     ro text = cycle_text()
-    assert(definitions_hash(text) == "818a4aaeef4f")
-    assert(definitions_hash("${text}\n\n") == "818a4aaeef4f")
-    assert(definitions_hash(text.replace("пред", "предел")) != "818a4aaeef4f")
+    assert(definitions_hash(text) == "f757b8aa7b08")
+    assert(definitions_hash("${text}\n\n") == "f757b8aa7b08")
+    assert(definitions_hash(text.replace("пред", "предел")) != "f757b8aa7b08")
     assert(translate_definitions(text).hash == definitions_hash(text))
 }
 

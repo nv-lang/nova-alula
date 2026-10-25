@@ -2,7 +2,7 @@
 
 - machine: agent_step
 - machine_version: alula-2.24
-- format: 2.24
+- format: 2.25
 - language: en
 
 This is an **illustration**: the "Agent step" machine in full, written in the Alula format, format version 2.24 ([state-machine-alula-spec.md](state-machine-alula-spec.md); it is the only definition of the notation). It is the English-language twin of [state-machine-agent-step.alula.md](state-machine-agent-step.alula.md): the same machine, row for row, with the English keywords of the [word table](alula-keywords.tsv) (spec, section 1a); the JSON tree `machine/2` is the same for both files up to the internal names (constants, parameters, functions, party names, bindings). The file lets a reader open and see a real machine: types, data, parties, functions, all 37 transition rows, the ends with the "end to response" table, the attached "Pause" fragment; what the fragment brings (parameters, common events COMMON 1-6, the Pause state with events PAUSE 1-4) is described in section 9 of the specification.
@@ -218,7 +218,7 @@ fn usage_event(u Usage) -> JournalEvent =>
                 cache_read: text(u.tokens.cache_read), cache_write: text(u.tokens.cache_write), cost: text(u.cost))
 ```
 
-Correspondence to the automaton code: the names of the functions are the names of the code (`sum_ints`, `sum_floats`, `add_tokens`, `add_usage`, `tokens_spent`, `cost_spent`, `token_limit_reached`, `cost_limit_reached`, `turn_limit_reached`, `interactive`, `needs_elevated_attention`, `decision_by_policy`, `retry_pause`, `turn_term`, `usage_event`, `collect_usage`); `project_policy` is the parameter `PERMISSION_POLICY`; `action_kind_word` is `text(ActionKind)` (the values are in the enum), `number_word` and `float_word` are `text(x)` (none is `none`). `record_end_usage` and `journal_machine_data` are not functions but actions in the "On entry" of the ends; `reply_validation`, `close_agent_turn`, `time_now` are primitives (section "Primitives").
+Correspondence to the automaton code: the names of the functions are the names of the code (`sum_ints`, `sum_floats`, `add_tokens`, `add_usage`, `tokens_spent`, `cost_spent`, `token_limit_reached`, `cost_limit_reached`, `turn_limit_reached`, `interactive`, `needs_elevated_attention`, `decision_by_policy`, `retry_pause`, `turn_term`, `usage_event`, `collect_usage`); `project_policy` is the parameter `PERMISSION_POLICY`; `action_kind_word` is `text(ActionKind)` (the values are in the enum), `number_word` and `float_word` are `text(x)` (none is `none`). `record_end_usage` and `journal_machine_data` are not functions but actions in the "On entry" of the ends; `reply_validation`, `close_agent_turn` are primitives (section "Primitives"); the time is `event.at`.
 
 ## Includes
 
@@ -233,7 +233,7 @@ Pause(halt_signal: halt, halt_code: "pause_halt", nested: [],
 Initial state: Start
 
 ### Start — operation
-- On entry: let moment = time_now()
+- On entry: let moment = event.at
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|
@@ -346,7 +346,7 @@ The request field `permission_request` is named as the data but with another exp
 ### Accounting — operation
 - Reads: agent_request, stop_reason, transport_usage, started
 - On entry:
-  - let now = time_now();
+  - let now = event.at;
   - let collected = collect_usage(agent_request, stop_reason, transport_usage, started, now)
 
 | № | Event | Condition | Actions | To |
@@ -370,7 +370,7 @@ The Pause state is brought by the "Pause" fragment (section "Includes"); it is n
 ### Halted — end
 - Reads: usage, agent_request, stop_reason, transport_usage, started
 - On entry:
-  - let now = time_now();
+  - let now = event.at;
   - close_agent_turn();
   - if not has(usage) then { journal(usage_event(collect_usage(agent_request, stop_reason, transport_usage, started, now))) };
   - journal("agent_step_stopped", reason: stop_reason)
@@ -379,7 +379,7 @@ The Pause state is brought by the "Pause" fragment (section "Includes"); it is n
 ### Errored — end
 - Reads: all_data
 - On entry:
-  - let now = time_now();
+  - let now = event.at;
   - close_agent_turn();
   - if not has(usage) then { journal(usage_event(collect_usage(agent_request, stop_reason, transport_usage, started, now))) };
   - journal(transition_note);
@@ -416,4 +416,4 @@ external fn reply_validation() volatile -> ReplyCheck
 external fn close_agent_turn() acting
 ```
 
-`time_now` is milliseconds of the epoch. `reply_validation` is measured by the executor before the ReplyValidation fork: the form of the reply is valid, violated, or the reply is empty; the form remarks stay with the executor and do not enter the data. `close_agent_turn` tells the transport about the cancellation of the open turn, including one held until the permission decision; it runs as the last stage of fixation and may be repeated without harm.
+`event.at` is the stamp of the event, milliseconds of the epoch. `reply_validation` is measured by the executor before the ReplyValidation fork: the form of the reply is valid, violated, or the reply is empty; the form remarks stay with the executor and do not enter the data. `close_agent_turn` tells the transport about the cancellation of the open turn, including one held until the permission decision; it runs as the last stage of fixation and may be repeated without harm.
