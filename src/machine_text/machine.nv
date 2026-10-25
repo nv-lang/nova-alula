@@ -187,7 +187,7 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
     ro sections = sections_of(entries, cx)
     // the dictionary of the names is pinned by the hash of its normative part: the format and the hash change together (AL-62)
     if format_versions().contains(header.format) {
-        ro dictionary = glossary_check_text(glossary_table_text(), header.format)
+        ro dictionary = glossary_check_text(glossary_table_text_of(header.format), header.format)
         if dictionary != "" { note(cx, struct_error(1, 1, dictionary)) }
     }
     // the rows of `## Имена` are read first: every declaration looks for its row

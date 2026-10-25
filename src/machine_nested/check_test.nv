@@ -119,20 +119,21 @@ test "ck form returns" {
 }
 
 test "ck parse class" {
-    ro json = m_with("\"primitive\":\"parse_agent_reply\",\"role\":\"witness\"", "\"primitive\":\"close_for_writing\",\"role\":\"witness\"")
+    // the parse of the witness is its own function (AL-131): `parse_witness_reply`, no role
+    ro json = m_with("\"primitive\":\"parse_witness_reply\"", "\"primitive\":\"close_for_writing\"")
     assert(issue_says(json, "close_for_writing"))
-    assert(issue_says(m_with("\"primitive\":\"parse_agent_reply\",\"role\":\"witness\"", "\"primitive\":\"no_such\",\"role\":\"witness\""), "no_such"))
+    assert(issue_says(m_with("\"primitive\":\"parse_witness_reply\"", "\"primitive\":\"no_such\""), "no_such"))
 }
 
-test "ck parse role" {
-    // the second parameter of the primitive is the role: a primitive of one parameter takes no role
-    ro json = m_with("\"primitive\":\"parse_agent_reply\",\"role\":\"witness\"", "\"primitive\":\"call_trace\",\"role\":\"witness\"")
-    assert(issue_says(json, "role"))
+test "ck parse parameters" {
+    // the parse takes the answer only (no role since 2.24): a function without a parameter is not a parse
+    ro json = m_with("\"primitive\":\"parse_witness_reply\"", "\"primitive\":\"call_trace\"")
+    assert(issue_says(json, "parameters"))
 }
 
 test "ck parse first" {
     // the first parameter of `разбор` is the result type of the party
-    ro json = m_with("\"primitive\":\"parse_agent_reply\",\"role\":\"witness\"", "\"primitive\":\"role_context\",\"role\":\"witness\"")
+    ro json = m_with("\"primitive\":\"parse_witness_reply\"", "\"primitive\":\"role_context\"")
     assert(issue_count(json) >= 1)
 }
 

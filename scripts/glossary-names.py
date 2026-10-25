@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Словарь имён Алулы для переводчика: нормативная часть словаря методики (версия 11) в файл пакета.
+"""Словарь имён Алулы для переводчика: нормативная часть словаря методики (версия 13) в файл пакета.
 
 Формат 2.16 (AL-61, AL-62) закрепляет словарь ХЕШЕМ нормативной части: пары «русское -> английское» таблиц разделов
 2.1-2.9, 2.11, 2.12, 2.16 (первые два столбца, в обратных кавычках) и записей раздела 2.10 (`русское` -> `английское`)
@@ -24,9 +24,9 @@ sys.dont_write_bytecode = True
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TARGET = os.path.join(HERE, '..', 'src', 'machine_text', 'glossary_names.tsv')
-PINNED = '60383c370415'  # формат 2.17 закрепляет хеш словаря 2.16 (спецификация, 1а, AL-62)
+PINNED = '35c571ccda17'  # формат 2.24 закрепляет хеш словаря версии 13 (спецификация, 1а, AL-62, AL-131); формат 2.23 закреплял 60383c370415 (версия 11, файл glossary_names_v11.tsv)
 NORMATIVE_TABLES = ['2.%d' % i for i in (1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 16)]  # разделы-таблицы; 2.10 - записи
-HEADER = ('# Normative part of the dictionary of the names of the methodology (glossary version 11, sections 2.1-2.9, 2.11, 2.12, 2.16 and the records of 2.10), '
+HEADER = ('# Normative part of the dictionary of the names of the methodology (glossary version 13, sections 2.1-2.9, 2.11, 2.12, 2.16 and the records of 2.10), '
           'in the order of the glossary: "Russian<TAB>English". The hash of the pairs is pinned by the format (AL-62); change it only with the format. '
           'Made by scripts/glossary-names.py.')
 

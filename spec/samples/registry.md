@@ -1,6 +1,6 @@
 # Реестр образцов: примитивы пилотов (шаг агента и совещание)
 
-Данные для проверки образцов этой папки: 20 примитивов пилотов (шаг агента 3, совещание 17), которые раздел 7 спецификации называет примером реестра. Это не реестр методики: примитивы запуска сессии и раннера, а также наборы типов запуска и раннера остаются у методики. Примитивы `time_now` и `new_id` — язык (раздел 7а).
+Данные для проверки образцов этой папки: 22 примитива пилотов (шаг агента 3, совещание 19), которые раздел 7 спецификации называет примером реестра. Это не реестр методики: примитивы запуска сессии и раннера, а также наборы типов запуска и раннера остаются у методики. Примитивы `time_now` и `new_id` — язык (раздел 7а).
 
 Форма — раздел 7 спецификации Алулы: имена — JSON-имена реестра хозяина; типы — как пишет дерево `machine/2` (`int>=0`, `?text`, `[]Finding`, `"a" \| "b"`); `\|` внутри ячейки — знак `|`; списки «читает» и «пишет» разделены `;`; `—` — пусто. Файл читает `parse_registry_table` пакета `alula` (`alula.machine_table`), программа `alula` берёт его рядом с машинами (`registry.md`) или флагом `--registry`.
 
@@ -12,7 +12,9 @@
 | role_context | context: RoleContext | text | volatile | project objects | — |
 | call_trace | — | text | volatile | envelope of the call | — |
 | call_step | — | int>=0 | volatile | envelope of the call | — |
-| parse_agent_reply | reply: AgentReply; role: "witness" \| "author" \| "lens" | RoleResult | volatile | object: artifact file of the reply | — |
+| parse_witness_reply | reply: AgentReply | []WitnessAnswer | volatile | object: artifact file of the reply; object: proposal | — |
+| parse_author_reply | reply: AgentReply | EditResult | volatile | object: artifact file of the reply | — |
+| parse_lens_reply | reply: AgentReply | LensResult | volatile | object: artifact file of the reply | — |
 | proposal_read | — | bool | volatile | object: proposal | — |
 | proposal_with_fingerprint | — | text | volatile | object: proposal | — |
 | proposal_changed_since_attempt | — | bool | volatile | object: proposal | — |
@@ -28,14 +30,6 @@
 | reply_validation | — | ReplyCheck | volatile | reply_text; reply_artifact; agent_request; objects: session files | service record: form remarks (read by the turn fix) |
 | close_agent_turn | — | — | acting | — | — |
 | check_cache | dialog_kind: "main" \| "delivery" | — | acting | — | service record: request start mark |
-
-## Roles
-
-| primitive | role | result | reads |
-|---|---|---|---|
-| parse_agent_reply | witness | []WitnessAnswer | object: proposal |
-| parse_agent_reply | author | EditResult | — |
-| parse_agent_reply | lens | LensResult | — |
 
 ## Types
 
@@ -56,5 +50,4 @@
 | ReplyCheck | variant | Valid; Violated; Empty |
 | WitnessAnswer | variant | Answered(claim: Claim); NotMeasured(claim: text) |
 | EditResult | variant | Done(proposal: text); Question(proposal: text, question: text) |
-| RoleResult | variant | WitnessOutcome(answers: []WitnessAnswer); LensOutcome(result: LensResult); EditOutcome(result: EditResult) |
 | RoleContext | variant | WitnessContext(author_question: ?text, findings: ?[]Finding, proposal: text); LensContext(proposal: text, witness_answers: ?[]WitnessAnswer); FixContext(proposal: text, gate3_findings: []Finding, author_guidance: ?text); QuestionContext(author_question: text, proposal: text, gate3_findings: []Finding, human_answer: text) |

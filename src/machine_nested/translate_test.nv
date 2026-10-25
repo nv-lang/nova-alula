@@ -38,16 +38,20 @@ test "nm no parse" {
 }
 
 test "nm parse" {
-    ro text = with_prims(boss_with("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput); разбор: parse_agent_reply -> CallOutput | — |"), ["parse_agent_reply"])
+    ro text = with_prims(boss_with("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput); разбор: parse_witness_reply -> CallOutput | — |"), ["parse_witness_reply"])
     ro report = checked(text)
-    assert(report.json.contains("\"parse\":{\"primitive\":\"parse_agent_reply\""))
+    assert(report.json.contains("\"parse\":{\"primitive\":\"parse_witness_reply\""))
 }
 
-test "nm parse role" {
-    ro text = with_prims(boss_with("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput); разбор: parse_agent_reply(\"witness\") -> CallOutput | — |"), ["parse_agent_reply"])
-    ro report = checked(text)
-    assert(report.json.contains("\"role\":\"witness\""))
-    assert(report.json.contains("\"type\":"))
+test "nm parse by role function" {
+    // one function per role (AL-131): the function is named, there is no role literal and no `role` in the tree
+    for name in ["parse_witness_reply", "parse_author_reply", "parse_lens_reply"] {
+        ro text = with_prims(boss_with("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput); разбор: ${name} -> CallOutput | — |"), [name])
+        ro report = checked(text)
+        assert(report.json.contains("\"parse\":{\"primitive\":\"${name}\""))
+        assert(!report.json.contains("\"role\""))
+        assert(report.json.contains("\"type\":"))
+    }
 }
 
 test "nm no result" {
@@ -68,7 +72,7 @@ test "nm unknown type" {
 }
 
 test "nm parse bad" {
-    ro text = boss_with("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput); разбор: parse_agent_reply(\"witness\" CallOutput | — |")
+    ro text = boss_with("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput); разбор: parse_witness_reply(\"witness\" CallOutput | — |")
     assert(count_kind(text, "syntax") >= 1)
 }
 
@@ -465,11 +469,11 @@ test "nm meeting parties" {
         assert(def.parties[i].nested == "agent_step")
         assert(def.parties[i].profile.len() == 1)
         assert(def.parties[i].parse.len() == 1)
-        assert(def.parties[i].parse[0].primitive == "parse_agent_reply")
+        assert(def.parties[i].parse[0].role == "")
     }
-    assert(def.parties[w].parse[0].role == "witness")
-    assert(def.parties[a].parse[0].role == "author")
-    assert(def.parties[l].parse[0].role == "lens")
+    assert(def.parties[w].parse[0].primitive == "parse_witness_reply")
+    assert(def.parties[a].parse[0].primitive == "parse_author_reply")
+    assert(def.parties[l].parse[0].primitive == "parse_lens_reply")
     assert(def.parties[l].id == "")
     assert(def.parties[l].counter == "lenses[*].attempt")
     assert(def.request_limit.len() == 1)

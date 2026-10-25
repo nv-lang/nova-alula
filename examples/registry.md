@@ -9,8 +9,3 @@
 | name | parameters | result | class | reads | writes |
 |---|---|---|---|---|---|
 | close_agent_turn | — | — | acting | — | — |
-
-## Roles
-
-| primitive | role | result | reads |
-|---|---|---|---|

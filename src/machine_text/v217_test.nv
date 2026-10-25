@@ -29,27 +29,39 @@ fn fixture_hash() -> str => glossary_hash_text(glossary_markdown_pairs(glossary_
 
 // ---- the normative part ---------------------------------------------------------------------------------------------------------------------------
 
-test "v217 the normative part of the dictionary has 1268 pairs" {
-    ro lines = glossary_table_text().split("\n")
+fn table_size(tsv str) -> int {
     mut n = 0
-    for l in lines {
+    for l in tsv.split("\n") {
         if l != "" && !l.starts_with("#") { n += 1 }
     }
-    assert(n == 1268)
+    n
+}
+
+// The format 2.23 pins the dictionary of the version 11 (`glossary_names_v11.tsv`), the format 2.24 the dictionary of the version 13 (`glossary_names.tsv`, AL-131); until the format is raised (task 181)
+// the translator reads 2.23.
+test "v217 the normative part of the dictionary of the format 2.23 has 1268 pairs" {
+    assert(table_size(glossary_table_text_of("2.23")) == 1268)
+}
+
+test "v217 the normative part of the dictionary of the format 2.24 has 1270 pairs" {
+    assert(table_size(glossary_table_text_of("2.24")) == 1270)
+    assert(table_size(glossary_table_text()) == 1270)
 }
 
 test "v217 the hash of the dictionary is the one of the format" {
-    assert(glossary_hash_text(glossary_table_text()) == "60383c370415")
+    assert(glossary_hash_text(glossary_table_text_of("2.23")) == "60383c370415")
+    assert(glossary_hash_text(glossary_table_text_of("2.24")) == "35c571ccda17")
 }
 
-test "v217 the format 2.23 pins the hash 60383c370415" {
+test "v217 the format 2.23 pins the hash 60383c370415 and the format 2.24 pins 35c571ccda17" {
     assert(glossary_pinned_hash("2.23") == "60383c370415")
+    assert(glossary_pinned_hash("2.24") == "35c571ccda17")
     assert(glossary_pinned_hash("2.14") == "")
 }
 
-test "v217 every format that is read has a pinned hash that is the hash of the dictionary" {
+test "v217 every format that is read has a pinned hash that is the hash of its dictionary" {
     for v in format_versions() {
-        assert(glossary_pinned_hash(v) == glossary_hash_text(glossary_table_text()))
+        assert(glossary_pinned_hash(v) == glossary_hash_text(glossary_table_text_of(v)))
     }
 }
 
@@ -57,24 +69,52 @@ test "v217 the dictionary is checked by the translator" {
     assert(glossary_check() == "")
 }
 
+test "v217 the dictionary of 2.24 has three parse functions by role instead of one (AL-131)" {
+    ro now = glossary_pairs_of(glossary_table_text_of("2.24"))
+    ro before = glossary_pairs_of(glossary_table_text_of("2.23"))
+    mut agent = false
+    for p in before { if p.ru == "разобрать_ответ_агента" && p.en == "parse_agent_reply" { agent = true } }
+    assert(agent)
+    mut witness = false
+    mut author = false
+    mut lens = false
+    for p in now {
+        assert(p.ru != "разобрать_ответ_агента")
+        if p.ru == "разобрать_ответ_свидетеля" && p.en == "parse_witness_reply" { witness = true }
+        if p.ru == "разобрать_ответ_автора" && p.en == "parse_author_reply" { author = true }
+        if p.ru == "разобрать_ответ_линзы" && p.en == "parse_lens_reply" { lens = true }
+    }
+    assert(witness && author && lens)
+}
+
+test "v217 the dictionary of one format is not the one of the other" {
+    assert(glossary_check_text(glossary_table_text_of("2.24"), "2.23").contains("словарь изменён без смены формата"))
+    assert(glossary_check_text(glossary_table_text_of("2.23"), "2.24").contains("словарь изменён без смены формата"))
+}
+
 test "v217 a changed pair gives another hash" {
-    ro text = glossary_table_text().replace("число_повторов\tretry_count", "число_повторов\tretries")
-    assert(text != glossary_table_text())
+    ro text = glossary_table_text_of("2.23").replace("число_повторов\tretry_count", "число_повторов\tretries")
+    assert(text != glossary_table_text_of("2.23"))
     assert(glossary_hash_text(text) != "60383c370415")
 }
 
 test "v217 a changed pair is found by the check" {
-    ro text = glossary_table_text().replace("число_повторов\tretry_count", "число_повторов\tretries")
+    ro text = glossary_table_text_of("2.23").replace("число_повторов\tretry_count", "число_повторов\tretries")
     assert(glossary_check_text(text, "2.23").contains("словарь изменён без смены формата"))
+    ro now = glossary_table_text_of("2.24").replace("число_повторов\tretry_count", "число_повторов\tretries")
+    assert(glossary_check_text(now, "2.24").contains("словарь изменён без смены формата"))
 }
 
 test "v217 an added pair gives another hash" {
-    assert(glossary_hash_text("${glossary_table_text()}новое_имя\tnew_name\n") != "60383c370415")
+    assert(glossary_hash_text("${glossary_table_text_of("2.23")}новое_имя\tnew_name\n") != "60383c370415")
+    assert(glossary_hash_text("${glossary_table_text_of("2.24")}новое_имя\tnew_name\n") != "35c571ccda17")
 }
 
 test "v217 a removed pair gives another hash" {
-    ro text = glossary_table_text().replace("число_повторов\tretry_count\n", "")
+    ro text = glossary_table_text_of("2.23").replace("число_повторов\tretry_count\n", "")
     assert(glossary_hash_text(text) != "60383c370415")
+    ro now = glossary_table_text_of("2.24").replace("число_повторов\tretry_count\n", "")
+    assert(glossary_hash_text(now) != "35c571ccda17")
 }
 
 test "v217 the order of the pairs counts" {
@@ -94,8 +134,9 @@ test "v217 the hash is the SHA-256 of the lines joined by LF" {
 }
 
 test "v217 the check of the hash is for the version of the format" {
-    assert(glossary_check_text(glossary_table_text(), "2.23") == "")
-    assert(glossary_check_text(glossary_table_text(), "2.99").contains("2.99"))
+    assert(glossary_check_text(glossary_table_text_of("2.23"), "2.23") == "")
+    assert(glossary_check_text(glossary_table_text_of("2.24"), "2.24") == "")
+    assert(glossary_check_text(glossary_table_text_of("2.24"), "2.99").contains("2.99"))
 }
 
 // ---- the normative part of the glossary of the methodology -------------------------------------------------------------------------------
