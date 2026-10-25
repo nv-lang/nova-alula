@@ -235,7 +235,7 @@ test "nm edits" {
     assert(report.json.contains("\"edit_check\":\"proposal_changed_since_attempt\""))
 }
 
-// AL-115: "On accept" has volatile calls (the result is a value of the answer), no acting ones
+// AL-116: "On accept" has volatile calls (the result is a value of the answer), no acting ones
 test "nm accept has no acting call" {
     ro accept = tiny_agent().replace("- Запрос:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| prompt | text_reply | сторона |\n", "- Запрос:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| prompt | text_reply | сторона |\n\n- При приёме:\n\n| событие | действия |\n|---|---|\n| ответ(ответ) | text_reply = вызвать(PRIM) |\n")
     ro acting = with_prims(accept.replace("вызвать(PRIM)", "вызвать(close_for_writing, \"x\")"), ["close_for_writing"])

@@ -137,7 +137,7 @@ test "cs volatile" {
     assert(class_allowed(Volatile, OperationEntryPos))
     assert(class_allowed(Volatile, EndEntryPos))
     assert(class_allowed(Volatile, AcceptPos))
-    // AL-115: the actions of the chosen row run once, a volatile call may stand in them
+    // AL-117: the actions of the chosen row run once, a volatile call may stand in them
     assert(class_allowed(Volatile, ActionPos))
 }
 
@@ -204,14 +204,14 @@ test "ps language" {
     assert(reg.primitives.len() == 2)
     assert(rpos_ok(reg, call_primitive("time_now", []Expr.new()), OperationEntryPos))
     assert(rpos_ok(reg, call_primitive("new_id", []Expr.new()), OperationEntryPos))
-    // new_id in the actions of a row is allowed by the class (volatile, AL-115); its own rule (a binding of the entry of an operation) is a check of the table
+    // new_id in the actions of a row is allowed by the class (volatile, AL-116, AL-117); its own rule (a binding of the entry of an operation) is a check of the table
     assert(rpos_ok(reg, call_primitive("new_id", []Expr.new()), ActionPos))
     assert(!rpos_ok(reg, call_primitive("new_id", []Expr.new()), ConditionPos))
     assert(!rpos_ok(reg, call_primitive("party_profile", []Expr.new()), OperationEntryPos))
 }
 
 test "ps acting without a result" {
-    // AL-115: an acting primitive without a result is not a value: its call is an action, not an expression and not the value of a binding
+    // AL-116: an acting primitive without a result is not a value: its call is an action, not an expression and not the value of a binding
     ro reg = rfixture()
     assert(rpos_ok(reg, call_primitive("commit_turn", []Expr.new()), ActionPos))
     match check_call_position(reg, "finish_turn", ActionPos) {

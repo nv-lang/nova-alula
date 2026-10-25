@@ -281,7 +281,7 @@ fn says_en(text str, needle str) -> bool {
     false
 }
 
-// AL-115: the classes of a primitive are `pure`, `изменчивая` (`volatile`) and `действующая` (`acting`); the words of the format 2.22 are refused with the new word, there is no transition period
+// AL-116: the classes of a primitive are `pure`, `изменчивая` (`volatile`) and `действующая` (`acting`); the words of the format 2.22 are refused with the new word, there is no transition period
 test "dc the classes of a primitive are read in the words of the file" {
     assert(!says(prim_ru("pure"), "класс примитива"))
     assert(!says(prim_ru("изменчивая"), "класс примитива"))
@@ -294,18 +294,18 @@ test "dc the classes of a primitive are read in the words of the file" {
 }
 
 test "dc the former classes of a primitive are refused with the new word" {
-    assert(kind_says(prim_ru("reading"), "syntax", "`reading` в формате 2.22 не бывает (AL-115): пишется `изменчивая`; переходного периода нет"))
-    assert(kind_says(prim_ru("writing"), "syntax", "`writing` в формате 2.22 не бывает (AL-115): пишется `действующая`; переходного периода нет"))
-    assert(kind_says(prim_ru("irreversible"), "syntax", "`irreversible` в формате 2.22 не бывает (AL-115): пишется `действующая`; переходного периода нет"))
+    assert(kind_says(prim_ru("reading"), "syntax", "`reading` в формате 2.22 не бывает (AL-116): пишется `изменчивая`; переходного периода нет"))
+    assert(kind_says(prim_ru("writing"), "syntax", "`writing` в формате 2.22 не бывает (AL-116): пишется `действующая`; переходного периода нет"))
+    assert(kind_says(prim_ru("irreversible"), "syntax", "`irreversible` в формате 2.22 не бывает (AL-116): пишется `действующая`; переходного периода нет"))
     // the word of the other language is no class of a Russian file: the list of the classes is told
     assert(says(prim_ru("volatile"), "класс примитива: pure, изменчивая, действующая"))
     assert(says(prim_ru("acting"), "класс примитива: pure, изменчивая, действующая"))
 }
 
 test "dc the former classes of a primitive of an English file are refused with the new word" {
-    assert(says_en(prim_en("reading"), "`reading` в формате 2.22 не бывает (AL-115): пишется `volatile`; переходного периода нет"))
-    assert(says_en(prim_en("writing"), "`writing` в формате 2.22 не бывает (AL-115): пишется `acting`; переходного периода нет"))
-    assert(says_en(prim_en("irreversible"), "`irreversible` в формате 2.22 не бывает (AL-115): пишется `acting`; переходного периода нет"))
+    assert(says_en(prim_en("reading"), "`reading` в формате 2.22 не бывает (AL-116): пишется `volatile`; переходного периода нет"))
+    assert(says_en(prim_en("writing"), "`writing` в формате 2.22 не бывает (AL-116): пишется `acting`; переходного периода нет"))
+    assert(says_en(prim_en("irreversible"), "`irreversible` в формате 2.22 не бывает (AL-116): пишется `acting`; переходного периода нет"))
     // the word of the other language is no class of an English file
     assert(says_en(prim_en("изменчивая"), "класс примитива: pure, volatile, acting"))
 }

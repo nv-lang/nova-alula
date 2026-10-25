@@ -27,7 +27,7 @@ test "red unreachable" {
 test "red primitive class" {
     ro in_cond = tiny().replace(jb(">=", jn("n"), jl("2")), jprim("close_agent_turn", ""))
     assert(says(in_cond, "may not stand in condition"))
-    // AL-115: a volatile call may stand in the actions of a row (they run once), not in a condition
+    // AL-117: a volatile call may stand in the actions of a row (they run once), not in a condition
     ro read_in_action = tiny_rows(wait_rows_with(jprim("time_now", "")))
     assert(ok_text(read_in_action.replace("\"parties\":", "\"primitives\":[\"time_now\"],\"parties\":")))
     ro read_in_cond = tiny().replace(jb(">=", jn("n"), jl("2")), jb(">=", jprim("time_now", ""), jl("2")))
@@ -46,7 +46,7 @@ test "red primitive class" {
     assert(says(bad_call.replace("\"parties\":", "\"primitives\":[\"time_now\"],\"parties\":"), "the call of the volatile primitive time_now as an action has no effect"))
 }
 
-// The class of a primitive and the place of its call (AL-115): an acting call is not in a condition, not in the request, not in the entry of a fork; a call of an acting primitive without a result is not a value.
+// The class of a primitive and the place of its call (AL-116): an acting call is not in a condition, not in the request, not in the entry of a fork; a call of an acting primitive without a result is not a value.
 test "red acting in the places of the reading" {
     ro act = jprim("close_agent_turn", "")
     ro in_request = tiny().replace("\"inputs\":[{\"field\":\"n\",\"value\":${jn("n")}", "\"inputs\":[{\"field\":\"n\",\"value\":${act}")

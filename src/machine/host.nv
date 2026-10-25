@@ -101,7 +101,7 @@ fn hs_class(word str) -> Option[PrimitiveClass] {
     None
 }
 
-// The word of a class of the format 2.22 and the word that replaced it (AL-115): `reading` is `volatile`, `writing` and `irreversible` are `acting`. There is no transition period (the owner, 2026-10-20).
+// The word of a class of the format 2.22 and the word that replaced it (AL-116): `reading` is `volatile`, `writing` and `irreversible` are `acting`. There is no transition period (the owner, 2026-10-20).
 fn hs_class_former(word str) -> Option[str] {
     if word == "reading" { return Some("volatile") }
     if word == "writing" || word == "irreversible" { return Some("acting") }
@@ -241,13 +241,13 @@ fn hs_primitive(row HostPrimRow, known TypeDefs) -> Result[Primitive, str] {
         Some(k) => k
         None => {
             match hs_class_former(c[3]) {
-                Some(now) => return Err(hs_err(row.line, "`${c[3]}` в формате 2.22 не бывает (AL-115): пишется `${now}`; переходного периода нет"))
+                Some(now) => return Err(hs_err(row.line, "`${c[3]}` в формате 2.22 не бывает (AL-116): пишется `${now}`; переходного периода нет"))
                 None => return Err(hs_err(row.line, "the class of ${c[0]} is pure, volatile or acting, got `${c[3]}`"))
             }
         }
     }
     if class == Pure && (!hs_is_none(c[4]) || !hs_is_none(c[5])) {
-        return Err(hs_err(row.line, "the pure primitive ${c[0]} reads its arguments only: its columns reads and writes are `—`, got `${c[4]}` and `${c[5]}` (AL-115)"))
+        return Err(hs_err(row.line, "the pure primitive ${c[0]} reads its arguments only: its columns reads and writes are `—`, got `${c[4]}` and `${c[5]}` (AL-116)"))
     }
     Ok(Primitive { name: c[0], params, result, class, reads: hs_list(c[4]), writes: hs_list(c[5]) })
 }

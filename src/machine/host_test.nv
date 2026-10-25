@@ -221,19 +221,19 @@ test "host an unknown class is refused with the line" {
     assert(said.contains("pure, volatile or acting"))
 }
 
-// AL-115: the words of the classes of the format 2.22 are refused with the new word (no transition period)
+// AL-116: the words of the classes of the format 2.22 are refused with the new word (no transition period)
 test "host the former classes are refused with the new word" {
     ro head = "| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n"
     ro reading = hst_errors("${head}| r | — | int | reading | — | — |\n", "")
-    assert(reading.contains("registry.md:3: `reading` в формате 2.22 не бывает (AL-115): пишется `volatile`; переходного периода нет"))
+    assert(reading.contains("registry.md:3: `reading` в формате 2.22 не бывает (AL-116): пишется `volatile`; переходного периода нет"))
     ro writing = hst_errors("${head}| w | — | — | writing | — | — |\n", "")
-    assert(writing.contains("`writing` в формате 2.22 не бывает (AL-115): пишется `acting`"))
+    assert(writing.contains("`writing` в формате 2.22 не бывает (AL-116): пишется `acting`"))
     ro irreversible = hst_errors("${head}| i | — | — | irreversible | — | — |\n", "")
-    assert(irreversible.contains("`irreversible` в формате 2.22 не бывает (AL-115): пишется `acting`"))
+    assert(irreversible.contains("`irreversible` в формате 2.22 не бывает (AL-116): пишется `acting`"))
     assert(hst_errors("${head}| v | — | int | volatile | — | — |\n| a | — | — | acting | — | — |\n| p | — | int | pure | — | — |\n", "") == "ok")
 }
 
-// AL-115: a pure primitive reads its arguments only: its columns `reads` and `writes` are `—`
+// AL-116: a pure primitive reads its arguments only: its columns `reads` and `writes` are `—`
 test "host a pure primitive with reads or writes is refused" {
     ro head = "| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n"
     ro reads = hst_errors("${head}| p | x: int | int | pure | objects: the stock | — |\n", "")

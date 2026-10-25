@@ -174,7 +174,7 @@ the check "an `if` does not nest in the branch of another `if`", the sets of val
 
 ## The registry of the primitives of the host
 
-`Primitive { name, params: []ParamSpec, result: TypeSpec, class, reads, writes }`; `class` is `Pure`, `Volatile` or `Acting` (the owner, 2026-10-25, through the methodology, AL-115: before there were four, `Reading`, `Writing` and `Irreversible`; a function of the author has no class, it is always pure). `register` refuses an empty name, a second primitive of a name, a repeated
+`Primitive { name, params: []ParamSpec, result: TypeSpec, class, reads, writes }`; `class` is `Pure`, `Volatile` or `Acting` (the owner, 2026-10-25, through the methodology, AL-116: before there were four, `Reading`, `Writing` and `Irreversible`; a function of the author has no class, it is always pure). `register` refuses an empty name, a second primitive of a name, a repeated
 parameter name, and a pure primitive with a non-empty `reads` or `writes` (a pure primitive reads its arguments only; the loader of `registry.md` refuses it with the line). `check_call_position(registry, name, position)` and `check_expr_positions(registry, tree, position)` (it walks a tree and gives the path of the first call that does not fit) say whether the class is
 allowed in the place (section 7 of the format):
 
@@ -219,7 +219,7 @@ The registry of the pilots (23 primitives of the meeting and of the agent step: 
 | `check_cache` | `dialog_kind: "main" \| "delivery"` | nothing | acting |
 | `stop_agent_group` | - | nothing | acting |
 
-The first 17 are the 17 functions of the meeting that its markup (`functions-markup.md`) makes primitives of the host: 8 volatile, 9 acting (6 writing and 3 irreversible before AL-115); the next four are the agent step (`check_cache` is the
+The first 17 are the 17 functions of the meeting that its markup (`functions-markup.md`) makes primitives of the host: 8 volatile, 9 acting (6 writing and 3 irreversible before AL-116); the next four are the agent step (`check_cache` is the
 check of the cache that the specification of the step puts after every accepted result of a turn; the pilot's code does not have it); the last is the one primitive of the cycle check (task 122): `stop_agent_group`, the group
 of processes of the agent is stopped as a whole when the check ends in HALTED or ERRORED. No pure primitive: `fingerprint` stays inside `proposal_with_fingerprint`.
 
