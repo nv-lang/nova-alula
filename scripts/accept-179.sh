@@ -54,6 +54,18 @@ grep -q "AL-130" spec/alula-changelog.md || red "в spec/alula-changelog.md не
 # 2. Negative compilations: three groups.
 echo "== 2. отрицательные компиляции"
 neg_dir=scripts/negative-179
+# A negative file is a module of the package, so it is checked inside a copy of the package that holds only what it needs (the module `alula.machine`, the module of
+# the host) and the file itself as `src/neg179/neg.nv` (the line `module` is rewritten): a file outside `src/` has no module path, and a file inside would break `nova check src`.
+sandbox="$tmp/sandbox"
+mkdir -p "$sandbox/src/neg179" "$sandbox/src/host"
+cp nova.toml "$sandbox/nova.toml"
+if [ -d src/machine ] && [ -d src/host ]; then
+  cp -r src/machine "$sandbox/src/machine"
+  rm -f "$sandbox"/src/machine/*_test.nv
+  for f in src/host/*.nv; do
+    case "$f" in *_test.nv) ;; *) cp "$f" "$sandbox/src/host/" ;; esac
+  done
+fi
 neg_groups=0
 neg_ok=0
 neg_check() { # neg_check <group> <file>...
@@ -67,7 +79,8 @@ neg_check() { # neg_check <group> <file>...
       continue
     fi
     out="$tmp/neg.out"
-    "$NOVA" check "$neg_dir/$f" > "$out" 2>&1
+    sed 's/^module .*/module alula.neg179/' "$neg_dir/$f" > "$sandbox/src/neg179/neg.nv"
+    (cd "$sandbox" && "$NOVA" check src/neg179/neg.nv) > "$out" 2>&1
     rc=$?
     strip_ansi < "$out" > "$out.txt"
     if [ "$rc" -eq 0 ]; then

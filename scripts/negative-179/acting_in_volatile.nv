@@ -1,0 +1,13 @@
+// expect: E_NO_MATCHING_OVERLOAD
+// Negative compilation of task 179 (AL-130): an acting function (takes `mut ActEnv`) does not fit `bind_volatile`.
+module alula.negative_179
+
+import alula.machine.{Value, Null}
+import alula.host.{Host, new_host, ActEnv}
+
+fn acting(mut env ActEnv, args []Value) -> Value => Null
+
+fn main() {
+    mut h = new_host()
+    h.bind_volatile("x", acting)
+}
