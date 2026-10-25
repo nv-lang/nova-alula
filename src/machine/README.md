@@ -174,17 +174,19 @@ the check "an `if` does not nest in the branch of another `if`", the sets of val
 
 ## The registry of the primitives of the host
 
-`Primitive { name, params: []ParamSpec, result: TypeSpec, class, reads, writes }`; `class` is `Pure`, `Reading`, `Writing` or `Irreversible`. `register` refuses an empty name, a second primitive of a name, a repeated
-parameter name. `check_call_position(registry, name, position)` and `check_expr_positions(registry, tree, position)` (it walks a tree and gives the path of the first call that does not fit) say whether the class is
+`Primitive { name, params: []ParamSpec, result: TypeSpec, class, reads, writes }`; `class` is `Pure`, `Volatile` or `Acting` (the owner, 2026-10-25, through the methodology, AL-115: before there were four, `Reading`, `Writing` and `Irreversible`; a function of the author has no class, it is always pure). `register` refuses an empty name, a second primitive of a name, a repeated
+parameter name, and a pure primitive with a non-empty `reads` or `writes` (a pure primitive reads its arguments only; the loader of `registry.md` refuses it with the line). `check_call_position(registry, name, position)` and `check_expr_positions(registry, tree, position)` (it walks a tree and gives the path of the first call that does not fit) say whether the class is
 allowed in the place (section 7 of the format):
 
 | Class | Where a call may stand |
 |---|---|
 | `Pure` | everywhere |
-| `Reading` | `InputPos` (the table "Input" of an appeal), `ProfilePos`, `ForkEntryPos`, `OperationEntryPos`, `EndEntryPos`, `AcceptPos`; not in a condition (`ConditionPos`), not in an action (`ActionPos`) |
-| `Writing`, `Irreversible` | `OperationEntryPos`, `EndEntryPos`, `ActionPos`; not in a condition, not in "Input", not in the profile, not in "On entry" of a fork, not in "On accept" |
+| `Volatile` (the result depends on the world: the clock, a file, a store) | `InputPos` (the table "Input" of an appeal), `ProfilePos`, `ForkEntryPos`, `OperationEntryPos`, `EndEntryPos`, `AcceptPos`, `ActionPos` (the actions of the chosen row run once); not in a condition (`ConditionPos`) |
+| `Acting` (changes the world) | `OperationEntryPos`, `EndEntryPos`, `ActionPos`; not in a condition, not in "Input", not in the profile, not in "On entry" of a fork, not in "On accept" (the expressions of the actions of a block have the position of the block, so `x = acting(...)` in "On accept" is refused too) |
 
-An honest retreat from the format (section 5: an irreversible call is the last stage of a commit): an irreversible function is called at once, in its place in the actions, BEFORE the step is written (the `PrimitiveHost` is called from the action, `machine_run/step.nv`). Repeatability without harm is a requirement to the host. A step that fails after such a call is rolled back, and the call has been made. A queue run after the step is written is built when a real host with files and processes appears, or at the first case of a double call.
+An acting primitive without a result is not a value: its call is an action, and `check_expr_positions` refuses it in an expression and on the right of a binding (the message names the primitive and the class). A volatile call as an action with no binding has no effect, `check_call_actions` refuses it.
+
+An honest retreat from the format (section 5: an acting call is the last stage of a commit): an acting function is called at once, in its place in the actions, BEFORE the step is written (the `PrimitiveHost` is called from the action, `machine_run/step.nv`). Repeatability without harm is a requirement to the host. A step that fails after such a call is rolled back, and the call has been made. A queue run after the step is written is built when a real host with files and processes appears, or at the first case of a double call.
 
 `check_call_args` and `check_call_result` check the count and the types of the arguments and the type of the result of a call against the signature. `reads` and `writes` name what a primitive reads or writes without an
 argument (rule 11 of the specification): they join the "Input" of the state of the call.
@@ -193,31 +195,31 @@ The registry of the pilots (23 primitives of the meeting and of the agent step: 
 
 | Primitive | Parameters | Result | Class |
 |---|---|---|---|
-| `party_profile` | `party: text` | `AgentProfile` | reading |
-| `role_context` | `context: RoleContext` | `text` | reading |
-| `call_trace` | - | `text` | reading |
-| `call_step` | - | `int>=0` | reading |
-| `parse_agent_reply` | `reply: AgentReply, role: "witness" \| "author" \| "lens"` | `RoleResult` | reading |
-| `proposal_read` | - | `bool` | reading |
-| `proposal_with_fingerprint` | - | `text` | reading |
-| `proposal_changed_since_attempt` | - | `bool` | reading |
-| `count_in_model_tally` | `finding: Finding` | nothing | writing |
-| `journal_findings` | `findings: []Finding` | nothing | writing |
-| `journal_machine_data` | - | nothing | writing |
-| `journal_decision` | `decision: text, source: text, passes: int>=0, open: []Finding` | nothing | writing |
-| `remove_unsound` | `number: int>=0` | nothing | writing |
-| `build_summary` | `number: int>=0` | `?Summary` | writing |
-| `close_for_writing` | `object: text` | nothing | irreversible |
-| `open_for_writing` | `object: text` | nothing | irreversible |
-| `move_to_archive` | `number: int>=0, suffix: int>=0` | nothing | irreversible |
-| `time_now` | - | `int` | reading |
-| `new_id` | - | `id` | reading |
-| `reply_validation` | - | `ReplyCheck` | reading |
-| `close_agent_turn` | - | nothing | irreversible |
-| `check_cache` | `dialog_kind: "main" \| "delivery"` | nothing | writing |
-| `stop_agent_group` | - | nothing | irreversible |
+| `party_profile` | `party: text` | `AgentProfile` | volatile |
+| `role_context` | `context: RoleContext` | `text` | volatile |
+| `call_trace` | - | `text` | volatile |
+| `call_step` | - | `int>=0` | volatile |
+| `parse_agent_reply` | `reply: AgentReply, role: "witness" \| "author" \| "lens"` | `RoleResult` | volatile |
+| `proposal_read` | - | `bool` | volatile |
+| `proposal_with_fingerprint` | - | `text` | volatile |
+| `proposal_changed_since_attempt` | - | `bool` | volatile |
+| `count_in_model_tally` | `finding: Finding` | nothing | acting |
+| `journal_findings` | `findings: []Finding` | nothing | acting |
+| `journal_machine_data` | - | nothing | acting |
+| `journal_decision` | `decision: text, source: text, passes: int>=0, open: []Finding` | nothing | acting |
+| `remove_unsound` | `number: int>=0` | nothing | acting |
+| `build_summary` | `number: int>=0` | `?Summary` | acting |
+| `close_for_writing` | `object: text` | nothing | acting |
+| `open_for_writing` | `object: text` | nothing | acting |
+| `move_to_archive` | `number: int>=0, suffix: int>=0` | nothing | acting |
+| `time_now` | - | `int` | volatile |
+| `new_id` | - | `id` | volatile |
+| `reply_validation` | - | `ReplyCheck` | volatile |
+| `close_agent_turn` | - | nothing | acting |
+| `check_cache` | `dialog_kind: "main" \| "delivery"` | nothing | acting |
+| `stop_agent_group` | - | nothing | acting |
 
-The first 17 are the 17 functions of the meeting that its markup (`functions-markup.md`) makes primitives of the host: 8 reading, 6 writing, 3 irreversible; the next four are the agent step (`check_cache` is the
+The first 17 are the 17 functions of the meeting that its markup (`functions-markup.md`) makes primitives of the host: 8 volatile, 9 acting (6 writing and 3 irreversible before AL-115); the next four are the agent step (`check_cache` is the
 check of the cache that the specification of the step puts after every accepted result of a turn; the pilot's code does not have it); the last is the one primitive of the cycle check (task 122): `stop_agent_group`, the group
 of processes of the agent is stopped as a whole when the check ends in HALTED or ERRORED. No pure primitive: `fingerprint` stays inside `proposal_with_fingerprint`.
 
@@ -336,9 +338,9 @@ The data view is the one both can show: `Awaiting` the message and the reply, `D
 
 ## Not implemented (and why)
 
-- The last stage of a commit for an irreversible call (section 5, rule 13): the call is made at once, before the step is written; the queue after the write is built when a real host with files and processes appears or at the first case of a double call (see "The registry of the primitives of the host").
+- The last stage of a commit for an acting call (section 5, rule 13): the call is made at once, before the step is written; the queue after the write is built when a real host with files and processes appears or at the first case of a double call (see "The registry of the primitives of the host").
 - `@prepare_return` (rule 24: the preparation is the executor's) - refused by the checks.
-- A writing primitive that changes data of the machine (`writes` in the registry): `PrimitiveHost` gives back a value only.
+- An acting primitive that changes data of the machine (`writes` in the registry): `PrimitiveHost` gives back a value only.
 - `includes` are checked for shape (name, version, 12-digit hash); the file of definitions is not read; a fragment is the expanded tree.
 - The qualified `answer: Type.Variant`.
 - Nested machines (task 119, section below): (task 123: the answers that come while the machine is on pause are held, rule 14, and the pair runner is recursive); the result table "by role" of a party is not modelled; the modes `nothing` / `no_return` of a nested call are not told apart; a machine has ONE party of a set; a hand-written Nova machine cannot be nested (only a machine that is data); the hub does not run a nested machine on the server (the memory runner `alula test` does).
@@ -355,7 +357,7 @@ Task 108 (`doc/tasks/108-table-translator/`) brought the interpreter from the fo
 - **A set of literals** `"a" | "b"` replaces `text from {"a", "b"}` (2.5, T-1): two values or more, under `?` and `[]` in parentheses (`?("a" | "b")`); `spec_text` and `parse_spec` follow; a literal outside the set assigned
   to a datum, or an initial value outside it, is an issue of the table; at run time every write is checked against the type (`bound_violation`).
 - **`id`** (`IdType`, 2.5, T-2): a text 8-4-4-4-12 of lower case hexadecimal digits (`is_uuid`); checked in `check_value`, so also for a datum, a signal, the input of the machine (`input_rejected`, `reason=type`) and the arguments of a primitive.
-- **`new_id`** (reading, no parameters, result `id`), in `language_registry()` (since 0.4.0; before in `standard_registry()`). The check of the table: it may stand only in a binding of the entry of an operation and the binding must be written to the data by a row of that state.
+- **`new_id`** (volatile, no parameters, result `id`), in `language_registry()` (since 0.4.0; before in `standard_registry()`). The check of the table: it may stand only in a binding of the entry of an operation and the binding must be written to the data by a row of that state.
   `ScriptedHost` answers it with `Uuid.v7()` under `with Time = th.fixed_ms(at), Random = th.seeded(...)` (the stamp of the event and the number of the call in the step): the same step gives the same ids; a scripted reply of the host wins.
   The host of the product that wants real random ids is another `PrimitiveHost`.
 - **Tuple fields from zero** (2.3): `t.0`, `t.1`; `make_tuple` names them `0`, `1`, ...; the lossless JSON `{"$tuple": [...]}` is the same.
@@ -445,7 +447,7 @@ is the verdict (`clean`, `requirements`, `plan`, `question`, `restart`, `stopped
 | the types | the types of the layer of the methodology (`Цикл`, `Находка`, `Свод`, `Счётчик`, `Вердикт`, `ИтогСессии`, ...); the findings of the meeting are `MeetingFinding` (they differ from the findings of the review); the callee must declare the same fields (pinned by `src/machine_cycle/fit_test.nv`) |
 | the data | 35 data (the variables of the table of the data of the methodology and the fields of the input kept as data) and the 3 of the fragment; `свод[номер_захода]` and `находки_проверки[номер_захода]` are dicts written by "On accept" of ЗАПУСК_СЕССИИ (rules 8 and 14); the datum of the source of the launch is `launch_source` (the dictionary name `source` is the binding of the pause) |
 | the definitions | `потолок_исчерпан` is from the included file `арифметика_цикла` (hash `fad927a77d32`); `проверяющий`, `правщик`, `обновить_счётчики`, `наибольший_счётчик`, `сбросить_достигших`, `без_достигших_потолка`, `записи_сужения`, `есть_находка_уровня`, `находки_цикла` are in the table |
-| the primitive | `stop_agent_group` (irreversible) at the entry of HALTED and ERRORED; the scenarios answer it with `"host": {"stop_agent_group": null}`; there is no real executor (`ir_proc_kill`, `ir_agent_close` of the plan 105 are a later task) |
+| the primitive | `stop_agent_group` (acting) at the entry of HALTED and ERRORED; the scenarios answer it with `"host": {"stop_agent_group": null}`; there is no real executor (`ir_proc_kill`, `ir_agent_close` of the plan 105 are a later task) |
 | the pause | the fragment "Пауза" with the nested machines `[session_start, meeting]`: stop, continue, halt and cancel go to them as signals; their request stays open on a pause |
 
 **Differences from the table of the methodology** (the details are in the analysis of the task): the verdict is an enumeration with words (the proposal of the methodology, "What the engine did not cover", item 12); the stop reasons and the mark of the
@@ -475,7 +477,7 @@ Task 121 (`doc/tasks/121-session-start/`, the analysis with the numbers is its `
 
 - **The states.** B2 (`Gate2`, the keeper confirms the profile and the price) -> SCOPE (`Scope`, a fork on the volume) -> SESSION (`Session`, the nested machine `agent_step`) -> RESULT PARSING (`ResultParsing`, an operation) -> END; B1 (`Gate1`, the volume does not fit: repeat or halt) and B13 (`Gate13Session`, the agent step refused: repeat with a new request, `Gate13Session#1` is "restart", or halt); PAUSE from the fragment "Pause" with `вложенные: [шаг_агента]`; the ends END, HALTED (the stop reasons `gate1_halt`, `gate13_halt`, `pause_halt`, `cancel_request`), ERRORED. 26 rows: 11 of the states, 6 common events, 4 of the pause, 5 of the table "Ends".
 - **The input and the answer.** The input is the ten fields of `ВходЗапускаСессии` (an absent field of an optional type is `none`: the interpreter took it for a missing field before this task); the answer is `ИтогЗапускаСессии` (`result`, `summary`, `findings`: the last two only for a check session, by the number of the pass). The refusals: `StoppedByHuman` (a halt at B1, B13 or in the pause), `Cancelled` (the cancel of the request of the call), `NoResult` (the end ERRORED).
-- **The primitives of the host** (the methodology's `registry.md` of the CrewHarness repository since 0.4.0, 27 then): `launch_scope` (the volume fits or does not), `launch_profile` and `session_context` (the profile and the prompt of the request of the agent step, read in its table "Input"), `parse_session_artifact` (the stop word, the summary line and the findings of the artifact), `stop_agent_group` (irreversible, in the entry of HALTED and ERRORED). Their types are the set `session` of that `registry.md` (the meeting has types of the names `Finding`, `Severity` and `Summary` with other fields: each machine declares its own). The host of the tests is the `ScriptedHost`; there is no real executor. The names of the session codes are those of the code of the methodology (`s1`, `s7`, `commit`, ...): `session_dialog_kind` gives `delivery` for `s7`, `s7_fix`, `s8`, `commit`, `push`, else `main`.
+- **The primitives of the host** (the methodology's `registry.md` of the CrewHarness repository since 0.4.0, 27 then): `launch_scope` (the volume fits or does not), `launch_profile` and `session_context` (the profile and the prompt of the request of the agent step, read in its table "Input"), `parse_session_artifact` (the stop word, the summary line and the findings of the artifact), `stop_agent_group` (acting, in the entry of HALTED and ERRORED). Their types are the set `session` of that `registry.md` (the meeting has types of the names `Finding`, `Severity` and `Summary` with other fields: each machine declares its own). The host of the tests is the `ScriptedHost`; there is no real executor. The names of the session codes are those of the code of the methodology (`s1`, `s7`, `commit`, ...): `session_dialog_kind` gives `delivery` for `s7`, `s7_fix`, `s8`, `commit`, `push`, else `main`.
 - **The registry of the callable machines.** `product_registry()` (`src/machine_run/nested.nv`) loads `agent_step` and `session_start` from the compiled files; the words `шаг_агента` and `запуск_сессии` of the table of the names of the machines (`names_format.tsv`, kind `machine`) are their names. `check_registry(session_start, product_registry())` is empty and `check_nested(cycle_check, "session_start", ...)` is empty too (the cycle check of task 122 calls it with the same ten fields: the number of the pass is `?число` in both, a bound `int>=0` on one side would be another type for the pair check); a caller of the session start (the runner, task 123) is two levels deep, which `check_registry` still names an error until the runner of the pairs is recursive.
 - **The gates are signals.** A gate (B2, B1, B13, the pause) is not a request of the engine: the keeper answers by a signal (`confirm`, `repeat`, `halt`), so a gate opens no request and the counter of the keeper stays 0 (as in the agent step).
 - **Scenarios.** `scenarios/session-*` (55): `session-<state>-<n>` for each row (23: `gate2`, `scope`, `gate1`, `session`, `result-parsing`, `gate13`, `pause`, `common`, `end-end`, `end-halted`) and `session-flow-*` (32: the runner and the review, the four stop words, the volume, the retries of the session, the failures of the agent, the pause and the stop at a gate, the cancel in the middle, after the answer and at a gate, the restart of the parent / of the nested machine / after the answer, the death between the commit and the send, the input, a signal that is not waited for, a second answer, the request of the agent step). They are written by `doc/tasks/121-session-start/tools/gen_session_scenarios.py` and run by the pair runner (`alula test` finds the agent step in the folder). Two rows no sequence of events takes (`Scope#3`, `common#6`) and the end ERRORED is taken only by a changed table (`errored_test.nv`).
@@ -505,10 +507,10 @@ is equal in both languages, `src/machine_runner/table_test.nv`). The runner call
   record `ИтогПроверки`, so each of the four reviews (AnalysisReview, PlanReview, ImplementationReview, DeliveryReview) has two rows (`answer`, `failure`) and the 18 rows "answer: clean / requirements / question / plan / restart" of the methodology are the rows of
   ReviewVerdict (19 with the row "иначе"). 251 rows in all (233 of the states and of that fork, 4 of the pause, 6 common events, 8 of the ends); 22 of them no sequence of events takes (named in `cover_test.nv`).
 - **The route.** `маршрут` is `""` (not chosen), `"полный"` or `"быстрый"`: the classification (RouteClassification) proposes, the gate 14 chooses, RouteCheck checks the settings of the project against the minimums of the methodology, RouteRecording writes the numbers of the cycle,
-  BriefCheck and BriefCopy make the approved copy of the brief on the fast route (the record of the approval first, the file last: `create_approved_copy` is irreversible), FullPathReturn goes back to the full route by the word "full path" (gates 5, 8, 10a) or by the rule.
-- **The primitives of the host** (the methodology's `registry.md` of the CrewHarness repository since 0.4.0, 56 then): reading `specification`, `task_plan`, `implementation_report` (one per document: the answer of the `ScriptedHost` is chosen by the name of the primitive), `route_features`, `project_settings`, `source_list`, `brief_complete`,
-  `copy_approval`, `approval_by_document`, `source_with_specification_marks`, `last_implementation_review`, `has_unresolved_line`, `customer_letter`, `round_letters`, `secrets_report`, `tree_diff`, `commit_message`, `commit_text`, `feedback_route`; writing `run_preparation`,
-  `write_answers`, `write_decisions`, `write_owner_marks`, `save_round_notes`; irreversible `write_draft_status`, `create_approved_copy`, `rename_letter`, `release_lock`, `show_human` (and `stop_agent_group` of task 122). The documents and the files are the host's objects; in the data of the machine
+  BriefCheck and BriefCopy make the approved copy of the brief on the fast route (the record of the approval first, the file last: `create_approved_copy` is acting), FullPathReturn goes back to the full route by the word "full path" (gates 5, 8, 10a) or by the rule.
+- **The primitives of the host** (the methodology's `registry.md` of the CrewHarness repository since 0.4.0, 56 then): volatile `specification`, `task_plan`, `implementation_report` (one per document: the answer of the `ScriptedHost` is chosen by the name of the primitive), `route_features`, `project_settings`, `source_list`, `brief_complete`,
+  `copy_approval`, `approval_by_document`, `source_with_specification_marks`, `last_implementation_review`, `has_unresolved_line`, `customer_letter`, `round_letters`, `secrets_report`, `tree_diff`, `commit_message`, `commit_text`, `feedback_route`; acting `run_preparation`,
+  `write_answers`, `write_decisions`, `write_owner_marks`, `save_round_notes`; also acting `write_draft_status`, `create_approved_copy`, `rename_letter`, `release_lock`, `show_human` (and `stop_agent_group` of task 122). The documents and the files are the host's objects; in the data of the machine
   there is the dict `утверждения` (the record of the approval: the date, who, the hash of the text; the approval is valid when the hash equals that of the document now). There is no real executor.
 - **The pair runner is recursive.** `run_nested_scenario` keeps a tree of nested machines (each with its world, journal and store; the engine id is `<parent id>/<request id>`); a step names a machine of the tree by the path of the requests
   (`session_launch-1/agent_step-1`, or by its own id when only one machine has it) in `on` and in `also`; the answers of the host of a step of the root hold for the whole tree. `check_registry` checks every level; a machine that a machine below the first level calls and
