@@ -41,6 +41,7 @@ One folder under `src/` is one module `alula.<folder>` and one unit of tests (Or
 | `alula.machine_table` | the model of a machine, the decoder of the tree `machine/2`, the type syntax, the checks of a table |
 | `alula.machine_text` | the translator of tables (Russian and English, format 2.23) to the JSON and the reverse generator ([README](src/machine_text/README.md)) |
 | `alula.machine_run` | the interpreter `AlulaMachine`, the state, the host of the primitives, nested machines (`machine` parties), the runner of scenarios |
+| `alula.host`, `alula.host_impls` | the contract of the host of the external functions (spec 7a, AL-130): `bind_pure`, `bind_volatile`, `bind_acting`, the records `ReadEnv` and `ActEnv`, the test host with counters by class and the check of the version of the world; the implementations in a separate module under the guard of the imports ([README](src/host/README.md)) |
 | `alula.alula_cli`, program `alula` | the commands `compile`, `render`, `convert`, `check`, `summary`, `run`, `test`, `version` ([README](src/alula_cli/README.md)); `src/alula.nv` is the program |
 | `alula.alula_scenarios`, `alula.alula_eq` | tests only: a folder of scenarios through the program; the circles of the program equal the library |
 | `alula.machine_*` (the rest) | tests only: the proofs of the translator, the checks and the interpreter on the examples and on the samples of the specification |
@@ -81,13 +82,22 @@ cd C:/work/alula
 nova test src --jobs 4 --timeout 600                 # all units (the heavy ones: machine_runner about 7 minutes, alula_scenarios about 3)
 nova test src --jobs 4 --timeout 600 --strict-effects
 powershell -File scripts/build-alula.ps1 -Test    # builds target/alula.exe and runs it on examples/ (alula test examples)
-sh scripts/guards/run-all.sh                         # the guards: the marks of the Oracle workarounds, the border of the package, the former name, the copies of spec/
+sh scripts/guards/run-all.sh                         # the guards: the marks of the Oracle workarounds, the border of the package, the former name, the copies of spec/, the imports of the implementations of the host (needs NOVA_STD_PATH)
+sh scripts/accept-179.sh                             # the criterion of the host contract: the negative compilations, the test host, the guard, --strict-effects
 python tools/check-alula-keywords.py --glossary <path>/state-machine-glossary.md   # the table of words, the samples and the dictionary (the glossary stays in the methodology)
 python tools/check-alula-samples.py --glossary <path>/state-machine-glossary.md    # the two samples of the agent step against each other
 python tools/check-alula-translation.py             # the English text of the specification against the Russian
 ```
 
 Tests are `*_test.nv` beside the sources. The output of a unit must stay under 4 KB (item 20 of the notes), hence the short names of the tests.
+
+## The contract of the host
+
+The text of the specification, section 7a (version 2.24, AL-130), word for word:
+
+> **The host contract.** The host binds the implementations of external functions one function at a time: `bind_pure`, `bind_volatile`, `bind_acting` — by the class of the function; at load every declared external function is bound (an unbound one is a load error). The class of an external function is told by the type of its environment: a pure one gets none, a volatile one gets an environment without write methods, an acting one gets a writable environment; the compiler checks it. Not proven by types: that the implementation does not use output, files, clock or network behind the environment, or capture outside mutable state; this is covered by the import guard, --strict-effects (partly) and the test host. The contract belongs to the host, not to the machine file: it cannot be written in a file.
+
+The package gives the contract as code: [src/host/](src/host/README.md) (the host with the three bindings, the environments `ReadEnv` and `ActEnv`, the test host), `src/host_impls/` (the implementations, a separate module) and the guard `scripts/guards/check-impl-effects.py`. The load check against the declarations of a machine file belongs to the release (tasks 175, 181).
 
 ## Use as a dependency
 
