@@ -527,12 +527,19 @@ fn decl_definitions(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
 
 // ---- the primitives ---------------------------------------------------------------------------------------------------------------------
 
-fn primitive_classes() -> []str => ["pure", "reading", "writing", "irreversible"]
+/// The keys of the classes of a primitive of the host (AL-115); the words of a file are `kw(.., "enum_value", key)`: `pure`, `изменчивая`, `действующая` in a Russian file and `pure`, `volatile`, `acting` in an English one.
+fn primitive_classes() -> []str => ["pure", "volatile", "acting"]
 
 fn prim_row(r TxEntry, mut cx TxCx) -> Result[str, TranslateError] {
     ro d = cell_decl_json(r.cells[0], r.line, cx, "примитива", "примитивы")?
-    if !primitive_classes().contains(r.cells[3].text) {
-        return Err(tx_err(r.line, r.cells[3].col, "syntax", "класс примитива: ${primitive_classes().join(", ")}"))
+    ro class_cell = r.cells[3]
+    ro class_key = kw_key(cx.words, "enum_value", class_cell.text) ?? ""
+    if !primitive_classes().contains(class_key) {
+        match former_find(cx.words.lang, "class", class_cell.text) {
+            Some(f) => return Err(tx_err(r.line, class_cell.col, "syntax", former_message(f)))
+            None => ()
+        }
+        return Err(tx_err(r.line, class_cell.col, "syntax", "класс примитива: ${kw_all(cx.words, "enum_value", primitive_classes()).join(", ")}"))
     }
     call_clash(cx, d.tok, d.json)
     pair_add(cx.env.prims, d.tok.text, d.json)

@@ -307,9 +307,9 @@ fn rn_sec_ends(mut cx RnCx, root RJ) -> []str {
 
 fn rn_class_of(cx RnCx, name str) -> str {
     for p in cx.registry.primitives {
-        if p.name == name { return class_word(p.class) }
+        if p.name == name { return rn_kw(cx, "enum_value", class_word(p.class)) }
     }
-    "reading"
+    rn_kw(cx, "enum_value", "volatile")
 }
 
 fn rn_sec_primitives(cx RnCx, root RJ) -> []str {
@@ -402,7 +402,7 @@ fn rn_former_note(v RJ, path str) -> str {
 /// machine's own (else the line of connection stands and the copies are left out, section 1b (м)).
 export fn render_machine_with(machine_json str, language str, copy_includes bool) -> RenderReport => render_machine_in(machine_json, language, copy_includes, language_registry())
 
-/// The same with the registry of the host: the class of a primitive in the table "Primitives" of the file is the class that the registry gives (a primitive that the registry does not know is `reading`).
+/// The same with the registry of the host: the class of a primitive in the table "Primitives" of the file is the class that the registry gives (a primitive that the registry does not know is `volatile`).
 export fn render_machine_in(machine_json str, language str, copy_includes bool, registry Registry) -> RenderReport {
     if language != "ru" && language != "en" {
         return RenderReport { text: "", notes: ["the language must be `ru` or `en`, got `${language}`"] }

@@ -4,16 +4,16 @@
 // an agent. The registry is a table of records "name, parameters with types, result, class" (draft-format-v1.md, section 7).
 // The core only keeps the table and checks it: nothing is called here; a call goes through the `PrimitiveHost` of eval.nv.
 //
-// Classes and where a call of each is allowed (format v2, section 7):
-//   Pure          everywhere (conditions, expressions, the table "Input", actions, "On entry");
-//   Reading       in "Input" of an appeal, in the "profile" of a party, in "On entry" (an operation, a fork, an end) and in
-//                 "On accept"; not in conditions and not in the actions of a row;
-//   Writing       in "On entry" of an operation and of an end and in the actions of a row; not in conditions, not in "Input",
-//                 not in "On entry" of a fork, not in "On accept";
-//   Irreversible  as Writing for the positions. The format says the host runs it as the last stage of a commit and that it may be repeated without harm;
-//                 in this implementation a call of any class is made at once, in its place in the actions, BEFORE the step is written (`PrimitiveHost`
-//                 is called from `run_actions`), so repeatability is the host's duty: a step that fails after the call is rolled back and the call has been made.
-//                 A queue run after the write is not built; it comes with a real host with files and processes, or with the first case of a double call.
+// Classes and where a call of each is allowed (format 2.23, section 7; the class is of a primitive of the host, a function of the author has no class, it is always pure):
+//   Pure      everywhere (conditions, expressions, the table "Input", actions, "On entry"); it reads its arguments only, so its columns `reads` and `writes` are `—`;
+//   Volatile  (its result depends on the world: the clock, a file, a store) in "Input" of an appeal, in the "profile" of a party, in "On entry" (an operation, a fork, an end),
+//             in "On accept" and in the actions of a row (the actions of the chosen row run once); not in conditions;
+//   Acting    (it changes the world) in "On entry" of an operation and of an end and in the actions of a row; not in conditions, not in "Input", not in the "profile",
+//             not in "On entry" of a fork, not in "On accept". An acting primitive without a result is not a value: its call is an action, it does not stand in an expression
+//             or on the right of a binding (`check_expr_positions`). The format says the host runs it as the last stage of a commit and that it may be repeated without harm;
+//             in this implementation a call of any class is made at once, in its place in the actions, BEFORE the step is written (`PrimitiveHost`
+//             is called from `run_actions`), so repeatability is the host's duty: a step that fails after the call is rolled back and the call has been made.
+//             A queue run after the write is not built; it comes with a real host with files and processes, or with the first case of a double call.
 // The positions are `Position`: ConditionPos (a condition of a row, an expression of the data and of the definitions), InputPos,
 // ProfilePos, ForkEntryPos, OperationEntryPos, EndEntryPos, AcceptPos, ActionPos.
 // A primitive also names what it reads without an argument (`reads`: they join the "Input" of the state of the call, rule 11)
@@ -23,12 +23,11 @@
 // data of the host (a file `registry.md` in the form of the section 7, read by `parse_registry_table` of `alula.machine_table`): the bodies are the host's, the registry keeps a name, the types and the class.
 module alula.machine
 
-/// PrimitiveClass: what a primitive does to the world.
+/// PrimitiveClass: what a primitive of the host does to the world: Pure reads its arguments only, Volatile reads the world (its result depends on it), Acting changes the world.
 export type PrimitiveClass enum
     | Pure
-    | Reading
-    | Writing
-    | Irreversible
+    | Volatile
+    | Acting
 
 /// Position: the place of a call in a table.
 export type Position enum
@@ -122,6 +121,10 @@ export fn register(mut registry Registry, primitive Primitive) -> Result[(), Reg
         }
         i += 1
     }
+    // a pure primitive reads its arguments only (format 2.23): it has nothing to say in `reads` and `writes`
+    if primitive.class == Pure && (primitive.reads.len() > 0 || primitive.writes.len() > 0) {
+        return Err(RegistryError { message: "the pure primitive ${primitive.name} reads its arguments only: its columns reads and writes are `—`" })
+    }
     registry.primitives.push(primitive)
     Ok(())
 }
@@ -134,13 +137,12 @@ export fn find_primitive(registry Registry, name str) -> Option[Primitive] {
     None
 }
 
-/// The word of a class: pure, reading, writing, irreversible.
+/// The word of a class: pure, volatile, acting.
 export fn class_word(class PrimitiveClass) -> str {
     match class {
         Pure => "pure"
-        Reading => "reading"
-        Writing => "writing"
-        Irreversible => "irreversible"
+        Volatile => "volatile"
+        Acting => "acting"
     }
 }
 
@@ -162,12 +164,11 @@ export fn position_word(position Position) -> str {
 export fn class_allowed(class PrimitiveClass, position Position) -> bool {
     match class {
         Pure => true
-        Reading => match position {
+        Volatile => match position {
             ConditionPos => false
-            ActionPos => false
             _ => true
         }
-        _ => match position {
+        Acting => match position {
             OperationEntryPos => true
             EndEntryPos => true
             ActionPos => true
@@ -187,12 +188,27 @@ export fn check_call_position(registry Registry, name str, position Position) ->
     }
 }
 
+fn is_nothing_spec(spec TypeSpec) -> bool {
+    match spec {
+        NothingType => true
+        _ => false
+    }
+}
+
 fn walk_positions(registry Registry, e Expr, position Position, path str) -> Result[(), PositionError] {
     match e {
         CallPrimitive { name, args } => {
             match check_call_position(registry, name, position) {
                 Ok(u) => ()
                 Err(x) => return Err(PositionError { path, primitive: x.primitive, message: x.message })
+            }
+            match find_primitive(registry, name) {
+                Some(p) => {
+                    if p.class == Acting && is_nothing_spec(p.result) {
+                        return Err(PositionError { path, primitive: name, message: "the acting primitive ${name} has no result: its call is an action, it does not stand in an expression or on the right of a binding" })
+                    }
+                }
+                None => ()
             }
         }
         _ => ()
@@ -267,13 +283,13 @@ fn nothing() -> []str => []str.new()
 fn no_params() -> []ParamSpec => []ParamSpec.new()
 
 /// The registry of the language (spec section 7a, AL-113): the two standard primitives that every host and every executor must give, `time_now` (milliseconds of the clock of the executor) and
-/// `new_id` (a new identifier, format 2.5), both of the class `reading`, and the table of the 35 codes of the language. A host adds its own primitives, roles and codes (`host_registry` of `alula.machine_table`):
+/// `new_id` (a new identifier, format 2.5), both of the class `volatile`, and the table of the 35 codes of the language. A host adds its own primitives, roles and codes (`host_registry` of `alula.machine_table`):
 /// the registry of a host is this one and the data of the host.
 export fn language_registry() -> Registry {
     mut reg = new_registry()
-    ro clock = Primitive { name: "time_now", params: no_params(), result: IntType, class: Reading, reads: nothing(), writes: nothing() }
+    ro clock = Primitive { name: "time_now", params: no_params(), result: IntType, class: Volatile, reads: nothing(), writes: nothing() }
     // format 2.5, section 7: a built-in primitive; a new identifier (UUID v7), fixed in the event `now` of an operation
-    ro fresh = Primitive { name: "new_id", params: no_params(), result: IdType, class: Reading, reads: nothing(), writes: nothing() }
+    ro fresh = Primitive { name: "new_id", params: no_params(), result: IdType, class: Volatile, reads: nothing(), writes: nothing() }
     for p in [clock, fresh] {
         match register(reg, p) {
             Ok(u) => ()
