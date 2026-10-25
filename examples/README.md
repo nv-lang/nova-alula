@@ -18,7 +18,7 @@ two primitives (`time_now`, `new_id`) and 35 journal codes; the host of the exam
 | `Gate` | `gate.alula.json` | an agent turn, the fragment "Pause", a stop and a halt of a human | `gate-*` 5 |
 | `Lenses` | `lenses.alula.json` | a set of parties | `lenses-*` 3 |
 | `Variants` | `variants.alula.json` | answers by the forms of an enumeration, a retry, a term | `variants-*` 5 |
-| `actions` | `actions.alula.json` | the actions of the rows, the primitive `close_agent_turn` of the class `irreversible` | the tests of `machine_run` |
+| `actions` | `actions.alula.json` | the actions of the rows, the primitive `close_agent_turn` of the class `acting` | the tests of `machine_run` |
 | `caller`, `callee` | `caller.alula.md`, `callee.alula.md` | a nested machine called by a parent: the protocol of the call, restarts, a stop, a cancel | `nested-call-*` 17 |
 | `fan` | `fan.alula.md` | a set of nested calls with a limit | `nested-set-*` 9 |
 | `Echo` | `echo.alula.md` | a party of a free input (no gate, no request), the destination `same` | `echo-*` 3 |

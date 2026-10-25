@@ -8,26 +8,26 @@
 
 | name | parameters | result | class | reads | writes |
 |---|---|---|---|---|---|
-| party_profile | party: text | AgentProfile | reading | project setting: role profiles | — |
-| role_context | context: RoleContext | text | reading | project objects | — |
-| call_trace | — | text | reading | envelope of the call | — |
-| call_step | — | int>=0 | reading | envelope of the call | — |
-| parse_agent_reply | reply: AgentReply; role: "witness" \| "author" \| "lens" | RoleResult | reading | object: artifact file of the reply | — |
-| proposal_read | — | bool | reading | object: proposal | — |
-| proposal_with_fingerprint | — | text | reading | object: proposal | — |
-| proposal_changed_since_attempt | — | bool | reading | object: proposal | — |
-| count_in_model_tally | finding: Finding | — | writing | — | buffer: model tally |
-| journal_findings | findings: []Finding | — | writing | — | — |
-| journal_machine_data | — | — | writing | all_data | — |
-| journal_decision | decision: text; source: text; passes: int>=0; open: []Finding | — | writing | — | — |
-| remove_unsound | number: int>=0 | — | writing | lens_findings | lens_findings |
-| build_summary | number: int>=0 | ?Summary | writing | lens_findings; lenses | object: summary file |
-| close_for_writing | object: text | — | irreversible | — | — |
-| open_for_writing | object: text | — | irreversible | — | — |
-| move_to_archive | number: int>=0; suffix: int>=0 | — | irreversible | — | — |
-| reply_validation | — | ReplyCheck | reading | reply_text; reply_artifact; agent_request; objects: session files | service record: form remarks (read by the turn fix) |
-| close_agent_turn | — | — | irreversible | — | — |
-| check_cache | dialog_kind: "main" \| "delivery" | — | writing | — | service record: request start mark |
+| party_profile | party: text | AgentProfile | volatile | project setting: role profiles | — |
+| role_context | context: RoleContext | text | volatile | project objects | — |
+| call_trace | — | text | volatile | envelope of the call | — |
+| call_step | — | int>=0 | volatile | envelope of the call | — |
+| parse_agent_reply | reply: AgentReply; role: "witness" \| "author" \| "lens" | RoleResult | volatile | object: artifact file of the reply | — |
+| proposal_read | — | bool | volatile | object: proposal | — |
+| proposal_with_fingerprint | — | text | volatile | object: proposal | — |
+| proposal_changed_since_attempt | — | bool | volatile | object: proposal | — |
+| count_in_model_tally | finding: Finding | — | acting | — | buffer: model tally |
+| journal_findings | findings: []Finding | — | acting | — | — |
+| journal_machine_data | — | — | acting | all_data | — |
+| journal_decision | decision: text; source: text; passes: int>=0; open: []Finding | — | acting | — | — |
+| remove_unsound | number: int>=0 | — | acting | lens_findings | lens_findings |
+| build_summary | number: int>=0 | ?Summary | acting | lens_findings; lenses | object: summary file |
+| close_for_writing | object: text | — | acting | — | — |
+| open_for_writing | object: text | — | acting | — | — |
+| move_to_archive | number: int>=0; suffix: int>=0 | — | acting | — | — |
+| reply_validation | — | ReplyCheck | volatile | reply_text; reply_artifact; agent_request; objects: session files | service record: form remarks (read by the turn fix) |
+| close_agent_turn | — | — | acting | — | — |
+| check_cache | dialog_kind: "main" \| "delivery" | — | acting | — | service record: request start mark |
 
 ## Roles
 

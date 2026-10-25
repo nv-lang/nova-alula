@@ -413,8 +413,8 @@ The set of `stop_reason` has 12 values; Halted covers 11, the twelfth (`""`) is 
 
 | name | parameters | result | class | reads | writes |
 |---|---|---|---|---|---|
-| time_now | — | int | reading | — | — |
-| reply_validation | — | ReplyCheck | reading | reply_text, reply_artifact, agent_request; objects: session files | service record "form remarks" (read by turn "fix") |
-| close_agent_turn | — | — | irreversible | — | — |
+| time_now | — | int | volatile | — | — |
+| reply_validation | — | ReplyCheck | volatile | reply_text, reply_artifact, agent_request; objects: session files | service record "form remarks" (read by turn "fix") |
+| close_agent_turn | — | — | acting | — | — |
 
 `time_now` is milliseconds of the epoch. `reply_validation` is measured by the executor before the ReplyValidation fork: the form of the reply is valid, violated, or the reply is empty; the form remarks stay with the executor and do not enter the data. `close_agent_turn` tells the transport about the cancellation of the open turn, including one held until the permission decision; it runs as the last stage of fixation and may be repeated without harm.
