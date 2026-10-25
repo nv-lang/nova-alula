@@ -356,30 +356,30 @@ test "wt lint sees a word" {
 fn lines_in(text str) -> []str => lines_of(text)
 
 test "wt lang default" {
-    ro info = detect_language(lines_in("# Машина: М\n\n- machine: m\n- format: 2.23\n\n## Типы\n—\n"))
+    ro info = detect_language(lines_in("# Машина: М\n\n- machine: m\n- format: 2.24\n\n## Типы\n—\n"))
     assert(info.lang == "ru")
-    assert(info.version == "2.23")
+    assert(info.version == "2.24")
     assert(info.strict)
     assert(info.errors.len() == 0)
     assert(!detect_language(lines_in("# Машина: М\n\nmachine: m\nformat: 2.5\n")).strict)
 }
 
 test "wt lang declared" {
-    ro en = detect_language(lines_in("# Machine: M\n\n- machine: m\n- format: 2.23\n- language: en\n\n## Types\n—\n"))
+    ro en = detect_language(lines_in("# Machine: M\n\n- machine: m\n- format: 2.24\n- language: en\n\n## Types\n—\n"))
     assert(en.lang == "en")
     assert(en.errors.len() == 0)
     assert(en.strict)
-    ro ru = detect_language(lines_in("# Машина: М\n\n- machine: m\n- format: 2.23\n- language: ru\n"))
+    ro ru = detect_language(lines_in("# Машина: М\n\n- machine: m\n- format: 2.24\n- language: ru\n"))
     assert(ru.lang == "ru")
     assert(ru.errors.len() == 0)
-    ro defs = detect_language(lines_in("# Functions: d\n\n- functions_version: 1\n- format: 2.23\n- language: en\n"))
+    ro defs = detect_language(lines_in("# Functions: d\n\n- functions_version: 1\n- format: 2.24\n- language: en\n"))
     assert(defs.lang == "en" && defs.errors.len() == 0)
-    ro frag = detect_language(lines_in("# Fragment: Pause\n\n- fragment: Pause\n- format: 2.23\n- language: en\n"))
+    ro frag = detect_language(lines_in("# Fragment: Pause\n\n- fragment: Pause\n- format: 2.24\n- language: en\n"))
     assert(frag.lang == "en" && frag.errors.len() == 0)
 }
 
 test "wt lang english undeclared" {
-    ro info = detect_language(lines_in("\n# Machine: M\n\n- machine: m\n- format: 2.23\n"))
+    ro info = detect_language(lines_in("\n# Machine: M\n\n- machine: m\n- format: 2.24\n"))
     assert(info.errors.len() == 1)
     assert(info.errors[0].kind == "language")
     assert(info.errors[0].line == 2)
@@ -392,7 +392,7 @@ test "wt lang header mismatch" {
     assert(a.errors.len() == 1)
     assert(a.errors[0].line == 1)
     assert(a.errors[0].message.contains("а в строке language объявлен ru"))
-    ro b = detect_language(lines_in("# Машина: М\n\n- machine: m\n- format: 2.23\n- language: en\n"))
+    ro b = detect_language(lines_in("# Машина: М\n\n- machine: m\n- format: 2.24\n- language: en\n"))
     assert(b.errors.len() == 1)
     assert(b.errors[0].line == 5)
     assert(b.errors[0].message.contains("язык шапки русский"))
@@ -415,8 +415,8 @@ test "wt lang inside fence" {
 }
 
 test "wt versions" {
-    assert(format_versions() == ["2.23"])
-    assert(version_strict("2.23"))
+    assert(format_versions() == ["2.24"])
+    assert(version_strict("2.24"))
     assert(!version_strict("2.11") && !version_strict("2.10") && !version_strict("2.9") && !version_strict(""))
 }
 

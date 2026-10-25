@@ -13,12 +13,13 @@ test "v154 a tree without the key is the tree of the version that the program re
     assert(ok_text(tiny()))
 }
 
-test "v154 the value 2.23 is read" {
-    assert(ok_text(with_version154("\"2.23\"")))
+test "v154 the value 2.24 is read" {
+    assert(ok_text(with_version154("\"2.24\"")))
 }
 
 test "v154 another version is an error that names the version" {
     assert(says(with_version154("\"2.21\""), "got 2.21"))
+    assert(says(with_version154("\"2.23\""), "got 2.23"))
     assert(says(with_version154("\"2.22\""), "got 2.22"))
     assert(says(with_version154("\"3.0\""), "got 3.0"))
     assert(says(with_version154("\"2.21\""), "$.alula_version"))
@@ -26,7 +27,7 @@ test "v154 another version is an error that names the version" {
 
 test "v154 the error of another version says that there is no transition period" {
     assert(says(with_version154("\"2.20\""), "there is no transition period"))
-    assert(says(with_version154("\"2.20\""), "must be 2.23"))
+    assert(says(with_version154("\"2.20\""), "must be 2.24"))
 }
 
 test "v154 an empty version is not the absent key" {
@@ -34,7 +35,7 @@ test "v154 an empty version is not the absent key" {
 }
 
 test "v154 the key table_format does not exist" {
-    ro text = tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"table_format\":\"2.23\",")
+    ro text = tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"table_format\":\"2.24\",")
     assert(!ok_text(text))
     assert(says(text, "table_format"))
 }

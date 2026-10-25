@@ -279,7 +279,7 @@ test "ev dup key" {
     assert(eerr(d) == "duplicate_key@$.entries[1]")
 }
 
-// The norm of the dict order (format 2.23): the order of a dict is the order of the record, a repeated key is an error.
+// The norm of the dict order (format 2.24): the order of a dict is the order of the record, a repeated key is an error.
 test "ev dict order" {
     // the literal: the written order, not the order of the keys; `value_equal` does not see the order, the JSON text does
     ro d = DictLit([EntryExpr { key: lit_text("b"), value: ei(1) }, EntryExpr { key: lit_text("a"), value: ei(2) }, EntryExpr { key: lit_text("c"), value: ei(3) }])
@@ -447,7 +447,7 @@ test "fn keys values" {
 
 test "fn length" {
     assert(eis_in(ec("length", [er("xs")]), Int(5)))
-    // a text has no length (format 2.23): the check of the table says nothing, the evaluator refuses
+    // a text has no length (format 2.24): the check of the table says nothing, the evaluator refuses
     assert(eerr_in(ec("length", [er("name")])) == "type_mismatch@$.args[0]")
     assert(eerr(ec("length", [lit_text("a😀b")])) == "type_mismatch@$.args[0]")
     assert(eerr(ec("length", [lit_text("")])) == "type_mismatch@$.args[0]")

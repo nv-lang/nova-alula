@@ -7,7 +7,7 @@ import std.text
 
 test "v217 fixture ru is clean" {
     assert(is_clean(v217_ru()))
-    assert(json_of(v217_ru()).starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.23\",\"machine\":\"Tiny\""))
+    assert(json_of(v217_ru()).starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.24\",\"machine\":\"Tiny\""))
 }
 
 test "v217 fixture en is clean" {
@@ -18,19 +18,26 @@ test "v217 fixture ru and en give one tree" {
     assert(no_title(json_of(v217_ru())) == no_title(json_of(v217_en())))
 }
 
+test "v217 format 2.23 is refused" {
+    ro text = ru17("- format: 2.24", "- format: 2.23")
+    assert(!is_clean(text))
+    assert(note_says(text, "формат 2.23: версия не известна"))
+    assert(note_says(text, "читает формат 2.24"))
+}
+
 test "v217 format 2.22 is refused" {
-    ro text = ru17("- format: 2.23", "- format: 2.22")
+    ro text = ru17("- format: 2.24", "- format: 2.22")
     assert(!is_clean(text))
     assert(note_says(text, "версия не известна"))
-    assert(note_says(text, "читает формат 2.23"))
-    ro older = ru17("- format: 2.23", "- format: 2.14")
+    assert(note_says(text, "читает формат 2.24"))
+    ro older = ru17("- format: 2.24", "- format: 2.14")
     assert(!is_clean(older))
     assert(note_says(older, "версия не известна"))
-    assert(note_says(older, "2.23"))
+    assert(note_says(older, "2.24"))
 }
 
 test "v217 format 2.16 is refused" {
-    assert(note_says(ru17("- format: 2.23", "- format: 2.16"), "версия не известна"))
+    assert(note_says(ru17("- format: 2.24", "- format: 2.16"), "версия не известна"))
 }
 
 // ---- AL-53: the JSON name is built by itself -------------------------------------------------------------------------------------------------

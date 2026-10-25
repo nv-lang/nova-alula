@@ -61,7 +61,7 @@ test "v217 the protocol signals of the fragment are in the space of the machine 
 
 // ---- the file of definitions ----------------------------------------------------------------------------------------------------------------------
 
-fn defs_with_names() -> str => "# Функции: счёт\n\n- functions_version: 1\n- format: 2.23\n\n## Типы\n\n```\nтип Токены { вход число, выход число }\n```\n\n## Имена\n\n| имя | JSON-имя |\n|---|---|\n| Токены.вход | input_tokens |\n\n## Константы\n—\n\n## Функции\n—\n"
+fn defs_with_names() -> str => "# Функции: счёт\n\n- functions_version: 1\n- format: 2.24\n\n## Типы\n\n```\nтип Токены { вход число, выход число }\n```\n\n## Имена\n\n| имя | JSON-имя |\n|---|---|\n| Токены.вход | input_tokens |\n\n## Константы\n—\n\n## Функции\n—\n"
 
 test "v217 a file of definitions has its section of the names" {
     ro report = translate_definitions(defs_with_names())
@@ -92,24 +92,29 @@ test "v217 a file of definitions refuses the brackets" {
     assert(report.errors[0].message.contains("скобки"))
 }
 
-test "v217 a file of definitions refuses the format 2.22" {
-    ro report = translate_definitions(defs_with_names().replace("format: 2.23", "format: 2.22"))
+test "v217 a file of definitions refuses the format 2.23" {
+    ro report = translate_definitions(defs_with_names().replace("format: 2.24", "format: 2.23"))
     assert(report.errors.len() > 0)
-    ro older = translate_definitions(defs_with_names().replace("format: 2.23", "format: 2.14"))
+}
+
+test "v217 a file of definitions refuses the format 2.22" {
+    ro report = translate_definitions(defs_with_names().replace("format: 2.24", "format: 2.22"))
+    assert(report.errors.len() > 0)
+    ro older = translate_definitions(defs_with_names().replace("format: 2.24", "format: 2.14"))
     assert(older.errors.len() > 0)
 }
 
-test "v217 the hash of the sample file of definitions is that of 2.23" {
-    assert(definitions_hash(defs_file_text("арифметика_цикла")) == "ebb7658048b2")
+test "v217 the hash of the sample file of definitions is that of 2.24" {
+    assert(definitions_hash(defs_file_text("арифметика_цикла")) == "818a4aaeef4f")
 }
 
-test "v217 the English sample file of definitions has the hash of 2.23" {
+test "v217 the English sample file of definitions has the hash of 2.24" {
     ro text = defs_file_text("cycle_arithmetic")
-    assert(text.contains("format: 2.23"))
+    assert(text.contains("format: 2.24"))
     assert(definitions_hash(text).byte_len() == 12)
-    assert(definitions_hash(text) == "a9af85407c2b")
+    assert(definitions_hash(text) == "431e7018e2bb")
 }
 
-test "v217 the format line of the file of definitions is 2.23" {
-    assert(defs_file_text("арифметика_цикла").contains("- format: 2.23"))
+test "v217 the format line of the file of definitions is 2.24" {
+    assert(defs_file_text("арифметика_цикла").contains("- format: 2.24"))
 }

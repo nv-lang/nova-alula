@@ -17,7 +17,7 @@ test "ln tiny en equals ru" {
 
 test "ln header default" {
     // no line `language` is Russian; `language: ru` is the same file
-    ro declared = ru_with("- format: 2.23\n", "- format: 2.23\n- language: ru\n")
+    ro declared = ru_with("- format: 2.24\n", "- format: 2.24\n- language: ru\n")
     assert(declared != tiny_ru())
     assert(json_of(declared) == json_of(tiny_ru()))
     assert(is_clean(declared))
@@ -34,7 +34,7 @@ test "ln english header undeclared" {
 }
 
 test "ln russian header english declared" {
-    ro text = ru_with("- format: 2.23\n", "- format: 2.23\n- language: en\n")
+    ro text = ru_with("- format: 2.24\n", "- format: 2.24\n- language: en\n")
     ro all = notes(text)
     assert(all[0].contains("язык шапки русский"))
     assert(all[0].starts_with("${line_of(text, "- language")}:"))

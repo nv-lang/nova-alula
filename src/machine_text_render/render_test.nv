@@ -24,27 +24,27 @@ test "rn header ru" {
     assert(first[1] == "")
     assert(first[2] == "- machine: Calc")
     assert(first[3] == "- machine_version: 1")
-    assert(first[4] == "- format: 2.23")
+    assert(first[4] == "- format: 2.24")
     assert(first[5] == "- language: ru")
     assert(first[6] == "")
 }
 
 test "rn header en" {
     ro text = render(calc_json(), "en")
-    assert(text.starts_with("# Machine: Calc\n\n- machine: Calc\n- machine_version: 1\n- format: 2.23\n- language: en\n\n"))
+    assert(text.starts_with("# Machine: Calc\n\n- machine: Calc\n- machine_version: 1\n- format: 2.24\n- language: en\n\n"))
 }
 
 test "rn former key and former version refused" {
-    ro former = calc_json().replace("\"alula_version\": \"2.23\"", "\"portolan_version\": \"2.23\"") // guard-allow(legacy-name): the former key of the version is named to be refused
+    ro former = calc_json().replace("\"alula_version\": \"2.24\"", "\"portolan_version\": \"2.24\"") // guard-allow(legacy-name): the former key of the version is named to be refused
     assert(former != calc_json())
     ro report = render_machine(former, "ru")
     assert(report.text == "")
     assert(report.notes.len() == 1 && report.notes[0].contains("the former name of `alula_version`"))
-    ro older = calc_json().replace("\"alula_version\": \"2.23\"", "\"alula_version\": \"2.12\"")
+    ro older = calc_json().replace("\"alula_version\": \"2.24\"", "\"alula_version\": \"2.12\"")
     assert(older != calc_json())
     ro refused = render_machine(older, "en")
     assert(refused.text == "")
-    assert(refused.notes[0].contains("the version 2.23 only is read and written"))
+    assert(refused.notes[0].contains("the version 2.24 only is read and written"))
 }
 
 test "rn eleven sections" {
@@ -108,7 +108,7 @@ fn inc_en(hash str) -> str => `# Machine: Inc
 
 - machine: Inc
 - machine_version: 1
-- format: 2.23
+- format: 2.24
 - language: en
 
 ## Data
@@ -145,20 +145,20 @@ Initial state: S
 `
 
 test "rn includes line by default" {
-    ro first = json_of(inc_en("a9af85407c2b"))
+    ro first = json_of(inc_en("431e7018e2bb"))
     assert(!first.starts_with("ERROR "))
     ro made = render_machine(first, "en")
     assert(made.notes.len() == 0)
-    assert(made.text.contains("## Includes\n\n```\nfunctions: cycle_arithmetic version 1 hash a9af85407c2b\n```\n"))
+    assert(made.text.contains("## Includes\n\n```\nfunctions: cycle_arithmetic version 1 hash 431e7018e2bb\n```\n"))
     assert(!made.text.contains("define ceiling_reached"))
     assert(same_tree(first, json_of(made.text)) == "")
     ro ru = render(first, "ru")
-    assert(ru.contains("функции: cycle_arithmetic версия 1 хеш a9af85407c2b"))
+    assert(ru.contains("функции: cycle_arithmetic версия 1 хеш 431e7018e2bb"))
     assert(same_tree(first, json_of(ru)) == "")
 }
 
 test "rn includes as copy" {
-    ro first = json_of(inc_en("a9af85407c2b"))
+    ro first = json_of(inc_en("431e7018e2bb"))
     ro made = render_machine_with(first, "en", true)
     assert(made.text.contains("fn ceiling_reached(pass_number int>=1, origin int>=1, limit int>=0) -> bool =>\n  pass_number - 1 - origin + 1 >= limit"))
     assert(made.text.contains("## Includes\n—\n"))

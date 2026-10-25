@@ -59,7 +59,7 @@ test "sm loads" {
     match load_machine(sample_json(), sample_registry()) {
         Ok(def) => {
             assert(def.name == "agent_step")
-            assert(def.version == "alula-2.23")
+            assert(def.version == "alula-2.24")
             assert(def.states.len() == 14)
             assert(def.common.len() == 6)
             assert(def.parties.len() == 3)
@@ -76,15 +76,15 @@ test "sm loads" {
 
 test "sm summary" {
     ro text = render_summary(sample_json())
-    assert(text.starts_with("machine agent_step (version alula-2.23): 14 states, 47 rows, "))
+    assert(text.starts_with("machine agent_step (version alula-2.24): 14 states, 47 rows, "))
     assert(text.contains("  AgentTurn (appeal): 9 rows, 18 actions"))
     assert(text.contains("common events: 6 rows"))
     assert(text.contains("ends: 13 rows"))
 }
 
 test "sm header 27" {
-    assert(sample_json().starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.23\",\"machine\":\"agent_step\",\"version\":\"alula-2.23\""))
-    assert(sample().contains("- format: 2.23"))
+    assert(sample_json().starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.24\",\"machine\":\"agent_step\",\"version\":\"alula-2.24\""))
+    assert(sample().contains("- format: 2.24"))
 }
 
 test "sm no expansion section" {

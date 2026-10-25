@@ -24,7 +24,7 @@ sys.dont_write_bytecode = True
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TARGET = os.path.join(HERE, '..', 'src', 'machine_text', 'glossary_names.tsv')
-PINNED = '35c571ccda17'  # формат 2.24 закрепляет хеш словаря версии 13 (спецификация, 1а, AL-62, AL-131); формат 2.23 закреплял 60383c370415 (версия 11, файл glossary_names_v11.tsv)
+PINNED = '35c571ccda17'  # формат 2.24 закрепляет хеш словаря версии 13 (спецификация, 1а, AL-62, AL-131); формат 2.23 закреплял 60383c370415 (версия 11; с подъёмом формата до 2.24 файл версии 11 удалён)
 NORMATIVE_TABLES = ['2.%d' % i for i in (1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 16)]  # разделы-таблицы; 2.10 - записи
 HEADER = ('# Normative part of the dictionary of the names of the methodology (glossary version 13, sections 2.1-2.9, 2.11, 2.12, 2.16 and the records of 2.10), '
           'in the order of the glossary: "Russian<TAB>English". The hash of the pairs is pinned by the format (AL-62); change it only with the format. '

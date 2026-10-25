@@ -188,7 +188,7 @@ fn defs_read(file_text str, mut cx TxCx) -> TxDefsDoc {
 type TxDefsCall { name str, version str, hash str, line int, col int }
 
 fn defs_call_read(line TxKv, e TxEntry, w TxWords) -> Result[TxDefsCall, TranslateError] {
-    // the hash can start with a digit (`5dbdd898d25d`; `642e1f78f0f7` of the format 2.22 looked like a number with an exponent), and a number touched by letters is a broken token: the line is lexed up to the word `hash`, the hash is read from the text
+    // the hash can start with a digit (`cf2a79073e96`; `642e1f78f0f7` of the format 2.22 looked like a number with an exponent), and a number touched by letters is a broken token: the line is lexed up to the word `hash`, the hash is read from the text
     ro raw0 = line.segs[0].text
     ro hash_at = raw0.rfind(kw(w, "key", "hash")) ?? -1
     ro cut_text = if hash_at >= 0 { raw0[..hash_at + kw(w, "key", "hash").byte_len()] } else { raw0 }

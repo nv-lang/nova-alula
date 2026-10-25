@@ -2,12 +2,11 @@
 //
 // A name that leaves the machine (a state, a datum, a field of the input, a type, a field, a form of an enumeration, an element of an enum, a signal of a party and its field, a primitive, the setting of a keeper) has a Latin JSON name
 // in the tree. The JSON name is built by itself, in this order (spec 1a): the row of the section `## Имена` (the qualified name `Тип.поле` is stronger than the simple one and a simple row renames every declaration of
-// the name), the Latin name as it is, the English name of the dictionary of the methodology for the WHOLE name (the dictionary of the format that is read: the version 11 for 2.23, 1268 pairs, the hash `60383c370415`; the version 13 for 2.24, 1270 pairs, the hash `35c571ccda17`; AL-62, AL-131), the transliteration
+// the name), the Latin name as it is, the English name of the dictionary of the methodology for the WHOLE name (the dictionary of the format that is read: the version 13 of the methodology for 2.24, 1270 pairs, the hash `35c571ccda17`; AL-62, AL-131), the transliteration
 // word by word (the types and the states in Pascal case, the others in snake case). A word of two alphabets is an error (AL-59). The brackets after a name of 2.14 are an error (AL-60). The JSON names of one space are
 // different (AL-58, ten spaces); a row that changes nothing, a row for a name that is not declared, a repeated row, a JSON name that is not Latin are errors of the section.
 //
-// The dictionary is the file `glossary_names.tsv` (`русское<TAB>английское`, the pairs of the normative part in the order of the glossary of the methodology, the version 13; `scripts/glossary-names.py` makes it); the dictionary that the format 2.23
-// pinned (the version 11) stays beside it as `glossary_names_v11.tsv` until the format is raised to 2.24 (task 181).
+// The dictionary is the file `glossary_names.tsv` (`русское<TAB>английское`, the pairs of the normative part in the order of the glossary of the methodology, the version 13; `scripts/glossary-names.py` makes it).
 module alula.machine_text
 
 import std.text
@@ -25,12 +24,6 @@ type TxGlossary { names HashMap[str, str] }
 
 /// The normative part of the dictionary as the file of the package (the version 13, the format 2.24): the lines `русское<TAB>английское` in the order of the glossary of the methodology.
 fn glossary_table_text() -> str => embed_str("glossary_names.tsv")
-
-/// The dictionary that a format pins: the version 11 for 2.23 (`glossary_names_v11.tsv`), the version 13 for 2.24 (`glossary_names.tsv`).
-fn glossary_table_text_of(format str) -> str {
-    if format == "2.24" { return glossary_table_text() }
-    embed_str("glossary_names_v11.tsv")
-}
 
 // The pairs of a table, in order; a comment `#` and an empty line are skipped.
 fn glossary_pairs_of(tsv str) -> []TxPair {
@@ -57,7 +50,6 @@ fn glossary_hash_text(tsv str) -> str {
 
 /// The hash that a version of the format pins (AL-62); the version and the hash change only together. "" for a version that is not read.
 fn glossary_pinned_hash(format str) -> str {
-    if format == "2.23" { return "60383c370415" }
     if format == "2.24" { return "35c571ccda17" }
     ""
 }
@@ -77,7 +69,7 @@ fn glossary_check_text(tsv str, format str) -> str {
 fn glossary_check() -> str {
     mut last = ""
     for v in format_versions() { last = v }
-    glossary_check_text(glossary_table_text_of(last), last)
+    glossary_check_text(glossary_table_text(), last)
 }
 
 /// The dictionary for the names: a name that the normative part gives ONE English name.
@@ -86,7 +78,7 @@ fn glossary_load() -> TxGlossary {
     mut doubtful = HashMap[str, str].new()
     mut last = ""
     for v in format_versions() { last = v }
-    ro pairs = glossary_pairs_of(glossary_table_text_of(last))
+    ro pairs = glossary_pairs_of(glossary_table_text())
     for p in pairs {
         match first.get(p.ru) {
             Some(known) => {

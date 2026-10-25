@@ -6,8 +6,8 @@ module alula.machine_text_fmt
 import std.text
 import alula.machine_text.{definitions_hash, normalize_definitions, translate_definitions, defs_file_text}
 
-// The shipped file of definitions is of format 2.14 (the hash `ebb7658048b2`).
-fn cycle() -> str => defs_file_text("арифметика_цикла").replace("- format: 2.23", "- format: 2.23")
+// The shipped file of definitions is of format 2.14 (the hash `818a4aaeef4f`).
+fn cycle() -> str => defs_file_text("арифметика_цикла").replace("- format: 2.24", "- format: 2.24")
 
 // The text of 2.5: no list markers, the key lines at the first column.
 fn old_style(text str) -> str {
@@ -24,17 +24,17 @@ fn old_style(text str) -> str {
 
 test "fm versions" {
     ro v212 = base_json()
-    assert(v212.contains("\"alula_version\":\"2.23\""))
-    assert(json_of(replaced(base_text(), "- format: 2.23", "format: 2.23")) == v212)
+    assert(v212.contains("\"alula_version\":\"2.24\""))
+    assert(json_of(replaced(base_text(), "- format: 2.24", "format: 2.24")) == v212)
 }
 
 test "fm unknown version" {
     for v in ["2.4", "2.11", "3", "2.7.1", ""] {
-        ro report = checked(replaced(base_text(), "- format: 2.23", "- format: ${v}"))
+        ro report = checked(replaced(base_text(), "- format: 2.24", "- format: ${v}"))
         assert(report.errors.len() > 0)
-        assert(report_says(report, "читает формат 2.23"))
+        assert(report_says(report, "читает формат 2.24"))
     }
-    ro missing = replaced(base_text(), "- format: 2.23\n", "")
+    ro missing = replaced(base_text(), "- format: 2.24\n", "")
     assert(errors_say(missing, "формат не указан"))
 }
 
@@ -52,7 +52,7 @@ test "fm old style" {
 
 test "fm sample hash" {
     ro text = cycle()
-    assert(text.contains("- format: 2.23"))
+    assert(text.contains("- format: 2.24"))
     ro hash = definitions_hash(text)
     assert(hash.byte_len() == 12)
     assert(definitions_hash(text.replace("\n", "\r\n")) == hash)
@@ -63,7 +63,7 @@ test "fm sample hash" {
 
 test "fm line format is a part of the hash" {
     ro text = cycle()
-    assert(definitions_hash(text.replace("format: 2.23", "format: 2.11")) != definitions_hash(text))
+    assert(definitions_hash(text.replace("format: 2.24", "format: 2.11")) != definitions_hash(text))
     assert(normalize_definitions(text).ends_with("предел\n"))
 }
 
@@ -76,18 +76,18 @@ test "fm defs report" {
 
 test "fm defs unknown" {
     for v in ["2.4", "2.11", "3"] {
-        ro report = translate_definitions(cycle().replace("format: 2.23", "format: ${v}"))
+        ro report = translate_definitions(cycle().replace("format: 2.24", "format: ${v}"))
         assert(report.errors.len() == 1)
-        assert(report.errors[0].message.contains("формат файла определений должен быть 2.23"))
+        assert(report.errors[0].message.contains("формат файла определений должен быть 2.24"))
     }
 }
 
 test "fm include hash" {
     ro include = "функции: арифметика_цикла версия 1 хеш"
-    ro good = replaced(base_text(), "## Состояния\n", "## Подключения\n\n${include} ebb7658048b2\n\n## Состояния\n")
+    ro good = replaced(base_text(), "## Состояния\n", "## Подключения\n\n${include} 818a4aaeef4f\n\n## Состояния\n")
     ro good_report = checked(good)
     if good_report.errors.len() > 0 { panic(first_error_of(good_report)) }
-    assert(good_report.json.contains("\"includes\":[{\"name\":\"арифметика_цикла\",\"version\":\"1\",\"hash\":\"ebb7658048b2\"}]"))
+    assert(good_report.json.contains("\"includes\":[{\"name\":\"арифметика_цикла\",\"version\":\"1\",\"hash\":\"818a4aaeef4f\"}]"))
     ro old = replaced(base_text(), "## Состояния\n", "## Подключения\n\n${include} 1628bec298d9\n\n## Состояния\n")
-    assert(errors_say(old, "хеш файла арифметика_цикла — ebb7658048b2, а в подключении 1628bec298d9"))
+    assert(errors_say(old, "хеш файла арифметика_цикла — 818a4aaeef4f, а в подключении 1628bec298d9"))
 }

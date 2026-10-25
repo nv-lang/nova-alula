@@ -442,7 +442,7 @@ export fn render_machine_in(machine_json str, language str, copy_includes bool, 
             }
             // a tree of another version of the language is not written (no transition period, task 125): the file would say a version that the translator does not read
             if rj_gstr(root, "alula_version") != "" && !format_versions().contains(rj_gstr(root, "alula_version")) {
-                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 2.23 only is read and written (there is no transition period)"] }
+                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 2.24 only is read and written (there is no transition period)"] }
             }
             ro former = rn_former_note(root, "$")
             if former != "" { return RenderReport { text: "", notes: [former] } }
@@ -450,7 +450,7 @@ export fn render_machine_in(machine_json str, language str, copy_includes bool, 
             ro dropped = rn_dropped(cx, root, copy_includes)
             // what the fragments bring is written by the line of connection, not as the machine's own (1b (m), 2.12, AL-32)
             ro shown = if rj_garr(root, "fragments").len() == 0 { root } else { rn_without_fragments(root) }
-            ro version = if rj_gstr(shown, "alula_version") == "" { "2.23" } else { rj_gstr(shown, "alula_version") }
+            ro version = if rj_gstr(shown, "alula_version") == "" { "2.24" } else { rj_gstr(shown, "alula_version") }
             mut out = []str.new()
             out.push("# ${rn_kw(cx, "header", "Machine")}: ${rj_gstr(shown, "machine")}")
             out.push("")
