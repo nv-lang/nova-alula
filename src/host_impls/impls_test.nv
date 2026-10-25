@@ -1,0 +1,94 @@
+// impls_test.nv - task 179: the reference implementations through the test host: each class is called by its binding, the counters say so, the world is where it should be
+// after a call, and the bindings agree with a registry (spec 7a, AL-130).
+module alula.host_impls
+
+import alula.machine.{Value, Null, Int, Text, EvalError, value_equal, load_host, Registry}
+import alula.host.{Host, new_host}
+
+fn hi_val(r Result[Value, EvalError]) -> Value {
+    match r {
+        Ok(v) => v
+        Err(x) => Text("ERR ${x.message}")
+    }
+}
+
+fn hi_is(r Result[Value, EvalError], expected Value) -> bool => value_equal(hi_val(r), expected)
+
+fn hi_host() -> Host {
+    mut h = new_host()
+    bind_reference(h)
+    h.world_put("clock", Int(1000))
+    h.world_put("next_id", Text("id-1"))
+    h
+}
+
+fn hi_registry_text() -> str => `# the reference host
+
+## Primitives
+
+| name | parameters | result | class | reads | writes |
+|---|---|---|---|---|---|
+| add_one | n: int | ?int | pure | — | — |
+| join_text | a: text; b: text | text | pure | — | — |
+| lookup | key: text | ?text | volatile | objects: the store | — |
+| store | key: text; value: text | ?text | acting | — | objects: the store |
+| advance_clock | step: int | ?int | acting | — | objects: the clock |
+`
+
+fn hi_registry() -> Registry {
+    match load_host(hi_registry_text(), "") {
+        Ok(r) => r
+        Err(errors) => panic(errors.join(" | "))
+    }
+}
+
+test "pure" {
+    mut h = hi_host()
+    assert(hi_is(h.call_primitive("add_one", [Int(1)]), Int(2)))
+    assert(hi_is(h.call_primitive("add_one", [Text("x")]), Null))
+    assert(hi_is(h.call_primitive("add_one", []), Null))
+    assert(hi_is(h.call_primitive("join_text", [Text("a"), Int(1), Text("b")]), Text("ab")))
+    assert(h.stats().pure == 4)
+    assert(h.world_version() == 2)
+}
+
+test "volatile" {
+    mut h = hi_host()
+    ro v0 = h.world_version()
+    assert(hi_is(h.call_primitive("time_now", []), Int(1000)))
+    assert(hi_is(h.call_primitive("new_id", []), Text("id-1")))
+    assert(hi_is(h.call_primitive("lookup", [Text("clock")]), Int(1000)))
+    assert(hi_is(h.call_primitive("lookup", [Text("none")]), Null))
+    assert(h.stats().volatile == 4)
+    assert(h.world_version() == v0)
+    assert(h.stats().violations == 0)
+}
+
+test "acting" {
+    mut h = hi_host()
+    ro v0 = h.world_version()
+    assert(hi_is(h.call_primitive("store", [Text("k"), Text("v")]), Text("v")))
+    assert(hi_is(h.call_primitive("lookup", [Text("k")]), Text("v")))
+    assert(hi_is(h.call_primitive("advance_clock", [Int(50)]), Int(1050)))
+    assert(hi_is(h.call_primitive("time_now", []), Int(1050)))
+    assert(h.stats().acting == 2)
+    assert(h.world_version() == v0 + 2)
+    assert(h.stats().violations == 0)
+}
+
+test "bound by class" {
+    mut h = hi_host()
+    assert(h.check_bindings(hi_registry()).len() == 0)
+}
+
+test "bound to a registry that names less" {
+    mut h = hi_host()
+    ro reg = match load_host("", "") {
+        Ok(r) => r
+        Err(errors) => panic(errors.join(" | "))
+    }
+    ro problems = h.check_bindings(reg)
+    assert(problems.len() == 5)
+    assert(problems.contains("add_one: bound, but the registry names no such external function"))
+    assert(problems.contains("advance_clock: bound, but the registry names no such external function"))
+}

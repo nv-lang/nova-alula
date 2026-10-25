@@ -43,9 +43,13 @@ export type Host {
 }
 
 /// A host with no bindings and an empty world.
-export fn new_host() -> Host => {
+export fn new_host() -> Host => host_over(new_world())
+
+/// A host over a world that the caller keeps: the host and the caller see the same world (a record is shared, not copied). A product builds the world, fills it and
+/// gives it to the host; a test keeps a handle to prove that a closure that captured the world is seen by the check of the version.
+export fn host_over(world World) -> Host => {
     pures: []PureBinding.new(), vols: []VolatileBinding.new(), acts: []ActingBinding.new(),
-    world: new_world(), n_pure: 0, n_vol: 0, n_act: 0, violations: []str.new(), problems: []str.new(),
+    world, n_pure: 0, n_vol: 0, n_act: 0, violations: []str.new(), problems: []str.new(),
 }
 
 /// The class under which a name is bound, `None` when it is not bound.
