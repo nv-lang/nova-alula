@@ -51,13 +51,13 @@ test "rn eleven sections" {
     ro ru = render(calc_json(), "ru")
     ro en = render(calc_json(), "en")
     mut at = 0
-    for h in ["## Типы", "## Константы", "## Параметры", "## Вход", "## Данные", "## Стороны", "## Функции", "## Подключения", "## Состояния", "## Концы", "## Примитивы"] {
+    for h in ["## Типы", "## Константы", "## Параметры", "## Вход", "## Данные", "## Стороны", "## Функции", "## Подключения", "## Состояния", "## Концы", "## Внешние функции"] {
         ro found = index_of_line(ru, h)
         assert(found > at)
         at = found
     }
     mut at_en = 0
-    for h in ["## Types", "## Constants", "## Parameters", "## Input", "## Data", "## Parties", "## Functions", "## Includes", "## States", "## Ends", "## Primitives"] {
+    for h in ["## Types", "## Constants", "## Parameters", "## Input", "## Data", "## Parties", "## Functions", "## Includes", "## States", "## Ends", "## External functions"] {
         ro found = index_of_line(en, h)
         assert(found > at_en)
         at_en = found
@@ -353,8 +353,8 @@ test "rn expression calls" {
     ro ev = `{"op":"call","fn":"journal_event","args":[${lit("\"agent_usage\"")},${lit("\"session\"")},${nm("x")}]}`
     assert(render_expression_in(ev, "en", ["x"]) == "journal_event(\"agent_usage\", session: x)")
     assert(render_expression_in(ev, "ru", ["x"]) == "событие_журнала(\"agent_usage\", session: x)")
-    assert(render_expression_in(`{"op":"primitive_call","name":"time_now","args":[]}`, "en", []) == "call(time_now)")
-    assert(render_expression_in(`{"op":"primitive_call","name":"time_now","args":[]}`, "ru", []) == "вызвать(time_now)")
+    assert(render_expression_in(`{"op":"primitive_call","name":"time_now","args":[]}`, "en", []) == "time_now()")
+    assert(render_expression_in(`{"op":"primitive_call","name":"time_now","args":[]}`, "ru", []) == "время_сейчас()")
 }
 
 test "rn expression match" {
@@ -392,7 +392,7 @@ test "rn actions" {
     assert(act(`{"do":"machine_error","code":"fork_no_match","params":[{"name":"fork","value":${lit("\"Retry\"")}}]}`) == "machine_error(\"fork_no_match\", fork: \"Retry\")")
     assert(act(`{"do":"cancel_open"}`) == "cancel_open")
     assert(act(`{"do":"cancel_open","party":"agent"}`) == "cancel_open(party: agent)")
-    assert(act(`{"do":"call","primitive":"close_agent_turn","args":[]}`) == "call(close_agent_turn)")
+    assert(act(`{"do":"call","primitive":"close_agent_turn","args":[]}`) == "close_agent_turn()")
     assert(act(`{"do":"bind","name":"now","value":${lit("1")}}`) == "let now = 1")
 }
 
@@ -454,8 +454,8 @@ test "rn english sample has the checked shape" {
     ro made = render(json_of(methodology_en_text()), "en")
     assert(made.contains("### AgentTurn — appeal\n- Party: agent\n"))
     assert(made.contains("### Retry — fork\n- Reads: retry_count, turn\n"))
-    assert(made.contains("### Start — operation\n- On entry: let moment = call(time_now)\n"))
-    assert(made.contains("### Halted — end\n- Reads: usage, agent_request, stop_reason, transport_usage, started\n- On entry:\n  - let now = call(time_now);\n"))
+    assert(made.contains("### Start — operation\n- On entry: let moment = time_now()\n"))
+    assert(made.contains("### Halted — end\n- Reads: usage, agent_request, stop_reason, transport_usage, started\n- On entry:\n  - let now = time_now();\n"))
     assert(made.contains("- Except: stop_reason in [\"\"]\n"))
     assert(made.contains("| 9 | failure(reason in [FailCode.ConnectionLost, FailCode.Timeout, FailCode.NoResult]) | — | stop_reason = text(reason); journal(\"turn_failed\", reason: text(reason)) | Accounting |"))
     assert(made.contains("| Halted | 11 | stop_reason == \"cancel_request\" | Refusal(FailCode.Cancelled, stop_reason) |"))

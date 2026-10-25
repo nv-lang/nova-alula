@@ -25,7 +25,7 @@ import std.encoding.json.{Json}
 import std.encoding.json.{JsonValue, JsonObject}
 import alula.engine.{Incoming, SendOrder, CancelOrder, SignalOrder, Conclusion, FailCode, JournalParam, JournalEvent, journal_event, param}
 import alula.machine.{Value, Null, Int, Text, List, Dict, DictEntry, RecordField, Binding, Scope, DefTable, Expr, TypeSpec, PrimitiveHost, EvalError, Binary, Add}
-import alula.machine.{eval_defs, kind_word, make_record, make_tuple, enum_value, value_text, value_json, value_to_json, value_compare, parse_value, value_from_json, record_get, dict_get, check_value, FieldDef, TypeDefs, check_call_args, check_call_result, Lit}
+import alula.machine.{eval_defs, kind_word, make_record, make_tuple, enum_value, value_text, value_json, value_to_json, value_compare, parse_value, value_from_json, record_get, dict_get, check_value, FieldDef, TypeDefs, check_call_args, check_call_result, has_tail, Lit}
 import alula.machine_table.{MachineDef, TableRow, EventPat, Action, LValue, PathStep, NamedExpr, Bind, SignalDef, PartyDef, MachineParty}
 import alula.machine_table.{find_state, find_party, find_data}
 
@@ -687,9 +687,15 @@ fn run_actions(mut ctx Ctx, actions []Action, mut host PrimitiveHost) -> Result[
                 ro c = want_bool(run_expr(ctx, cond, host)?)?
                 if c { run_actions(ctx, then_actions, host)? } else { run_actions(ctx, else_actions, host)? }
             }
-            CallAct { name, args } => {
+            CallAct { name, args, named } => {
                 mut values = []Value.new()
                 for e in args { values.push(run_expr(ctx, e, host)?) }
+                // the named tail (AL-129) goes to the host as the last argument: the list of the pairs `(name, value)` in the order of the writing
+                if named.len() > 0 || has_tail(ctx.table.registry, name) {
+                    mut pairs = []Value.new()
+                    for f in named { pairs.push(make_tuple([Text(f.name), run_expr(ctx, f.value, host)?])) }
+                    values.push(List(pairs))
+                }
                 match check_call_args(ctx.table.registry, ctx.def.types, name, values) {
                     Ok(u) => ()
                     Err(x) => return Err(defect_fault("type_mismatch", "${name}: ${x.path} ${x.message}"))

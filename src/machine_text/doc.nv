@@ -115,7 +115,7 @@ fn struct_error(line int, col int, message str) -> TranslateError => tx_err(line
 
 /// The keys of the sections of a file of a machine, in the order of format section 1 (the English words of the table of words; `Signals` and `Response parts` are the product's).
 fn section_keys() -> []str => [
-    "Types", "Names", "Constants", "Parameters", "Input", "Data", "Parties", "Signals", "Response parts", "Functions", "Includes", "Common events", "States", "Ends", "Primitives"
+    "Types", "Names", "Constants", "Parameters", "Input", "Data", "Parties", "Signals", "Response parts", "Functions", "Includes", "Common events", "States", "Ends", "External functions"
 ]
 
 /// The words of the sections in the language of the file, for a message.
@@ -143,7 +143,12 @@ fn sections_of(entries []TxEntry, mut cx TxCx) -> []TxSection {
             if key == "" || !section_keys().contains(key) {
                 match kw_foreign(cx.words, "section", title) {
                     Some(k) => note(cx, foreign_error(cx.words, entries[i].line, 4, title, "section", k))
-                    None => note(cx, struct_error(entries[i].line, 4, "неизвестный раздел `${title}`: бывают ${section_words(cx.words)}"))
+                    None => {
+                        match former_find(cx.words.lang, "section", title) {
+                            Some(f) => note(cx, struct_error(entries[i].line, 4, former_message(f)))
+                            None => note(cx, struct_error(entries[i].line, 4, "неизвестный раздел `${title}`: бывают ${section_words(cx.words)}"))
+                        }
+                    }
                 }
             } else {
                 for seen in out {

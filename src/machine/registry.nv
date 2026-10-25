@@ -40,8 +40,8 @@ export type Position enum
     | AcceptPos
     | ActionPos
 
-/// ParamSpec: a parameter of a primitive.
-export type ParamSpec { name str, spec TypeSpec }
+/// ParamSpec: a parameter of a primitive. The named tail `...имя: Тип` (AL-129) is the last parameter with `tail`: `spec` is the type of its values, the host gets the pairs `[](name, value)` as the last argument.
+export type ParamSpec { name str, spec TypeSpec, tail bool }
 
 /// Primitive: the signature and the class of a primitive of the host.
 export type Primitive { name str, params []ParamSpec, result TypeSpec, class PrimitiveClass, reads []str, writes []str }
@@ -60,7 +60,10 @@ export type RegistryError { message str }
 export type PositionError { path str, primitive str, message str }
 
 /// A parameter.
-export fn param(name str, spec TypeSpec) -> ParamSpec => { name, spec }
+export fn param(name str, spec TypeSpec) -> ParamSpec => { name, spec, tail: false }
+
+/// The named tail of a primitive (AL-129): the last parameter, `spec` is the type of the values of the pairs.
+export fn tail_param(name str, spec TypeSpec) -> ParamSpec => { name, spec, tail: true }
 
 /// An empty registry.
 export fn new_registry() -> Registry => { primitives: []Primitive.new(), journal: []JournalCode.new(), roles: []RoleRow.new() }
@@ -120,6 +123,14 @@ export fn register(mut registry Registry, primitive Primitive) -> Result[(), Reg
             j += 1
         }
         i += 1
+    }
+    // the named tail is the last parameter, and only one (AL-129)
+    mut at = 0
+    while at < primitive.params.len() {
+        if primitive.params[at].tail && at + 1 != primitive.params.len() {
+            return Err(RegistryError { message: "the primitive ${primitive.name} has the named tail ${primitive.params[at].name} not last (AL-129)" })
+        }
+        at += 1
     }
     // a pure primitive reads its arguments only (format 2.23): it has nothing to say in `reads` and `writes`
     if primitive.class == Pure && (primitive.reads.len() > 0 || primitive.writes.len() > 0) {
@@ -197,7 +208,7 @@ fn is_nothing_spec(spec TypeSpec) -> bool {
 
 fn walk_positions(registry Registry, e Expr, position Position, path str) -> Result[(), PositionError] {
     match e {
-        CallPrimitive { name, args } => {
+        CallPrimitive { name, args, named } => {
             match check_call_position(registry, name, position) {
                 Ok(u) => ()
                 Err(x) => return Err(PositionError { path, primitive: x.primitive, message: x.message })
@@ -206,6 +217,14 @@ fn walk_positions(registry Registry, e Expr, position Position, path str) -> Res
                 Some(p) => {
                     if p.class == Acting && is_nothing_spec(p.result) {
                         return Err(PositionError { path, primitive: name, message: "the acting primitive ${name} has no result: its call is an action, it does not stand in an expression or on the right of a binding" })
+                    }
+                    ro tail = p.params.len() > 0 && p.params[p.params.len() - 1].tail
+                    ro wanted = if tail { p.params.len() - 1 } else { p.params.len() }
+                    if args.len() != wanted {
+                        return Err(PositionError { path, primitive: name, message: "${name} takes ${wanted} arguments, got ${args.len()}" })
+                    }
+                    if named.len() > 0 && !tail {
+                        return Err(PositionError { path, primitive: name, message: "${name} has no named tail: the pairs `имя: значение` are for an external function with `...имя: Тип` (AL-129)" })
                     }
                 }
                 None => ()
@@ -229,7 +248,7 @@ export fn check_expr_positions(registry Registry, expr Expr, position Position) 
 
 fn collect_names(e Expr, mut out []str) -> () {
     match e {
-        CallPrimitive { name, args } => {
+        CallPrimitive { name, args, named } => {
             mut known = false
             for n in out {
                 if n == name { known = true }
@@ -248,6 +267,42 @@ export fn primitive_names(expr Expr) -> []str {
     out
 }
 
+/// Does the primitive end its parameters with a named tail (AL-129)?
+export fn has_tail(registry Registry, name str) -> bool {
+    match find_primitive(registry, name) {
+        Some(p) => p.params.len() > 0 && p.params[p.params.len() - 1].tail
+        None => false
+    }
+}
+
+// The last argument of a call of a primitive with a tail: the list of the pairs `(name, value)`, each value of the type of the tail.
+fn check_tail_pairs(q ParamSpec, v Value, defs TypeDefs) -> Result[(), TypeCheckError] {
+    match v {
+        List(items) => {
+            mut k = 0
+            for item in items {
+                match item {
+                    Record { name, fields } => {
+                        match record_get(fields, "1") {
+                            Some(value) => {
+                                match check_at(q.spec, value, defs, "$.${q.name}[${k}]") {
+                                    Ok(u) => ()
+                                    Err(x) => return Err(x)
+                                }
+                            }
+                            None => return Err(TypeCheckError { path: "$.${q.name}[${k}]", message: "a pair of the named tail is (name, value)" })
+                        }
+                    }
+                    _ => return Err(TypeCheckError { path: "$.${q.name}[${k}]", message: "a pair of the named tail is (name, value)" })
+                }
+                k += 1
+            }
+            Ok(())
+        }
+        _ => Err(TypeCheckError { path: "$.${q.name}", message: "the named tail is a list of pairs (name, value)" })
+    }
+}
+
 /// Check the arguments of a call against the parameters of the primitive (the count and the types).
 export fn check_call_args(registry Registry, defs TypeDefs, name str, args []Value) -> Result[(), TypeCheckError] {
     match find_primitive(registry, name) {
@@ -257,9 +312,16 @@ export fn check_call_args(registry Registry, defs TypeDefs, name str, args []Val
             }
             mut i = 0
             for q in p.params {
-                match check_at(q.spec, args[i], defs, "$.${q.name}") {
-                    Ok(u) => ()
-                    Err(x) => return Err(x)
+                if q.tail {
+                    match check_tail_pairs(q, args[i], defs) {
+                        Ok(u) => ()
+                        Err(x) => return Err(x)
+                    }
+                } else {
+                    match check_at(q.spec, args[i], defs, "$.${q.name}") {
+                        Ok(u) => ()
+                        Err(x) => return Err(x)
+                    }
                 }
                 i += 1
             }

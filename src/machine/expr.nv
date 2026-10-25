@@ -76,7 +76,7 @@ export type Expr enum
     | IndexOf { target Expr, index Expr }
     | CallFn { name str, args []Expr }
     | Lambda { params []str, body Expr }
-    | CallPrimitive { name str, args []Expr }
+    | CallPrimitive { name str, args []Expr, named []FieldExpr }
     | MatchOn { subject Expr, arms []MatchArm }
     | LetIn { name str, value Expr, body Expr }
     | IfElse { cond Expr, then_branch Expr, else_branch Expr }
@@ -104,7 +104,10 @@ export fn name_ref(name str) -> Expr => Name(name)
 export fn field_of(target Expr, name str) -> Expr => FieldOf { target, name }
 export fn index_of(target Expr, index Expr) -> Expr => IndexOf { target, index }
 export fn call(name str, args []Expr) -> Expr => CallFn { name, args }
-export fn call_primitive(name str, args []Expr) -> Expr => CallPrimitive { name, args }
+export fn call_primitive(name str, args []Expr) -> Expr => CallPrimitive { name, args, named: []FieldExpr.new() }
+
+/// A call of an external function with the pairs `ключ: значение` of its named tail (AL-129), in the order of the writing.
+export fn call_primitive_named(name str, args []Expr, named []FieldExpr) -> Expr => CallPrimitive { name, args, named }
 export fn lambda1(p str, body Expr) -> Expr => Lambda { params: [p], body }
 export fn lambda2(first str, second str, body Expr) -> Expr => Lambda { params: [first, second], body }
 export fn bin(op BinOp, left Expr, right Expr) -> Expr => Binary { op, left, right }
@@ -151,7 +154,7 @@ export fn expr_depth(e Expr) -> int {
         IndexOf { target, index } => 1 + max_of(expr_depth(target), expr_depth(index))
         CallFn { name, args } => 1 + deepest(args)
         Lambda { params, body } => 1 + expr_depth(body)
-        CallPrimitive { name, args } => 1 + deepest(args)
+        CallPrimitive { name, args, named } => 1 + max_of(deepest(args), deepest_fields(named))
         MatchOn { subject, arms } => {
             mut best = expr_depth(subject)
             for a in arms {
@@ -211,7 +214,11 @@ fn children(e Expr) -> []ExprChild {
         IndexOf { target, index } => [kid("of", target), kid("index", index)]
         CallFn { name, args } => kids_of_list("args", args)
         Lambda { params, body } => [kid("body", body)]
-        CallPrimitive { name, args } => kids_of_list("args", args)
+        CallPrimitive { name, args, named } => {
+            mut out = kids_of_list("args", args)
+            for f in named { out.push(ExprChild { seg: "named.${f.name}", expr: f.value }) }
+            out
+        }
         MatchOn { subject, arms } => {
             mut out = [kid("on", subject)]
             mut i = 0
@@ -293,6 +300,18 @@ fn items_json(items []Expr) -> JsonValue {
     JsonValue.array(out)
 }
 
+// The pairs of the named tail of a call (AL-129): `[{"name": …, "value": E}, …]` in the order of the writing.
+fn named_json(named []FieldExpr) -> JsonValue {
+    mut out = []JsonValue.new()
+    for f in named {
+        mut o = JsonObject.new()
+        put(o, "name", JsonValue.str(f.name))
+        put(o, "value", expr_to_json(f.value))
+        out.push(JsonValue.object(o))
+    }
+    JsonValue.array(out)
+}
+
 fn fields_expr_json(fields []FieldExpr) -> JsonValue {
     mut o = JsonObject.new()
     for f in fields { put(o, f.name, expr_to_json(f.value)) }
@@ -370,10 +389,11 @@ export fn expr_to_json(e Expr) -> JsonValue {
             put(o, "body", expr_to_json(body))
             JsonValue.object(o)
         }
-        CallPrimitive { name, args } => {
+        CallPrimitive { name, args, named } => {
             mut o = node("primitive_call")
             put(o, "name", JsonValue.str(name))
             put(o, "args", items_json(args))
+            if named.len() > 0 { put(o, "named", named_json(named)) }
             JsonValue.object(o)
         }
         MatchOn { subject, arms } => {
@@ -533,6 +553,26 @@ fn dec_fields(o JsonObject, path str, depth int) -> Result[[]FieldExpr, ExprErro
     Ok(out)
 }
 
+// The optional key `named` of a call of an external function: the pairs of the tail, in the order of the writing (AL-129); a repeated name is an error.
+fn dec_named(o JsonObject, path str, depth int) -> Result[[]FieldExpr, ExprError] {
+    mut out = []FieldExpr.new()
+    if !o.contains("named") { return Ok(out) }
+    ro listed = need_array(o, "named", path)?
+    mut i = 0
+    for item in listed {
+        ro at = "${path}.named[${i}]"
+        ro pair = obj_of(item, at)?
+        ro name = need_text(pair, "name", at)?
+        for seen in out {
+            if seen.name == name { return Err(bad(at, "the name ${name} is repeated in the named tail (AL-129)")) }
+        }
+        ro value = need_expr(pair, "value", at, depth)?
+        out.push(FieldExpr { name, value })
+        i += 1
+    }
+    Ok(out)
+}
+
 fn dec_params(items []JsonValue, path str) -> Result[[]str, ExprError] {
     mut out = []str.new()
     mut i = 0
@@ -684,7 +724,8 @@ fn dec_op(op str, o JsonObject, path str, depth int) -> Result[Expr, ExprError] 
             ro name = need_text(o, "name", path)?
             ro listed = need_array(o, "args", path)?
             ro args = dec_list(listed, "${path}.args", depth)?
-            Ok(CallPrimitive { name, args })
+            ro named = dec_named(o, path, depth)?
+            Ok(CallPrimitive { name, args, named })
         }
         "match" => dec_match(o, path, depth)
         "let" => {

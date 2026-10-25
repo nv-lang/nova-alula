@@ -1,0 +1,114 @@
+// v224_test.nv - task 175 (Alula 2.24): the external functions of the file are in the tree as records (AL-123), the check of the declaration against the registry of the host (the name, the number and the types of
+// the parameters, the result, the class: seven kinds of difference), the named tail (AL-129) and the pairs of a call.
+module alula.machine_table
+
+import std.text
+import alula.machine.{Registry, language_registry, register, Primitive, PrimitiveClass, TypeSpec, ParamSpec, param, tail_param, IntType, TextType, NothingType, Acting, Volatile}
+
+// The registry of the tests: the language and `record(code: int, label: text)`, acting, with no result; `note(...fields: text)` with a named tail; `clock() -> int`, volatile.
+fn prim224(name str, params []ParamSpec, result TypeSpec, class PrimitiveClass) -> Primitive {
+    Primitive { name, params, result, class, reads: []str.new(), writes: []str.new() }
+}
+
+fn reg224() -> Registry {
+    mut reg = language_registry()
+    ro all = [
+        prim224("record", [param("code", IntType), param("label", TextType)], NothingType, Acting),
+        prim224("note", [param("code", IntType), tail_param("fields", TextType)], NothingType, Acting),
+        prim224("clock", []ParamSpec.new(), IntType, Volatile)
+    ]
+    for p in all {
+        match register(reg, p) {
+            Ok(u) => ()
+            Err(x) => panic("the registry of the test is wrong: ${x.message}")
+        }
+    }
+    reg
+}
+
+fn issues224(text str) -> []str {
+    mut out = []str.new()
+    match load_machine(text, reg224()) {
+        Ok(def) => ()
+        Err(list) => {
+            for e in list { out.push(issue_text(e)) }
+        }
+    }
+    out
+}
+
+fn says224(text str, needle str) -> bool {
+    for line in issues224(text) {
+        if line.contains(needle) { return true }
+    }
+    false
+}
+
+fn ok224(text str) -> bool => issues224(text).len() == 0
+
+fn with_declared(records str) -> str => tiny().replace("\"parties\":", "\"primitives\":[${records}],\"parties\":")
+
+fn rec_record(params str, result str, class str) -> str {
+    ro res = if result == "" { "" } else { "\"result\":\"${result}\"," }
+    "{\"name\":\"record\",\"params\":[${params}],${res}\"class\":\"${class}\"}"
+}
+
+fn p_int() -> str => "{\"name\":\"code\",\"type\":\"int\"}"
+
+fn p_text() -> str => "{\"name\":\"label\",\"type\":\"text\"}"
+
+test "v224 the declaration of the registry is clean, the names of the parameters are free" {
+    assert(ok224(with_declared(rec_record("${p_int()},${p_text()}", "", "acting"))))
+    assert(ok224(with_declared(rec_record("{\"name\":\"номер\",\"type\":\"int\"},{\"name\":\"метка\",\"type\":\"text\"}", "", "acting"))))
+    // a function of the registry that the file does not declare is allowed
+    assert(ok224(tiny()))
+}
+
+test "v224 seven kinds of the difference with the registry" {
+    // the name: the registry has no such function
+    assert(says224(with_declared("{\"name\":\"record_all\",\"params\":[],\"class\":\"acting\"}"), "функция record_all: нет в реестре хозяина"))
+    // the number of the parameters
+    assert(says224(with_declared(rec_record(p_int(), "", "acting")), "функция record: число параметров в файле 1, в реестре 2"))
+    // the type of a parameter
+    assert(says224(with_declared(rec_record("${p_int()},{\"name\":\"label\",\"type\":\"int\"}", "", "acting")), "функция record: параметр 2 в файле число, в реестре строка"))
+    // the result
+    assert(says224(with_declared(rec_record("${p_int()},${p_text()}", "int", "acting")), "функция record: результат в файле число, в реестре ничего"))
+    // the class
+    assert(says224(with_declared(rec_record("${p_int()},${p_text()}", "", "volatile")), "функция record: класс в файле изменчивая, в реестре действующая"))
+    // not in the registry at all
+    assert(says224(with_declared("{\"name\":\"no_such\",\"params\":[],\"class\":\"pure\"}"), "функция no_such: нет в реестре хозяина"))
+    // an extra function of the registry is no difference
+    assert(ok224(with_declared("{\"name\":\"clock\",\"params\":[],\"result\":\"int\",\"class\":\"volatile\"}")))
+}
+
+test "v224 the named tail is compared with the tail of the registry" {
+    ro tail = "{\"name\":\"fields\",\"type\":\"text\",\"tail\":true}"
+    assert(ok224(with_declared("{\"name\":\"note\",\"params\":[${p_int()},${tail}],\"class\":\"acting\"}")))
+    assert(says224(with_declared("{\"name\":\"note\",\"params\":[${p_int()},{\"name\":\"fields\",\"type\":\"text\"}],\"class\":\"acting\"}"), "функция note: параметр 2 в файле обычный, в реестре именованный хвост"))
+    assert(says224(with_declared("{\"name\":\"note\",\"params\":[${p_int()},{\"name\":\"fields\",\"type\":\"int\",\"tail\":true}],\"class\":\"acting\"}"), "функция note: параметр 2 в файле число, в реестре строка"))
+    // the tail is the last parameter
+    assert(says(with_declared("{\"name\":\"note\",\"params\":[{\"name\":\"fields\",\"type\":\"text\",\"tail\":true},${p_int()}],\"class\":\"acting\"}"), "the named tail is the last parameter"))
+}
+
+test "v224 the standard functions are not declared and a call of an undeclared function is refused" {
+    assert(says224(with_declared("{\"name\":\"new_id\",\"params\":[],\"result\":\"id\",\"class\":\"volatile\"}"), "стандартная внешняя функция языка"))
+    ro call = "{\"do\":\"call\",\"primitive\":\"record\",\"args\":[{\"op\":\"lit\",\"value\":7},{\"op\":\"lit\",\"value\":\"a\"}]}"
+    ro in_row = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"actions\":[${call}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"signal\",\"name\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
+    assert(says224(in_row, "функция record: вызывается, но не объявлена"))
+    assert(ok224(in_row.replace("\"parties\":", "\"primitives\":[${rec_record("${p_int()},${p_text()}", "", "acting")}],\"parties\":")))
+}
+
+test "v224 the pairs of the call are in the tree and only for a function with a tail" {
+    ro tail = "{\"name\":\"fields\",\"type\":\"text\",\"tail\":true}"
+    ro decl = "\"primitives\":[{\"name\":\"note\",\"params\":[${p_int()},${tail}],\"class\":\"acting\"}],\"parties\":"
+    ro pairs = "\"named\":[{\"name\":\"k\",\"value\":{\"op\":\"lit\",\"value\":\"a\"}},{\"name\":\"m\",\"value\":{\"op\":\"lit\",\"value\":\"b\"}}]"
+    ro call = "{\"do\":\"call\",\"primitive\":\"note\",\"args\":[{\"op\":\"lit\",\"value\":7}],${pairs}}"
+    ro rows = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"actions\":[${call}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"signal\",\"name\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
+    assert(ok224(rows.replace("\"parties\":", decl)))
+    // the same pairs for a function without the tail
+    ro plain = rows.replace("\"primitive\":\"note\"", "\"primitive\":\"record\"").replace("\"parties\":", "\"primitives\":[${rec_record("${p_int()},${p_text()}", "", "acting")}],\"parties\":")
+    assert(says224(plain, "has no named tail"))
+    // a repeated name in the pairs is refused by the decoder
+    ro twice = rows.replace("\"name\":\"m\"", "\"name\":\"k\"").replace("\"parties\":", decl)
+    assert(says224(twice, "is repeated in the named tail (AL-129)"))
+}

@@ -131,26 +131,6 @@ fn names_in_order(sections []TxSection) -> bool {
     true
 }
 
-// Does the text of the section call a primitive (`вызвать`)? A file of definitions has pure definitions only.
-fn section_calls(entries []TxEntry, sec TxSection, w TxWords) -> Option[TxEntry] {
-    mut i = sec.first
-    while i < sec.last {
-        ro e = entries[i]
-        if e.kind == EN_TEXT {
-            match tx_lex(e.text, e.line, e.indent + 1) {
-                Ok(tokens) => {
-                    for t in tokens {
-                        if t_is_kw(t, w, "action", "call") { return Some(e) }
-                    }
-                }
-                Err(err) => ()
-            }
-        }
-        i += 1
-    }
-    None
-}
-
 /// The file of definitions read: the version and the pieces of the JSON. The file is read in its own language (its header and the line `language`), the machine's names of definitions,
 /// types and constants come back into the machine's environment. The errors go to `cx` with the lines of the file.
 fn defs_read(file_text str, mut cx TxCx) -> TxDefsDoc {
@@ -163,6 +143,8 @@ fn defs_read(file_text str, mut cx TxCx) -> TxDefsDoc {
     ro entries = classified.entries
     ro version = defs_header(entries, dcx)
     ro sections = sections_of(entries, dcx)
+    // a file of functions has no external functions (AL-123): neither a declaration nor a call, the standard ones included
+    dcx.env.in_defs_file = true
     if !names_in_order(sections) {
         note(dcx, struct_error(1, 1, "в файле определений три раздела по порядку: ${kw_all(dcx.words, "section", ["Types", "Constants", "Functions"]).join(", ")} (пустой раздел — `—`)"))
     }
@@ -183,10 +165,6 @@ fn defs_read(file_text str, mut cx TxCx) -> TxDefsDoc {
     }
     match section_of(sections, "Functions") {
         Some(sec) => {
-            match section_calls(entries, sec, dcx.words) {
-                Some(e) => note(dcx, struct_error(e.line, e.indent + 1, "в файле определений нет `${kw(dcx.words, "action", "call")}`: только чистые определения"))
-                None => ()
-            }
             defs_register(entries, sec, dcx)
             definitions = decl_definitions(entries, sec, dcx)
         }

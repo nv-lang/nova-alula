@@ -13,18 +13,18 @@ import std.text
 type TxPair { ru str, en str }
 
 /// TxEnv: the names that the file itself introduces, collected before the sections are translated: states (the Latin name is in the heading), the data,
-/// the constants and the parameters (`globals`), the definitions, the declared types and their cases, the fields of the records, of the forms of enumerations and of the signals (`fields`), the primitives,
+/// the constants and the parameters (`globals`), the definitions, the declared types and their cases, the fields of the records, of the forms of enumerations and of the signals (`fields`), the external functions (`prims`; `tails`: those with a named tail, AL-129; `in_defs_file`: the file is a file of definitions, where an external function is refused),
 /// the parties, the signals of the parties (`psignals`), the parts of an answer and the signals of the machine, the nested machines that a fragment is given empty (`empty_lists`) or not empty (`nested_lists`: the name of the parameter and the Latin names of the
 /// machines, joined by a comma). Since 2.13 (AL-46) a name gets its JSON name from the brackets of its declaration, never from a dictionary.
 type TxEnv {
-    states []TxPair, globals []TxPair, defs []TxPair, types []TxPair, cases []TxPair, prims []TxPair,
+    states []TxPair, globals []TxPair, defs []TxPair, types []TxPair, cases []TxPair, prims []TxPair, tails []TxPair, in_defs_file bool,
     parties []TxPair, psignals []TxPair, parts []TxPair, signals []TxPair, input_fields []TxPair, fields []TxPair, empty_lists []str,
     nested_lists []TxPair, owner str, opath []str, case_types []TxPair
 }
 
 fn env_new() -> TxEnv {
     TxEnv {
-        states: []TxPair.new(), globals: []TxPair.new(), defs: []TxPair.new(), types: []TxPair.new(), cases: []TxPair.new(), prims: []TxPair.new(),
+        states: []TxPair.new(), globals: []TxPair.new(), defs: []TxPair.new(), types: []TxPair.new(), cases: []TxPair.new(), prims: []TxPair.new(), tails: []TxPair.new(), in_defs_file: false,
         parties: []TxPair.new(), psignals: []TxPair.new(), parts: []TxPair.new(), signals: []TxPair.new(), input_fields: []TxPair.new(), fields: []TxPair.new(), empty_lists: []str.new(),
         nested_lists: []TxPair.new(), owner: "", opath: []str.new(), case_types: []TxPair.new()
     }
@@ -1114,7 +1114,6 @@ fn ex_primary(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError]
     if p_is_kw(p, words, "expr", "if") || p_is_kw(p, words, "expr", "match") { return ex_expr(p, cx, sc) }
     if p_is_kw(p, words, "expr", "let") { return Err(p_fail(p, "`${kw(words, "expr", "let")}` стоит в начале блока `{ ${kw(words, "expr", "let")} имя = выр; выр }` (AL-75)")) }
     if is_keyword(words, w) { return Err(p_fail(p, "ожидается выражение")) }
-    if p_is_kw(p, words, "action", "call") && t_is(p_ahead(p, 1), "(") { return ex_primitive_call(p, cx, sc) }
     p_adv(p)
     if p_is(p, "(") { return ex_call(p, cx, sc, t) }
     if is_bare_use(p, cx, w) && bare_clash(cx, sc, t) { return Ok(ex_name(cx, sc, t)) }
@@ -1186,7 +1185,8 @@ fn ex_args(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxArgs, TranslateError]
     Ok(TxArgs { positional, named, named_tokens })
 }
 
-/// A call `имя(арг, …)` of a function of the catalog or of a definition of the file; `событие_журнала(код, имя: выр, …)` carries the pairs flat.
+/// A call `имя(арг, …)` of a function of the catalog, of a definition of the file or of an external function (AL-123); `событие_журнала(код, имя: выр, …)` carries the pairs flat, an external function with a named tail
+/// takes the pairs in the field `named` of the call (AL-129).
 fn ex_call(mut p TxP, mut cx TxCx, sc TxScope, name TxTok) -> Result[TxJ, TranslateError] {
     match macro_key(cx.words, name.text) {
         Some(key) => return Err(tx_err(name.line, name.col, "syntax", "функция списка `${name.text}(…)` вызывается как метод списка: `список.${name.text}(…)` (AL-78); переходного периода нет"))
@@ -1197,21 +1197,28 @@ fn ex_call(mut p TxP, mut cx TxCx, sc TxScope, name TxTok) -> Result[TxJ, Transl
         None => ()
     }
     ro args = ex_args(p, cx, sc)?
+    // an external function that the machine declares in `## Внешние функции` (AL-123): a call is a call of any function, the class decides where it may stand (the check)
+    match pair_get(cx.env.prims, name.text) {
+        Some(prim_en) => return Ok(ext_call_node(cx, name, prim_en, args))
+        None => ()
+    }
     mut fn_en = ""
     match kw_key(cx.words, "catalog", name.text) {
-        Some(en) => { fn_en = en }
+        Some(en) => {
+            // `время_сейчас` and `новый_ид` are declared by the language beforehand (7а): a call of the same node as a call of a declared external function
+            if en == "time_now" || en == "new_id" {
+                if cx.env.in_defs_file {
+                    cx_error(cx, name, "check", "в файле функций нет внешних функций (AL-123): `${name.text}` — стандартная внешняя функция, её зовёт машина; функция файла читает только свои аргументы")
+                }
+                named_refused(cx, name.text, args.named_tokens)
+                return Ok(x_prim(en, args.positional))
+            }
+            fn_en = en
+        }
         None => {
             match pair_get(cx.env.defs, name.text) {
                 Some(en) => { fn_en = en }
                 None => {
-                    // a primitive that the machine names in `## Примитивы` is called as a function too (format 4.6, 2.12, AL-29): the same node as `вызвать(имя, арг)`; which class may stand where is the check's
-                    match pair_get(cx.env.prims, name.text) {
-                        Some(prim_en) => {
-                            named_refused(cx, name.text, args.named_tokens)
-                            return Ok(x_prim(prim_en, args.positional))
-                        }
-                        None => ()
-                    }
                     if cx_foreign(cx, name, ["catalog"]) {
                         fn_en = name.text
                     } else if is_identifier_latin(name.text) {
@@ -1242,6 +1249,23 @@ fn ex_call(mut p TxP, mut cx TxCx, sc TxScope, name TxTok) -> Result[TxJ, Transl
     Ok(x_call(fn_en, args_all))
 }
 
+/// The node of a call of an external function: the arguments, and the pairs `ключ: значение` of the named tail when the function has one (AL-129); a pair for a function without the tail is refused (AL-120), a repeated key is an error.
+fn ext_call_node(mut cx TxCx, name TxTok, prim_en str, args TxArgs) -> TxJ {
+    if args.named.len() == 0 { return x_prim(prim_en, args.positional) }
+    if !pair_has(cx.env.tails, name.text) {
+        named_refused(cx, name.text, args.named_tokens)
+        return x_prim(prim_en, args.positional)
+    }
+    mut seen = []str.new()
+    mut at = 0
+    for n in args.named {
+        if seen.contains(n.key) { cx_error(cx, args.named_tokens[at], "check", "ключ `${n.key}` повторён в вызове `${name.text}` (AL-129)") }
+        seen.push(n.key)
+        at += 1
+    }
+    x_prim_named(prim_en, args.positional, args.named)
+}
+
 /// AL-120: the pairs `имя: значение` are read by every call, but only the forms of the journal take them (`журнал`, `событие_журнала`, `ошибка_машины`); any other callee refuses a pair by an error of the check
 /// that names the callee and the argument (the tree has no place for the pair, so it is not kept).
 fn named_refused(mut cx TxCx, callee str, named_tokens []TxTok) -> () {
@@ -1256,42 +1280,13 @@ fn named_refused_message(w TxWords, callee str, key str) -> str {
     message_named
 }
 
-/// `вызвать(примитив, арг, …)`: the primitive is named by its word of the table `## Примитивы` or by the table of names.
-fn ex_primitive_call(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
-    p_adv(p)
-    p_expect(p, "(")?
-    ro n = p_tok(p)
-    if n.kind != TK_NAME { return Err(p_fail(p, "ожидается имя примитива")) }
-    p_adv(p)
-    ro en = tr_primitive(cx, n)
-    mut args = []TxJ.new()
-    while p_eat(p, ",") {
-        ro t = p_tok(p)
-        if t.kind == TK_NAME && t_is(p_ahead(p, 1), ":") && !is_keyword(cx.words, t.text) {
-            p_adv(p)
-            p_adv(p)
-            ro skipped = ex_expr(p, cx, sc)?
-            named_refused(cx, "${kw(cx.words, "action", "call")}(${n.text}, …)", [t])
-            continue
-        }
-        args.push(ex_expr(p, cx, sc)?)
-    }
-    p_expect(p, ")")?
-    Ok(x_prim(en, args))
-}
-
+/// The JSON name of an external function that the file declares, for `разбор:` and `проверка:` (a name of a function that the machine does not declare is an error).
 fn tr_primitive(mut cx TxCx, t TxTok) -> str {
     match pair_get(cx.env.prims, t.text) {
         Some(en) => return en
         None => ()
     }
-    match kw_key(cx.words, "catalog", t.text) {
-        Some(en) => {
-            if en == "new_id" { return en }
-        }
-        None => ()
-    }
-    cx_error(cx, t, "name", "примитива `${t.text}` нет в таблице `## Примитивы` машины, и он не встроенный")
+    cx_error(cx, t, "name", "внешней функции `${t.text}` нет в разделе `## ${kw(cx.words, "section", "External functions")}` машины")
     t.text
 }
 

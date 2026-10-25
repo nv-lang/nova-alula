@@ -337,9 +337,9 @@ fn foreign_error(w TxWords, line int, col int, word str, kind str, key str) -> T
 /// The closed list of the key words of a state, a section and a connection (format 4.1; `Куда` is a column, not a key, AL-14): a paragraph that starts with one of them without the list marker is warned about.
 fn prose_keys(w TxWords) -> []str => kw_all(w, "key", ["Party", "Idle term", "Request", "Reads", "Edits", "Form returns", "On entry", "On accept", "Result", "Except", "Request limit"])
 
-// A line that begins a declaration of the sections `Типы` and `Определения`.
+// A line that begins a declaration of the sections `Типы`, `Функции` and `Внешние функции`.
 fn is_decl_start(text str, w TxWords) -> bool {
-    for k in ["type", "fn"] {
+    for k in ["type", "fn", "external"] {
         if text.starts_with("${kw(w, "decl", k)} ") { return true }
     }
     false

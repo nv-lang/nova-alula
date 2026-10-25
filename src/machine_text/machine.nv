@@ -3,7 +3,7 @@
 //
 // The order of the work is the order of the dependencies, not of the file: the names of the states, of the definitions are collected first (a row may
 // lead to a state that comes later), then the types, the constants, the parameters, the input, the data, the parties, the signals, the parts of an answer, the
-// definitions, the primitives, the common events, the states, the ends. Every error of every part is kept: the translation does not stop at the first.
+// definitions, the external functions, the common events, the states, the ends. Every error of every part is kept: the translation does not stop at the first.
 module alula.machine_text
 
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
@@ -242,16 +242,15 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
         None => ()
     }
 
-    // the primitives are named before the parties, the data and the rows that call them (a profile, a parse and a check of `Правит` name them too)
-    mut primitives = []str.new()
-    match section_of(sections, "Primitives") {
-        Some(sec) => { primitives = decl_primitives(entries, sec, cx) }
-        None => ()
-    }
-
     mut types = TxTypes { records: []TxJ.new(), variants: []TxJ.new() }
     match section_of(sections, "Types") {
         Some(sec) => { types = decl_types(entries, sec, cx) }
+        None => ()
+    }
+    // the external functions are declared after the types (a signature names them) and before the parties, the data and the rows that call them (a profile, a parse and a check of `Правит` name them too)
+    mut primitives = []TxJ.new()
+    match section_of(sections, "External functions") {
+        Some(sec) => { primitives = decl_externals(entries, sec, cx) }
         None => ()
     }
     mut constants = []TxJ.new()
@@ -423,7 +422,7 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
     if common.len() > 0 { root.push(kv("common_events", TxArr(common))) }
     root.push(kv("states", TxArr(states)))
     root.push(kv("ends", jobj([kv("result", js(ends.result)), kv("rows", TxArr(ends.rows))])))
-    if primitives.len() > 0 { root.push(kv("primitives", jstrs(primitives))) }
+    if primitives.len() > 0 { root.push(kv("primitives", TxArr(primitives))) }
 
     ro elaborated = el_root(jobj(root))
     for e in el_errors(elaborated) { cx.errors.push(e) }

@@ -10,8 +10,8 @@ fn hc_ticked(text str) -> str => text.replace("'", hc_tick())
 
 // A machine of a shop: its action calls the acting primitive `reserve` of the host and journals the code `item_reserved` of the host.
 fn hc_shop() -> str {
-    ro table = "\n## Primitives\n\n| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| reserve | — | — | acting | — | — |\n"
-    ro machine = tiny_en().replace("turn_count += 1", "turn_count += 1; call(reserve, \"tea\", 1); journal(\"item_reserved\", item: \"tea\")").replace("Machine: Малая", "Machine: Shop").replace("- machine: Tiny", "- machine: Shop")
+    ro table = "\n## External functions\n\n```\nexternal fn reserve(item str, count int>=1) acting\n```\n"
+    ro machine = tiny_en().replace("turn_count += 1", "turn_count += 1; reserve(\"tea\", 1); journal(\"item_reserved\", item: \"tea\")").replace("Machine: Малая", "Machine: Shop").replace("- machine: Tiny", "- machine: Shop")
     "${machine}${table}"
 }
 
@@ -99,14 +99,13 @@ test "host cli compile and summary use the host too" {
     assert(summary.code == 0)
 }
 
-test "host cli render writes the class of a primitive from the registry of the host" {
+test "host cli render writes the declaration of an external function from the tree alone" {
     ro compiled = run_with(["compile", "/work/shop.alula.md"], hc_files(true, true))
-    ro files = [NamedText { name: "/work/shop.alula.json", text: compiled.out }, NamedText { name: "/work/registry.md", text: hc_registry() }]
-    ro shown = run_with(["render", "/work/shop.alula.json"], files)
-    assert(shown.code == 0)
-    assert(shown.out.contains("| reserve | — | — | действующая | — | — |"))
+    // the tree T1 holds the signature and the class (AL-123): the file is written without the registry of the host
     ro plain = run_with(["render", "/work/shop.alula.json"], one("/work/shop.alula.json", compiled.out))
-    assert(plain.out.contains("| reserve | — | — | изменчивая | — | — |"))
+    assert(plain.code == 0)
+    assert(plain.out.contains("внешняя функция reserve(item строка, count число>=1) действующая"))
+    assert(plain.out.contains("reserve(\"tea\", 1)"))
 }
 
 test "host cli test reads the host from the folder" {

@@ -296,7 +296,7 @@ fn fixer() -> str => `{"format":"machine/2","machine":"Fixer","version":"1",
 {"name":"c_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"},
 {"name":"got","type":"text","initial":{"expr":{"op":"lit","value":""}}}],
 "parties":[{"name":"c","id":"c","kind":"machine","nested":"callee","input_type":"In","result":"Out","parse":{"primitive":"parse_out","type":"Out"},"counter":"c_attempt"}],
-"primitives":["parse_out","changed"],
+"primitives":[{"name":"parse_out","params":[{"name":"out","type":"Out"}],"result":"Out","class":"volatile"},{"name":"changed","params":[],"result":"bool","class":"volatile"}],
 "initial":"Ask",
 "states":[{"name":"Ask","kind":"appeal","party":"c","edits":"proposal","edit_check":"changed","form_returns":1,
 "inputs":[{"field":"note","value":{"op":"name","name":"proposal"},"reads":"party"}],
@@ -309,7 +309,7 @@ fn fixer() -> str => `{"format":"machine/2","machine":"Fixer","version":"1",
 // The standard registry and the two primitives of the fixer: the parse takes the answer and gives the parsed one, the check says whether the object changed.
 fn fixer_registry() -> Registry {
     mut reg = sample_registry()
-    ro out = ParamSpec { name: "out", spec: RecordType("Out") }
+    ro out = ParamSpec { name: "out", spec: RecordType("Out"), tail: false }
     ro parse = Primitive { name: "parse_out", params: [out], result: RecordType("Out"), class: Volatile, reads: []str.new(), writes: []str.new() }
     ro changed = Primitive { name: "changed", params: []ParamSpec.new(), result: BoolType, class: Volatile, reads: []str.new(), writes: []str.new() }
     ro first = register(reg, parse)

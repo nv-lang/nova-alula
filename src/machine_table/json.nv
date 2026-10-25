@@ -7,7 +7,7 @@
 module alula.machine_table
 
 import std.encoding.json.{Json, JsonValue, JsonObject}
-import alula.machine.{Expr, Lit, Text, TypeSpec, TypeDefs, FieldDef, RecordDef, VariantDef, EnumValue, CaseDef, Bind, DefFn, expr_from_json, field_def, TextType, ListType, TupleType, parse_spec}
+import alula.machine.{Expr, FieldExpr, Lit, Text, TypeSpec, TypeDefs, FieldDef, RecordDef, VariantDef, EnumValue, CaseDef, Bind, DefFn, expr_from_json, field_def, TextType, ListType, TupleType, parse_spec}
 
 /// The format tag of the tree.
 export const MACHINE_FORMAT = "machine/2"
@@ -532,6 +532,60 @@ fn dec_definitions(root JsonObject, defs TypeDefs) -> Result[[]DefFn, LoadError]
     Ok(out)
 }
 
+// The pairs of the named tail of a call of an external function (AL-129): `[{"name", "value"}, …]` in the order of the writing; a repeated name is refused.
+fn dec_named_tail(o JsonObject, path str) -> Result[[]FieldExpr, LoadError] {
+    mut out = []FieldExpr.new()
+    if !j_has(o, "named") { return Ok(out) }
+    ro items = j_need_arr(o, "named", path)?
+    mut i = 0
+    for item in items {
+        ro p = "${path}.named[${i}]"
+        ro pair = j_obj(item, p)?
+        j_only(pair, ["name", "value"], p)?
+        ro name = j_need_str(pair, "name", p)?
+        for seen in out {
+            if seen.name == name { return Err(le(p, "the name ${name} is repeated in the named tail (AL-129)")) }
+        }
+        out.push(FieldExpr { name, value: j_expr(pair, "value", p)? })
+        i += 1
+    }
+    Ok(out)
+}
+
+// The declarations of the external functions of the file (AL-123, tree T1): `[{"name", "params": [{"name", "type", "tail"?}], "result"?, "class"}]`.
+fn dec_primitives(root JsonObject) -> Result[[]PrimDecl, LoadError] {
+    mut out = []PrimDecl.new()
+    if !j_has(root, "primitives") { return Ok(out) }
+    ro items = j_need_arr(root, "primitives", "$")?
+    mut i = 0
+    for item in items {
+        ro p = "$.primitives[${i}]"
+        ro o = j_obj(item, p)?
+        j_only(o, ["name", "params", "result", "class"], p)?
+        ro name = j_need_str(o, "name", p)?
+        for seen in out {
+            if seen.name == name { return Err(le(p, "the external function ${name} is declared twice")) }
+        }
+        mut params = []PrimParamDecl.new()
+        ro listed = j_arr_or_empty(o, "params", p)?
+        mut k = 0
+        for q in listed {
+            ro qp = "${p}.params[${k}]"
+            ro qo = j_obj(q, qp)?
+            j_only(qo, ["name", "type", "tail"], qp)?
+            ro tail = j_bool_or(qo, "tail", false, qp)?
+            if tail && k + 1 != listed.len() { return Err(le(qp, "the named tail is the last parameter (AL-129)")) }
+            params.push(PrimParamDecl { name: j_need_str(qo, "name", qp)?, type_text: j_need_str(qo, "type", qp)?, tail })
+            k += 1
+        }
+        ro class = j_need_str(o, "class", p)?
+        if class != "pure" && class != "volatile" && class != "acting" { return Err(le("${p}.class", "the class is pure, volatile or acting, got ${class}")) }
+        out.push(PrimDecl { name, params, result: j_str_or(o, "result", "", p)?, class })
+        i += 1
+    }
+    Ok(out)
+}
+
 fn dec_includes(root JsonObject) -> Result[[]IncludeDef, LoadError] {
     ro items = j_arr_or_empty(root, "includes", "$")?
     mut out = []IncludeDef.new()
@@ -914,8 +968,8 @@ fn dec_action(v JsonValue, path str) -> Result[Action, LoadError] {
             })
         }
         "call" => {
-            j_only(o, ["do", "primitive", "args"], path)?
-            Ok(CallAct { name: j_need_str(o, "primitive", path)?, args: j_exprs_or_empty(o, "args", path)? })
+            j_only(o, ["do", "primitive", "args", "named"], path)?
+            Ok(CallAct { name: j_need_str(o, "primitive", path)?, args: j_exprs_or_empty(o, "args", path)?, named: dec_named_tail(o, path)? })
         }
         "machine_error" => {
             j_only(o, ["do", "code", "params"], path)?
@@ -1131,7 +1185,7 @@ fn dec_machine(root JsonObject) -> Result[MachineDef, LoadError] {
     ro common = dec_rows(root, "common_events", "$")?
     ro states = dec_states(root)?
     ro ends = dec_ends(root, types)?
-    ro primitives = j_strings_or_empty(root, "primitives", "$")?
+    ro primitives = dec_primitives(root)?
     Ok(MachineDef {
         name, version, types, constants, params, input, data, parties, request_limit, signals,
         definitions, includes, fragments, initial, error_end, common, states,

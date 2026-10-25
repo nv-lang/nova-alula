@@ -108,7 +108,6 @@ fn ac_stmt(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError]
     ro opens = t_is(p_ahead(p, 1), "(")
     if t_is_kw(t, words, "action", "journal") && opens { return ac_journal(p, cx, sc) }
     if t_is_kw(t, words, "action", "machine_error") && opens { return ac_machine_error(p, cx, sc) }
-    if t_is_kw(t, words, "action", "call") && opens { return ac_call(p, cx, sc) }
     if t_is_kw(t, words, "action", "for") { return ac_for(p, cx, sc) }
     if t_is_kw(t, words, "action", "if") { return ac_if(p, cx, sc) }
     if t_is_kw(t, words, "action", "let") { return ac_let(p, cx, sc) }
@@ -119,7 +118,27 @@ fn ac_stmt(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError]
         Some(e) => return Err(e)
         None => ()
     }
+    // `имя(арг);` — a call of an external function as an action (AL-123); `вызвать(…)` of the formats before 2.24 is refused with the new writing
+    if opens {
+        match former_find(words.lang, "call", w) {
+            Some(f) => return Err(tx_err(t.line, t.col, "syntax", former_message(f)))
+            None => ()
+        }
+        if pair_has(cx.env.prims, w) || standard_call(cx, w) { return ac_call(p, cx, sc) }
+        // a name with brackets in the place of an action is a call of an external function; it must be declared (AL-123)
+        if !pair_has(cx.env.defs, w) && kw_key(words, "catalog", w) == None {
+            return Err(tx_err(t.line, t.col, "name", "внешняя функция `${w}` не объявлена: она объявляется строкой раздела `## ${kw(words, "section", "External functions")}` (AL-123)"))
+        }
+    }
     ac_assign(p, cx, sc)
+}
+
+// Is the word one of the external functions that the language declares beforehand (`время_сейчас`, `новый_ид`, 7а)?
+fn standard_call(cx TxCx, w str) -> bool {
+    match kw_key(cx.words, "catalog", w) {
+        Some(en) => en == "time_now" || en == "new_id"
+        None => false
+    }
 }
 
 // `поле = выр`, `поле += выр`, `поле[ключ] = выр`, `поле[ключ].поле = выр`.
@@ -222,28 +241,39 @@ fn ac_machine_error(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, Transl
     Ok(stmt_of([a_machine_error(first.text, params)]))
 }
 
-// `вызвать(примитив, арг, …)` as an action.
+// `имя(арг, …)` as an action: a call of an external function in the place of an action (AL-123); the pairs of the named tail are `ключ: значение` after the positional arguments (AL-129).
 fn ac_call(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError] {
-    p_adv(p)
-    p_adv(p)
     ro n = p_tok(p)
-    if n.kind != TK_NAME { return Err(p_fail(p, "ожидается имя примитива")) }
     p_adv(p)
-    ro en = tr_primitive(cx, n)
-    mut args = []TxJ.new()
-    while p_eat(p, ",") {
-        ro t = p_tok(p)
-        if t.kind == TK_NAME && t_is(p_ahead(p, 1), ":") && !is_keyword(cx.words, t.text) {
-            p_adv(p)
-            p_adv(p)
-            ro skipped = ex_expr(p, cx, sc)?
-            named_refused(cx, "${kw(cx.words, "action", "call")}(${n.text}, …)", [t])
-            continue
-        }
-        args.push(ex_expr(p, cx, sc)?)
+    ro args = ex_args(p, cx, sc)?
+    if cx.env.in_defs_file && standard_call(cx, n.text) {
+        cx_error(cx, n, "check", "в файле функций нет внешних функций (AL-123): `${n.text}` — стандартная внешняя функция, её зовёт машина")
     }
-    p_expect(p, ")")?
-    Ok(stmt_of([a_call(en, args)]))
+    ro node = match pair_get(cx.env.prims, n.text) {
+        Some(en) => ext_call_action(cx, n, en, args)
+        None => {
+            named_refused(cx, n.text, args.named_tokens)
+            ro std_en = kw_key(cx.words, "catalog", n.text) ?? n.text
+            a_call(std_en, args.positional)
+        }
+    }
+    Ok(stmt_of([node]))
+}
+
+fn ext_call_action(mut cx TxCx, name TxTok, prim_en str, args TxArgs) -> TxJ {
+    if args.named.len() == 0 { return a_call(prim_en, args.positional) }
+    if !pair_has(cx.env.tails, name.text) {
+        named_refused(cx, name.text, args.named_tokens)
+        return a_call(prim_en, args.positional)
+    }
+    mut seen = []str.new()
+    mut at = 0
+    for n in args.named {
+        if seen.contains(n.key) { cx_error(cx, args.named_tokens[at], "check", "ключ `${n.key}` повторён в вызове `${name.text}` (AL-129)") }
+        seen.push(n.key)
+        at += 1
+    }
+    a_call_named(prim_en, args.positional, args.named)
 }
 
 // `для имя из выр { действия }` (AL-72, AL-97; in English `for x in xs { … }`).

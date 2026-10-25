@@ -24,26 +24,31 @@ test "red unreachable" {
     assert(says(cut, "the state Finished cannot be reached"))
 }
 
+// The declaration of `close_agent_turn` in the key `primitives` of the tree (AL-123): the registry of the tests has it acting, with no parameters and no result.
+fn declared_close() -> str => "\"primitives\":[{\"name\":\"close_agent_turn\",\"params\":[],\"class\":\"acting\"}]"
+
 test "red primitive class" {
     ro in_cond = tiny().replace(jb(">=", jn("n"), jl("2")), jprim("close_agent_turn", ""))
     assert(says(in_cond, "may not stand in condition"))
     // AL-117: a volatile call may stand in the actions of a row (they run once), not in a condition
     ro read_in_action = tiny_rows(wait_rows_with(jprim("time_now", "")))
-    assert(ok_text(read_in_action.replace("\"parties\":", "\"primitives\":[\"time_now\"],\"parties\":")))
+    assert(ok_text(read_in_action))
     ro read_in_cond = tiny().replace(jb(">=", jn("n"), jl("2")), jb(">=", jprim("time_now", ""), jl("2")))
     assert(says(read_in_cond, "the volatile primitive time_now may not stand in condition"))
     ro unregistered = tiny_rows(wait_rows_with(jprim("no_such", "")))
     assert(says(unregistered, "the primitive no_such is not registered"))
-    ro unlisted = tiny().replace("\"parties\":", "\"primitives\":[\"time_now\"],\"parties\":")
-    assert(ok_text(unlisted))
+    // `time_now` and `new_id` belong to the language (7a): a machine does not declare them
+    assert(ok_text(tiny()))
+    ro declared_standard = tiny().replace("\"parties\":", "\"primitives\":[{\"name\":\"time_now\",\"params\":[],\"result\":\"int\",\"class\":\"volatile\"}],\"parties\":")
+    assert(says(declared_standard, "стандартная внешняя функция языка"))
     ro call = "{\"do\":\"call\",\"primitive\":\"close_agent_turn\"}"
     ro in_row = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"actions\":[${call}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"signal\",\"name\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
-    assert(says(in_row, "called but not listed in primitives"))
-    assert(ok_text(in_row.replace("\"parties\":", "\"primitives\":[\"close_agent_turn\"],\"parties\":")))
+    assert(says(in_row, "вызывается, но не объявлена"))
+    assert(ok_text(in_row.replace("\"parties\":", "${declared_close()},\"parties\":")))
     ro reading_call = call.replace("close_agent_turn", "time_now")
     ro bad_call = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"actions\":[${reading_call}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"signal\",\"name\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
     // a volatile call as an action has no effect (it only reads): the result is bound
-    assert(says(bad_call.replace("\"parties\":", "\"primitives\":[\"time_now\"],\"parties\":"), "the call of the volatile primitive time_now as an action has no effect"))
+    assert(says(bad_call, "the call of the volatile primitive time_now as an action has no effect"))
 }
 
 // The class of a primitive and the place of its call (AL-116): an acting call is not in a condition, not in the request, not in the entry of a fork; a call of an acting primitive without a result is not a value.
@@ -69,7 +74,7 @@ test "red acting without a result is not a value" {
     ro in_entry = tiny().replace("\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[\"n\"]", "\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[\"n\"],\"entry\":[${bound}]")
     assert(says(in_entry, "the acting primitive close_agent_turn has no result"))
     ro as_action = tiny_rows("{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"actions\":[{\"do\":\"call\",\"primitive\":\"close_agent_turn\"}],\"to\":\"Decide\"},{\"n\":2,\"event\":{\"kind\":\"signal\",\"name\":\"halt\"},\"actions\":[${jassign("stop", jl(jstr("a")))}],\"to\":\"Stopped\"}")
-    assert(!says(as_action.replace("\"parties\":", "\"primitives\":[\"close_agent_turn\"],\"parties\":"), "has no result"))
+    assert(!says(as_action.replace("\"parties\":", "${declared_close()},\"parties\":"), "has no result"))
 }
 
 test "red ends not exhausted" {

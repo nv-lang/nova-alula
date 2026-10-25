@@ -7,7 +7,7 @@
 // ORACLE-WORKAROUND(34): "none or one" is a list of zero or one item or an empty text, not an `Option` field of a record (the nearest known defect: an `Option` of an enum held by a record declared before the enum breaks the C); the enums are declared before the records that hold them; use `Option` fields when item 34 is fixed
 module alula.machine_table
 
-import alula.machine.{Expr, TypeSpec, TypeDefs, FieldDef, Bind, DefFn}
+import alula.machine.{Expr, FieldExpr, TypeSpec, TypeDefs, FieldDef, Bind, DefFn}
 
 /// LoadError: why a machine is refused, with the place in the JSON (`$.states[2].rows[0].event`).
 export type LoadError { path str, message str }
@@ -82,7 +82,7 @@ export type Action enum
     | LetAct { name str, value Expr, body []Action }
     | BindAct { name str, value Expr }
     | IfAct { cond Expr, then_actions []Action, else_actions []Action }
-    | CallAct { name str, args []Expr }
+    | CallAct { name str, args []Expr, named []FieldExpr }
     | MachineErrorAct { code str, params []NamedExpr }
     | CancelOpenAct { party str, except []Expr }
     | PassAct { nested Expr, signal str }
@@ -152,6 +152,12 @@ export type AnswerDef enum
 /// EndRow: a row of the table "Ends": the end, the number, the condition of entry and the answer.
 export type EndRow { state str, n int, when Expr, answer AnswerDef }
 
+/// PrimParamDecl: a parameter of an external function that the file declares (AL-123): the name, the type as the tree writes it, the mark of the named tail `...имя: Тип` (AL-129; `type_text` is then the type of its values).
+export type PrimParamDecl { name str, type_text str, tail bool }
+
+/// PrimDecl: the declaration of an external function in the file (AL-123, tree T1): the JSON name, the parameters, the result as the tree writes it (empty: no result) and the class (`pure`, `volatile`, `acting`).
+export type PrimDecl { name str, params []PrimParamDecl, result str, class str }
+
 /// MachineDef: the whole machine.
 export type MachineDef {
     name str, version str, types TypeDefs,
@@ -159,7 +165,7 @@ export type MachineDef {
     parties []PartyDef, request_limit []Expr, signals []SignalDef,
     definitions []DefFn, includes []IncludeDef, fragments []FragmentUse,
     initial str, error_end str, common []TableRow, states []StateDef,
-    result_spec []TypeSpec, end_rows []EndRow, primitives []str
+    result_spec []TypeSpec, end_rows []EndRow, primitives []PrimDecl
 }
 
 /// The built-in names of the machine (what the executor provides, format 3.1): not data, not constants.

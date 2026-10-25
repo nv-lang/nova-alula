@@ -97,6 +97,15 @@ fn x_call(fn_name str, args []TxJ) -> TxJ => jobj([kv("op", js("call")), kv("fn"
 
 fn x_prim(name str, args []TxJ) -> TxJ => jobj([kv("op", js("primitive_call")), kv("name", js(name)), kv("args", TxArr(args))])
 
+/// The pairs `{"name", "value"}` of the named tail of a call of an external function (AL-129), in the order of the writing.
+fn named_pairs(named []TxKV) -> TxJ {
+    mut out = []TxJ.new()
+    for n in named { out.push(jobj([kv("name", js(n.key)), kv("value", n.value)])) }
+    TxArr(out)
+}
+
+fn x_prim_named(name str, args []TxJ, named []TxKV) -> TxJ => jobj([kv("op", js("primitive_call")), kv("name", js(name)), kv("args", TxArr(args)), kv("named", named_pairs(named))])
+
 fn x_bin(op str, left TxJ, right TxJ) -> TxJ => jobj([kv("op", js(op)), kv("left", left), kv("right", right)])
 
 fn x_un(op str, operand TxJ) -> TxJ => jobj([kv("op", js(op)), kv("operand", operand)])
@@ -196,6 +205,8 @@ fn a_if(cond TxJ, then_actions []TxJ, else_actions []TxJ) -> TxJ {
 }
 
 fn a_call(primitive str, args []TxJ) -> TxJ => jobj([kv("do", js("call")), kv("primitive", js(primitive)), kv("args", TxArr(args))])
+
+fn a_call_named(primitive str, args []TxJ, named []TxKV) -> TxJ => jobj([kv("do", js("call")), kv("primitive", js(primitive)), kv("args", TxArr(args)), kv("named", named_pairs(named))])
 
 fn a_machine_error(code str, params []TxKV) -> TxJ {
     mut pairs = [kv("do", js("machine_error")), kv("code", js(code))]

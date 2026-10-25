@@ -3,7 +3,7 @@ module alula.machine_text
 
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
-import alula.machine.{Registry, language_registry, class_word}
+import alula.machine.{Registry, language_registry}
 
 fn rn_binds(cx RnCx, bind RJ) -> str {
     mut parts = []str.new()
@@ -305,21 +305,44 @@ fn rn_sec_ends(mut cx RnCx, root RJ) -> []str {
     out
 }
 
-fn rn_class_of(cx RnCx, name str) -> str {
-    for p in cx.registry.primitives {
-        if p.name == name { return rn_kw(cx, "enum_value", class_word(p.class)) }
-    }
-    rn_kw(cx, "enum_value", "volatile")
-}
-
-fn rn_sec_primitives(cx RnCx, root RJ) -> []str {
-    mut rows = []RnRow.new()
+// The section of the external functions (AL-123): the declarations of the tree, one per line, in a block of code. The class of a pure function has no word; the named tail is the last parameter `...имя: Тип` (AL-129).
+fn rn_sec_primitives(mut cx RnCx, root RJ) -> []str {
+    mut lines = []str.new()
+    mut at = 0
     for n in rj_garr(root, "primitives") {
-        ro name = rj_str(n)
-        rows.push(RnRow { cells: [name, "—", "—", rn_class_of(cx, name), "—", "—"] })
+        ro name = rj_gstr(n, "name")
+        if name == "" {
+            rn_note(cx, "$.primitives[${at}]: since 2.24 an external function is a record `{ name, params, result, class }`, not a name (AL-123)")
+            at += 1
+            continue
+        }
+        mut params = []str.new()
+        for q in rj_garr(n, "params") {
+            ro tail = match rj_get(q, "tail") {
+                Some(x) => match x {
+                    RBool(b) => b
+                    _ => false
+                }
+                None => false
+            }
+            if tail {
+                params.push("...${rj_gstr(q, "name")}: ${rn_type(cx, rj_gstr(q, "type"))}")
+            } else {
+                params.push("${rj_gstr(q, "name")} ${rn_type(cx, rj_gstr(q, "type"))}")
+            }
+        }
+        mut line = "${rn_kw(cx, "decl", "external")} ${rn_kw(cx, "decl", "fn")} ${name}(${params.join(", ")})"
+        ro class = rj_gstr(n, "class")
+        if class == "volatile" || class == "acting" { line = "${line} ${rn_kw(cx, "enum_value", class)}" }
+        if rj_gstr(n, "result") != "" { line = "${line} -> ${rn_type(cx, rj_gstr(n, "result"))}" }
+        lines.push(line)
+        at += 1
     }
-    if rows.len() == 0 { return ["—"] }
-    rn_table(rn_cols(cx, ["name", "parameters", "result", "class", "reads", "writes"]), rows)
+    if lines.len() == 0 { return ["—"] }
+    mut out = ["```"]
+    rn_add(out, lines)
+    out.push("```")
+    out
 }
 
 // ---- the names of the included files ------------------------------------------------------------------------------------------
@@ -402,7 +425,7 @@ fn rn_former_note(v RJ, path str) -> str {
 /// machine's own (else the line of connection stands and the copies are left out, section 1b (м)).
 export fn render_machine_with(machine_json str, language str, copy_includes bool) -> RenderReport => render_machine_in(machine_json, language, copy_includes, language_registry())
 
-/// The same with the registry of the host: the class of a primitive in the table "Primitives" of the file is the class that the registry gives (a primitive that the registry does not know is `volatile`).
+/// The same with the registry of the host (kept for the callers: the tree T1 of 2.24 holds the class and the signature of an external function itself, the file is written from the tree alone).
 export fn render_machine_in(machine_json str, language str, copy_includes bool, registry Registry) -> RenderReport {
     if language != "ru" && language != "en" {
         return RenderReport { text: "", notes: ["the language must be `ru` or `en`, got `${language}`"] }
@@ -448,7 +471,7 @@ export fn render_machine_in(machine_json str, language str, copy_includes bool, 
             rn_add(out, rn_sec_common(cx, shown))
             rn_section(out, rn_kw(cx, "section", "States"), rn_sec_states(cx, shown))
             rn_section(out, rn_kw(cx, "section", "Ends"), rn_sec_ends(cx, shown))
-            rn_section(out, rn_kw(cx, "section", "Primitives"), rn_sec_primitives(cx, shown))
+            rn_section(out, rn_kw(cx, "section", "External functions"), rn_sec_primitives(cx, shown))
             RenderReport { text: "${rn_trimmed(out).join("\n")}\n", notes: cx.notes }
         }
     }

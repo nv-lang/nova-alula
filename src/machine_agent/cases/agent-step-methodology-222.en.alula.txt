@@ -233,7 +233,7 @@ Pause(halt_signal: halt, halt_code: "pause_halt", nested: [],
 Initial state: Start
 
 ### Start — operation
-- On entry: let moment = call(time_now)
+- On entry: let moment = time_now()
 
 | № | Event | Condition | Actions | To |
 |---|---|---|---|---|
@@ -289,7 +289,7 @@ The appeal has no "On accept" (in the code `on_accept` is empty). A form fix goe
 
 ### ReplyValidation — fork
 - Reads: return_count, reply_text, reply_artifact, agent_request
-- On entry: let validation = call(reply_validation)
+- On entry: let validation = reply_validation()
 
 | № | Condition | Actions | To |
 |---|---|---|---|
@@ -346,7 +346,7 @@ The request field `permission_request` is named as the data but with another exp
 ### Accounting — operation
 - Reads: agent_request, stop_reason, transport_usage, started
 - On entry:
-  - let now = call(time_now);
+  - let now = time_now();
   - let collected = collect_usage(agent_request, stop_reason, transport_usage, started, now)
 
 | № | Event | Condition | Actions | To |
@@ -370,8 +370,8 @@ The Pause state is brought by the "Pause" fragment (section "Includes"); it is n
 ### Halted — end
 - Reads: usage, agent_request, stop_reason, transport_usage, started
 - On entry:
-  - let now = call(time_now);
-  - call(close_agent_turn);
+  - let now = time_now();
+  - close_agent_turn();
   - if not has(usage) then { journal(usage_event(collect_usage(agent_request, stop_reason, transport_usage, started, now))) };
   - journal("agent_step_stopped", reason: stop_reason)
 - Except: stop_reason in [""]
@@ -379,8 +379,8 @@ The Pause state is brought by the "Pause" fragment (section "Includes"); it is n
 ### Errored — end
 - Reads: all_data
 - On entry:
-  - let now = call(time_now);
-  - call(close_agent_turn);
+  - let now = time_now();
+  - close_agent_turn();
   - if not has(usage) then { journal(usage_event(collect_usage(agent_request, stop_reason, transport_usage, started, now))) };
   - journal(transition_note);
   - journal(all_data)
@@ -409,12 +409,11 @@ Errored is entered from the `else` rows of the forks (`machine_error("fork_no_ma
 
 The set of `stop_reason` has 12 values; Halted covers 11, the twelfth (`""`) is taken off by the `Except` line. The values `pause_halt` and `cancel_request` are required by the "Pause" fragment; both rows exist (No. 10 and No. 11). The cost limit has no code of its own (`cost_limit` leads to `MaxTokens`, decision 7 of the source).
 
-## Primitives
+## External functions
 
-| name | parameters | result | class | reads | writes |
-|---|---|---|---|---|---|
-| time_now | — | int | volatile | — | — |
-| reply_validation | — | ReplyCheck | volatile | reply_text, reply_artifact, agent_request; objects: session files | service record "form remarks" (read by turn "fix") |
-| close_agent_turn | — | — | acting | — | — |
+```
+external fn reply_validation() volatile -> ReplyCheck
+external fn close_agent_turn() acting
+```
 
 `time_now` is milliseconds of the epoch. `reply_validation` is measured by the executor before the ReplyValidation fork: the form of the reply is valid, violated, or the reply is empty; the form remarks stay with the executor and do not enter the data. `close_agent_turn` tells the transport about the cancellation of the open turn, including one held until the permission decision; it runs as the last stage of fixation and may be repeated without harm.
