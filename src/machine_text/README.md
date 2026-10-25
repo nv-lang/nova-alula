@@ -50,7 +50,7 @@ The marker `- ` is OPTIONAL when reading (a file of format 2.5, such as `chat.al
 The body of `При входе` of several actions may be a nested list, one action to an item (`  - пусть сейчас = вызвать(time_now);`), the `;` at the end of an item is kept; an item of a nested list is read as a continuation line without its marker.
 A table after a list item stands at the level of the block after an empty line. `format: 2.6` is read like `format: 2.5`; the key `alula_version` of the tree is the format of the file (`2.5` or `2.6`). The hash of the sample file of definitions is `1628bec298d9` (the line `format: 2.6` is a part of the hash).
 
-**Format 2.7 (task 110).** Every mark of the version is run (the marks P-1...P-9 of section 0 of the format); the sample of the methodology (`spec/samples/agent-step.alula.md`, 2.7, copied as it is into `src/machine_agent/cases/`) is translated whole, with no error.
+**Format 2.7 (task 110).** Every mark of the version is run (the marks P-1...P-9 of section 0 of the changelog of the format); the sample of the methodology (`spec/samples/agent-step.alula.md`, 2.7, copied as it is into `src/machine_agent/cases/`) is translated whole, with no error.
 
 | Mark | What the translator does |
 |---|---|
@@ -63,7 +63,7 @@ A table after a list item stands at the level of the block after an empty line. 
 
 ## Format 2.12 (task 125)
 
-The marks AL-23 ... AL-33 and AL-37 of section 0 of the specification, what the translator and the reverse generator do with each (the analysis with the numbers is `doc/tasks/125-*/analysis.md`):
+The marks AL-23 ... AL-33 and AL-37 of section 0 of the changelog of the specification (`spec/alula-changelog.md`), what the translator and the reverse generator do with each (the analysis with the numbers is `doc/tasks/125-*/analysis.md`):
 
 | Mark | What the translator does |
 |---|---|
@@ -220,7 +220,7 @@ first column is a row (`\|` is a bar of the text, a bar in a string literal is n
 строка". Expressions, actions and types are those of sections 2, 3 and 5 (`?T`, `[]T`, `словарь[K, V]`, `полный словарь[K, V]`, tuples, `число≥n`, sets of literals `"a" | "b"`, `ид`; `если`, `пусть`,
 `выбор`, lambdas, `{ ...x, поле: выр }`, `Тип.Форма { … }`, `вызвать(примитив, …)`; `поле = выр`, `+=`, `поле[ключ] = выр`, `журнал(…)`, `ошибка_машины(…)`, `для каждого`, `если … то (…) иначе (…)`).
 
-Extensions of the product (they are the proposals of section 14 of the format, И-4, that the interpreter has): the section `## Части ответа` (`| сторона | имя | поля |`) and the event
+Extensions of the product (they are the proposals of section 14 of the changelog of the format, И-4, that the interpreter has): the section `## Части ответа` (`| сторона | имя | поля |`) and the event
 `часть(имя(поле: имя))` for a part of an answer that keeps the request open; the event `срок` (the term made by the executor); the section `## Сигналы` (`| имя | поля |`) and `сигнал(имя)` in the
 rows of any appeal; `отменить_открытые(сторона: имя)` cancels the open requests of one party. The chat machine (`src/machine/machines/chat.alula.md`) uses all four.
 

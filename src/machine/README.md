@@ -391,7 +391,7 @@ What the interpreter got for it (decisions are in `doc/tasks/109-agent-step-mach
 
 # Format 2.7 (task 110)
 
-Task 110 (`doc/tasks/110-format-27/`) brought the tree, the interpreter and the translator to format 2.7 of the methodology (marks P-1...P-9 of section 0 of the format). The sample of the agent step of the methodology
+Task 110 (`doc/tasks/110-format-27/`) brought the tree, the interpreter and the translator to format 2.7 of the methodology (marks P-1...P-9 of section 0 of the changelog of the format). The sample of the agent step of the methodology
 (`spec/samples/agent-step.alula.md`, 2.7) is translated whole and with no hand edit; the table of the product (`machines/agent_step.alula.txt`) is that sample with the two keys of the project in the column "project override".
 
 - **The tree.** `alula_version` may be `2.7`. A variant that is an enum has the optional key **`values`** (it was `words` before 2.13), the list of the pairs `["Name", "word"]` in the order of the declaration (only the values that have a word; a
@@ -486,7 +486,7 @@ Task 121 (`doc/tasks/121-session-start/`, the analysis with the numbers is its `
 
 # Alula 2.12 (task 125)
 
-Task 125 (`doc/tasks/125-*/`, the analysis with the numbers is its `analysis.md`) moved the product to the version 2.12 of the language (the methodology commit `255fe28`, the marks AL-23 ... AL-37 of section 0 of the specification). There is no transition period (the owner, 2026-10-20): the translator, the decoder of the tree, the schema and the program read `2.12` and refuse `2.11` and every older version. What changed in the interpreter side:
+Task 125 (`doc/tasks/125-*/`, the analysis with the numbers is its `analysis.md`) moved the product to the version 2.12 of the language (the methodology commit `255fe28`, the marks AL-23 ... AL-37 of section 0 of the changelog of the specification). There is no transition period (the owner, 2026-10-20): the translator, the decoder of the tree, the schema and the program read `2.12` and refuse `2.11` and every older version. What changed in the interpreter side:
 
 - **The version.** `alula_versions()` is `["2.12"]`, `ALULA_VERSION` is `"2.12"`; the schema lists only `2.12`. Every machine of `machines/` says `format: 2.12` / `alula_version: "2.12"` and was built again by `alula compile`.
 - **The flat input of the agent step (AL-30).** The input of a nested machine is the record of the fields of its `## Вход`. The agent step has the eight fields of `ЗапросАгента` (`kind`, `profile`, `session`, `dialog_kind`, `context`, `limits`, `trace`, `step`; its datum `agent_request` is built by the record constructor), `dialog_steps` and `session_start` call it with `machine шаг_агента(вход ЗапросАгента, итог ОтветАгента)`: seven fields in the table "Input" of the appeal, the profile by the column of the party. A start without a field is `input_rejected` with the name of the field (the 8 scenarios `agent-step-flow-input-without-*`). The starts of the 83 scenarios of the agent step and of the 6 of `nested-steps-*` are the flat fields (the generators: `doc/tasks/109-agent-step-machine/tools`, `119-nested-machines/tools`, `121-session-start/tools`).
