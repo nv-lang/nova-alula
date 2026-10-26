@@ -111,6 +111,11 @@ fn foreign_refined(cx TxCx, e TranslateError) -> TranslateError {
 
 fn struct_error(line int, col int, message str) -> TranslateError => tx_err(line, col, "structure", message)
 
+// A line that is one dash: an empty section of 2.25; in a file of 2.26 an empty section is not written (AL-137), the dash is an error.
+fn dash_line(mut cx TxCx, e TxEntry) -> () {
+    if cx.v226 { note(cx, struct_error(e.line, e.indent + 1, "с 2.26 пустой раздел не пишется: строки `—` нет, раздел без строк опускается (AL-137)")) }
+}
+
 // ---- the sections ----------------------------------------------------------------------------------------------------------------
 
 /// The keys of the sections of a file of a machine, in the order of format section 1 (the English words of the table of words; `Signals` and `Response parts` are the product's).
@@ -139,6 +144,12 @@ fn sections_of(entries []TxEntry, mut cx TxCx) -> []TxSection {
             match kw_key(cx.words, "section", title) {
                 Some(k) => { key = k }
                 None => ()
+            }
+            // the seam of 2.26 (AL-137): `## Выход` is the section of the ends of a file of 2.26, `## Концы` of a file of 2.25; the key of the section stays `Ends`
+            if key == "Output" {
+                key = if cx.v226 { "Ends" } else { "" }
+            } else if key == "Ends" && cx.v226 {
+                note(cx, struct_error(entries[i].line, 4, "с 2.26 раздел называется `## ${kw(cx.words, "section", "Output")}`: `- ${kw(cx.words, "key", "Result")}: <тип>` и таблица `${kw(cx.words, "column", "end")} | ${kw(cx.words, "column", "when")} | ${kw(cx.words, "column", "response")}` (AL-137); переходного периода нет"))
             }
             if key == "" || !section_keys().contains(key) {
                 match kw_foreign(cx.words, "section", title) {
@@ -263,6 +274,7 @@ fn section_table(entries []TxEntry, sec TxSection, expected []str, mut cx TxCx) 
             seen = true
             i = tab_end(entries, i, sec.last, cx.words)
         } else if e.kind == EN_TEXT && e.text == "—" {
+            dash_line(cx, e)
             i += 1
         } else {
             note(cx, struct_error(e.line, e.indent + 1, "лишняя строка в разделе `${sec.title}`"))

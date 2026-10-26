@@ -8,7 +8,8 @@ import alula.machine.{Registry, language_registry}
 
 /// RnCx: the context of one generation: the language, the words, the names of the host, the notes about what the file cannot say. Every name is written as it lies in the tree (section 1b (ж), AL-46).
 /// `cell` is true while a cell of a table is written (a `выбор` stands on one line there); `indent` is the indent of the line that the expression stands in (a multi-line `выбор` of a block of code, AL-87).
-type RnCx { lang str, words TxWords, names TxNames, notes []str, catalog []str, cell bool, indent int, registry Registry }
+/// `v226`: the tree is of 2.26 and is written in the form of 2.26 (task 195): no `№`, the empty cell, `## Выход`, the external functions without the prefix, no line `Читает:`.
+type RnCx { lang str, words TxWords, names TxNames, notes []str, catalog []str, cell bool, indent int, registry Registry, v226 bool }
 
 fn rn_cx(lang str) -> RnCx => rn_cx_in(lang, language_registry())
 
@@ -18,7 +19,7 @@ fn rn_cx_in(lang str, registry Registry) -> RnCx {
     for r in words_rows() {
         if r.kind == "catalog" { catalog.push(r.en) }
     }
-    RnCx { lang, words: words_load(lang), names: names_load_for(lang), notes: []str.new(), catalog, cell: true, indent: 0, registry }
+    RnCx { lang, words: words_load(lang), names: names_load_for(lang), notes: []str.new(), catalog, cell: true, indent: 0, registry, v226: false }
 }
 
 // ORACLE-WORKAROUND(45): a copy of a `ro` list built by hand in a loop; `mut out = items` when item 45 is fixed (the same in `rn_with`)

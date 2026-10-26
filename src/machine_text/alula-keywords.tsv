@@ -1,12 +1,10 @@
 kind	ru	en
 header	Машина	Machine
-header	Функции	Functions
-header	Фрагмент	Fragment
+header	Библиотека	Library
 header	machine	machine
 header	machine_version	machine_version
 header	format	format
-header	functions_version	functions_version
-header	fragment	fragment
+header	library	library
 header	language	language
 section	Типы	Types
 section	Константы	Constants
@@ -17,26 +15,28 @@ section	Стороны	Parties
 section	Функции	Functions
 section	Подключения	Includes
 section	Состояния	States
-section	Концы	Ends
+section	Выход	Output
 section	Внешние функции	External functions
 section	Имена	Names
-section	Обязывает	Requires
+section	Требует	Requires
 section	Общие события	Common events
+section	Данные движка	Engine data
+section	События стороны	Party events
 column	имя	name
 column	тип	type
 column	значение	value
 column	по умолчанию	default
 column	переопределение проектом	project_override
 column	примечание	note
+column	комментарий	comment
+column	параметр	parameter
 column	начальное	initial
 column	не убывает	non_decreasing
-column	пишет	writes
 column	идентификатор	id
 column	вид	kind
 column	профиль	profile
 column	сигналы	signals
 column	счётчик	counter
-column	№	№
 column	Событие	Event
 column	Условие	Condition
 column	Действия	Actions
@@ -49,7 +49,7 @@ column	читает	reads
 column	конец	end
 column	ответ	response
 column	когда	when
-column	допустимые значения	allowed_values
+column	части	parts
 column	параметры	parameters
 column	результат	result
 column	класс	class
@@ -65,7 +65,6 @@ key	Правит	Edits
 key	проверка	check
 key	Возвратов формы	Form returns
 key	Запрос	Request
-key	Читает	Reads
 key	При входе	On entry
 key	При приёме	On accept
 key	Результат	Result
@@ -73,9 +72,9 @@ key	Предел запросов	Request limit
 key	набор	set
 key	Кроме	Except
 key	Инвариант	Invariant
-key	функции	functions
-key	версия	version
-key	хеш	hash
+key	Файл	File
+key	Имя	Name
+key	Хеш	Hash
 key	проект	project
 kind_party	agent	agent
 kind_party	human	human
@@ -88,8 +87,9 @@ kind_party	итог	result
 kind_party	вход	input
 event	ответ	response
 event	сбой	failure
-event	сразу	immediate
 event	сигнал	signal
+event	часть	part
+event	срок	timeout
 event	причина	reason
 event	иначе	else
 destination	предыдущее	previous
@@ -99,7 +99,6 @@ destination	запуск заново	rerun
 decl	тип	type
 decl	перечисление	enum
 decl	функция	fn
-decl	внешняя	external
 type	число	int
 type	число>=	int>=
 type	вещественное	f64
@@ -112,11 +111,7 @@ type	Состояние	State
 type	Сигнал	Signal
 type	СобытиеЖурнала	JournalEvent
 type	ИсходВорот	GateOutcome
-kind_param	сигнал	signal
-kind_param	строка	str
-kind_param	[]машина	[]machine
-kind_param	поведение	behavior
-kind_param	примечание	note
+type	КодСбоя	FailCode
 expr	если	if
 expr	то	then
 expr	иначе	else
@@ -135,6 +130,7 @@ action	журнал	journal
 action	ошибка_машины	machine_error
 action	передать	pass
 action	отменить_открытые	cancel_open
+action	сторона	party
 action	кроме	except
 action	для	for
 action	из	in
@@ -172,17 +168,9 @@ readable	открытые_запросы	open_requests
 readable	слова_человека	human_words
 readable	причина	reason
 enum_value	механика	mechanics
-enum_value	действия	rows
-enum_value	действия и механика	rows_and_mechanics
-enum_value	фрагмент	fragment
-enum_value	действия и фрагмент	rows_and_fragment
 enum_value	сторона	party
 enum_value	исполнитель	executor
 enum_value	да	yes
-enum_value	без_возврата_в_к_отправке	without_return_to_send
-enum_value	прекратить_ход_транспорта	stop_transport_turn
-enum_value	ничего	nothing
-enum_value	запросы_из_к_отправке	requests_from_to_send
 enum_value	стоп	stop
 enum_value	продолжить	continue
 enum_value	остановить	halt
@@ -190,6 +178,16 @@ enum_value	отмена	cancel
 enum_value	pure	pure
 enum_value	изменчивая	volatile
 enum_value	действующая	acting
+enum_value	НетРезультата	NoResult
+enum_value	ОтказМодели	ModelRefused
+enum_value	СоединениеОборвалось	ConnectionLost
+enum_value	ФормаНеИсправлена	FormNotFixed
+enum_value	НетОтветаВСрок	Timeout
+enum_value	ОстановленоЧеловеком	StoppedByHuman
+enum_value	ПотолокЗаходов	CeilingReached
+enum_value	ОтмененоРодителем	Cancelled
+enum_value	ПредельТокенов	MaxTokens
+enum_value	ПредельЗапросовХода	MaxTurnRequests
 catalog	есть	has
 catalog	обязательно	require
 catalog	обязательно_непустое	require_non_empty

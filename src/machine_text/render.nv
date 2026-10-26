@@ -15,7 +15,11 @@ export type RenderReport { text str, notes []str }
 /// RnRow: a row of a table, the texts of its cells.
 type RnRow { cells []str }
 
+// The empty cell of a table of 2.26 ("none" in a row, "the same name" in the request, AL-137): written `|  |`; an empty text of any other cell is `—`.
+const RN_EMPTY = "\t"
+
 fn rn_cell(text str) -> str {
+    if text == RN_EMPTY { return "" }
     if text == "" { return "—" }
     text.replace("|", "\\|")
 }

@@ -517,6 +517,7 @@ fn decl_input(entries []TxEntry, sec TxSection, mut cx TxCx) -> TxInput {
             }
             i += line.taken
         } else if e.kind == EN_TEXT && e.text == "—" {
+            dash_line(cx, e)
             i += 1
         } else {
             note(cx, struct_error(e.line, e.indent + 1, "лишняя строка в разделе `Вход`"))

@@ -68,7 +68,7 @@ fn rn_event(cx RnCx, ev RJ, locals []str) -> RnEvent {
 
 fn rn_destination(cx RnCx, row RJ) -> str {
     ro to = rj_gstr(row, "to")
-    if to == "" { return "—" }
+    if to == "" { return if cx.v226 { RN_EMPTY } else { "—" } }
     mut text = to
     if to == "@previous" { text = rn_kw(cx, "destination", "previous") }
     if to == "@same" { text = rn_kw(cx, "destination", "same") }
@@ -93,7 +93,9 @@ fn rn_bind_names_of(actions []RJ) -> []str {
     out
 }
 
-fn rn_rows(mut cx RnCx, rows []RJ, fork bool, locals []str) -> []str {
+fn rn_rows(mut cx RnCx, rows []RJ, kind str, locals []str) -> []str {
+    if cx.v226 { return rn_rows_226(cx, rows, kind, locals) }
+    ro fork = kind == "fork"
     mut out = []RnRow.new()
     for r in rows {
         mut cells = []str.new()
@@ -128,6 +130,42 @@ fn rn_rows(mut cx RnCx, rows []RJ, fork bool, locals []str) -> []str {
     }
     ro keys = if fork { ["№", "Condition", "Actions", "To"] } else { ["№", "Event", "Condition", "Actions", "To"] }
     rn_table(rn_cols(cx, keys), out)
+}
+
+// The rows of 2.26 (AL-137): no `№`; an appeal and a common event `Событие | Условие | Действия | Куда`, a fork `Условие | Действия | Куда`, an operation `Действия | Куда`; "none" is the empty cell.
+fn rn_rows_226(mut cx RnCx, rows []RJ, kind str, locals []str) -> []str {
+    mut out = []RnRow.new()
+    for r in rows {
+        mut cells = []str.new()
+        mut row_locals = rn_copy(locals)
+        if kind != "fork" && kind != "operation" {
+            ro ev = match rj_get(r, "event") {
+                Some(e) => rn_event(cx, e, locals)
+                None => RnEvent { text: RN_EMPTY, locals }
+            }
+            cells.push(ev.text)
+            row_locals = ev.locals
+        }
+        if kind != "operation" {
+            ro cond = match rj_get(r, "cond") {
+                Some(c) => rn_expr(cx, c, row_locals)
+                None => RN_EMPTY
+            }
+            ro is_else = match rj_get(r, "else") {
+                Some(e) => match e {
+                    RBool(b) => b
+                    _ => false
+                }
+                None => false
+            }
+            cells.push(if is_else { rn_kw(cx, "event", "else") } else { cond })
+        }
+        ro acts = rj_garr(r, "actions")
+        cells.push(if acts.len() == 0 { RN_EMPTY } else { rn_actions(cx, acts, row_locals).text })
+        cells.push(rn_destination(cx, r))
+        out.push(RnRow { cells })
+    }
+    rn_table(rn_cols(cx, rows_columns(kind, true)), out)
 }
 
 fn rn_entry_lines(mut cx RnCx, st RJ, locals []str) -> []str {
@@ -187,13 +225,18 @@ fn rn_state(mut cx RnCx, st RJ, index int) -> []str {
                     None => false
                 }
                 ro value = match rj_get(i, "value") {
-                    Some(e) => if same { "—" } else { rn_expr(cx, e, []str.new()) }
+                    Some(e) => if same { if cx.v226 { RN_EMPTY } else { "—" } } else { rn_expr(cx, e, []str.new()) }
                     None => "none"
                 }
-                ro reads = rn_kw(cx, "enum_value", if rj_gstr(i, "reads") == "party" { "party" } else { "executor" })
-                rows.push(RnRow { cells: [rn_field_name(cx, rj_gstr(i, "field")), value, reads] })
+                if cx.v226 {
+                    // 2.26 (AL-138): no column `читает`, the field goes to the party
+                    rows.push(RnRow { cells: [rn_field_name(cx, rj_gstr(i, "field")), value] })
+                } else {
+                    ro reads = rn_kw(cx, "enum_value", if rj_gstr(i, "reads") == "party" { "party" } else { "executor" })
+                    rows.push(RnRow { cells: [rn_field_name(cx, rj_gstr(i, "field")), value, reads] })
+                }
             }
-            rn_add(out, rn_table(rn_cols(cx, ["request_field", "expression", "reads"]), rows))
+            rn_add(out, rn_table(rn_cols(cx, if cx.v226 { ["request_field", "expression"] } else { ["request_field", "expression", "reads"] }), rows))
         }
         ro accept = rj_garr(st, "accept")
         if accept.len() > 0 {
@@ -211,16 +254,18 @@ fn rn_state(mut cx RnCx, st RJ, index int) -> []str {
             rn_add(out, rn_table(rn_cols(cx, ["event", "actions"]), rows))
         }
         out.push("")
-        rn_add(out, rn_rows(cx, rj_garr(st, "rows"), false, []str.new()))
+        rn_add(out, rn_rows(cx, rj_garr(st, "rows"), "appeal", []str.new()))
         return out
     }
-    // an operation, a fork, an end: the names read (no line when it reads nothing, AL-40), the entry, the exception, the rows
-    match rj_get(st, "reads_all") {
-        Some(r) => { out.push("- ${rn_kw(cx, "key", "Reads")}: ${rn_kw(cx, "readable", "all_data")}") }
-        None => {
-            mut names = []str.new()
-            for n in rj_garr(st, "reads") { names.push(rn_global(cx, rj_str(n))) }
-            if names.len() > 0 { out.push("- ${rn_kw(cx, "key", "Reads")}: ${names.join(", ")}") }
+    // an operation, a fork, an end: the names read (no line when it reads nothing, AL-40; no line in 2.26, the reads are derived, AL-138), the entry, the exception, the rows
+    if !cx.v226 {
+        match rj_get(st, "reads_all") {
+            Some(r) => { out.push("- ${rn_kw(cx, "key", "Reads")}: ${rn_kw(cx, "readable", "all_data")}") }
+            None => {
+                mut names = []str.new()
+                for n in rj_garr(st, "reads") { names.push(rn_global(cx, rj_str(n))) }
+                if names.len() > 0 { out.push("- ${rn_kw(cx, "key", "Reads")}: ${names.join(", ")}") }
+            }
         }
     }
     rn_add(out, rn_entry_lines(cx, st, []str.new()))
@@ -234,7 +279,7 @@ fn rn_state(mut cx RnCx, st RJ, index int) -> []str {
     }
     if kind != "end" {
         out.push("")
-        rn_add(out, rn_rows(cx, rj_garr(st, "rows"), kind == "fork", rn_bind_names_of(rj_garr(st, "entry"))))
+        rn_add(out, rn_rows(cx, rj_garr(st, "rows"), kind, rn_bind_names_of(rj_garr(st, "entry"))))
     }
     out
 }
@@ -258,7 +303,7 @@ fn rn_sec_common(mut cx RnCx, root RJ) -> []str {
     if rows.len() == 0 { return out }
     out.push("## ${rn_kw(cx, "section", "Common events")}")
     out.push("")
-    rn_add(out, rn_rows(cx, rows, false, []str.new()))
+    rn_add(out, rn_rows(cx, rows, "appeal", []str.new()))
     out.push("")
     out
 }
@@ -299,9 +344,13 @@ fn rn_sec_ends(mut cx RnCx, root RJ) -> []str {
             }
             text = "${rn_kw(cx, "expr", "Refusal")}(${code}, ${reason})"
         }
-        rows.push(RnRow { cells: [rj_gstr(r, "state"), rj_gscalar(r, "n"), when, text] })
+        if cx.v226 {
+            rows.push(RnRow { cells: [rj_gstr(r, "state"), when, text] })
+        } else {
+            rows.push(RnRow { cells: [rj_gstr(r, "state"), rj_gscalar(r, "n"), when, text] })
+        }
     }
-    rn_add(out, rn_table(rn_cols(cx, ["end", "№", "when", "response"]), rows))
+    rn_add(out, rn_table(rn_cols(cx, if cx.v226 { ["end", "when", "response"] } else { ["end", "№", "when", "response"] }), rows))
     out
 }
 
@@ -331,7 +380,7 @@ fn rn_sec_primitives(mut cx RnCx, root RJ) -> []str {
                 params.push("${rj_gstr(q, "name")} ${rn_type(cx, rj_gstr(q, "type"))}")
             }
         }
-        mut line = "${rn_kw(cx, "decl", "external")} ${rn_kw(cx, "decl", "fn")} ${name}(${params.join(", ")})"
+        mut line = if cx.v226 { "${name}(${params.join(", ")})" } else { "${rn_kw(cx, "decl", "external")} ${rn_kw(cx, "decl", "fn")} ${name}(${params.join(", ")})" }
         ro class = rj_gstr(n, "class")
         if class == "volatile" || class == "acting" { line = "${line} ${rn_kw(cx, "enum_value", class)}" }
         if rj_gstr(n, "result") != "" { line = "${line} -> ${rn_type(cx, rj_gstr(n, "result"))}" }
@@ -403,6 +452,12 @@ fn rn_section(mut out []str, heading str, lines []str) -> () {
     out.push("")
 }
 
+// A section of 2.26: an empty section (a dash, or nothing) is not written (AL-137).
+fn rn_section_226(mut out []str, heading str, lines []str) -> () {
+    if lines.len() == 0 || (lines.len() == 1 && lines[0] == "—") { return }
+    rn_section(out, heading, lines)
+}
+
 /// The first former key or kind of a tree of 2.12 (`words` of a party or of an enum, the event kind `word`, the argument `halt_word`): the place and the message, "" when the tree holds none. No transition period (AL-38, AL-41).
 fn rn_former_note(v RJ, path str) -> str {
     for pair in rj_pairs(v) {
@@ -447,6 +502,7 @@ export fn render_machine_in(machine_json str, language str, copy_includes bool, 
             ro former = rn_former_note(root, "$")
             if former != "" { return RenderReport { text: "", notes: [former] } }
             mut cx = rn_cx_in(language, registry)
+            cx.v226 = rj_gstr(root, "alula_version") == "2.26"
             ro dropped = rn_dropped(cx, root, copy_includes)
             // what the fragments bring is written by the line of connection, not as the machine's own (1b (m), 2.12, AL-32)
             ro shown = if rj_garr(root, "fragments").len() == 0 { root } else { rn_without_fragments(root) }
@@ -459,6 +515,23 @@ export fn render_machine_in(machine_json str, language str, copy_includes bool, 
             out.push("- format: ${version}")
             out.push("- language: ${language}")
             out.push("")
+            if cx.v226 {
+                // 2.26 (section 1, 1b (б)): the order of the sections, an empty section is not written, the ends are `## Выход`, the external functions stand before the functions
+                rn_section_226(out, rn_kw(cx, "section", "Types"), rn_sec_types(cx, shown, dropped.types))
+                rn_section_226(out, rn_kw(cx, "section", "Constants"), rn_sec_constants(cx, shown, dropped.constants))
+                rn_section_226(out, rn_kw(cx, "section", "Parameters"), rn_sec_params(cx, shown))
+                rn_section_226(out, rn_kw(cx, "section", "Input"), rn_sec_input(cx, shown))
+                rn_section_226(out, rn_kw(cx, "section", "Data"), rn_sec_data(cx, shown))
+                rn_section_226(out, rn_kw(cx, "section", "Parties"), rn_sec_parties(cx, shown))
+                rn_add(out, rn_extra_sections(cx, shown))
+                rn_section_226(out, rn_kw(cx, "section", "Includes"), rn_sec_includes(cx, shown, copy_includes))
+                rn_section_226(out, rn_kw(cx, "section", "External functions"), rn_sec_primitives(cx, shown))
+                rn_section_226(out, rn_kw(cx, "section", "Functions"), rn_sec_definitions(cx, shown, dropped.definitions))
+                rn_add(out, rn_sec_common(cx, shown))
+                rn_section_226(out, rn_kw(cx, "section", "States"), rn_sec_states(cx, shown))
+                rn_section_226(out, rn_kw(cx, "section", "Output"), rn_sec_ends(cx, shown))
+                return RenderReport { text: "${rn_trimmed(out).join("\n")}\n", notes: cx.notes }
+            }
             rn_section(out, rn_kw(cx, "section", "Types"), rn_sec_types(cx, shown, dropped.types))
             rn_section(out, rn_kw(cx, "section", "Constants"), rn_sec_constants(cx, shown, dropped.constants))
             rn_section(out, rn_kw(cx, "section", "Parameters"), rn_sec_params(cx, shown))

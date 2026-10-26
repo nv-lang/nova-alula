@@ -35,7 +35,8 @@ type TxPlace { path str, line int }
 
 /// TxCx: the context of one translation: the errors and the warnings, the table of names of the host, the names of the file, the JSON names that it declares (`jn`, jname.nv), the counts of the rows, the places of the JSON and
 /// the words of the language of the file.
-type TxCx { errors []TranslateError, warnings []TranslateError, names TxNames, env TxEnv, jn TxJn, rows_total int, rows_noted int, places []TxPlace, words TxWords }
+/// `v226`: the file is of the format 2.26 and its forms are read (task 195); false for a file of 2.25, read in its former form until stream 4 migrates the files.
+type TxCx { errors []TranslateError, warnings []TranslateError, names TxNames, env TxEnv, jn TxJn, rows_total int, rows_noted int, places []TxPlace, words TxWords, v226 bool }
 
 fn cx_place(mut cx TxCx, path str, line int) -> () {
     cx.places.push(TxPlace { path, line })

@@ -277,6 +277,7 @@ fn decl_parties(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxPartyRow {
             }
             i += line.taken
         } else if e.kind == EN_TEXT && e.text == "—" {
+            dash_line(cx, e)
             i += 1
         } else {
             note(cx, struct_error(e.line, e.indent + 1, "лишняя строка в разделе `Стороны`"))
@@ -394,7 +395,7 @@ fn def_segs(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxSeg {
     while i < sec.last {
         ro e = entries[i]
         if e.kind == EN_TEXT {
-            if e.text != "—" { segs.push(TxSeg { text: e.text, line: e.line, col: e.indent + 1, code: e.fenced }) }
+            if e.text != "—" { segs.push(TxSeg { text: e.text, line: e.line, col: e.indent + 1, code: e.fenced }) } else { dash_line(cx, e) }
         } else {
             note(cx, struct_error(e.line, 1, "в разделе `${sec.name}` таблиц нет"))
         }
@@ -544,8 +545,13 @@ fn decl_definitions(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
 fn primitive_classes() -> []str => ["pure", "volatile", "acting"]
 
 /// The tokens of the next declaration are skipped up to the next `внешняя` (or the end): after an error in a declaration the next one is read.
-fn ext_skip(mut p TxP, cx TxCx) -> () {
+fn ext_skip(mut p TxP, cx TxCx, head_line int) -> () {
     p_adv(p)
+    if cx.v226 {
+        // a declaration of 2.26 has no word before it (AL-142): the next one begins a line
+        while !p_done(p) && !(p_tok(p).line > head_line && p_tok(p).col == 1) { p_adv(p) }
+        return
+    }
     while !p_done(p) && !p_is_kw(p, cx.words, "decl", "external") { p_adv(p) }
 }
 
@@ -568,7 +574,15 @@ fn ext_param(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
 /// One declaration `внешняя функция имя(арг тип, …) [класс] [-> тип]` without a body (AL-123).
 fn ext_one(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
     ro head = p_tok(p)
-    if !t_is_kw(head, cx.words, "decl", "external") {
+    if cx.v226 {
+        // 2.26 (AL-142): `имя(арг тип, …) [класс] [-> тип]`, no word before the name
+        if t_is_kw(head, cx.words, "decl", "external") {
+            return Err(tx_err(head.line, head.col, "syntax", "с 2.26 внешняя функция пишется без слов `${kw(cx.words, "decl", "external")} ${kw(cx.words, "decl", "fn")}`: `имя(арг тип, …) [класс] [-> тип]` (AL-142); переходного периода нет"))
+        }
+        if t_is_kw(head, cx.words, "decl", "fn") {
+            return Err(tx_err(head.line, head.col, "syntax", "в разделе `## ${kw(cx.words, "section", "External functions")}` объявление — `имя(арг тип, …) [класс] [-> тип]` без слова `${kw(cx.words, "decl", "fn")}` (AL-142)"))
+        }
+    } else if !t_is_kw(head, cx.words, "decl", "external") {
         match former_find(cx.words.lang, "decl", head.text) {
             Some(f) => return Err(tx_err(head.line, head.col, "syntax", former_message(f)))
             None => ()
@@ -578,10 +592,12 @@ fn ext_one(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
         }
         return Err(tx_err(head.line, head.col, "syntax", "ожидается `${kw(cx.words, "decl", "external")} ${kw(cx.words, "decl", "fn")}`, найдено: ${t_shown(head)}"))
     }
-    p_adv(p)
-    p_expect_kw(p, cx.words, "decl", "fn")?
+    if !cx.v226 {
+        p_adv(p)
+        p_expect_kw(p, cx.words, "decl", "fn")?
+    }
     ro n = p_tok(p)
-    if n.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "decl", "external")} ${kw(cx.words, "decl", "fn")}` ожидается имя")) }
+    if n.kind != TK_NAME { return Err(p_fail(p, if cx.v226 { "ожидается имя внешней функции" } else { "после `${kw(cx.words, "decl", "external")} ${kw(cx.words, "decl", "fn")}` ожидается имя" })) }
     p_adv(p)
     mut json = n.text
     match readable_json(cx.words, n.text) {
@@ -667,7 +683,7 @@ fn decl_externals(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
                     }
                     Err(e) => {
                         note(cx, e)
-                        ext_skip(p, cx)
+                        ext_skip(p, cx, head.line)
                     }
                 }
                 if cx.errors.len() > before { cx.rows_noted += 1 }

@@ -21,6 +21,9 @@ fn keywords_text() -> str => embed_str("alula-keywords.tsv")
 
 fn keywords_product_text() -> str => embed_str("keywords_product.tsv")
 
+// The seam of 2.26 (task 195): the words of the table of 2.25 that 2.26 removed; a file of 2.25 is read with them until the files are migrated (stream 4 removes the layer).
+fn keywords_225_text() -> str => embed_str("keywords_225.tsv")
+
 fn word_key(kind str, word str) -> str => "${kind}\t${word}"
 
 // The lines of one file of words; a comment `#` and the header line `kind ru en` are skipped.
@@ -41,6 +44,7 @@ fn words_read(text str, mut rows []TxWord) -> () {
 fn words_rows() -> []TxWord {
     mut rows = []TxWord.new()
     words_read(keywords_text(), rows)
+    words_read(keywords_225_text(), rows)
     words_read(keywords_product_text(), rows)
     rows
 }

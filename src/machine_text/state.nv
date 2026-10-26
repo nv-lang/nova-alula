@@ -109,15 +109,59 @@ fn n_of_cell(cell TxCell, line int) -> Result[int, TranslateError] {
     Ok(n)
 }
 
+// The text of a cell of actions of 2.26 with `<br>` read as `; ` (AL-137): every `<br>` outside a string literal becomes `;` and three spaces, so the columns of the errors stay those of the file.
+fn br_parted(text str) -> str {
+    mut out = []str.new()
+    ro cs []char = text.chars().collect()
+    mut in_str = false
+    mut k = 0
+    while k < cs.len() {
+        ro c = cs[k]
+        if in_str {
+            out.push("${c}")
+            if c == '\\' && k + 1 < cs.len() {
+                out.push("${cs[k + 1]}")
+                k += 2
+                continue
+            }
+            if c == '"' { in_str = false }
+            k += 1
+            continue
+        }
+        if c == '"' {
+            in_str = true
+            out.push("${c}")
+            k += 1
+            continue
+        }
+        if c == '<' && k + 3 < cs.len() && cs[k + 1] == 'b' && cs[k + 2] == 'r' && cs[k + 3] == '>' {
+            out.push(";   ")
+            k += 4
+            continue
+        }
+        out.push("${c}")
+        k += 1
+    }
+    out.join("")
+}
+
+// The error of a cell of a row of 2.26 that holds `—`: "none" is the empty cell (AL-137), one way to write it.
+fn dash_cell_error(cell TxCell, line int) -> TranslateError {
+    tx_err(line, cell.col, "syntax", "с 2.26 «нет» — пустая ячейка: `—` в ячейке строки не пишется (AL-137); переходного периода нет")
+}
+
 fn ac_cell(cell TxCell, line int, mut cx TxCx, sc TxScope) -> Result[TxActList, TranslateError] {
-    mut p = cell_p(cell, line)?
+    if cx.v226 && cell.text == "—" { return Err(dash_cell_error(cell, line)) }
+    ro text = if cx.v226 { br_parted(cell.text) } else { cell.text }
+    mut p = cell_p(TxCell { text, col: cell.col }, line)?
     ro all = ac_list_scoped(p, cx, sc)?
     p_end(p)?
     Ok(all)
 }
 
-/// A row of transitions of a state of the kind `kind`; returns the JSON of the row.
-fn row_parse(r TxEntry, kind str, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+/// A row of transitions of a state of the kind `kind`; returns the JSON of the row. `place` is the number of the row in its table (from 1): the number of a row of 2.26, which has no column `№`.
+fn row_parse(r TxEntry, kind str, place int, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    if cx.v226 { return row_parse_226(r, kind, place, cx, sc) }
     ro n = n_of_cell(r.cells[0], r.line)?
     mut event_json = ev_json("now", [])
     mut scope = sc_clone(sc)
@@ -146,7 +190,63 @@ fn row_parse(r TxEntry, kind str, mut cx TxCx, sc TxScope) -> Result[TxJ, Transl
     Ok(jobj(pairs))
 }
 
-fn is_transition_header(e TxEntry, w TxWords) -> bool => e.kind == EN_ROW && e.cells.len() > 0 && e.cells[0].text == kw(w, "column", "№")
+// A row of 2.26 (AL-137): no column `№`; an appeal and a common event `Событие | Условие | Действия | Куда`, a fork `Условие | Действия | Куда`, an operation `Действия | Куда` (its event is
+// `now`, no condition). An empty cell is "none"; an empty "Куда" only at a row of `ошибка_машины` (the check); `—` is an error.
+fn row_parse_226(r TxEntry, kind str, place int, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    mut event_json = ev_json("now", [])
+    mut scope = sc_clone(sc)
+    mut at = 0
+    if kind != "fork" && kind != "operation" {
+        mut ep = cell_p(r.cells[0], r.line)?
+        ro ev = ev_parse(ep, cx, sc)?
+        p_end(ep)?
+        event_json = ev.json
+        scope = ev.scope
+        at = 1
+    }
+    mut cond = TxCond { has_expr: false, is_else: false, expr: x_null() }
+    if kind != "operation" {
+        if r.cells[at].text == "—" { return Err(dash_cell_error(r.cells[at], r.line)) }
+        mut cp = cell_p(r.cells[at], r.line)?
+        cond = cond_parse(cp, cx, scope)?
+        p_end(cp)?
+        at += 1
+    }
+    ro acts = ac_cell(r.cells[at], r.line, cx, scope)?
+    ro to_cell = r.cells[at + 1]
+    if to_cell.text == "—" { return Err(dash_cell_error(to_cell, r.line)) }
+    mut where = TxWhere { to: "", restart: false }
+    if to_cell.text != "" {
+        mut wp = cell_p(to_cell, r.line)?
+        where = where_parse(wp, cx)?
+        p_end(wp)?
+    }
+    mut pairs = [kv("n", jint(place)), kv("event", event_json)]
+    if cond.has_expr { pairs.push(kv("cond", cond.expr)) }
+    if cond.is_else { pairs.push(kv("else", TxBool(true))) }
+    if acts.actions.len() > 0 { pairs.push(kv("actions", TxArr(acts.actions))) }
+    if where.to != "" { pairs.push(kv("to", js(where.to))) }
+    if where.restart { pairs.push(kv("restart", TxBool(true))) }
+    Ok(jobj(pairs))
+}
+
+// The header of a table of rows: `№ | …` (2.25); in 2.26 the first column is `Событие`, `Условие` or `Действия` with three or four columns (a row of `№ | …` in 2.26 is the header too: its error is made
+// by the reading of the table).
+fn is_transition_header(e TxEntry, w TxWords) -> bool {
+    if e.kind != EN_ROW || e.cells.len() == 0 { return false }
+    ro first = e.cells[0].text
+    if first == kw(w, "column", "№") { return true }
+    if e.cells.len() < 2 { return false }
+    first == kw(w, "column", "Event") || first == kw(w, "column", "Condition") || (first == kw(w, "column", "Actions") && e.cells.len() == 2)
+}
+
+// The keys of the columns of a table of rows of the kind `kind`.
+fn rows_columns(kind str, v226 bool) -> []str {
+    if !v226 { return if kind == "fork" { ["№", "Condition", "Actions", "To"] } else { ["№", "Event", "Condition", "Actions", "To"] } }
+    if kind == "fork" { return ["Condition", "Actions", "To"] }
+    if kind == "operation" { return ["Actions", "To"] }
+    ["Event", "Condition", "Actions", "To"]
+}
 
 fn is_input_header(e TxEntry, w TxWords) -> bool => e.kind == EN_ROW && e.cells.len() > 0 && e.cells[0].text == kw(w, "column", "request_field")
 
@@ -160,12 +260,18 @@ fn rows_read(entries []TxEntry, at int, last int, kind str, path str, mut cx TxC
 // The same, the numbers of the places start at `already`.
 fn rows_read_from(entries []TxEntry, at int, last int, kind str, path str, already int, mut cx TxCx, sc TxScope) -> []TxJ {
     mut out = []TxJ.new()
-    ro expected = if kind == "fork" { ["№", "Condition", "Actions", "To"] } else { ["№", "Event", "Condition", "Actions", "To"] }
+    ro expected = rows_columns(kind, cx.v226)
+    if cx.v226 && entries[at].cells.len() > 0 && entries[at].cells[0].text == kw(cx.words, "column", "№") {
+        note(cx, struct_error(entries[at].line, entries[at].cells[0].col, "столбца `№` нет: с 2.26 строки таблицы не нумеруются, их порядок — порядок строк (AL-137); столбцы: ${kw_all(cx.words, "column", expected).join(" | ")}"))
+        return out
+    }
     ro t = tab_read(entries, at, last, expected, cx)
+    mut place = already
     for r in t.rows {
         cx.rows_total += 1
+        place += 1
         ro before = cx.errors.len()
-        match row_parse(r, kind, cx, sc) {
+        match row_parse(r, kind, place, cx, sc) {
             Ok(j) => {
                 out.push(j)
                 cx_place(cx, "${path}[${already + out.len() - 1}]", r.line)
@@ -207,7 +313,12 @@ fn accept_row(r TxEntry, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError]
 
 fn input_read(entries []TxEntry, at int, last int, mut cx TxCx, sc TxScope) -> []TxJ {
     mut out = []TxJ.new()
-    ro t = tab_read(entries, at, last, ["request_field", "expression", "reads"], cx)
+    ro head = entries[at]
+    if cx.v226 && head.cells.len() == 3 && header_norm(head.cells[2].text) == header_norm(kw(cx.words, "column", "reads")) {
+        note(cx, struct_error(head.line, head.cells[2].col, "столбца `${head.cells[2].text}` в «${kw(cx.words, "key", "Request")}» нет: с 2.26 чтения выводятся (AL-138); всё, что названо в таблице, уходит стороне полем запроса; столбцы: ${kw(cx.words, "column", "request_field")} | ${kw(cx.words, "column", "expression")}"))
+        return out
+    }
+    ro t = tab_read(entries, at, last, if cx.v226 { ["request_field", "expression"] } else { ["request_field", "expression", "reads"] }, cx)
     for r in t.rows {
         cx.rows_total += 1
         ro before = cx.errors.len()
@@ -221,6 +332,7 @@ fn input_read(entries []TxEntry, at int, last int, mut cx TxCx, sc TxScope) -> [
 }
 
 fn input_row(r TxEntry, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    if cx.v226 { return input_row_226(r, cx, sc) }
     ro f = cell_name(r.cells[0], r.line)?
     ro en = tr_field_name(cx, f)
     // `—` in the cell of the expression is "the same name" (AL-56): the expression of the field is the name of the field, and the name must be readable in the request like any expression; the same name
@@ -242,6 +354,28 @@ fn input_row(r TxEntry, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] 
         return Err(tx_err(r.line, r.cells[2].col, "syntax", "в столбце `${kw(cx.words, "column", "reads")}` бывает `${kw(cx.words, "enum_value", "party")}` или `${kw(cx.words, "enum_value", "executor")}`"))
     }
     Ok(jobj([kv("field", js(en)), kv("value", value), kv("reads", js(if reads == kw(cx.words, "enum_value", "party") { "party" } else { "executor" }))]))
+}
+
+// A field of the request of 2.26 (AL-137, AL-138): `поле запроса | выражение`; the empty cell of the expression is "the same name" (the expression is the name of the field), `—` is an error; the
+// field goes to the party (the column `читает` is gone: the reads are derived by the check).
+fn input_row_226(r TxEntry, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    ro f = cell_name(r.cells[0], r.line)?
+    ro en = tr_field_name(cx, f)
+    ro cell = r.cells[1]
+    if cell.text == "—" { return Err(dash_cell_error(cell, r.line)) }
+    mut value = x_null()
+    if cell.text == "" {
+        ro same = tk(TK_NAME, f.text, r.line, cell.col)
+        mut sp = p_new([same], r.line, cell.col + 1)
+        value = ex_expr(sp, cx, sc)?
+        p_end(sp)?
+    } else {
+        value = cell_expr(cell, r.line, cx, sc)?
+        if cell.text == f.text {
+            cx.warnings.push(tx_err(r.line, cell.col, "warning", "выражение поля запроса `${f.text}` равно его имени: пишется пустая ячейка (AL-137)"))
+        }
+    }
+    Ok(jobj([kv("field", js(en)), kv("value", value), kv("reads", js("party"))]))
 }
 
 // ---- the state -----------------------------------------------------------------------------------------------------------------------------------
@@ -514,10 +648,12 @@ fn state_translate(entries []TxEntry, blk TxBlock, index int, mut cx TxCx) -> Tx
             } else if is_transition_header(e, cx.words) {
                 rows_at = i
             } else if !(i > blk.first && entries[i - 1].kind == EN_ROW) {
-                note(cx, struct_error(e.line, 1, "таблица начинается с заголовка: `${kw(cx.words, "column", "request_field")}`, `${kw(cx.words, "column", "event")}` или `№`"))
+                ro first_words = if cx.v226 { "`${kw(cx.words, "column", "Event")}`, `${kw(cx.words, "column", "Condition")}` или `${kw(cx.words, "column", "Actions")}`" } else { "или `№`" }
+                note(cx, struct_error(e.line, 1, "таблица начинается с заголовка: `${kw(cx.words, "column", "request_field")}`, `${kw(cx.words, "column", "event")}` ${first_words}"))
             }
             i = tab_end(entries, i, blk.last, cx.words)
         } else if e.kind == EN_TEXT && e.text == "—" {
+            dash_line(cx, e)
             i += 1
         } else {
             note(cx, struct_error(e.line, e.indent + 1, "лишняя строка в состоянии `${blk.ru}`"))
@@ -544,7 +680,7 @@ fn state_translate(entries []TxEntry, blk TxBlock, index int, mut cx TxCx) -> Tx
     if blk.kind == "end" {
         if rows_at >= 0 { note(cx, struct_error(entries[rows_at].line, 1, "у конца строк переходов нет")) }
     } else if rows_at < 0 {
-        note(cx, struct_error(blk.line, 1, "у состояния `${blk.ru}` нет таблицы строк `№ | …`"))
+        note(cx, struct_error(blk.line, 1, "у состояния `${blk.ru}` нет таблицы строк `${if cx.v226 { kw_all(cx.words, "column", rows_columns(blk.kind, true)).join(" | ") } else { "№ | …" }}`"))
     }
     if blk.kind == "appeal" {
         for q in party_pairs { pairs.push(q) }
@@ -592,16 +728,17 @@ fn end_answer(cell TxCell, line int, mut cx TxCx) -> Result[TxJ, TranslateError]
     Ok(jobj([kv("kind", js("refusal")), kv("code", args.positional[0]), kv("text", args.positional[1])]))
 }
 
-fn end_row(r TxEntry, mut cx TxCx) -> Result[TxJ, TranslateError] {
+fn end_row(r TxEntry, place int, mut cx TxCx) -> Result[TxJ, TranslateError] {
     ro s = cell_name(r.cells[0], r.line)?
     mut state_en = s.text
     match pair_get(cx.env.states, s.text) {
         Some(x) => { state_en = x }
         None => { cx_error(cx, s, "name", "состояния `${s.text}` нет в этой машине${state_hint(cx, s.text)}") }
     }
-    ro n = n_of_cell(r.cells[1], r.line)?
-    ro when = cell_expr(r.cells[2], r.line, cx, sc_empty())?
-    ro answer = end_answer(r.cells[3], r.line, cx)?
+    ro at = if cx.v226 { 1 } else { 2 }
+    ro n = if cx.v226 { place } else { n_of_cell(r.cells[1], r.line)? }
+    ro when = cell_expr(r.cells[at], r.line, cx, sc_empty())?
+    ro answer = end_answer(r.cells[at + 1], r.line, cx)?
     Ok(jobj([kv("state", js(state_en)), kv("n", jint(n)), kv("when", when), kv("answer", answer)]))
 }
 
@@ -615,11 +752,23 @@ fn decl_ends(entries []TxEntry, sec TxSection, mut cx TxCx) -> TxEnds {
     while i < sec.last {
         ro e = entries[i]
         if e.kind == EN_ROW {
-            ro t = tab_read(entries, i, sec.last, ["end", "№", "when", "response"], cx)
+            if cx.v226 && e.cells.len() > 1 && e.cells[1].text == kw(cx.words, "column", "№") {
+                note(cx, struct_error(e.line, e.cells[1].col, "столбца `№` нет: с 2.26 таблица «${kw(cx.words, "section", "Output")}» — `${kw(cx.words, "column", "end")} | ${kw(cx.words, "column", "when")} | ${kw(cx.words, "column", "response")}` (AL-137)"))
+                i = tab_end(entries, i, sec.last, cx.words)
+                continue
+            }
+            ro t = tab_read(entries, i, sec.last, if cx.v226 { ["end", "when", "response"] } else { ["end", "№", "when", "response"] }, cx)
+            mut seen = []str.new()
             for r in t.rows {
                 cx.rows_total += 1
                 ro before = cx.errors.len()
-                match end_row(r, cx) {
+                // a row of 2.26 has no number: the number of a row is its place among the rows of the same end (from 1)
+                mut place = 1
+                for st in seen {
+                    if st == r.cells[0].text { place += 1 }
+                }
+                seen.push(r.cells[0].text)
+                match end_row(r, place, cx) {
                     Ok(j) => {
                         rows.push(j)
                         cx_place(cx, "$.ends.rows[${rows.len() - 1}]", r.line)
@@ -649,11 +798,11 @@ fn decl_ends(entries []TxEntry, sec TxSection, mut cx TxCx) -> TxEnds {
                     Err(err) => note(cx, err)
                 }
             } else {
-                note(cx, struct_error(e.line, 1, "в разделе `Концы` бывает строка `Результат: …` и таблица"))
+                note(cx, struct_error(e.line, 1, "в разделе `${if cx.v226 { kw(cx.words, "section", "Output") } else { "Концы" }}` бывает строка `Результат: …` и таблица"))
             }
             i += line.taken
         } else {
-            note(cx, struct_error(e.line, e.indent + 1, "лишняя строка в разделе `Концы`"))
+            note(cx, struct_error(e.line, e.indent + 1, "лишняя строка в разделе `${if cx.v226 { kw(cx.words, "section", "Output") } else { "Концы" }}`"))
             i += 1
         }
     }

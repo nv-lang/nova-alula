@@ -17,7 +17,7 @@ export type TranslateReport { json str, errors []TranslateError, warnings []Tran
 
 /// The context of a translation of a file in the language `lang` (`ru` or `en`).
 fn cx_new_in(lang str) -> TxCx {
-    TxCx { errors: []TranslateError.new(), warnings: []TranslateError.new(), names: names_load_for(lang), env: env_new(), jn: jn_new(), rows_total: 0, rows_noted: 0, places: []TxPlace.new(), words: words_load(lang) }
+    TxCx { errors: []TranslateError.new(), warnings: []TranslateError.new(), names: names_load_for(lang), env: env_new(), jn: jn_new(), rows_total: 0, rows_noted: 0, places: []TxPlace.new(), words: words_load(lang), v226: false }
 }
 
 fn cx_new() -> TxCx => cx_new_in("ru")
@@ -73,7 +73,7 @@ fn header_read(entries []TxEntry, mut cx TxCx) -> TxHeader {
     }
     if !format_versions().contains(format) {
         ro shown = if format == "" { "не указан" } else { format }
-        note(cx, struct_error(1, 1, "формат ${shown}: версия не известна переводчику, он читает формат ${format_versions().join(", ")} (строка `format: 2.25`); переходного периода нет"))
+        note(cx, struct_error(1, 1, "формат ${shown}: версия не известна переводчику, он читает формат ${format_versions().join(", ")} (строка `format: 2.26`); переходного периода нет"))
     }
     TxHeader { title, machine, version, format }
 }
@@ -128,7 +128,7 @@ fn errors_quoted(errors_in []TranslateError, lines []str) -> []TranslateError {
 // ---- fragments ----------------------------------------------------------------------------------------------------------------------------------
 
 /// TxFragRun: a fragment of a call, read: its entries and sections, and the blocks of its states.
-type TxFragRun { call TxCall, entries []TxEntry, sections []TxSection, blocks []TxBlock }
+type TxFragRun { call TxCall, entries []TxEntry, sections []TxSection, blocks []TxBlock, v226 bool }
 
 // The notes made since `from` belong to the fragment: they are put at the line of its call and say so.
 fn cx_remap(mut cx TxCx, from int, call TxCall, places_from int) -> () {
@@ -181,8 +181,11 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
     ro classified = tx_classify_in(lines, words_load(info.lang), info.strict, info.strict)
     ro entries = classified.entries
     mut cx = cx_new_in(info.lang)
+    cx.v226 = info.version == "2.26"
+    ro own226 = cx.v226
     for e in info.errors { cx.errors.push(e) }
     for e in classified.errors { cx.errors.push(e) }
+    if own226 { key_lines_226(entries, cx) }
     ro header = header_read(entries, cx)
     ro sections = sections_of(entries, cx)
     // the dictionary of the names is pinned by the hash of its normative part: the format and the hash change together (AL-62)
@@ -210,6 +213,9 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
                 match fragment_text(call, cx) {
                     Some(text) => {
                         accepted_calls.push(call)
+                        // the text of a fragment is read in the form of its own format line (the seam of 2.26, task 195)
+                        ro frag226 = detect_language(lines_of(text)).version == "2.26"
+                        cx.v226 = frag226
                         ro fentries = tx_classify_in(lines_of(text), cx.words, false, false).entries
                         ro before = cx.errors.len()
                         ro jn_before = cx.jn.decls.len()
@@ -221,7 +227,8 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
                         }
                         jn_fix_since(cx, jn_before)
                         cx_remap(cx, before, call, cx.places.len())
-                        runs.push(TxFragRun { call, entries: fentries, sections: fsections, blocks: fblocks })
+                        cx.v226 = own226
+                        runs.push(TxFragRun { call, entries: fentries, sections: fsections, blocks: fblocks, v226: frag226 })
                         for sj in protocol_signals_json(cx) { signals.push(sj) }
                     }
                     None => ()
@@ -280,7 +287,9 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
             Some(fsec) => {
                 ro before = cx.errors.len()
                 ro places_from = cx.places.len()
+                cx.v226 = run.v226
                 for d in decl_data(run.entries, fsec, cx) { data.push(d) }
+                cx.v226 = own226
                 cx_remap(cx, before, run.call, places_from)
             }
             None => ()
@@ -344,7 +353,9 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
             Some(fsec) => {
                 ro before = cx.errors.len()
                 ro places_from = cx.places.len()
+                cx.v226 = run.v226
                 for r in common_events_at(run.entries, fsec, cx, common.len()) { common.push(r) }
+                cx.v226 = own226
                 cx_remap(cx, before, run.call, places_from)
             }
             None => ()
@@ -372,14 +383,16 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
         for blk in run.blocks {
             ro before = cx.errors.len()
             ro places_from = cx.places.len()
+            cx.v226 = run.v226
             states.push(state_translate(run.entries, blk, states.len(), cx))
+            cx.v226 = own226
             cx_remap(cx, before, run.call, places_from)
         }
     }
     mut ends = TxEnds { result: "", rows: []TxJ.new() }
     match section_of(sections, "Ends") {
         Some(sec) => { ends = decl_ends(entries, sec, cx) }
-        None => note(cx, struct_error(1, 1, "нет раздела `## ${kw(cx.words, "section", "Ends")}`"))
+        None => note(cx, struct_error(1, 1, "нет раздела `## ${kw(cx.words, "section", if cx.v226 { "Output" } else { "Ends" })}`"))
     }
     // the section of the expansion of a fragment is removed in 2.13 (AL-44)
     for x in classified.expansions { cx.errors.push(expansion_error(x.line, x.name)) }
@@ -429,6 +442,20 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
     jn_finish(cx)
     ro sorted = errors_sorted(cx.errors)
     TranslateReport { json: tx_text(elaborated.json), errors: errors_quoted(sorted, lines), warnings: errors_quoted(errors_sorted(warnings_all(classified.warnings, cx.warnings)), lines), rows_total: cx.rows_total, rows_noted: cx.rows_noted, places: cx.places, names: jn_report(cx) }
+}
+
+// The keys of a file of 2.26 that are items of a list (format 4.1, AL-137): the marker `- ` is obligatory, a key without it is an error (the reading "the marker is optional" of 2.5 is gone);
+// the line `Читает:` is no key any more (AL-138: the reads are derived by the check). The header and `Начальное состояние:` are not items of the list of a state.
+fn key_lines_226(entries []TxEntry, mut cx TxCx) -> () {
+    ro listed = ["Party", "Idle term", "Edits", "Form returns", "Request", "On entry", "On accept", "Except", "Result", "Request limit", "Invariant"]
+    for e in entries {
+        if e.kind != EN_TEXT || e.indent != 0 || e.colon < 0 || e.fenced { continue }
+        if e.key == "Reads" {
+            note(cx, struct_error(e.line, 1, "строки `${e.text[..e.colon].trim_ascii()}:` нет: с 2.26 чтения выводятся (AL-138) — проверка выводит их из выражений строк, «${kw(cx.words, "key", "Request")}», «${kw(cx.words, "key", "On accept")}», «${kw(cx.words, "key", "On entry")}» и списков `читает` внешних функций"))
+        } else if e.shift == 0 && listed.contains(e.key) {
+            note(cx, struct_error(e.line, 1, "строка-ключ без маркера `- `: с 2.26 строка-ключ пишется элементом списка (`- ${e.text[..e.colon].trim_ascii()}: …`, AL-137); markdown склеивает строки без маркера в один абзац"))
+        }
+    }
 }
 
 fn warnings_all(first []TranslateError, second []TranslateError) -> []TranslateError {
@@ -486,6 +513,7 @@ fn common_events_at(entries []TxEntry, sec TxSection, mut cx TxCx, already int) 
             out = rows_read_from(entries, i, sec.last, "appeal", "$.common_events", already, cx, sc_empty())
             i = tab_end(entries, i, sec.last, cx.words)
         } else if e.kind == EN_TEXT && e.text == "—" {
+            dash_line(cx, e)
             i += 1
         } else {
             note(cx, struct_error(e.line, e.indent + 1, "лишняя строка в разделе `${sec.title}`"))

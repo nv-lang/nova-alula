@@ -7,17 +7,17 @@
 молчит до первой реализации разбора.
 Что проверяет:
   1. таблица: первая строка — заголовок `kind<TAB>ru<TAB>en`; в каждой строке три колонки без пустых ячеек;
-     `kind` — из закрытого перечня (header, section, column, kind_state, key, kind_party, kind_param, event, destination, decl, type,
-     expr, action, operator, readable, catalog, enum_value), каждый вид представлен; в пределах вида слова `ru` не повторяются и слова `en`
-     не повторяются (в разных видах слово может повторяться); вид `kind_param` (виды параметров фрагмента, раздел 9, AL-63) — ровно
-     `сигнал`, `строка`, `[]машина`, `поведение`, `примечание` с английскими словами ровно `signal`, `str`, `[]machine`, `behavior`, `note`
-     (по парам), и из них в виде `type` стоит только `строка` (виды параметров — не типы данных);
+     `kind` — из закрытого перечня (header, section, column, kind_state, key, kind_party, event, destination, decl, type,
+     expr, action, operator, readable, catalog, enum_value; вида `kind_param` с 2.26 нет — виды параметров заменены типами, AL-140),
+     каждый вид представлен; в пределах вида слова `ru` не повторяются и слова `en` не повторяются (в разных видах слово может
+     повторяться); слова 2.26 (AL-137…AL-143, `TABLE_226_ADDED`) стоят в таблице парами, убранные в 2.26 (`TABLE_226_REMOVED`) — нет;
   2. русский образец: структурные слова (имена шапки и ключи шапки, заголовки разделов `##`, строки-ключи `- Ключ:` и `Начальное состояние:`,
      заголовки столбцов таблиц, виды состояний в заголовках `###`) есть в таблице в колонке `ru` своего вида;
      английское структурное слово (есть в колонке `en`, нет в `ru`) в русском образце — ошибка;
   3. английский образец: те же структурные слова по колонке `en` (`Initial state:` вместо `Начальное состояние:`);
      русское структурное слово (есть в колонке `ru`, нет в `en`) в нём — ошибка; строка шапки `- language: en` обязательна
-     (в русском образце допустима `- language: ru` или её отсутствие, иной язык — ошибка);
+     (в русском образце допустима `- language: ru` или её отсутствие, иной язык — ошибка); шов 2.26 (задача 195): образец с
+     `- format: 2.25` читается и со словами, которые 2.26 убрала (`src/machine_text/keywords_225.tsv`), пока поток 4 не перенесёт образцы;
   4. знаки операторов (спецификация, 1а, AL-42): в блоках кода, строках таблиц и строках-ключах нет знаков `≥`, `≤`, `≠`, `→`, `⇒`, `∈`, `‥`
      (только ASCII: `>=`, `<=`, `!=`, `->`, `=>`, `in`, `..`); в прозе знак `→` допустим; прежняя запись (до 2.18, AL-67…AL-69) — ошибка:
      в заголовке функции `функция имя(…) -> Тип` (`fn`) первый знак `=` после типа результата (если раньше нет `{`
@@ -122,9 +122,8 @@
      словаря дают ошибку, исправный образец — нет; одно JSON-имя в разных пространствах и смешение письменностей через `_`
      ошибки не дают, так же как комментарий `//` в блоке кода и после заголовка, `"http://x"`, числа `1_000`, `1e-7`,
      `1.5e3`, `2E5`, `1_000.5`, поле кортежа `к.0`, escape закрытого списка, голые имена элементов в `выбор` и `in […]`,
-     английские `text(x)` и поле `text`; в копии таблицы слов вид параметра фрагмента, перенесённый обратно в `type`, испорченное английское слово
-     вида `kind_param` (`сигнал sgnl`) и таблица без вида `kind_param`
-     дают ошибку, исправная таблица — нет.
+     английские `text(x)` и поле `text`; в копии таблицы слов возвращённый раздел `Концы`, убранный раздел `Выход`, испорченное
+     английское слово `КодСбоя` (`FailCod`) и возвращённый вид `kind_param` дают ошибку, исправная таблица — нет.
 Пропускает: прозу, имена и значения (кроме проверки 5) и содержимое ячеек таблиц (кроме заголовков и проверок 4, 5).
 Чего не проверяет: слова внутри выражений и действий, соответствие английских слов JSON-схеме, правило стиля «имя поля
 не совпадает с названием его типа» (спецификация, раздел 2, AL-54; предупреждение — позже), выражение `—` таблицы
@@ -148,14 +147,28 @@ GLOSSARY_VERSION = 13  # версия словаря (для людей), при
 NORMATIVE_TABLES = ['2.%d' % i for i in (1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 16)]  # разделы-таблицы словаря; 2.10 — записи
 SAMPLES = [('spec/samples/agent-step.alula.md', 'ru'), ('spec/samples/agent-step.en.alula.md', 'en'),
            ('spec/samples/meeting-definitions.alula.md', 'ru')]
-KINDS = ['header', 'section', 'column', 'kind_state', 'key', 'kind_party', 'kind_param', 'event', 'destination', 'decl', 'type',
+KINDS = ['header', 'section', 'column', 'kind_state', 'key', 'kind_party', 'event', 'destination', 'decl', 'type',
          'expr', 'action', 'operator', 'readable', 'catalog', 'enum_value']
-# виды параметров фрагмента (раздел 9, AL-63): закрытый перечень вида `kind_param`; из них тип данных — только `текст`
-KIND_PARAM = ('сигнал', 'строка', '[]машина', 'поведение', 'примечание')
-KIND_PARAM_ALSO_TYPE = ('строка',)
-# пары «русское слово -> английское слово» вида `kind_param`: английская колонка проверяется так же строго, как русская
-KIND_PARAM_PAIRS = (('сигнал', 'signal'), ('строка', 'str'), ('[]машина', '[]machine'), ('поведение', 'behavior'),
-                    ('примечание', 'note'))
+# слова, которые внесла версия 2.26 (AL-137…AL-143): библиотеки, `## Требует`, вшитая библиотека `контракт`, `## Выход`, ключи подключения,
+# события стороны, действие `сторона`, тип `КодСбоя` и его десять кодов; строка таблицы — (вид, ru, en)
+TABLE_226_ADDED = (
+    ('header', 'Библиотека', 'Library'), ('header', 'library', 'library'), ('section', 'Выход', 'Output'),
+    ('section', 'Требует', 'Requires'), ('section', 'Данные движка', 'Engine data'), ('section', 'События стороны', 'Party events'),
+    ('column', 'комментарий', 'comment'), ('column', 'параметр', 'parameter'), ('column', 'части', 'parts'),
+    ('key', 'Файл', 'File'), ('key', 'Имя', 'Name'), ('key', 'Хеш', 'Hash'), ('event', 'часть', 'part'), ('event', 'срок', 'timeout'),
+    ('action', 'сторона', 'party'), ('type', 'КодСбоя', 'FailCode'),
+    ('enum_value', 'НетРезультата', 'NoResult'), ('enum_value', 'ОтказМодели', 'ModelRefused'),
+    ('enum_value', 'СоединениеОборвалось', 'ConnectionLost'), ('enum_value', 'ФормаНеИсправлена', 'FormNotFixed'),
+    ('enum_value', 'НетОтветаВСрок', 'Timeout'), ('enum_value', 'ОстановленоЧеловеком', 'StoppedByHuman'),
+    ('enum_value', 'ПотолокЗаходов', 'CeilingReached'), ('enum_value', 'ОтмененоРодителем', 'Cancelled'),
+    ('enum_value', 'ПредельТокенов', 'MaxTokens'), ('enum_value', 'ПредельЗапросовХода', 'MaxTurnRequests'))
+# слова, которые версия 2.26 убрала: столбцы `№` и `пишет`, строка-ключ `Читает`, событие `сразу`, слово `внешняя`, раздел `Концы`
+# (теперь `Выход`), шапки файла функций и фрагмента (теперь библиотека); (вид, ru)
+TABLE_226_REMOVED = (
+    ('column', '№'), ('column', 'пишет'), ('key', 'Читает'), ('event', 'сразу'), ('decl', 'внешняя'), ('section', 'Концы'),
+    ('header', 'Функции'), ('header', 'Фрагмент'))
+# шов 2.26 (задача 195): слова 2.25, которые 2.26 убрала, — ими читается образец с `- format: 2.25`, пока поток 4 не перенесёт образцы
+SEAM_225 = 'src/machine_text/keywords_225.tsv'
 FRAGMENT_STATE = 'Pause'  # JSON-имя состояния, которое приносит подключённый фрагмент «Пауза» (раздел 9)
 # данные контракта и фрагмента «Пауза» — читаемые имена таблицы слов: их JSON-имена (слово `en`) занимают пространство данных (AL-58)
 CONTRACT_DATA = ('предыдущее', 'запрос_вызова', 'открытые_запросы', 'остановка', 'к_отправке', 'слова_человека')
@@ -191,17 +204,16 @@ def check_table(text):
         errs.append('%s:1: первая строка должна быть заголовком `kind<TAB>ru<TAB>en`' % TABLE)
     words = {k: (set(), set()) for k in KINDS}
     pairs = []
-    kp_pairs = set()
+    rows = set()
     for n, line in enumerate(lines[1:], 2):
         cells = line.split('\t')
         if len(cells) != 3:
             errs.append('%s:%d: колонок %d, нужно 3' % (TABLE, n, len(cells)))
             continue
         kind, ru, en = cells
+        rows.add((kind, ru, en))
         if kind == 'readable':
             pairs.append((ru, en))
-        if kind == 'kind_param':
-            kp_pairs.add((ru, en))
         if '' in (kind.strip(), ru.strip(), en.strip()):
             errs.append('%s:%d: пустая ячейка' % (TABLE, n))
             continue
@@ -215,15 +227,12 @@ def check_table(text):
     for k in KINDS:
         if not words[k][0]:
             errs.append('%s: вид `%s` не представлен' % (TABLE, k))
-    kp = words['kind_param'][0]
-    if kp and kp != set(KIND_PARAM):
-        errs.append('%s: вид `kind_param` — ровно виды параметров фрагмента %s, а в таблице %s (AL-63)' % (
-            TABLE, ', '.join(KIND_PARAM), ', '.join(sorted(kp))))
-    elif kp and kp_pairs != set(KIND_PARAM_PAIRS):
-        errs.append('%s: вид `kind_param` — ровно пары %s, а в таблице %s (AL-63)' % (
-            TABLE, ', '.join('%s/%s' % p for p in KIND_PARAM_PAIRS), ', '.join('%s/%s' % p for p in sorted(kp_pairs))))
-    for w in sorted((words['type'][0] & set(KIND_PARAM)) - set(KIND_PARAM_ALSO_TYPE)):
-        errs.append('%s: `%s` — вид параметра фрагмента, не тип данных: его вид `kind_param`, не `type` (AL-63)' % (TABLE, w))
+    for kind, ru, en in TABLE_226_ADDED:
+        if (kind, ru, en) not in rows:
+            errs.append('%s: нет строки `%s %s %s`: её внесла версия 2.26 (AL-137…AL-143)' % (TABLE, kind, ru, en))
+    for kind, ru in TABLE_226_REMOVED:
+        if kind in words and ru in words[kind][0]:
+            errs.append('%s: слово `%s` (вид `%s`) версия 2.26 убрала (AL-137…AL-143)' % (TABLE, ru, kind))
     words['readable_pairs'] = pairs
     return errs, words
 
@@ -1658,8 +1667,23 @@ def check_json_names(text, words, name, lang, gloss, contract=None):
     return errs
 
 
+def seam_225_words(lang):
+    """Слова 2.25, которые убрала 2.26 (шов, задача 195): вид -> множество слов колонки языка."""
+    out = {}
+    path = os.path.join(ROOT, SEAM_225)
+    if not os.path.isfile(path):
+        return out
+    for line in read(SEAM_225).split('\n'):
+        cells = line.split('\t')
+        if len(cells) != 3 or line.startswith('#') or cells[0] == 'kind':
+            continue
+        out.setdefault(cells[0], set()).add(cells[1] if lang == 'ru' else cells[2])
+    return out
+
+
 def check_sample(text, words, name, lang, gloss):
     contract = [en for ru, en in words['readable_pairs'] if ru in CONTRACT_DATA] if 'readable_pairs' in words else []
+    seam = seam_225_words(lang) if re.search(r'^- format: 2\.25\s*$', text, re.M) else {}
     errs = check_operators(text, name) + check_v219(text, name, lang) + check_v220(text, name, lang) + check_v221(text, name, lang) + check_v222(text, name, lang) + (check_calls(text, words, name, lang, gloss) if gloss is not None else []) + check_removed(text, name) + check_json_names(text, words, name, lang, gloss, contract)
     own = {k: v[0 if lang == 'ru' else 1] for k, v in words.items() if k in KINDS}
     other = {k: v[1 if lang == 'ru' else 0] for k, v in words.items() if k in KINDS}
@@ -1669,7 +1693,7 @@ def check_sample(text, words, name, lang, gloss):
     if lang == 'ru' and declared and declared.group(1) != 'ru':
         errs.append('%s:1: в русском образце объявлен `- language: %s`' % (name, declared.group(1)))
     for n, kind, word in structural(text, lang):
-        if word in own[kind]:
+        if word in own[kind] or word in seam.get(kind, ()):
             continue
         if word in other[kind]:
             errs.append('%s:%d: %s слово `%s` (вид `%s`) в %s образце' % (
@@ -2076,19 +2100,23 @@ def selftest(sample, words, name, lang, gloss):
 
 
 def selftest_table(text):
-    """Вид параметра фрагмента в `type`, испорченное английское слово вида `kind_param` и таблица без `kind_param` — ошибка (AL-63)."""
-    a = 'kind_param\tсигнал\tsignal\n'
-    if a not in text:
+    """Таблица 2.26 (AL-137…AL-143): возвращённый раздел `Концы`, убранный раздел `Выход`, испорченное английское слово `КодСбоя`
+    и возвращённый вид `kind_param` — ошибка; исправная таблица — нет."""
+    a = 'section\tВыход\tOutput\n'
+    b = 'type\tКодСбоя\tFailCode\n'
+    if a not in text or b not in text:
         return ['самопроверка таблицы слов: нет заменяемой строки']
     if check_table(text)[0]:
         return ['самопроверка таблицы слов: исправная таблица не прошла']
     bad = []
-    if not check_table(text.replace(a, 'type\tсигнал\tsignal\n', 1))[0]:
-        bad.append('самопроверка таблицы слов: вид параметра в группе `type` не замечен')
-    if not check_table(text.replace(a, 'kind_param\tсигнал\tsgnl\n', 1))[0]:
-        bad.append('самопроверка таблицы слов: испорченное английское слово вида `kind_param` не замечено')
-    if not check_table(''.join(l for l in text.splitlines(True) if not l.startswith('kind_param\t')))[0]:
-        bad.append('самопроверка таблицы слов: таблица без `kind_param` не замечена')
+    if not check_table(text.replace(a, 'section\tКонцы\tEnds\n', 1))[0]:
+        bad.append('самопроверка таблицы слов: раздел `Концы` вместо `Выход` не замечен')
+    if not check_table(text.replace(a, '', 1))[0]:
+        bad.append('самопроверка таблицы слов: таблица без раздела `Выход` не замечена')
+    if not check_table(text.replace(b, 'type\tКодСбоя\tFailCod\n', 1))[0]:
+        bad.append('самопроверка таблицы слов: испорченное английское слово `КодСбоя` не замечено')
+    if not check_table(text + 'kind_param\tсигнал\tsignal\n')[0]:
+        bad.append('самопроверка таблицы слов: возвращённый вид `kind_param` не замечен')
     return bad
 
 

@@ -22,6 +22,9 @@ const FORMER_VERSION_KEY = "portolan_version" // guard-allow(legacy-name): the f
 /// The versions of the language whose tree this decoder reads: one. There is no transition period (the word of the owner, 2026-10-20), so a tree of 2.12 or of an older version is refused.
 export fn alula_versions() -> []str => ["2.25"]
 
+/// The versions whose tree the decoder takes during the move to 2.26 (task 195, the seam): a tree of 2.26 and a tree of 2.25; stream 4 leaves 2.26 alone.
+export fn alula_versions_read() -> []str => ["2.25", "2.26"]
+
 fn le(path str, message str) -> LoadError => { path, message }
 
 fn j_obj(v JsonValue, path str) -> Result[JsonObject, LoadError] {
@@ -1163,7 +1166,7 @@ fn dec_machine(root JsonObject) -> Result[MachineDef, LoadError] {
     ro format = j_need_str(root, "format", "$")?
     if format != MACHINE_FORMAT { return Err(le("$.format", "the format must be ${MACHINE_FORMAT}, got ${format}")) }
     ro language_version = j_str_or(root, "alula_version", ALULA_VERSION, "$")?
-    if !alula_versions().contains(language_version) {
+    if !alula_versions_read().contains(language_version) {
         return Err(le("$.alula_version", "the alula_version must be 2.25 (the version of the language of the methodology; there is no transition period), got ${language_version}"))
     }
     ro name = j_need_str(root, "machine", "$")?
