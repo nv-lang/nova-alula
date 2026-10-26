@@ -1,0 +1,296 @@
+// v226_test.nv - task 195 (Alula 2.26, stream 1: the form and the words, AL-137, AL-138 in the request, AL-142, AL-143): the key lines with the marker only, the request without the
+// column `читает`, the tables without `№`, the empty cell, `<br>`, a fork without `иначе`, `## Выход`, the external functions without the prefix, the words of 2.26. A file of 2.25 is read as before
+// (the seam until stream 4 migrates the files).
+module alula.machine_text
+
+import std.text
+
+// A small machine of 2.26: a gate, an operation, a fork without `иначе`, two ends, the section `## Выход`.
+fn tiny226_text() -> str => `# Машина: Малая
+
+- machine: Tiny
+- machine_version: 1
+- format: 2.26
+
+## Имена
+
+| имя | JSON-имя |
+|---|---|
+| исполнитель_повышенного_внимания | attention_executor |
+| ЖДАТЬ | Wait |
+| СЧЁТ | Count |
+| РЕШИТЬ | Decide |
+| КОНЕЦ | Finished |
+| СТОП | Stopped |
+
+## Данные
+
+| имя | тип | начальное | не убывает | пишет |
+|---|---|---|---|---|
+| число_ходов | число>=0 | 0 | да | действия |
+| остановка | "" \| "a" \| "b" | "" | — | действия |
+| попытка_вратаря | число>=0 | 0 | да | механика |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | сигналы | счётчик |
+|---|---|---|---|---|---|
+| вратарь | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — | разрешить, отказать | попытка_вратаря |
+
+## Состояния
+
+Начальное состояние: ЖДАТЬ
+
+### ЖДАТЬ — обращение
+- Сторона: вратарь
+- Запрос:
+
+| поле запроса | выражение |
+|---|---|
+| число_ходов |  |
+
+| Событие | Условие | Действия | Куда |
+|---|---|---|---|
+| сигнал(разрешить) |  | число_ходов += 1<br>журнал("turn_counted") | СЧЁТ |
+| сигнал(отказать) |  | остановка = "a" | СТОП |
+
+### СЧЁТ — операция
+
+| Действия | Куда |
+|---|---|
+| число_ходов += 1 | РЕШИТЬ |
+
+### РЕШИТЬ — развилка
+
+| Условие | Действия | Куда |
+|---|---|---|
+| число_ходов >= 4 |  | КОНЕЦ |
+| число_ходов < 4 |  | ЖДАТЬ |
+
+### КОНЕЦ — конец
+
+### СТОП — конец
+- Кроме: остановка в [""]
+
+## Выход
+
+- Результат: число
+
+| конец | когда | ответ |
+|---|---|---|
+| КОНЕЦ | истина | Ответ(число_ходов) |
+| СТОП | остановка == "a" | Отказ(FailCode.StoppedByHuman, "stopped") |
+| СТОП | остановка == "b" | Отказ(FailCode.NoResult, "b") |
+`
+
+fn t226_with(old str, new str) -> str => tiny226_text().replace(old, new)
+
+// The section of the external functions of 2.26 put before the states.
+fn t226_ext(decl str) -> str => t226_with("## Состояния\n", "## Внешние функции\n\n```\n${decl}\n```\n\n## Состояния\n")
+
+// The translation without the checks of the table (the reads of 2.26 are derived by the check, stream 2).
+fn r226(text str) -> TranslateReport => translate_report(text)
+
+fn first226(text str) -> str {
+    ro errors = r226(text).errors
+    if errors.len() == 0 { return "ok" }
+    "${errors[0].line}:${errors[0].col} ${errors[0].kind} ${errors[0].message}"
+}
+
+fn says226(text str, needle str) -> bool {
+    for e in r226(text).errors {
+        if e.message.contains(needle) { return true }
+    }
+    false
+}
+
+fn json226(text str) -> str => r226(text).json
+
+// ---- the form of 2.26 is read --------------------------------------------------------------------------------------------------------------------
+
+test "v226 the small machine of 2.26 is translated with no error" {
+    assert(first226(tiny226_text()) == "ok")
+}
+
+test "v226 the tree says the version 2.26" {
+    assert(json226(tiny226_text()).contains("\"alula_version\":\"2.26\""))
+}
+
+test "v226 the rows of a table without the column number are numbered in their order" {
+    ro j = json226(tiny226_text())
+    assert(j.contains("{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"allow\"}"))
+    assert(j.contains("{\"n\":2,\"event\":{\"kind\":\"signal\",\"name\":\"refuse\"}"))
+}
+
+test "v226 the operation row has the actions and the destination only, its event is now" {
+    ro j = json226(tiny226_text())
+    assert(j.contains("\"name\":\"Count\",\"kind\":\"operation\""))
+    assert(j.contains("{\"n\":1,\"event\":{\"kind\":\"now\"},\"actions\":[{\"do\":\"assign\",\"target\":\"turn_count\""))
+}
+
+test "v226 a fork without the row otherwise is read: an uncovered fork leads to the error by the engine" {
+    ro j = json226(tiny226_text())
+    assert(j.contains("\"name\":\"Decide\",\"kind\":\"fork\""))
+    assert(!j.contains("\"else\":true"))
+}
+
+test "v226 an empty cell of the condition and of the actions is none" {
+    ro j = json226(tiny226_text())
+    assert(j.contains("{\"n\":1,\"event\":{\"kind\":\"now\"},\"cond\":{\"op\":\">=\""))
+    assert(j.contains("\"to\":\"Finished\"}"))
+}
+
+test "v226 the actions of a cell are parted by br as by the semicolon" {
+    ro j = json226(tiny226_text())
+    assert(j.contains("{\"do\":\"journal\""))
+    ro semi = json226(t226_with("число_ходов += 1<br>журнал(\"turn_counted\")", "число_ходов += 1; журнал(\"turn_counted\")"))
+    assert(semi == j)
+}
+
+test "v226 br in a string literal is the text" {
+    ro j = json226(t226_with("журнал(\"turn_counted\")", "остановка = \"a<br>b\""))
+    assert(j.contains("a<br>b"))
+}
+
+test "v226 the empty cell of the expression of the request is the same name" {
+    ro j = json226(tiny226_text())
+    assert(j.contains("\"inputs\":[{\"field\":\"turn_count\",\"value\":{\"op\":\"name\",\"name\":\"turn_count\"}"))
+}
+
+test "v226 the expression equal to the name of the field is a warning: the empty cell is written" {
+    ro rep = r226(t226_with("| число_ходов |  |", "| число_ходов | число_ходов |"))
+    assert(rep.errors.len() == 0)
+    mut warned = false
+    for w in rep.warnings {
+        if w.message.contains("пишется пустая ячейка") { warned = true }
+    }
+    assert(warned)
+}
+
+test "v226 the section Output holds the result and the table end, when, answer" {
+    ro j = json226(tiny226_text())
+    assert(j.contains("\"ends\":{\"result\":\"int\",\"rows\":[{\"state\":\"Finished\",\"n\":1,"))
+    assert(j.contains("{\"state\":\"Stopped\",\"n\":2,"))
+}
+
+test "v226 an external function is declared without the prefix" {
+    ro text = t226_ext("отметить(н число) действующая").replace("число_ходов += 1<br>журнал(\"turn_counted\")", "число_ходов += 1<br>отметить(число_ходов)")
+    assert(first226(text) == "ok")
+    assert(json226(text).contains("\"primitives\":[{\"name\":\"otmetit\""))
+}
+
+test "v226 two external functions, one on a line, a result type" {
+    ro text = t226_ext("отметить(н число) действующая\nпрочитать() изменчивая -> число")
+    assert(first226(text) == "ok")
+}
+
+// ---- the former forms in a file of 2.26 are errors with the hint ----------------------------------------------------------------------------------
+
+test "v226 a key line without the marker is an error" {
+    assert(says226(t226_with("- Сторона: вратарь", "Сторона: вратарь"), "строка-ключ без маркера `- `"))
+    assert(says226(t226_with("- Кроме: остановка", "Кроме: остановка"), "строка-ключ без маркера `- `"))
+    assert(says226(t226_with("- Результат: число", "Результат: число"), "строка-ключ без маркера `- `"))
+}
+
+test "v226 the line Reads is an error: the reads are derived" {
+    assert(says226(t226_with("### КОНЕЦ — конец\n", "### КОНЕЦ — конец\n- Читает: число_ходов\n"), "с 2.26 чтения выводятся"))
+}
+
+test "v226 the column reads of the request is an error: the reads are derived" {
+    ro text = t226_with("| поле запроса | выражение |\n|---|---|\n| число_ходов |  |", "| поле запроса | выражение | читает |\n|---|---|---|\n| число_ходов |  | сторона |")
+    assert(says226(text, "с 2.26 чтения выводятся"))
+}
+
+test "v226 the dash in a cell of a row is an error: none is the empty cell" {
+    assert(says226(t226_with("| сигнал(отказать) |  |", "| сигнал(отказать) | — |"), "с 2.26 «нет» — пустая ячейка"))
+    assert(says226(t226_with("| число_ходов >= 4 |  |", "| число_ходов >= 4 | — |"), "с 2.26 «нет» — пустая ячейка"))
+    assert(says226(t226_with("| число_ходов |  |", "| число_ходов | — |"), "с 2.26 «нет» — пустая ячейка"))
+}
+
+test "v226 the column number is an error" {
+    ro text = t226_with("| Условие | Действия | Куда |\n|---|---|---|\n| число_ходов >= 4 |  | КОНЕЦ |\n| число_ходов < 4 |  | ЖДАТЬ |", "| № | Условие | Действия | Куда |\n|---|---|---|---|\n| 1 | число_ходов >= 4 |  | КОНЕЦ |\n| 2 | число_ходов < 4 |  | ЖДАТЬ |")
+    assert(says226(text, "столбца `№` нет"))
+}
+
+test "v226 the section Ends is an error: it is Output" {
+    assert(says226(t226_with("## Выход", "## Концы"), "с 2.26 раздел называется `## Выход`"))
+}
+
+test "v226 the prefix of an external function is an error" {
+    assert(says226(t226_ext("внешняя функция отметить(н число) действующая"), "с 2.26 внешняя функция пишется без слов"))
+}
+
+test "v226 a section of one dash is an error: an empty section is not written" {
+    assert(says226(t226_with("## Состояния\n", "## Константы\n\n—\n\n## Состояния\n"), "пустой раздел не пишется"))
+}
+
+// ---- a file of 2.25 is read as before (the seam until stream 4) -----------------------------------------------------------------------------------
+
+test "v226 a file of 2.25 is read in the former form" {
+    assert(format_versions().contains("2.25"))
+    assert(format_versions().contains("2.26"))
+    assert(r226(tiny_text()).errors.len() == 0)
+    assert(json226(tiny_text()).contains("\"alula_version\":\"2.25\""))
+}
+
+test "v226 the forms of 2.26 are not read in a file of 2.25" {
+    assert(says226(tiny_with("## Концы", "## Выход"), "неизвестный раздел"))
+}
+
+// ---- the words of 2.26 ----------------------------------------------------------------------------------------------------------------------------
+
+test "v226 the table of words has the words of 2.26" {
+    ro ru = words_load("ru")
+    ro en = words_load("en")
+    assert(kw(ru, "section", "Output") == "Выход")
+    assert(kw(en, "section", "Output") == "Output")
+    assert(kw(ru, "header", "Library") == "Библиотека")
+    assert(kw(ru, "section", "Engine data") == "Данные движка")
+    assert(kw(ru, "section", "Party events") == "События стороны")
+    assert(kw(ru, "column", "parts") == "части")
+    assert(kw(ru, "key", "File") == "Файл")
+    assert(kw(ru, "type", "FailCode") == "КодСбоя")
+    assert(kw(ru, "enum_value", "MaxTurnRequests") == "ПредельЗапросовХода")
+}
+
+test "v226 the table of words is the copy of the table of the specification of 2.26" {
+    ro text = embed_str("alula-keywords.tsv")
+    assert(text.contains("section\tВыход\tOutput"))
+    assert(!text.contains("section\tКонцы\tEnds"))
+    assert(!text.contains("column\t№\t№"))
+    assert(!text.contains("event\tсразу\timmediate"))
+    assert(!text.contains("decl\tвнешняя\texternal"))
+    assert(!text.contains("key\tЧитает\tReads"))
+}
+
+// ---- the reverse generator writes the form of 2.26 --------------------------------------------------------------------------------------------------
+
+test "v226 the generator writes a tree of 2.26 in the form of 2.26 and the circle gives the same tree" {
+    ro j = json226(tiny226_text())
+    ro text = render(j, "ru")
+    assert(text.contains("- format: 2.26"))
+    assert(text.contains("## Выход"))
+    assert(!text.contains("## Концы"))
+    assert(!text.contains("| № |"))
+    assert(!text.contains("| — |"))
+    assert(text.contains("| Действия | Куда |"))
+    assert(text.contains("| поле запроса | выражение |"))
+    assert(text.contains("- Сторона: "))
+    assert(first226(text) == "ok")
+    assert(json226(text) == j)
+}
+
+test "v226 the generator writes the external functions without the prefix" {
+    ro j = json226(t226_ext("отметить(н число) действующая"))
+    ro text = render(j, "ru")
+    assert(!text.contains("внешняя функция"))
+    assert(json226(text) == j)
+}
+
+test "v226 the English generator writes the form of 2.26 and the circle gives the same tree" {
+    ro j = json226(tiny226_text())
+    ro text = render(j, "en")
+    assert(text.contains("## Output"))
+    assert(!text.contains("## Ends"))
+    assert(json226(text) == j)
+}
