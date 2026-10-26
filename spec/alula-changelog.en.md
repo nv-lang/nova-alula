@@ -6,6 +6,12 @@ Purpose: the history of edits to the specification [spec/alula-spec.en.md](alula
 
 Change labels: the prefix AL- (Alula); before 2.17 the labels were written as Я-NN, the number is the same (the owner's word, 2026-10-22: «AL- — ОК»).
 
+**Package 0.8.1, format 2.25 unchanged.** The label is **AL-136**: a decision of the methodology as a consequence of AL-135 (“the old names are not accepted”); no question to the owner is needed. The Alula format, the table of words, the dictionary and the hashes of the samples do not change; only the package's message about the old file name of a test changes.
+
+| № | Edit | Where |
+|---|---|---|
+| AL-136 | **the old name of a test is refused explicitly**: `alula test <folder>`, on meeting a file `*.scenario.test.json`, prints one line `old file name, rename to *.alula.test.json: <path>` on the standard error for each such file and exits with the code 2 without running any test (a mixed folder too; a folder with the old names only gets the same refusal, not “no tests”); `alula run <machine> <file>` with a name ending in `.scenario.test.json` refuses with the same message (code 2); the name `*.alula.test.json` and any other path are read as before; the Alula format stays 2.25 | 11 |
+
 **Package 0.8.0, format 2.25 unchanged.** The label is **AL-135**: the owner's word, 2026-10-26 (“this is a mechanical rename”). The Alula format, the table of words, the dictionary and the hashes of the samples do not change; only the name of the package's test changes.
 
 | № | Edit | Where |

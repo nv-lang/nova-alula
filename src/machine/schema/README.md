@@ -29,7 +29,7 @@ Who is the authority for what:
 | tree format | `machine/2` | the root key `format` of the tree (a constant; it does not change with the language version, spec AL-19) |
 | test format | `test/0` | the root key `format` of a test (does not change with the language version, spec AL-50) |
 | language version | **2.25** | `- format: 2.25` in the header of a machine file, a functions file and a fragment file; the root key `alula_version` of the tree (the schema accepts only `"2.25"`); the recommended `- machine_version: alula-2.25` (spec 1), which becomes the root key `version` |
-| package `alula` | `0.8.0` | `alula version` prints `alula 0.8.0 (Alula 2.25, machine/2)` |
+| package `alula` | `0.8.1` | `alula version` prints `alula 0.8.1 (Alula 2.25, machine/2)` |
 | glossary of automatic names | hash **`35c571ccda17`** (the dictionary of the version 13, 1270 pairs) | pinned by the format (spec AL-62); the translator recomputes it from its copy of the normative part of the glossary |
 | word table | `spec/alula-keywords.tsv` of 2.25 (17 kinds) | the words of both file languages; the tree does not hold them |
 

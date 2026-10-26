@@ -1,0 +1,62 @@
+// old_name_test.nv - AL-136 (task 231): the old name of a check (before AL-135) is not skipped in silence: `alula test` refuses a folder that holds one, one line for each file and the code 2,
+// even when the other checks of the folder would pass; `alula run` refuses a check with the old name; the right name is read as before.
+module alula.alula_cli
+
+import std.text
+import alula.machine.{NamedText}
+fn old_message(path str) -> str => "old file name, rename to *.alula.test.json: ${path}"
+
+fn old_test_path(dir str) -> str => "${dir}/tiny.scenario.test.json"
+
+test "fn the old name is known" {
+    assert(is_old_test_name("a.scenario.test.json"))
+    assert(is_old_test_name("/x/y/tiny.scenario.test.json"))
+    assert(!is_old_test_name("a.alula.test.json"))
+    assert(!is_old_test_name("scenario.json"))
+    assert(!is_old_test_name("a.scenario.json"))
+    assert(old_test_name_message("/c/a.scenario.test.json") == old_message("/c/a.scenario.test.json"))
+}
+
+test "fn test refuses a mixed folder" {
+    ro files = [file("/c/tiny.alula.json", tiny_json()), file("/c/tiny.alula.test.json", tiny_test()), file(old_test_path("/c"), tiny_test())]
+    ro ran = run_with(["test", "/c"], files)
+    assert(ran.code == 2)
+    assert(ran.out == "")
+    assert(ran.err == "${old_message("/c/tiny.scenario.test.json")}\n")
+    ro clean = run_with(["test", "/c"], [file("/c/tiny.alula.json", tiny_json()), file("/c/tiny.alula.test.json", tiny_test())])
+    assert(clean.code == 0)
+    assert(clean.out.contains("1 of 1 tests passed"))
+}
+
+test "fn test refuses a folder of the old names only" {
+    ro files = [file("/c/tiny.alula.json", tiny_json()), file(old_test_path("/c"), tiny_test())]
+    ro ran = run_with(["test", "/c"], files)
+    assert(ran.code == 2)
+    assert(ran.out == "")
+    assert(ran.err.contains(old_message("/c/tiny.scenario.test.json")))
+    assert(!ran.err.contains("no tests"))
+}
+
+test "fn test names every old file, also in a folder under the folder" {
+    ro files = [file("/c/tiny.alula.json", tiny_json()), file("/c/tiny.alula.test.json", tiny_test()), file(old_test_path("/c"), tiny_test()), file(old_test_path("/c/sub"), tiny_test())]
+    ro ran = run_with(["test", "/c"], files)
+    assert(ran.code == 2)
+    assert(ran.err == "${old_message("/c/sub/tiny.scenario.test.json")}\n${old_message("/c/tiny.scenario.test.json")}\n")
+}
+
+test "fn run refuses a check with the old name" {
+    ro files = [file("/c/tiny.alula.json", tiny_json()), file(old_test_path("/c"), tiny_test())]
+    ro ran = run_with(["run", "/c/tiny.alula.json", "/c/tiny.scenario.test.json"], files)
+    assert(ran.code == 2)
+    assert(ran.out == "")
+    assert(ran.err == "${old_message("/c/tiny.scenario.test.json")}\n")
+}
+
+test "fn run reads the right name and any other path as before" {
+    ro files = [file("/c/tiny.alula.json", tiny_json()), file("/c/tiny.alula.test.json", tiny_test()), file("/c/other.json", tiny_test())]
+    ro right = run_with(["run", "/c/tiny.alula.json", "/c/tiny.alula.test.json"], files)
+    assert(right.code == 0)
+    assert(right.out == "ok\n")
+    ro other = run_with(["run", "/c/tiny.alula.json", "/c/other.json"], files)
+    assert(other.code == 0)
+}

@@ -69,7 +69,7 @@ fn scan_folder(dir str, mut names []str) Fs -> bool {
             here.sort()
             for name in here {
                 ro full = "${dir}/${name}"
-                if is_test_file(name) || is_former_name(name) {
+                if is_test_file(name) || is_former_name(name) || is_old_test_name(name) {
                     names.push(full)
                 } else if !name.starts_with(".") {
                     // a folder is read; anything else (a file, a link) fails to be read as a folder and is skipped
@@ -183,6 +183,10 @@ fn run_test_command(a Args) Fs Io -> int {
     ro machine_file = a.files[0]
     ro test_file = a.files[1]
     if is_former_name(machine_file) { return usage_error("run", former_name_message(machine_file)) }
+    if is_old_test_name(test_file) {
+        put_err("${old_test_name_message(test_file)}\n")
+        return 2
+    }
     ro machine_text = match read_file(machine_file) {
         Some(t) => t
         None => return usage_error("run", "cannot read ${machine_file}")

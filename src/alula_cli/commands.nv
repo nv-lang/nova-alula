@@ -215,6 +215,14 @@ export fn is_former_name(name str) -> bool {
 /// The refusal of a file with a former name.
 export fn former_name_message(name str) -> str => "${name}: the name of the file is the former one (*${FORMER_MARK}*): rename it to *.alula.* (the language is called Alula since the format 2.14; there is no transition period)"
 
+const OLD_TEST_SUFFIX = ".scenario.test.json" // the name of a check before AL-135 (task 230); it is named here to be refused
+
+/// Is it the name of a check as it was before AL-135 (`*` + the old suffix)? Such a file is not read by `alula test` and not run by `alula run`: it is refused with a message (AL-136).
+export fn is_old_test_name(name str) -> bool => name.ends_with(OLD_TEST_SUFFIX)
+
+/// The refusal of a file with the old name of a check.
+export fn old_test_name_message(name str) -> str => "old file name, rename to *.alula.test.json: ${name}"
+
 /// A machine found in the folder: the file it came from and the machine.
 type FoundMachine { file str, machine AlulaMachine }
 
@@ -290,6 +298,12 @@ export fn test_command(files []NamedText, dir str, verbose bool, registry Regist
     for f in files {
         if is_former_name(f.name) { return done("", "alula test: ${former_name_message(f.name)}\n", 2) }
     }
+    // a check with the old name is not skipped in silence (AL-136): one line for each such file, the code 2, nothing is run
+    mut old_names = []str.new()
+    for f in files {
+        if is_old_test_name(f.name) { old_names.push(old_test_name_message(f.name)) }
+    }
+    if old_names.len() > 0 { return done("", lines_text(old_names), 2) }
     if tests.len() == 0 { return done("", "alula test: no tests in ${dir}\n", 2) }
     mut found = []FoundMachine.new()
     mut errors = []str.new()
