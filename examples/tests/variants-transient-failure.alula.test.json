@@ -1,0 +1,11 @@
+{
+  "format": "test/0",
+  "machine": "Variants",
+  "name": "a failure from the list restarts the request, another one ends",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start"}, "expect": {"state": "Ask"}},
+    {"do": "feed", "event": {"kind": "failure", "name": "failure", "request": "agent-1", "code": "ConnectionLost"}, "expect": {"state": "Ask", "journal": [{"code": "transient", "params": {}}], "sent": ["agent-1", "agent-2"], "data": {"tries": 1}}},
+    {"do": "feed", "event": {"kind": "failure", "name": "failure", "request": "agent-2", "code": "ModelRefused"}, "expect": {"state": "Bad", "journal": [{"code": "other_failure", "params": {}}], "outcome": "refusal:NoResult", "data": {"result": "model_refused", "tries": 2}}}
+  ]
+}

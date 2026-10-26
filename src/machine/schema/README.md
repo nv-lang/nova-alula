@@ -1,4 +1,4 @@
-# The schemas of the Alula tree: `machine/2` and `scenario/0`
+# The schemas of the Alula tree: `machine/2` and `test/0`
 
 > The schemas of the package `alula` at the language **Alula 2.25**, the state of the specification `spec/alula-spec.md` (the text of 2.25 of this repository, changelog AL-123, AL-128 ... AL-132, AL-133, AL-134). The text was
 > written by the methodology and finished with the package: every tree below was compiled and run by the program `alula` of the
@@ -9,7 +9,7 @@
 | File | What it describes |
 |---|---|
 | `machine-2.schema.json` | the tree `machine/2`: a compiled machine, the file `<name>.alula.json` (spec AL-19). A hand-written tree is Alula too, written in the JSON form |
-| `scenario-0.schema.json` | a scenario `scenario/0`: the file `<name>.scenario.test.json` (spec AL-20) — events and what each step must leave |
+| `test-0.schema.json` | a test `test/0`: the file `<name>.alula.test.json` (spec AL-20) — events and what each step must leave |
 
 Who is the authority for what:
 
@@ -27,9 +27,9 @@ Who is the authority for what:
 | What | Value | Where it is written |
 |---|---|---|
 | tree format | `machine/2` | the root key `format` of the tree (a constant; it does not change with the language version, spec AL-19) |
-| scenario format | `scenario/0` | the root key `format` of a scenario (does not change with the language version, spec AL-50) |
+| test format | `test/0` | the root key `format` of a test (does not change with the language version, spec AL-50) |
 | language version | **2.25** | `- format: 2.25` in the header of a machine file, a functions file and a fragment file; the root key `alula_version` of the tree (the schema accepts only `"2.25"`); the recommended `- machine_version: alula-2.25` (spec 1), which becomes the root key `version` |
-| package `alula` | `0.7.0` | `alula version` prints `alula 0.7.0 (Alula 2.25, machine/2)` |
+| package `alula` | `0.8.0` | `alula version` prints `alula 0.8.0 (Alula 2.25, machine/2)` |
 | glossary of automatic names | hash **`35c571ccda17`** (the dictionary of the version 13, 1270 pairs) | pinned by the format (spec AL-62); the translator recomputes it from its copy of the normative part of the glossary |
 | word table | `spec/alula-keywords.tsv` of 2.25 (17 kinds) | the words of both file languages; the tree does not hold them |
 
@@ -308,11 +308,11 @@ One object per node with the key `op` (the list is the top of `src/machine/expr.
 | `Response(e)`, `Refusal(FailCode.X, t)` | `end_row.answer` |
 | the comment `//`, the section `## Names`, prose | nothing (they do not enter the tree) |
 
-## `scenario/0`: the keys
+## `test/0`: the keys
 
 | Node | Key | Type | Req. | Meaning |
 |---|---|---|---|---|
-| root | `format` | `"scenario/0"` | yes | |
+| root | `format` | `"test/0"` | yes | |
 | | `machine` | string | yes | the Latin name of the machine (`machine` of the tree) |
 | | `name` | string | no | a description |
 | | `start_at` | int (default 1000) | no | the clock of the in-memory world, ms |
@@ -488,20 +488,20 @@ them and also writes every section, an empty one as `—`). The journal codes `c
 The tree of the English file is the same except the internal names: `"name": "agent"` of the party and `"party": "agent"` of the
 state, `"bind": "t"` and `{"op": "name", "name": "t"}` instead of `т`. `title` is the text of the header line `# Машина: ask`; the `concat`/`text` unfolding and `60_000` → `60000` follow spec AL-80 and AL-91.
 
-Check it (run with the program `alula 0.6.0`: the two files compile to the two trees, the converted English file gives the English tree, both trees pass the scenario below):
+Check it (run with the program `alula 0.6.0`: the two files compile to the two trees, the converted English file gives the English tree, both trees pass the test below):
 
 ```
 alula compile ask.alula.md -o ask.alula.json
 alula compile ask.en.alula.md -o ask.en.alula.json
 alula convert ask.alula.md --language en -o ask.conv.alula.md
-alula run ask.alula.json ask-answer.scenario.test.json
+alula run ask.alula.json ask-answer.alula.test.json
 ```
 
-### `ask-answer.scenario.test.json`
+### `ask-answer.alula.test.json`
 
 ```json
 {
-  "format": "scenario/0",
+  "format": "test/0",
   "machine": "ask",
   "name": "the agent answers: the machine ends with the answer",
   "start_at": 1000,
@@ -515,7 +515,7 @@ alula run ask.alula.json ask-answer.scenario.test.json
 }
 ```
 
-The same scenario runs on the tree of either file: it names only JSON names (`AgentTurn`, `End`, `reply_text`) and the party id
+The same test runs on the tree of either file: it names only JSON names (`AgentTurn`, `End`, `reply_text`) and the party id
 (`agent-1`).
 
 ## Answered and open points
@@ -528,11 +528,11 @@ the package; what only the methodology can decide is marked **open**. The number
 | 1 | Does an action block with `let` give the node `let`? | Yes: `{ let x = e; actions }` is `{"do":"let","name":"x","value":e,"body":[actions]}`; a block without `let` is flattened into the list of actions (no node of its own); a statement `let x = e` outside a block is `bind` | solved (`machine_text/v222_action_test.nv`) |
 | 2 | Is `x in [a, b]` unfolded into `==` and `or`? | Yes, left-nested; `failure(reason in […])` is `event.reasons`, `Except: f in […]` is `state.except`; an empty set is `false` | solved (`machine_text/v222_expr_test.nv`) |
 | 3 | Is `type` always filled at a bare element name? | The `variant` node and the `case` pattern of `match` always carry `type`; `answer_variant` has the key `variant` only (the type is the result type of the party). The translator finds the type of a bare name by the declared types, with no expected type (AL-88, AL-104): a name that two types have, and a name that is also a datum, a constant, a parameter or a binding, is an error that asks for `Type.El` | solved (AL-104) |
-| 4 | `alula_version` or `table_format`? | The package keeps `alula_version` (the schema, the decoder, `alula version`, the scenarios of the product); the specification says so since AL-108: the key is optional, its value is `"2.22"`, another version is an error that names it, there is no `table_format` | solved (AL-108) |
+| 4 | `alula_version` or `table_format`? | The package keeps `alula_version` (the schema, the decoder, `alula version`, the tests of the product); the specification says so since AL-108: the key is optional, its value is `"2.22"`, another version is an error that names it, there is no `table_format` | solved (AL-108) |
 | 5 | The sections `## Сигналы`, `## Части ответа`, the events `срок` (`timeout`), `часть` (`progress`), the key `party` of `cancel_open`, the end `Errored`, `*.alula.txt` | Product extensions of the package, kept in `keywords_product.tsv` (the words) and not in `spec/alula-keywords.tsv`; the tree keys `signals`, `progress`, the event kinds `timeout`, `progress`, `cancel_open.party`, `error_end` are marked so in the schema | **open** (the methodology may take them into the table of words or leave them to the product) |
-| 6 | The names `cancel_requests`, `reenter` of the fragment "Pause" against `request_cancel`, `reentry` of the specification | A deliberate tree name of the package (`keywords_product.tsv`, `fragment_param`); the machines and the scenarios of the product use them | **open** |
-| 7 | `event.party` of a scenario is a name, so a scenario of a Russian file does not fit an English one | The runner accepts the name **or the id** of the party (`ScEvent.party`); a scenario that names the id fits both files | solved |
-| 8 | The prefix `проект.` of the scenario `params` | The prefix is one in both languages (`PROJECT_PREFIX`); the English file writes `project.<key>` in the column, the tree holds `project_key` = `<key>` | solved for the package; **open** for the methodology whether an English scenario has its own prefix |
+| 6 | The names `cancel_requests`, `reenter` of the fragment "Pause" against `request_cancel`, `reentry` of the specification | A deliberate tree name of the package (`keywords_product.tsv`, `fragment_param`); the machines and the tests of the product use them | **open** |
+| 7 | `event.party` of a test is a name, so a test of a Russian file does not fit an English one | The runner accepts the name **or the id** of the party (`ScEvent.party`); a test that names the id fits both files | solved |
+| 8 | The prefix `проект.` of the test `params` | The prefix is one in both languages (`PROJECT_PREFIX`); the English file writes `project.<key>` in the column, the tree holds `project_key` = `<key>` | solved for the package; **open** for the methodology whether an English test has its own prefix |
 | 9 | `title` or the Latin name? | `title` is the text after `# Машина:`/`# Machine:` (the whole line), `machine` is the Latin name of the line `- machine:`; the specification 1b (а) says otherwise | **open** (a correction of the text for the methodology) |
 | 10 | The names of the request fields | The JSON name of a request field is taken in this order: the field of a declared type, form or signal; the field of the input; a datum or constant; the field of the event (`событие.идентификатор`); the glossary; a Latin name as it is; else an error | solved (the rule is in `parse.nv`, `tr_field_name`); the list is **open** for the specification 1a |
 | 11 | The unfolding of `in […]` for 2.22 | Kept (see 2) | solved |
@@ -541,7 +541,7 @@ the package; what only the methodology can decide is marked **open**. The number
 
 Further differences between the specification and the package, and what is done about them:
 
-1. **The keys of 2.13** (`values`, `signals`, the event kind `signal`, the argument `halt_signal`, the scenario key `party`) are in the schemas and in the decoder.
+1. **The keys of 2.13** (`values`, `signals`, the event kind `signal`, the argument `halt_signal`, the test key `party`) are in the schemas and in the decoder.
 2. **`counter`** is optional in the schema and in the checks for a `human` party with free input (AL-52); every other party needs it.
 3. **The wording** of the descriptions of the schema is brought to 2.22 (`Reads:`/`Request:` instead of `Input:`); the key `definitions` keeps its name (AL-83: the keys of the tree do not change), `functions_version` is a header key of a functions file and in the tree it is `includes[].version`.
 4. **The result type of an agent.** Solved by AL-109: the result of an `agent` party is a type of `## Types` or a built-in type (`text`, `int`, `bool`, …), the result of a `machine` party is a type of `## Types`. The translator accepts a built-in type for an `agent` and refuses a name that no type declares; for a `machine` party it does not tell a built-in type from a declared one (the check compares the result with the result of the called machine), which is wider than the text.

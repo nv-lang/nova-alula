@@ -1,15 +1,15 @@
 // data.nv - the data files that live beside the core and are compiled into the binary: the schemas (`schema/`). `embed_str` reads a file at compile time, relative to this file, so the tests and the
-// program need no file system to find them. The machines and the scenarios of the examples live in `examples/` of the package and are embedded by the module `alula.examples` (tests only); the machines
+// program need no file system to find them. The machines and the tests of the examples live in `examples/` of the package and are embedded by the module `alula.examples` (tests only); the machines
 // of a product or of the methodology are the data of their owners (task 158, AL-113).
 module alula.machine
 
 /// NamedText: a file of a data directory: its name and its text.
 export type NamedText { name str, text str }
 
-/// The schemas of `schema/` (`machine-2.schema.json`, `scenario-0.schema.json`).
+/// The schemas of `schema/` (`machine-2.schema.json`, `test-0.schema.json`).
 export fn schema_files() -> []NamedText => [
     NamedText { name: "machine-2.schema.json", text: embed_str("schema/machine-2.schema.json") },
-    NamedText { name: "scenario-0.schema.json", text: embed_str("schema/scenario-0.schema.json") }
+    NamedText { name: "test-0.schema.json", text: embed_str("schema/test-0.schema.json") }
 ]
 
 /// The text of the file with the name; the empty text when there is none.

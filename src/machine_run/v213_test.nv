@@ -1,10 +1,10 @@
-// v213_test.nv - task 149: Alula 2.13 in the interpreter and the scenario runner: the signal of a party is an event `signal` (the step `word` of a scenario is gone, the step `signal` may name the party
+// v213_test.nv - task 149: Alula 2.13 in the interpreter and the test runner: the signal of a party is an event `signal` (the step `word` of a test is gone, the step `signal` may name the party
 // that declared the signal), the question `accepts_signal` of the hub is answered from the signals of the table, an optional field of the input that the input does not have is none (AL-48).
 module alula.machine_run
 
 import std.text
 import alula.machine.{text_of_file}
-import alula.examples.{machine_files, scenario_files}
+import alula.examples.{machine_files, test_files}
 
 fn signal_step(name str, party str, input str) -> str {
     ro who = if party == "" { "" } else { ",\"party\":\"${party}\"" }
@@ -12,7 +12,7 @@ fn signal_step(name str, party str, input str) -> str {
     `{"do":"feed","event":{"kind":"signal","name":"${name}"${who}${data}}}`
 }
 
-// ---- the step signal of a scenario ------------------------------------------------------------------------------------------------------------
+// ---- the step signal of a test ------------------------------------------------------------------------------------------------------------
 
 test "v213 word step refused" {
     ro text = one_step(`{"do":"feed","event":{"kind":"word","name":"user_message","input":"hi"}}`)
@@ -34,10 +34,10 @@ test "v213 event kinds" {
     assert(event_kinds().contains("signal"))
 }
 
-test "v213 scenario files use the signal step" {
+test "v213 test files use the signal step" {
     mut words = 0
     mut signals = 0
-    for f in scenario_files() {
+    for f in test_files() {
         if f.text.contains("\"kind\": \"word\"") || f.text.contains("\"kind\":\"word\"") { words += 1 }
         if f.text.contains("\"kind\": \"signal\"") { signals += 1 }
     }

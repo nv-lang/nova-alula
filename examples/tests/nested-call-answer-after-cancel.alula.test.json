@@ -1,0 +1,116 @@
+{
+  "format": "test/0",
+  "machine": "caller",
+  "name": "a call: the nested machine has answered, then the parent is cancelled; the answer that waits in the inbox is dropped (rule 17)",
+  "start_at": 1000,
+  "steps": [
+    {
+      "do": "feed",
+      "event": {
+        "kind": "start",
+        "request": "up-1",
+        "input": {
+          "task": "t"
+        }
+      },
+      "expect": {
+        "state": "Call",
+        "journal": [],
+        "open": [
+          "callee-1"
+        ],
+        "sent": [
+          "callee-1"
+        ],
+        "queue": [],
+        "outcome": "none",
+        "data": {
+          "call_request_id": "up-1",
+          "child_attempt": 1,
+          "open_requests": [
+            "callee-1"
+          ]
+        }
+      },
+      "also": {
+        "callee-1": {
+          "state": "Ask",
+          "open": [
+            "agent-1"
+          ],
+          "sent": [
+            "agent-1"
+          ],
+          "queue": [],
+          "outcome": "none",
+          "data": {
+            "label": "t",
+            "count": 3,
+            "profile": "fast",
+            "call_request_id": "callee-1",
+            "agent_attempt": 1,
+            "open_requests": [
+              "agent-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "answer",
+        "request": "agent-1",
+        "input": "hi"
+      },
+      "on": "callee-1",
+      "expect": {
+        "state": "Done",
+        "journal": [
+          {
+            "code": "callee_answered",
+            "params": {
+              "label": "t"
+            }
+          }
+        ],
+        "open": [],
+        "outcome": "answer:{\"$record\":\"CallOutput\",\"fields\":{\"answer\":\"hi\",\"score\":3}}"
+      },
+      "also": {
+        "parent": {
+          "state": "Call",
+          "queue": [
+            "in answer"
+          ],
+          "outcome": "none"
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "signal",
+        "name": "cancel_request",
+        "input": "up-1"
+      },
+      "expect": {
+        "state": "Halted",
+        "outcome": "refusal:Cancelled",
+        "queue": [
+          "in answer"
+        ],
+        "open": []
+      }
+    },
+    {
+      "do": "pump",
+      "expect": {
+        "state": "Halted",
+        "outcome": "refusal:Cancelled",
+        "queue": [],
+        "journal": []
+      }
+    }
+  ]
+}

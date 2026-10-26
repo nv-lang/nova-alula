@@ -1,30 +1,30 @@
-// proto_test.nv - the protocol of the call and the runner of the scenarios of a parent with its nested machines (task 119): the events a request, a signal and an end become, the registry and
-// the check of a pair against it, `on` and `also` of a step of a scenario, the report of a difference.
+// proto_test.nv - the protocol of the call and the runner of the tests of a parent with its nested machines (task 119): the events a request, a signal and an end become, the registry and
+// the check of a pair against it, `on` and `also` of a step of a test, the report of a difference.
 module alula.machine_nested_run
 
 import std.text
 import alula.engine.{PartyRequest, PartyResponse, EventKind, Incoming, Reply, Rejection, FailCode}
 import alula.machine.{text_of_file}
-import alula.examples.{scenario_files}
-import alula.machine_run.{NestedRegistry, check_registry, nested_of_request, call_start, call_signal, call_signal_name, call_reply, parse_scenario, run_nested_scenario, run_ok, report_text, scenario_through_parent, prepare_child}
+import alula.examples.{test_files}
+import alula.machine_run.{NestedRegistry, check_registry, nested_of_request, call_start, call_signal, call_signal_name, call_reply, parse_test, run_nested_test, run_ok, report_text, test_through_parent, prepare_child}
 
 fn request_of(id str, input str) -> PartyRequest[str] => { id, attempt: 1, party: "callee", input, idle_term: 0, trace: "t1-p", step: 3 }
 
-fn text_of_scenario(name str) -> str {
-    for f in scenario_files() {
+fn text_of_test(name str) -> str {
+    for f in test_files() {
         if f.name == name { return f.text }
     }
-    panic("no scenario ${name}")
+    panic("no test ${name}")
 }
 
 fn run_text(text str) -> str {
-    match parse_scenario(text) {
-        Ok(sc) => report_text(run_nested_scenario(machine_of(sc.machine), registry(), sc))
+    match parse_test(text) {
+        Ok(sc) => report_text(run_nested_test(machine_of(sc.machine), registry(), sc))
         Err(e) => "parse: ${e.path}: ${e.message}"
     }
 }
 
-fn ok_text() -> str => text_of_scenario("nested-call-ok.scenario.test.json")
+fn ok_text() -> str => text_of_test("nested-call-ok.alula.test.json")
 
 // ---- the events of the protocol -----------------------------------------------------------------------------------------------------------------
 
@@ -145,10 +145,10 @@ test "np check fits" {
     assert(check_registry(machine_of("callee"), registry()).len() == 0)
 }
 
-// ---- the scenario of a parent ---------------------------------------------------------------------------------------------------------------
+// ---- the test of a parent ---------------------------------------------------------------------------------------------------------------
 
-test "np scenario fields" {
-    match parse_scenario(ok_text()) {
+test "np test fields" {
+    match parse_test(ok_text()) {
         Ok(sc) => {
             assert(sc.machine == "caller")
             assert(sc.steps.len() == 3)
@@ -165,7 +165,7 @@ test "np scenario fields" {
     }
 }
 
-test "np scenario refused" {
+test "np test refused" {
     ro with_bad_also = ok_text().replace("\"also\": {", "\"also\": {\"zzz\": {\"mood\": 1}, ")
     assert(run_text(with_bad_also).contains("mood"))
     ro not_text = ok_text().replace("\"on\": \"callee-1\"", "\"on\": 5")

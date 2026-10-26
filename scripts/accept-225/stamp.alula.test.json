@@ -1,0 +1,14 @@
+{
+  "format": "test/0",
+  "machine": "Stamp",
+  "name": "event.at is the stamp of the event (the start event too), one value in a step; the functions of time",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start"}, "expect": {"state": "Idle", "data": {"started": 1000, "seen": 0, "epoch_text": "1970-01-01T00:00:00Z", "lo_text": "0001-01-01T00:00:00Z", "hi_text": "9999-12-31T23:59:59.999Z", "leap_text": "2000-02-29T00:00:00Z", "milli_text": "1970-01-01T00:00:01.500Z", "hi_back": 253402300799999, "lo_back": -62135596800000, "bad_back": null, "no_zone": null}}},
+    {"do": "advance", "ms": 500},
+    {"do": "feed", "event": {"kind": "signal", "name": "message", "input": "hello"}, "expect": {"state": "Idle", "data": {"started": 1000, "seen": 1500, "same_read": true, "seen_text": "1970-01-01T00:00:01.500Z", "back": 1500}}},
+    {"do": "advance", "ms": 250},
+    {"do": "feed", "event": {"kind": "signal", "name": "message", "input": "again"}, "expect": {"state": "Idle", "data": {"started": 1000, "seen": 1750, "same_read": true, "seen_text": "1970-01-01T00:00:01.750Z", "back": 1750}}},
+    {"do": "feed", "event": {"kind": "signal", "name": "message", "input": "third", "at": 9000}, "expect": {"state": "Idle", "data": {"seen": 9000, "same_read": true, "seen_text": "1970-01-01T00:00:09Z", "back": 9000}}}
+  ]
+}

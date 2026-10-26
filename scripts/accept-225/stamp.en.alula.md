@@ -5,7 +5,7 @@
 - format: 2.25
 - language: en
 
-The probe of the task 225 (Alula 2.25, AL-133, AL-134): `event.at` is the stamp of the event, milliseconds of the epoch; the functions `time_to_text` and `text_to_time` are pure. The scenario: `stamp.scenario.test.json`.
+The probe of the task 225 (Alula 2.25, AL-133, AL-134): `event.at` is the stamp of the event, milliseconds of the epoch; the functions `time_to_text` and `text_to_time` are pure. The test: `stamp.alula.test.json`.
 
 ## Data
 

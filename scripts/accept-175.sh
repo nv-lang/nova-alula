@@ -149,7 +149,7 @@ rec_probe "лишнее в реестре (ожидается ок)" "$(printf '
 echo "== alula test examples"
 ex_out=$("$alula" test examples 2>&1 | tail -1)
 case "$ex_out" in
-  "66 of 66 scenarios passed") ex_line="examples 66 из 66" ;;
+  "66 of 66 tests passed") ex_line="examples 66 из 66" ;;
   *) ex_line="examples ${ex_out}"; red "alula test examples: $ex_out" ;;
 esac
 
@@ -254,7 +254,7 @@ if [ "${ACCEPT_175_SKIP_NOVA_TEST:-}" = 1 ]; then
   echo "== nova test пропущен (ACCEPT_175_SKIP_NOVA_TEST=1)"
   test_line="nova test пропущен"
 else
-  for dir in machine machine_table machine_text machine_text_unicode machine_run engine machine_nested_run machine_text_lang machine_nested machine_agent machine_agent_en machine_text_render machine_text_eq machine_text_fmt alula_scenarios alula_eq alula_cli; do
+  for dir in machine machine_table machine_text machine_text_unicode machine_run engine machine_nested_run machine_text_lang machine_nested machine_agent machine_agent_en machine_text_render machine_text_eq machine_text_fmt alula_tests alula_eq alula_cli; do
     echo "== nova test src/$dir"
     t_out=$(nova test "src/$dir" --jobs 2 2>&1 | tail -3)
     t_pass=$(echo "$t_out" | sed -n 's/^PASS: \([0-9]*\)  FAIL: \([0-9]*\).*/\1/p' | tail -1)

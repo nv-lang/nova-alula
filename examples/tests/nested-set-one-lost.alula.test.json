@@ -1,0 +1,110 @@
+{
+  "format": "test/0",
+  "machine": "fan",
+  "name": "a set: the agent of one nested machine fails; the element is lost, the others go on and the end lists the ones that answered",
+  "start_at": 1000,
+  "steps": [
+    {
+      "do": "feed",
+      "event": {
+        "kind": "start",
+        "request": "up-1",
+        "input": {
+          "order": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "failure",
+        "request": "agent-1",
+        "code": "ConnectionLost"
+      },
+      "on": "b-1",
+      "expect": {
+        "state": "Halted",
+        "outcome": "refusal:NoResult"
+      },
+      "also": {
+        "parent": {
+          "queue": [
+            "in failure"
+          ]
+        }
+      }
+    },
+    {
+      "do": "pump",
+      "expect": {
+        "state": "Lenses",
+        "journal": [
+          {
+            "code": "lens_lost",
+            "params": {
+              "party": "b",
+              "code": "no_result"
+            }
+          }
+        ],
+        "open": [
+          "a-1",
+          "c-1"
+        ],
+        "data": {
+          "lost": [
+            "b"
+          ],
+          "to_send": []
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "answer",
+        "request": "agent-1",
+        "input": "ra"
+      },
+      "on": "a-1"
+    },
+    {
+      "do": "pump",
+      "expect": {
+        "state": "Lenses",
+        "open": [
+          "c-1"
+        ]
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "answer",
+        "request": "agent-1",
+        "input": "rc"
+      },
+      "on": "c-1"
+    },
+    {
+      "do": "pump",
+      "expect": {
+        "state": "Done",
+        "outcome": "answer:[\"a\",\"c\"]",
+        "data": {
+          "lost": [
+            "b"
+          ],
+          "answered": [
+            "a",
+            "c"
+          ]
+        }
+      }
+    }
+  ]
+}

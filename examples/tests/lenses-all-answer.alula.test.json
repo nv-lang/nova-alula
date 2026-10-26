@@ -1,0 +1,12 @@
+{
+  "format": "test/0",
+  "machine": "Lenses",
+  "name": "a set: one request to each element, answers in any order",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start", "input": {"order": ["a", "b", "c"]}}, "expect": {"state": "Ask", "sent": ["a-1", "b-1", "c-1"], "open": ["a-1", "b-1", "c-1"], "data": {"to_send": [], "done": []}}},
+    {"do": "feed", "event": {"kind": "answer", "name": "answer", "request": "b-1", "input": "two"}, "expect": {"state": "Ask", "journal": [{"code": "lens_answered", "params": {"party": "b", "text": "two"}}], "data": {"done": ["b"]}, "open": ["a-1", "c-1"]}},
+    {"do": "feed", "event": {"kind": "answer", "name": "answer", "request": "a-1", "input": "one"}, "expect": {"state": "Ask", "data": {"done": ["b", "a"]}}},
+    {"do": "feed", "event": {"kind": "answer", "name": "answer", "request": "c-1", "input": "three"}, "expect": {"state": "Finished", "outcome": "answer:[\"b\",\"a\",\"c\"]", "open": []}}
+  ]
+}

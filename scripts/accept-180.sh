@@ -9,7 +9,7 @@
 #   1. the dictionary of the package is the normative part of the glossary of the methodology (version 13): the pairs, the hash 35c571ccda17;
 #   2. the registries of the owner of the package (`spec/samples/registry.md`, `examples/registry.md`): no table "by role", no `parse_agent_reply`;
 #      the sample registry has the three functions with the results WitnessAnswer, EditResult, LensResult;
-#   3. no `parse_agent_reply` in the tests and the README that the task migrates (the samples, the cases and the scenarios are migrated by the task 181 together with the format);
+#   3. no `parse_agent_reply` in the tests and the README that the task migrates (the samples, the cases and the tests are migrated by the task 181 together with the format);
 #   4. `nova test` of the folders machine, machine_table, machine_text is green; machine_nested is green except the tests that wait for the task 181 (scripts/accept-180.waits-181.txt).
 set -u
 cd "$(dirname "$0")/.." || exit 9
@@ -46,7 +46,7 @@ n=$(grep -h "parse_agent_reply" $MIGRATED | grep -v "is_none()\|AL-131: one func
 
 # ---- 4. the tests -----------------------------------------------------------------------------------------------------------------------------------
 # machine, machine_table, machine_text: green. machine_nested: red only in the tests listed in scripts/accept-180.waits-181.txt - they build the tree of the sample
-# `src/machine_nested/cases/meeting-examples.alula.md`, which still says `parse_agent_reply("role")`; the task 181 migrates the samples, the cases and the scenarios with the format
+# `src/machine_nested/cases/meeting-examples.alula.md`, which still says `parse_agent_reply("role")`; the task 181 migrates the samples, the cases and the tests with the format
 # (one script), and then the list is empty. The list of the failed tests of a folder comes from the compiled test program (`nova test` prints only the tail of 4 KB).
 WAITS=scripts/accept-180.waits-181.txt
 n_waits=0

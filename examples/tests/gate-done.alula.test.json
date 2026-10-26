@@ -1,0 +1,10 @@
+{
+  "format": "test/0",
+  "machine": "Gate",
+  "name": "an agent turn that ends",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start"}, "expect": {"state": "Work", "sent": ["agent-1"], "open": ["agent-1"]}},
+    {"do": "feed", "event": {"kind": "answer", "name": "answer", "request": "agent-1"}, "expect": {"state": "Done", "journal": [{"code": "work_done", "params": {}}], "outcome": "answer:1", "open": []}}
+  ]
+}

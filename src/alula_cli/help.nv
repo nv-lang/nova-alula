@@ -5,7 +5,7 @@ import std.text
 import alula.machine_table.{alula_versions, MACHINE_FORMAT}
 
 /// The version of the program.
-export const PROGRAM_VERSION = "0.7.0"
+export const PROGRAM_VERSION = "0.8.0"
 
 /// The line of `alula version`: the program, the version of the language it reads (2.12 only: there is no transition period), the format of the compiled machine.
 export fn version_text() -> str {
@@ -32,10 +32,10 @@ Commands:
       the translation and the checks of the table; the errors and the warnings.
   alula summary <file.alula.md|file.alula.json> [--no-check]
       the states, the rows, the actions, the data, the parties.
-  alula run <machine> <scenario.scenario.test.json> [--registry <file>] [--journal <file>]
-      one scenario on a machine: ok, or the report of the difference.
+  alula run <machine> <name.alula.test.json> [--registry <file>] [--journal <file>]
+      one test on a machine: ok, or the report of the difference.
   alula test <folder> [-v] [--registry <file>] [--journal <file>]
-      every *.scenario.test.json of the folder on the machines of the folder: "N of M scenarios passed".
+      every *.alula.test.json of the folder on the machines of the folder: "N of M tests passed".
   alula version
       the version of the program and of the languages it reads.
 
@@ -44,10 +44,10 @@ The host: the language names one primitive (new_id) and 35 journal codes; the re
 Files:
   *.alula.md            a machine written in Alula (Russian or English; the header says which)
   *.alula.json          the compiled machine (machine/2)
-  *.scenario.test.json     a scenario (scenario/0)
+  *.alula.test.json     a test (test/0)
 
 An error is "file:line:column: kind: message" and the quoted line under it (a JSON file has no lines: 1:1).
-Exit codes: 0 success; 1 errors in a file, or a scenario that differs; 2 a wrong command or arguments (or a file that cannot be read).
+Exit codes: 0 success; 1 errors in a file, or a test that differs; 2 a wrong command or arguments (or a file that cannot be read).
 `
 
 /// The help of one command; "" when there is no such command.
@@ -118,10 +118,10 @@ The summary of a machine: the states, the rows, the actions, the data, the parti
 `
     }
     if command == "run" {
-        return `alula run <machine.alula.json|machine.alula.md> <scenario.scenario.test.json>
+        return `alula run <machine.alula.json|machine.alula.md> <name.alula.test.json>
 
-One scenario (scenario/0) on a machine. Prints "ok" and the code 0, or the report of the first differences and the code 1.
-The scenario names its machine; a machine with another name is an error.
+One test (test/0) on a machine. Prints "ok" and the code 0, or the report of the first differences and the code 1.
+The test names its machine; a machine with another name is an error.
 
   --registry <file>     the registry of the host (default: registry.md beside the machine)
   --journal <file>      the table of the journal codes of the host (default: journal.md beside the machine)
@@ -130,11 +130,11 @@ The scenario names its machine; a machine with another name is an error.
     if command == "test" {
         return `alula test <folder> [-v]
 
-Every *.scenario.test.json of the folder (and of the folders under it) on the machine that the scenario names; the machines are the *.alula.json files
-of the folder, or the *.alula.md files when a machine has no JSON. Prints the report of every scenario that differs and "N of M scenarios passed".
-The code is 1 when a scenario differs.
+Every *.alula.test.json of the folder (and of the folders under it) on the machine that the test names; the machines are the *.alula.json files
+of the folder, or the *.alula.md files when a machine has no JSON. Prints the report of every test that differs and "N of M tests passed".
+The code is 1 when a test differs.
 
-  -v, --verbose         one line "ok <file>" for every scenario that passed
+  -v, --verbose         one line "ok <file>" for every test that passed
   --registry <file>     the registry of the host (default: registry.md in the folder)
   --journal <file>      the table of the journal codes of the host (default: journal.md in the folder)
 `

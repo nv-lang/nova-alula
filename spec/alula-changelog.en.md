@@ -6,6 +6,12 @@ Purpose: the history of edits to the specification [spec/alula-spec.en.md](alula
 
 Change labels: the prefix AL- (Alula); before 2.17 the labels were written as Я-NN, the number is the same (the owner's word, 2026-10-22: «AL- — ОК»).
 
+**Package 0.8.0, format 2.25 unchanged.** The label is **AL-135**: the owner's word, 2026-10-26 (“this is a mechanical rename”). The Alula format, the table of words, the dictionary and the hashes of the samples do not change; only the name of the package's test changes.
+
+| № | Edit | Where |
+|---|---|---|
+| AL-135 | **the package test is called `test/0`**: the test format `scenario/0` → `test/0` (the schema `test-0.schema.json`), the file `<name>.scenario.test.json` → `<name>.alula.test.json` (the file name of a test, as AL-20); the test format does not change except for the value of the key `format`; the former `scenario/0` and `*.scenario.test.json` are not accepted, there is no transition period (as AL-22); the Alula format stays 2.25 | 11 |
+
 **Against version 2.24.** The labels of version 2.25 are **AL-133, AL-134**: a release by the decisions of the owner of the methodology, 2026-10-25 (methodology chat: “as recommended”; earlier “functions turning time into text are needed”) — the machine reads the time from the stamp of the event, not from a clock; functions turning time into text and back are added. The format changes 2.24 → 2.25; the `machine/2` tree changes only the set of readable names (`event.at`, `событие.момент`, the kind `readable` of the word table) and the list of standard functions (one is left, `new_id`); the hash of the methodology glossary `35c571ccda17` is the same (glossary version 13); the hash of the functions file sample (section 8) was recomputed at release — `f757b8aa7b08` (the Russian sample) and `75062faf50d1` (the English one): only the line `format:` changed in the sample; the machine samples are moved by the package owner with a script (`time_now()` is replaced by `event.at`).
 
 | № | Edit | Where |

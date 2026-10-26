@@ -122,8 +122,8 @@ n_old_hash=$(grep -rIn --include=*.nv --include=*.alula.md --include=*.alula.txt
 
 echo "== alula test examples"
 ex_out=$("$alula" test examples 2>&1 | tail -1)
-ex_n=$(echo "$ex_out" | sed -n 's/^\([0-9][0-9]*\) of \([0-9][0-9]*\) scenarios passed$/\1/p')
-ex_m=$(echo "$ex_out" | sed -n 's/^\([0-9][0-9]*\) of \([0-9][0-9]*\) scenarios passed$/\2/p')
+ex_n=$(echo "$ex_out" | sed -n 's/^\([0-9][0-9]*\) of \([0-9][0-9]*\) tests passed$/\1/p')
+ex_m=$(echo "$ex_out" | sed -n 's/^\([0-9][0-9]*\) of \([0-9][0-9]*\) tests passed$/\2/p')
 if [ -n "$ex_n" ] && [ "$ex_n" = "$ex_m" ] && [ "$ex_n" -gt 0 ]; then ex_line="examples $ex_n из $ex_m"; else ex_line="examples ${ex_out}"; red "alula test examples: $ex_out"; fi
 
 n_test_ok=0; n_test=0

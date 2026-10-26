@@ -6,7 +6,7 @@
 - language: en
 
 A set of nested calls (spec 4.2, `set:`; the party of the kind `machine`): one request to the machine `callee` for every name of the input `names`, no more than `LIMIT` at once (`Request limit`). The answers
-and the losses are collected in the order they come; the fork `Join` waits for all of them, the fork `Split` sends an empty set straight to the end. The pair is checked as a whole by `alula test` (the callee is found in the folder). The scenarios: `batch-*`.
+and the losses are collected in the order they come; the fork `Join` waits for all of them, the fork `Split` sends an empty set straight to the end. The pair is checked as a whole by `alula test` (the callee is found in the folder). The tests: `batch-*`.
 
 ## Types
 

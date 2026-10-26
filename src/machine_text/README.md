@@ -23,10 +23,10 @@ nova test src/machine_text_fmt                                          # the re
 nova test src/machine_text_lang                                         # the two languages, the news of 2.9 - 2.14 (145 tests, 62 of task 149)
 nova test src/machine_text_render                                       # the reverse generator and its circles (71 tests)
 nova test src/machine_agent                                             # the sample of the methodology goes through the translator; the agent step of the product
-nova test src/machine_agent_en                                          # the English sample of the agent step: the translation, the equality with the Russian one, the 83 scenarios
+nova test src/machine_agent_en                                          # the English sample of the agent step: the translation, the equality with the Russian one, the 83 tests
 nova test src/alula_cli                                         # the program `alula` on small files: the commands, the errors, the exit codes (task 116)
 nova test src/alula_eq                                          # the circles of the program on the machines of the product: compile -> render -> compile, convert ru -> en -> ru
-nova test src/alula_scenarios                                   # `alula test` on src/machine: the 364 scenarios (the 32 of the nested machines too); `alula run` of the agent step one by one
+nova test src/alula_tests                                   # `alula test` on src/machine: the 364 tests (the 32 of the nested machines too); `alula run` of the agent step one by one
 ```
 
 As a library (module `alula.machine_text`):

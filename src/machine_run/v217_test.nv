@@ -1,15 +1,15 @@
-// v217_test.nv - task 151: the party of a free input in the interpreter and the runner of the scenarios (AL-51, AL-52): the machine has no counter of the party and no record of a gate, the signal is taken
+// v217_test.nv - task 151: the party of a free input in the interpreter and the runner of the tests (AL-51, AL-52): the machine has no counter of the party and no record of a gate, the signal is taken
 // by the name of the signal in the current state, the counter of the party does not grow, the machine may have a party with gates and a party of a free input together. The chat machine of the data
 // directory is the machine of a free input (the user writes when he wants to).
 module alula.machine_run
 
 import std.text
 import alula.machine.{text_of_file}
-import alula.examples.{machine_files, scenario_files}
+import alula.examples.{machine_files, test_files}
 
-test "v217 the scenarios of the free input are in the directory" {
+test "v217 the tests of the free input are in the directory" {
     mut found = 0
-    for f in scenario_files() {
+    for f in test_files() {
         if f.name.starts_with("echo-") { found += 1 }
     }
     assert(found >= 3)

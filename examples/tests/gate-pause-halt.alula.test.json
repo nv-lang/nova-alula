@@ -1,0 +1,12 @@
+{
+  "format": "test/0",
+  "machine": "Gate",
+  "name": "stop, pause, halt: the machine ends as stopped by a human",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start"}, "expect": {"state": "Work"}},
+    {"do": "feed", "event": {"kind": "signal", "name": "stop", "input": {"author": "bob", "source": "console"}}, "expect": {"state": "Pause"}},
+    {"do": "feed", "event": {"kind": "signal", "name": "stop", "input": {"author": "bob", "source": "console"}}, "expect": {"state": "Pause", "journal": [{"code": "stop_discarded", "params": {"author": "bob"}}]}},
+    {"do": "feed", "event": {"kind": "signal", "name": "halt"}, "expect": {"state": "Halted", "outcome": "refusal:StoppedByHuman"}}
+  ]
+}

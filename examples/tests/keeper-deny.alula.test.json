@@ -1,0 +1,10 @@
+{
+  "format": "test/0",
+  "machine": "Keeper",
+  "name": "a gate: the signal `deny` ends the machine with the refusal StoppedByHuman",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start"}, "expect": {"state": "Wait"}},
+    {"do": "feed", "event": {"kind": "signal", "name": "deny"}, "expect": {"state": "Denied", "journal": [{"code": "signal_denied", "params": {}}], "outcome": "refusal:StoppedByHuman"}}
+  ]
+}

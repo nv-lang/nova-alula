@@ -1,0 +1,11 @@
+{
+  "format": "test/0",
+  "machine": "Echo",
+  "name": "free input: the signal `close` ends the machine with the number of the signals",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start"}, "expect": {"state": "Idle"}},
+    {"do": "feed", "event": {"kind": "signal", "name": "message", "input": "one"}, "expect": {"state": "Idle", "data": {"messages": 1}}},
+    {"do": "feed", "event": {"kind": "signal", "name": "close"}, "expect": {"state": "Closed", "journal": [{"code": "closed_by_user", "params": {}}], "outcome": "answer:1", "data": {"stop_reason": "closed"}}}
+  ]
+}

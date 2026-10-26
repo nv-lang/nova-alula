@@ -1,11 +1,11 @@
 // params_test.nv - P-9 of format 2.7: the interpreter takes the table "key -> value" of the project; a key is `проект.<ключ>` of the column "project override"; a key that the column
-// does not have refuses the load; the value is checked against the type of the parameter. The `params` of a scenario go through the same table. P-8: the data of a signal.
+// does not have refuses the load; the value is checked against the type of the parameter. The `params` of a test go through the same table. P-8: the data of a signal.
 module alula.machine_run
 
 import std.text
 import alula.machine.{Value, Int, Text, Float, Null, List, text_of_file}
 import alula.machine_table.{MachineDef, load_machine}
-import alula.examples.{scenario_files, sample_registry}
+import alula.examples.{test_files, sample_registry}
 
 fn calc_def() -> MachineDef {
     match load_machine(machine_text("calc.alula.json"), sample_registry()) {
@@ -109,8 +109,8 @@ test "pp checked first" {
     assert(refusal(mixed).contains("no parameter has the key проект.other"))
 }
 
-test "pp scenario params" {
-    ro text = "{\"format\":\"scenario/0\",\"machine\":\"Calc\",\"params\":{\"проект.calc.step\":5},\"steps\":[{\"do\":\"feed\",\"event\":{\"kind\":\"start\",\"input\":{\"start\":0,\"label\":\"abc\"}},\"expect\":{\"state\":\"Finish\",\"data\":{\"count\":10}}}]}"
+test "pp test params" {
+    ro text = "{\"format\":\"test/0\",\"machine\":\"Calc\",\"params\":{\"проект.calc.step\":5},\"steps\":[{\"do\":\"feed\",\"event\":{\"kind\":\"start\",\"input\":{\"start\":0,\"label\":\"abc\"}},\"expect\":{\"state\":\"Finish\",\"data\":{\"count\":10}}}]}"
     ro run = run_text(calc(), text)
     assert(run_ok(run))
     ro plain = text.replace("\"params\":{\"проект.calc.step\":5},", "")
@@ -119,9 +119,9 @@ test "pp scenario params" {
     assert(report_text(without).contains("data count"))
 }
 
-test "pp scenario key" {
-    ro bad = "{\"format\":\"scenario/0\",\"machine\":\"Calc\",\"params\":{\"STEP\":5},\"steps\":[]}"
+test "pp test key" {
+    ro bad = "{\"format\":\"test/0\",\"machine\":\"Calc\",\"params\":{\"STEP\":5},\"steps\":[]}"
     assert(parse_err(bad).contains("the key of a parameter is проект.<key>"))
-    ro good = "{\"format\":\"scenario/0\",\"machine\":\"Calc\",\"params\":{\"проект.calc.step\":5},\"steps\":[]}"
+    ro good = "{\"format\":\"test/0\",\"machine\":\"Calc\",\"params\":{\"проект.calc.step\":5},\"steps\":[]}"
     assert(parse_err(good) == "ok")
 }

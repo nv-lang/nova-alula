@@ -1,0 +1,196 @@
+// test_file_test.nv - the test runner: the files of the data directory run green, a difference gets a report that says where.
+module alula.machine_run
+
+import std.text
+import std.encoding.json.{Json}
+import alula.machine.{schema_files, data_dir_names, is_machine_json_name, NamedText, text_of_file}
+import alula.examples.{test_files, machine_files, table_files, example_dir_names}
+
+// The machine a test names.
+fn machine_named(name str) -> AlulaMachine {
+    if name == "Calc" { return calc() }
+    if name == "Gate" { return build("gate.alula.json") }
+    if name == "Lenses" { return build("lenses.alula.json") }
+    if name == "Variants" { return build("variants.alula.json") }
+    if name == "Echo" { return build("echo.alula.json") }
+    if name == "Retry" { return build("retry.alula.json") }
+    if name == "Verdict" { return build("verdict.alula.json") }
+    if name == "Router" { return build("router.alula.json") }
+    if name == "Pausable" { return build("pausable.alula.json") }
+    if name == "Keeper" { return build("keeper.alula.json") }
+    panic("no machine ${name}")
+}
+
+// A test of one step (only parsed: the machine named in it is not run).
+fn one_step(step str) -> str => `{"format":"test/0","machine":"Calc","name":"t","start_at":1000,"steps":[${step}]}`
+
+fn test_of(file str) -> Test {
+    match parse_test(text_of_file(test_files(), file)) {
+        Ok(sc) => sc
+        Err(e) => panic("the test ${file} does not parse: ${e.path}: ${e.message}")
+    }
+}
+
+fn run_file(file str) -> TestRun {
+    ro sc = test_of(file)
+    run_test(machine_named(sc.machine), sc)
+}
+
+fn run_text(machine AlulaMachine, text str) -> TestRun {
+    match parse_test(text) {
+        Ok(sc) => run_test(machine, sc)
+        Err(e) => panic("${e.path}: ${e.message}")
+    }
+}
+
+fn parse_err(text str) -> str {
+    match parse_test(text) {
+        Ok(sc) => "ok"
+        Err(e) => "${e.path}: ${e.message}"
+    }
+}
+
+test "every test" {
+    // the tests of a parent with its nested machines run in the unit `machine_nested_run`, the others on the machine they name
+    ro files = test_files()
+    assert(files.len() == 66)
+    mut run = 0
+    for f in files {
+        if f.name.starts_with("nested-") || f.name.starts_with("batch-") { continue }
+        ro result = run_file(f.name)
+        if !run_ok(result) { panic("${f.name}: ${report_text(result)}") }
+        run += 1
+    }
+    assert(run == 66 - 17 - 9 - 3)
+}
+
+test "test object input" {
+    ro sc = test_of("calc-count-up.alula.test.json")
+    assert(sc.steps[0].event.kind == "start")
+    assert(sc.steps[0].event.input == "{\"start\":0,\"label\":\"abc\"}")
+    ro gate = test_of("gate-pause-continue.alula.test.json")
+    assert(gate.steps[1].event.input == "{\"author\":\"ann\",\"source\":\"console\"}")
+}
+
+test "test refused" {
+    assert(parse_err("not json").contains("not valid JSON"))
+    assert(parse_err("{}").contains("format"))
+    assert(parse_err("{\"format\":\"test/1\"}").contains("test/0"))
+    assert(parse_err(one_step("{\"do\":\"jump\"}")).contains("operation"))
+    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"dance\"}}")).contains("kind of an event"))
+    assert(parse_err(one_step("{\"do\":\"feed\",\"zzz\":1}")).contains("zzz"))
+    assert(parse_err(one_step("{\"do\":\"advance\",\"expect\":{\"mood\":\"x\"}}")).contains("mood"))
+    assert(parse_err(one_step("{\"do\":\"feed\"}")).contains("event"))
+    assert(parse_err(one_step("{\"do\":\"advance\",\"ms\":-5}")).contains("ms"))
+    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\"}}")).contains("name"))
+    assert(parse_err("{\"format\":\"test/0\",\"machine\":\"M\",\"name\":\"t\",\"steps\":{}}").contains("list"))
+    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"a\"},\"expect\":{\"journal\":[{\"params\":{}}]}}")).contains("code"))
+    assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"a\"},\"expect\":{\"journal\":[{\"code\":\"x\",\"params\":{\"p\":1}}]}}")).contains("text"))
+    assert(parse_err(one_step("{\"do\":\"advance\",\"ms\":5}")) == "ok")
+}
+
+test "gate test" {
+    ro run = run_file("gate-pause-continue.alula.test.json")
+    assert(run_ok(run))
+    assert(run.traces[1].state == "Pause")
+    assert(run.traces[2].sent.len() == 2)
+    assert(run.traces[3].outcome == "answer:1")
+}
+
+test "lenses test" {
+    ro run = run_file("lenses-all-answer.alula.test.json")
+    assert(run_ok(run))
+    assert(run.traces[0].sent.len() == 3)
+    assert(run.traces[0].sent[2] == "c-1")
+    assert(run.traces[3].outcome == "answer:[\"b\",\"a\",\"c\"]")
+}
+
+test "test twice" {
+    ro first = run_file("calc-count-up.alula.test.json")
+    ro second = run_file("calc-count-up.alula.test.json")
+    assert(first.traces.len() == second.traces.len())
+    assert(first.traces[0].encoded == second.traces[0].encoded)
+    assert(first.traces[0].journal.len() == second.traces[0].journal.len())
+}
+
+test "unstarted machine" {
+    ro run = run_text(calc(), one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"go\"},\"expect\":{\"state\":\"Start\",\"journal\":[{\"code\":\"event_ignored\",\"params\":{\"event\":\"go\",\"state\":\"Start\"}}]}}"))
+    assert(run_ok(run))
+}
+
+fn listed(files []NamedText) -> []str {
+    mut out = []str.new()
+    for f in files { out.push(f.name) }
+    out
+}
+
+fn same_names(xs []str, ys []str) -> bool {
+    if xs.len() != ys.len() { return false }
+    for x in xs {
+        if !ys.contains(x) { return false }
+    }
+    true
+}
+
+test "lists of files" {
+    assert(same_names(example_dir_names("tests"), listed(test_files())))
+    assert(same_names(example_dir_names("machines"), listed(machine_files())))
+    assert(same_names(example_dir_names("tables"), listed(table_files())))
+    assert(same_names(data_dir_names("schema"), listed(schema_files())))
+    assert(example_dir_names("elsewhere").len() == 0)
+}
+
+test "names by the Alula" {
+    ro tests = test_files()
+    assert(tests.len() == 66)
+    for f in tests { assert(f.name.ends_with(".alula.test.json")) }
+    ro tables = table_files()
+    assert(tables.len() == 10)
+    for f in tables { assert(f.name.ends_with(".alula.md") || f.name.ends_with(".alula.txt")) }
+    assert(machine_files().len() == 15)
+    for f in machine_files() { assert(f.name.ends_with(".alula.json")) }
+}
+
+test "name of a compiled machine" {
+    assert(is_machine_json_name("a.alula.json"))
+    for n in ["a.json", "a.alula", "a.alula.md", "a.table.json", "machine.json", "a.alula.test.json", "a.schema.json", "foo.machine.json", "foo.table.md", "foo.table.txt"] { assert(!is_machine_json_name(n)) }
+    assert(example_dir_names("machines").len() == 15)
+}
+
+test "test schema" {
+    match Json.parse(text_of_file(schema_files(), "test-0.schema.json")) {
+        Ok(j) => {
+            ro text = j.to_str()
+            for op in step_ops() { assert(text.contains("\"${op}\"")) }
+            for kind in event_kinds() { assert(text.contains("\"${kind}\"")) }
+            for key in ["state", "journal", "data", "queue", "open", "outcome", "sent", "cancelled", "on", "also", "host"] { assert(text.contains("\"${key}\"")) }
+        }
+        Err(e) => assert(false)
+    }
+}
+
+// ---- the key `standalone` (task 122) ---------------------------------------------------------------------------------------------------------------
+
+test "standalone key true and false" {
+    match parse_test(`{"format":"test/0","machine":"M","standalone":true,"steps":[]}`) {
+        Ok(x) => assert(x.standalone)
+        Err(e) => assert(false)
+    }
+    match parse_test(`{"format":"test/0","machine":"M","standalone":false,"steps":[]}`) {
+        Ok(x) => assert(!x.standalone)
+        Err(e) => assert(false)
+    }
+}
+
+test "standalone key is a boolean" {
+    assert(parse_err(`{"format":"test/0","machine":"M","standalone":"yes","steps":[]}`) == "$.standalone: standalone is true or false")
+    assert(parse_err(`{"format":"test/0","machine":"M","standalone":1,"steps":[]}`) == "$.standalone: standalone is true or false")
+}
+
+test "standalone key in the schema" {
+    match Json.parse(text_of_file(schema_files(), "test-0.schema.json")) {
+        Ok(j) => assert(j.to_str().contains("\"standalone\""))
+        Err(e) => assert(false)
+    }
+}
+

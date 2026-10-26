@@ -1,99 +1,99 @@
-// run_test.nv - task 116: `alula run` (one scenario on one machine) and `alula test` (every scenario of a folder on the machines of the folder), on the small machine.
+// run_test.nv - task 116: `alula run` (one test on one machine) and `alula test` (every test of a folder on the machines of the folder), on the small machine.
 module alula.alula_cli
 
 import std.text
 import alula.machine.{NamedText}
 fn run_files() -> []NamedText => [
     file("/work/tiny.alula.json", tiny_json()),
-    file("/work/tiny.scenario.test.json", tiny_scenario())
+    file("/work/tiny.alula.test.json", tiny_test())
 ]
 
 fn md_run_files() -> []NamedText => [
     file("/work/tiny.alula.md", tiny_ru()),
-    file("/work/tiny.scenario.test.json", tiny_scenario())
+    file("/work/tiny.alula.test.json", tiny_test())
 ]
 
 // ---- run -------------------------------------------------------------------------------------------------------------------------
 
 test "rn json machine" {
-    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/tiny.scenario.test.json"], run_files())
+    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/tiny.alula.test.json"], run_files())
     assert(ran.code == 0)
     assert(ran.out == "ok\n")
     assert(ran.err == "")
 }
 
 test "rn alula machine" {
-    ro ran = run_with(["run", "/work/tiny.alula.md", "/work/tiny.scenario.test.json"], md_run_files())
+    ro ran = run_with(["run", "/work/tiny.alula.md", "/work/tiny.alula.test.json"], md_run_files())
     assert(ran.code == 0)
     assert(ran.out == "ok\n")
 }
 
 test "rn english machine" {
-    ro files = [file("/work/tiny.alula.md", tiny_en()), file("/work/tiny.scenario.test.json", tiny_scenario())]
-    ro ran = run_with(["run", "/work/tiny.alula.md", "/work/tiny.scenario.test.json"], files)
+    ro files = [file("/work/tiny.alula.md", tiny_en()), file("/work/tiny.alula.test.json", tiny_test())]
+    ro ran = run_with(["run", "/work/tiny.alula.md", "/work/tiny.alula.test.json"], files)
     assert(ran.code == 0)
     assert(ran.out == "ok\n")
 }
 
 test "rn difference is a report" {
-    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/wrong.scenario.test.json", tiny_scenario_wrong())]
-    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/wrong.scenario.test.json"], files)
+    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/wrong.alula.test.json", tiny_test_wrong())]
+    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/wrong.alula.test.json"], files)
     assert(ran.code == 1)
-    assert(ran.out.contains("scenario \"tiny wrong\": 1 difference(s)"))
+    assert(ran.out.contains("test \"tiny wrong\": 1 difference(s)"))
     assert(ran.out.contains("Decide"))
     assert(ran.out.contains("Wait"))
     assert(ran.err == "")
 }
 
 test "rn another machine" {
-    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/other.scenario.test.json", other_scenario())]
-    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/other.scenario.test.json"], files)
+    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/other.alula.test.json", other_test())]
+    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/other.alula.test.json"], files)
     assert(ran.code == 1)
     assert(ran.out == "")
-    assert(ran.err.contains("/work/other.scenario.test.json:1:1: scenario: "))
+    assert(ran.err.contains("/work/other.alula.test.json:1:1: test: "))
     assert(ran.err.contains("machine Other"))
     assert(ran.err.contains("Tiny"))
 }
 
-test "rn scenario not valid" {
-    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/bad.scenario.test.json", `{"format":"scenario/0","machine":"Tiny"}`)]
-    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/bad.scenario.test.json"], files)
+test "rn test not valid" {
+    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/bad.alula.test.json", `{"format":"test/0","machine":"Tiny"}`)]
+    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/bad.alula.test.json"], files)
     assert(ran.code == 1)
-    assert(ran.err.starts_with("/work/bad.scenario.test.json:1:1: scenario: "))
+    assert(ran.err.starts_with("/work/bad.alula.test.json:1:1: test: "))
 }
 
-test "rn scenario not a json" {
-    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/bad.scenario.test.json", "{")]
-    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/bad.scenario.test.json"], files)
+test "rn test not a json" {
+    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/bad.alula.test.json", "{")]
+    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/bad.alula.test.json"], files)
     assert(ran.code == 1)
-    assert(ran.err.contains("scenario: "))
+    assert(ran.err.contains("test: "))
 }
 
 test "rn machine with errors" {
-    ro files = [file("/work/tiny.alula.md", tiny_ru().replace("| 2 | иначе | — | ЖДАТЬ |", "| 2 | иначе | — | НЕТ |")), file("/work/tiny.scenario.test.json", tiny_scenario())]
-    ro ran = run_with(["run", "/work/tiny.alula.md", "/work/tiny.scenario.test.json"], files)
+    ro files = [file("/work/tiny.alula.md", tiny_ru().replace("| 2 | иначе | — | ЖДАТЬ |", "| 2 | иначе | — | НЕТ |")), file("/work/tiny.alula.test.json", tiny_test())]
+    ro ran = run_with(["run", "/work/tiny.alula.md", "/work/tiny.alula.test.json"], files)
     assert(ran.code == 1)
     assert(ran.out == "")
     assert(ran.err.contains("/work/tiny.alula.md:"))
 }
 
 test "rn json machine not valid" {
-    ro files = [file("/work/tiny.alula.json", "{"), file("/work/tiny.scenario.test.json", tiny_scenario())]
-    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/tiny.scenario.test.json"], files)
+    ro files = [file("/work/tiny.alula.json", "{"), file("/work/tiny.alula.test.json", tiny_test())]
+    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/tiny.alula.test.json"], files)
     assert(ran.code == 1)
     assert(ran.err.contains("/work/tiny.alula.json:1:1: check: "))
 }
 
 test "rn missing machine" {
-    ro ran = run_with(["run", "/work/none.alula.json", "/work/tiny.scenario.test.json"], one("/work/tiny.scenario.test.json", tiny_scenario()))
+    ro ran = run_with(["run", "/work/none.alula.json", "/work/tiny.alula.test.json"], one("/work/tiny.alula.test.json", tiny_test()))
     assert(ran.code == 2)
     assert(ran.err.contains("cannot read /work/none.alula.json"))
 }
 
-test "rn missing scenario" {
-    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/none.scenario.test.json"], json_only())
+test "rn missing test" {
+    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/none.alula.test.json"], json_only())
     assert(ran.code == 2)
-    assert(ran.err.contains("cannot read /work/none.scenario.test.json"))
+    assert(ran.err.contains("cannot read /work/none.alula.test.json"))
 }
 
 fn json_only() -> []NamedText => one("/work/tiny.alula.json", tiny_json())
@@ -101,7 +101,7 @@ fn json_only() -> []NamedText => one("/work/tiny.alula.json", tiny_json())
 test "rn needs two files" {
     ro ran = run_with(["run", "/work/tiny.alula.json"], json_only())
     assert(ran.code == 2)
-    assert(ran.err.contains("a machine and a scenario are needed"))
+    assert(ran.err.contains("a machine and a test are needed"))
 }
 
 test "rn too many files" {
@@ -110,111 +110,111 @@ test "rn too many files" {
 }
 
 test "rn unknown option" {
-    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/tiny.scenario.test.json", "-v"], run_files())
+    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/tiny.alula.test.json", "-v"], run_files())
     assert(ran.code == 2)
     assert(ran.err.contains("unknown option `-v`"))
 }
 
 // ---- test ------------------------------------------------------------------------------------------------------------------------
 
-fn two_scenarios() -> []NamedText => [
+fn two_tests() -> []NamedText => [
     file("/work/tiny.alula.json", tiny_json()),
-    file("/work/tiny-a.scenario.test.json", tiny_scenario()),
-    file("/work/tiny-b.scenario.test.json", tiny_scenario())
+    file("/work/tiny-a.alula.test.json", tiny_test()),
+    file("/work/tiny-b.alula.test.json", tiny_test())
 ]
 
 test "tt all green" {
-    ro ran = run_with(["test", "/work"], two_scenarios())
+    ro ran = run_with(["test", "/work"], two_tests())
     assert(ran.code == 0)
-    assert(ran.out.ends_with("2 of 2 scenarios passed\n"))
+    assert(ran.out.ends_with("2 of 2 tests passed\n"))
     assert(ran.err == "")
 }
 
 test "tt one red" {
     ro files = [
         file("/work/tiny.alula.json", tiny_json()),
-        file("/work/tiny-a.scenario.test.json", tiny_scenario()),
-        file("/work/tiny-b.scenario.test.json", tiny_scenario_wrong())
+        file("/work/tiny-a.alula.test.json", tiny_test()),
+        file("/work/tiny-b.alula.test.json", tiny_test_wrong())
     ]
     ro ran = run_with(["test", "/work"], files)
     assert(ran.code == 1)
-    assert(ran.out.contains("FAIL /work/tiny-b.scenario.test.json"))
-    assert(ran.out.contains("scenario \"tiny wrong\": 1 difference(s)"))
-    assert(ran.out.ends_with("1 of 2 scenarios passed\n"))
+    assert(ran.out.contains("FAIL /work/tiny-b.alula.test.json"))
+    assert(ran.out.contains("test \"tiny wrong\": 1 difference(s)"))
+    assert(ran.out.ends_with("1 of 2 tests passed\n"))
 }
 
 test "tt green is quiet" {
-    ro ran = run_with(["test", "/work"], two_scenarios())
+    ro ran = run_with(["test", "/work"], two_tests())
     assert(count_lines_with(ran.out, "FAIL") == 0)
     assert(count_lines_with(ran.out, "ok ") == 0)
 }
 
 test "tt verbose" {
-    ro ran = run_with(["test", "/work", "-v"], two_scenarios())
+    ro ran = run_with(["test", "/work", "-v"], two_tests())
     assert(ran.code == 0)
-    assert(ran.out.contains("ok /work/tiny-a.scenario.test.json"))
-    assert(ran.out.contains("ok /work/tiny-b.scenario.test.json"))
+    assert(ran.out.contains("ok /work/tiny-a.alula.test.json"))
+    assert(ran.out.contains("ok /work/tiny-b.alula.test.json"))
 }
 
 test "tt machines of the folder by name" {
-    // the machine of a scenario is found by its name, not by the name of the file
-    ro files = [file("/work/machines/whatever.alula.json", tiny_json()), file("/work/s/x.scenario.test.json", tiny_scenario())]
+    // the machine of a test is found by its name, not by the name of the file
+    ro files = [file("/work/machines/whatever.alula.json", tiny_json()), file("/work/s/x.alula.test.json", tiny_test())]
     ro ran = run_with(["test", "/work"], files)
     assert(ran.code == 0)
-    assert(ran.out.ends_with("1 of 1 scenarios passed\n"))
+    assert(ran.out.ends_with("1 of 1 tests passed\n"))
 }
 
 test "tt alula file machine" {
-    ro files = [file("/work/tiny.alula.md", tiny_ru()), file("/work/x.scenario.test.json", tiny_scenario())]
+    ro files = [file("/work/tiny.alula.md", tiny_ru()), file("/work/x.alula.test.json", tiny_test())]
     ro ran = run_with(["test", "/work"], files)
     assert(ran.code == 0)
-    assert(ran.out.ends_with("1 of 1 scenarios passed\n"))
+    assert(ran.out.ends_with("1 of 1 tests passed\n"))
 }
 
 test "tt json before alula" {
     // a machine given twice (the file and its compiled twin) is one machine
-    ro files = [file("/work/tiny.alula.md", tiny_ru()), file("/work/tiny.alula.json", tiny_json()), file("/work/x.scenario.test.json", tiny_scenario())]
+    ro files = [file("/work/tiny.alula.md", tiny_ru()), file("/work/tiny.alula.json", tiny_json()), file("/work/x.alula.test.json", tiny_test())]
     ro ran = run_with(["test", "/work"], files)
     assert(ran.code == 0)
     assert(ran.err == "")
 }
 
-test "tt scenario without machine" {
-    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/o.scenario.test.json", other_scenario())]
+test "tt test without machine" {
+    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/o.alula.test.json", other_test())]
     ro ran = run_with(["test", "/work"], files)
     assert(ran.code == 1)
-    assert(ran.out.contains("FAIL /work/o.scenario.test.json"))
+    assert(ran.out.contains("FAIL /work/o.alula.test.json"))
     assert(ran.out.contains("no machine Other in /work"))
-    assert(ran.out.ends_with("0 of 1 scenarios passed\n"))
+    assert(ran.out.ends_with("0 of 1 tests passed\n"))
 }
 
-test "tt scenario not valid" {
-    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/b.scenario.test.json", "{"), file("/work/x.scenario.test.json", tiny_scenario())]
+test "tt test not valid" {
+    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/b.alula.test.json", "{"), file("/work/x.alula.test.json", tiny_test())]
     ro ran = run_with(["test", "/work"], files)
     assert(ran.code == 1)
-    assert(ran.out.contains("FAIL /work/b.scenario.test.json"))
-    assert(ran.out.ends_with("1 of 2 scenarios passed\n"))
+    assert(ran.out.contains("FAIL /work/b.alula.test.json"))
+    assert(ran.out.ends_with("1 of 2 tests passed\n"))
 }
 
-test "tt other files are not scenarios" {
-    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/x.scenario.test.json", tiny_scenario()), file("/work/notes.md", "text"), file("/work/y.scenario.json", "{")]
+test "tt other files are not tests" {
+    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/x.alula.test.json", tiny_test()), file("/work/notes.md", "text"), file("/work/y.test.json", "{")]
     ro ran = run_with(["test", "/work"], files)
     assert(ran.code == 0)
-    assert(ran.out.ends_with("1 of 1 scenarios passed\n"))
+    assert(ran.out.ends_with("1 of 1 tests passed\n"))
 }
 
 test "tt machine with errors is told" {
-    ro files = [file("/work/tiny.alula.md", tiny_ru().replace("| 2 | иначе | — | ЖДАТЬ |", "| 2 | иначе | — | НЕТ |")), file("/work/x.scenario.test.json", tiny_scenario())]
+    ro files = [file("/work/tiny.alula.md", tiny_ru().replace("| 2 | иначе | — | ЖДАТЬ |", "| 2 | иначе | — | НЕТ |")), file("/work/x.alula.test.json", tiny_test())]
     ro ran = run_with(["test", "/work"], files)
     assert(ran.code == 1)
     assert(ran.err.contains("/work/tiny.alula.md:"))
-    assert(ran.out.ends_with("0 of 1 scenarios passed\n"))
+    assert(ran.out.ends_with("0 of 1 tests passed\n"))
 }
 
-test "tt no scenarios" {
+test "tt no tests" {
     ro ran = run_with(["test", "/work"], json_only())
     assert(ran.code == 2)
-    assert(ran.err.contains("no scenarios in /work"))
+    assert(ran.err.contains("no tests in /work"))
 }
 
 test "tt missing folder" {
@@ -230,44 +230,44 @@ test "tt needs a folder" {
 }
 
 test "tt folder with trailing slash" {
-    ro ran = run_with(["test", "/work/"], two_scenarios())
+    ro ran = run_with(["test", "/work/"], two_tests())
     assert(ran.code == 0)
-    assert(ran.out.ends_with("2 of 2 scenarios passed\n"))
+    assert(ran.out.ends_with("2 of 2 tests passed\n"))
 }
 
 test "tt unknown option" {
-    ro ran = run_with(["test", "/work", "--lenient"], two_scenarios())
+    ro ran = run_with(["test", "/work", "--lenient"], two_tests())
     assert(ran.code == 2)
     assert(ran.err.contains("unknown option `--lenient`"))
 }
 
-fn tiny_scenario_params() -> str => `{"format":"scenario/0","machine":"Tiny","name":"tiny params","start_at":1000,"params":{"проект.нет_такого":1},"steps":[{"do":"feed","event":{"kind":"start"},"expect":{"state":"Wait"}}]}`
+fn tiny_test_params() -> str => `{"format":"test/0","machine":"Tiny","name":"tiny params","start_at":1000,"params":{"проект.нет_такого":1},"steps":[{"do":"feed","event":{"kind":"start"},"expect":{"state":"Wait"}}]}`
 
-fn tiny_scenario_host() -> str => `{"format":"scenario/0","machine":"Tiny","name":"tiny host","start_at":1000,"steps":[{"do":"feed","event":{"kind":"start"},"host":{"x":{"$bogus":1}},"expect":{"state":"Wait"}}]}`
+fn tiny_test_host() -> str => `{"format":"test/0","machine":"Tiny","name":"tiny host","start_at":1000,"steps":[{"do":"feed","event":{"kind":"start"},"host":{"x":{"$bogus":1}},"expect":{"state":"Wait"}}]}`
 
-// A scenario that cannot be run (a parameter that the machine does not have, an answer of the host that is no value) is an error of the file, not a stop of the program.
-test "rn scenario parameter unknown" {
-    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/p.scenario.test.json", tiny_scenario_params())]
-    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/p.scenario.test.json"], files)
+// A test that cannot be run (a parameter that the machine does not have, an answer of the host that is no value) is an error of the file, not a stop of the program.
+test "rn test parameter unknown" {
+    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/p.alula.test.json", tiny_test_params())]
+    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/p.alula.test.json"], files)
     assert(ran.code == 1)
     assert(ran.out == "")
-    assert(ran.err.starts_with("/work/p.scenario.test.json:1:1: scenario: "))
+    assert(ran.err.starts_with("/work/p.alula.test.json:1:1: test: "))
     assert(ran.err.contains("no parameter has the key"))
 }
 
-test "rn scenario host answer wrong" {
-    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/h.scenario.test.json", tiny_scenario_host())]
-    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/h.scenario.test.json"], files)
+test "rn test host answer wrong" {
+    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/h.alula.test.json", tiny_test_host())]
+    ro ran = run_with(["run", "/work/tiny.alula.json", "/work/h.alula.test.json"], files)
     assert(ran.code == 1)
     assert(ran.out == "")
-    assert(ran.err.starts_with("/work/h.scenario.test.json:1:1: scenario: "))
+    assert(ran.err.starts_with("/work/h.alula.test.json:1:1: test: "))
 }
 
-test "tt scenario that cannot be run" {
-    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/p.scenario.test.json", tiny_scenario_params()), file("/work/x.scenario.test.json", tiny_scenario())]
+test "tt test that cannot be run" {
+    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/p.alula.test.json", tiny_test_params()), file("/work/x.alula.test.json", tiny_test())]
     ro ran = run_with(["test", "/work"], files)
     assert(ran.code == 1)
-    assert(ran.out.contains("FAIL /work/p.scenario.test.json"))
+    assert(ran.out.contains("FAIL /work/p.alula.test.json"))
     assert(ran.out.contains("no parameter has the key"))
-    assert(ran.out.ends_with("1 of 2 scenarios passed\n"))
+    assert(ran.out.ends_with("1 of 2 tests passed\n"))
 }

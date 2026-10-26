@@ -1,0 +1,11 @@
+{
+  "format": "test/0",
+  "machine": "Lenses",
+  "name": "a lost lens counts as done",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start", "input": {"order": ["x", "y"]}}, "expect": {"state": "Ask", "sent": ["x-1", "y-1"]}},
+    {"do": "feed", "event": {"kind": "failure", "name": "failure", "request": "x-1", "code": "ModelRefused"}, "expect": {"state": "Ask", "journal": [{"code": "lens_lost", "params": {"party": "x", "reason": "model_refused"}}]}},
+    {"do": "feed", "event": {"kind": "answer", "name": "answer", "request": "y-1", "input": "ok"}, "expect": {"state": "Finished", "outcome": "answer:[\"x\",\"y\"]"}}
+  ]
+}

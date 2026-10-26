@@ -5,7 +5,7 @@ module alula.machine_table
 
 import std.text
 import alula.machine.{schema_files, text_of_file}
-import alula.examples.{machine_files, scenario_files}
+import alula.examples.{machine_files, test_files}
 
 // The tiny machine of the support file, in the tree of 2.13: the words of the party are its signals.
 fn tiny13() -> str => tiny().replace("\"words\":[{\"name\":\"go\"},{\"name\":\"halt\"}]", "\"signals\":[{\"name\":\"go\"},{\"name\":\"halt\"}]").replace("{\"kind\":\"word\",\"word\":\"go\"}", "{\"kind\":\"signal\",\"name\":\"go\"}").replace("{\"kind\":\"word\",\"word\":\"halt\"}", "{\"kind\":\"signal\",\"name\":\"halt\"}")
@@ -133,8 +133,8 @@ test "v213 schema has no word event" {
     assert(!schema.contains("\"kind\": { \"const\": \"word\""))
 }
 
-test "v213 scenario schema has no word step" {
-    ro schema = text_of_file(schema_files(), "scenario-0.schema.json")
+test "v213 test schema has no word step" {
+    ro schema = text_of_file(schema_files(), "test-0.schema.json")
     assert(!schema.contains("\"word\""))
     assert(schema.contains("\"party\""))
 }
@@ -148,9 +148,9 @@ test "v213 machines hold no words" {
     }
 }
 
-test "v213 scenarios hold no word steps" {
+test "v213 tests hold no word steps" {
     mut words = 0
-    for f in scenario_files() {
+    for f in test_files() {
         if f.text.contains("\"kind\": \"word\"") || f.text.contains("\"kind\":\"word\"") { words += 1 }
     }
     assert(words == 0)

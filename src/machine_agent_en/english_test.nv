@@ -1,13 +1,13 @@
 // english_test.nv - task 113: the English twin of the sample of the agent step (spec/samples/agent-step.en.alula.md, copied as it is) goes through the translator without
-// a hand edit, gives the JSON of the Russian sample (but for the strings and the names of the locals of its author), and runs the 75 scenarios of the agent step.
+// a hand edit, gives the JSON of the Russian sample (but for the strings and the names of the locals of its author), and runs the 75 tests of the agent step.
 module alula.machine_agent_en
 
 import std.text
 import alula.machine.{NamedText}
 import alula.machine_table.{load_machine}
-import alula.machine_run.{AlulaMachine, load_alula_machine, parse_scenario, run_scenario, run_ok, report_text}
+import alula.machine_run.{AlulaMachine, load_alula_machine, parse_test, run_test, run_ok, report_text}
 import alula.machine_text.{translate_report, error_text, render_summary, TranslateReport}
-import alula.examples.{scenario_files}
+import alula.examples.{test_files}
 
 fn first_error(report TranslateReport) -> str {
     if report.errors.len() == 0 { return "ok" }
@@ -134,4 +134,4 @@ test "ae fragment words" {
     assert(report_of(bad_value).errors.len() > 0)
 }
 
-// ---- the 83 scenarios of the agent step run on the English sample ----------------------------------------------------------------
+// ---- the 83 tests of the agent step run on the English sample ----------------------------------------------------------------

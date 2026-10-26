@@ -7,7 +7,7 @@ import std.text
 import alula.machine.{NamedText, Registry}
 import alula.machine_table.{load_machine, parse_machine, issue_text}
 import alula.machine_text.{translate_report, translate_checked, TranslateReport, error_text, render_summary, render_machine_in}
-import alula.machine_run.{AlulaMachine, NestedRegistry, check_registry, run_nested_scenario, load_alula_machine, parse_scenario, scenario_problem, run_scenario, run_ok, report_text}
+import alula.machine_run.{AlulaMachine, NestedRegistry, check_registry, run_nested_test, load_alula_machine, parse_test, test_problem, run_test, run_ok, report_text}
 import alula.machine_table.{MachineParty}
 
 // ORACLE-WORKAROUND(9): the type is not named `Outcome`: a user type named like a prelude type breaks the build of the program (CC-FAIL "no member named tag in struct Nova_Outcome"); name it `Outcome` when item 9 is fixed
@@ -165,23 +165,23 @@ export fn machine_of_file(text str, file str, registry Registry) -> Result[Alula
     }
 }
 
-/// `alula run`: one scenario on one machine. `ok`, or the report of the differences with the code 1.
-export fn run_command(machine_text str, machine_file str, scenario_text str, scenario_file str, registry Registry) -> CmdResult {
+/// `alula run`: one test on one machine. `ok`, or the report of the differences with the code 1.
+export fn run_command(machine_text str, machine_file str, test_text str, test_file str, registry Registry) -> CmdResult {
     match machine_of_file(machine_text, machine_file, registry) {
         Err(lines) => done("", "${lines}\n", 1)
         Ok(machine) => {
-            match parse_scenario(scenario_text) {
-                Err(e) => done("", "${scenario_file}:1:1: scenario: ${e.path}: ${e.message}\n", 1)
+            match parse_test(test_text) {
+                Err(e) => done("", "${test_file}:1:1: test: ${e.path}: ${e.message}\n", 1)
                 Ok(sc) => {
                     if sc.machine != machine.def.name {
-                        return done("", "${scenario_file}:1:1: scenario: the scenario is for machine ${sc.machine}, the machine of ${machine_file} is ${machine.def.name}\n", 1)
+                        return done("", "${test_file}:1:1: test: the test is for machine ${sc.machine}, the machine of ${machine_file} is ${machine.def.name}\n", 1)
                     }
                     if has_nested(machine) && !sc.standalone {
-                        return done("", "${scenario_file}:1:1: scenario: the machine ${machine.def.name} calls nested machines: they are found in a folder, use `alula test <folder>`\n", 1)
+                        return done("", "${test_file}:1:1: test: the machine ${machine.def.name} calls nested machines: they are found in a folder, use `alula test <folder>`\n", 1)
                     }
-                    ro problem = scenario_problem(machine, sc)
-                    if problem != "" { return done("", "${scenario_file}:1:1: scenario: ${problem}\n", 1) }
-                    ro run = run_scenario(machine, sc)
+                    ro problem = test_problem(machine, sc)
+                    if problem != "" { return done("", "${test_file}:1:1: test: ${problem}\n", 1) }
+                    ro run = run_test(machine, sc)
                     if run_ok(run) { return done("ok\n", "", 0) }
                     done("${report_text(run)}\n", "", 1)
                 }
@@ -192,14 +192,14 @@ export fn run_command(machine_text str, machine_file str, scenario_text str, sce
 
 // ---- test --------------------------------------------------------------------------------------------------------------------------
 
-fn is_scenario_name(name str) -> bool => name.ends_with(".scenario.test.json")
+fn is_test_name(name str) -> bool => name.ends_with(".alula.test.json")
 
 fn is_json_machine_name(name str) -> bool => name.ends_with(".alula.json")
 
 fn is_text_machine_name(name str) -> bool => name.ends_with(".alula.md") || name.ends_with(".alula.txt")
 
-/// Is the file one that `alula test` reads: a scenario or a machine?
-export fn is_test_file(name str) -> bool => is_scenario_name(name) || is_json_machine_name(name) || is_text_machine_name(name)
+/// Is the file one that `alula test` reads: a test or a machine?
+export fn is_test_file(name str) -> bool => is_test_name(name) || is_json_machine_name(name) || is_text_machine_name(name)
 
 const FORMER_MARK = ".portolan." // guard-allow(legacy-name): the former extension is named here to be refused
 
@@ -233,11 +233,11 @@ fn registry_of(found []FoundMachine) -> NestedRegistry {
     reg
 }
 
-// The names of the machines that scenarios run together with their nested machines: a standalone scenario (task 122) plays the nested parties itself and needs none.
-fn nested_run_names(scenarios []NamedText) -> []str {
+// The names of the machines that tests run together with their nested machines: a standalone test (task 122) plays the nested parties itself and needs none.
+fn nested_run_names(tests []NamedText) -> []str {
     mut out = []str.new()
-    for s in scenarios {
-        match parse_scenario(s.text) {
+    for s in tests {
+        match parse_test(s.text) {
             Ok(sc) => {
                 if !sc.standalone && !out.contains(sc.machine) { out.push(sc.machine) }
             }
@@ -266,11 +266,11 @@ fn machine_named(found []FoundMachine, name str) -> Option[AlulaMachine] {
     None
 }
 
-// The names of the machines that the scenarios of the files ask for and that are not in `found`; the scenarios that do not parse are not asked about.
-fn missing_names(found []FoundMachine, scenarios []NamedText) -> []str {
+// The names of the machines that the tests of the files ask for and that are not in `found`; the tests that do not parse are not asked about.
+fn missing_names(found []FoundMachine, tests []NamedText) -> []str {
     mut out = []str.new()
-    for s in scenarios {
-        match parse_scenario(s.text) {
+    for s in tests {
+        match parse_test(s.text) {
             Ok(sc) => {
                 if machine_named(found, sc.machine).is_none() && !out.contains(sc.machine) { out.push(sc.machine) }
             }
@@ -280,17 +280,17 @@ fn missing_names(found []FoundMachine, scenarios []NamedText) -> []str {
     out
 }
 
-/// `alula test`: every scenario of `files` (the files of the folder `dir`, scenarios and machines, in the order of their names) on the machine of the folder that it names. The
-/// machines are the `*.alula.json` files; a machine that has no JSON file is read from `*.alula.md` (`*.alula.txt`) when a scenario asks for it.
+/// `alula test`: every test of `files` (the files of the folder `dir`, tests and machines, in the order of their names) on the machine of the folder that it names. The
+/// machines are the `*.alula.json` files; a machine that has no JSON file is read from `*.alula.md` (`*.alula.txt`) when a test asks for it.
 export fn test_command(files []NamedText, dir str, verbose bool, registry Registry) -> CmdResult {
-    mut scenarios = []NamedText.new()
+    mut tests = []NamedText.new()
     for f in files {
-        if is_scenario_name(f.name) { scenarios.push(f) }
+        if is_test_name(f.name) { tests.push(f) }
     }
     for f in files {
         if is_former_name(f.name) { return done("", "alula test: ${former_name_message(f.name)}\n", 2) }
     }
-    if scenarios.len() == 0 { return done("", "alula test: no scenarios in ${dir}\n", 2) }
+    if tests.len() == 0 { return done("", "alula test: no tests in ${dir}\n", 2) }
     mut found = []FoundMachine.new()
     mut errors = []str.new()
     for f in files {
@@ -301,11 +301,11 @@ export fn test_command(files []NamedText, dir str, verbose bool, registry Regist
             }
         }
     }
-    // the machines written in Alula are translated only when a scenario names a machine that no JSON file has (a translation costs a second for a big machine)
-    ro wanted = nested_run_names(scenarios)
-    if missing_names(found, scenarios).len() > 0 || nested_missing(found, wanted).len() > 0 {
+    // the machines written in Alula are translated only when a test names a machine that no JSON file has (a translation costs a second for a big machine)
+    ro wanted = nested_run_names(tests)
+    if missing_names(found, tests).len() > 0 || nested_missing(found, wanted).len() > 0 {
         for f in files {
-            if is_text_machine_name(f.name) && (missing_names(found, scenarios).len() > 0 || nested_missing(found, wanted).len() > 0) {
+            if is_text_machine_name(f.name) && (missing_names(found, tests).len() > 0 || nested_missing(found, wanted).len() > 0) {
                 match machine_of_file(f.text, f.name, registry) {
                     Ok(m) => {
                         if machine_named(found, m.def.name).is_none() { found.push(FoundMachine { file: f.name, machine: m }) }
@@ -317,23 +317,23 @@ export fn test_command(files []NamedText, dir str, verbose bool, registry Regist
     }
     mut out = []str.new()
     mut passed = 0
-    for s in scenarios {
-        match parse_scenario(s.text) {
-            Err(e) => out.push("FAIL ${s.name}\n  ${s.name}:1:1: scenario: ${e.path}: ${e.message}")
+    for s in tests {
+        match parse_test(s.text) {
+            Err(e) => out.push("FAIL ${s.name}\n  ${s.name}:1:1: test: ${e.path}: ${e.message}")
             Ok(sc) => {
                 match machine_named(found, sc.machine) {
                     None => out.push("FAIL ${s.name}\n  no machine ${sc.machine} in ${dir}")
                     Some(machine) => {
-                        ro problem = scenario_problem(machine, sc)
-                        // a standalone scenario plays the nested parties itself (task 122): no pair to check
+                        ro problem = test_problem(machine, sc)
+                        // a standalone test plays the nested parties itself (task 122): no pair to check
                         ro nested_run = has_nested(machine) && !sc.standalone
                         ro pair_problems = if nested_run { check_registry(machine, registry_of(found)) } else { []str.new() }
                         if problem != "" {
-                            out.push("FAIL ${s.name}\n  ${s.name}:1:1: scenario: ${problem}")
+                            out.push("FAIL ${s.name}\n  ${s.name}:1:1: test: ${problem}")
                         } else if pair_problems.len() > 0 {
-                            out.push("FAIL ${s.name}\n  ${s.name}:1:1: scenario: the nested machines do not fit: ${pair_problems.join(" | ")}")
+                            out.push("FAIL ${s.name}\n  ${s.name}:1:1: test: the nested machines do not fit: ${pair_problems.join(" | ")}")
                         } else {
-                            ro run = if nested_run { run_nested_scenario(machine, registry_of(found), sc) } else { run_scenario(machine, sc) }
+                            ro run = if nested_run { run_nested_test(machine, registry_of(found), sc) } else { run_test(machine, sc) }
                             if run_ok(run) {
                                 passed += 1
                                 if verbose { out.push("ok ${s.name}") }
@@ -346,6 +346,6 @@ export fn test_command(files []NamedText, dir str, verbose bool, registry Regist
             }
         }
     }
-    out.push("${passed} of ${scenarios.len()} scenarios passed")
-    done(lines_text(out), lines_text(errors), if passed == scenarios.len() { 0 } else { 1 })
+    out.push("${passed} of ${tests.len()} tests passed")
+    done(lines_text(out), lines_text(errors), if passed == tests.len() { 0 } else { 1 })
 }

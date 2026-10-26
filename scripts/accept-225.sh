@@ -3,7 +3,7 @@
 # Проверяет: (1) `alula version` печатает `alula 0.7.0 (Alula 2.25, machine/2)`; пакет называет 0.7.0 (nova.toml);
 #     (2) формат 2.24 не принимается: файл с `format: 2.24` и дерево с `alula_version` 2.24 — ошибка, в сообщении названы обе версии; формат 2.25 в данных везде;
 #     (3) AL-134: прежнее `время_сейчас()` / `time_now()` — ошибка с подсказкой `событие.момент` / `event.at` (в выражении и в действии, на обоих языках); поле сигнала с именем `момент` / `at` — ошибка;
-#         `событие.момент` / `event.at` читается и равно штампу события (СТАРТ, сигналы, одно значение в шаге) — сценарий scripts/accept-225/stamp.scenario.test.json;
+#         `событие.момент` / `event.at` читается и равно штампу события (СТАРТ, сигналы, одно значение в шаге) — сценарий scripts/accept-225/stamp.alula.test.json;
 #     (4) AL-133: функции `время_в_текст` / `текст_во_время` (`time_to_text` / `text_to_time`): граничные 0001-01-01 и 9999-12-31, `Z`, миллисекунды, високосный день,
 #         текст не той записи — пусто; вне диапазона — ошибка машины (проба); в таблице слов они есть, `время_сейчас` — нет;
 #     (5) словарь методики версии 13 не изменился: хеш 35c571ccda17 (scripts/glossary-names.py и tools/check-alula-keywords.py);
@@ -83,7 +83,7 @@ n_old_format=$(grep -rIn --exclude=accept-225.sh --exclude=accept-225.log.md "^-
 
 echo "== AL-134: event.at, время_сейчас убрана"
 probe=scripts/accept-225/stamp.en.alula.md
-scen=scripts/accept-225/stamp.scenario.test.json
+scen=scripts/accept-225/stamp.alula.test.json
 run_out=$("$alula" run "$probe" "$scen" 2>&1); run_rc=$?
 { [ "$run_rc" -eq 0 ] && [ "$run_out" = "ok" ]; } || red "сценарий штампа события (stamp): $(echo "$run_out" | head -4)"
 
@@ -156,8 +156,8 @@ n_old_hash=$(grep -rIn --include=*.nv --include=*.alula.md --include=*.alula.txt
 
 echo "== alula test examples"
 ex_out=$("$alula" test examples 2>&1 | tail -1)
-ex_n=$(echo "$ex_out" | sed -n 's/^\([0-9][0-9]*\) of \([0-9][0-9]*\) scenarios passed$/\1/p')
-ex_m=$(echo "$ex_out" | sed -n 's/^\([0-9][0-9]*\) of \([0-9][0-9]*\) scenarios passed$/\2/p')
+ex_n=$(echo "$ex_out" | sed -n 's/^\([0-9][0-9]*\) of \([0-9][0-9]*\) tests passed$/\1/p')
+ex_m=$(echo "$ex_out" | sed -n 's/^\([0-9][0-9]*\) of \([0-9][0-9]*\) tests passed$/\2/p')
 if [ -n "$ex_n" ] && [ "$ex_n" = "$ex_m" ] && [ "$ex_n" -gt 0 ]; then ex_line="examples $ex_n из $ex_m"; else ex_line="examples ${ex_out}"; red "alula test examples: $ex_out"; fi
 
 n_test_ok=0; n_test=0

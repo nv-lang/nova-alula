@@ -1,0 +1,10 @@
+{
+  "format": "test/0",
+  "machine": "Keeper",
+  "name": "a gate: a signal that is not in the table of the gate is not known to the machine and changes nothing",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start"}, "expect": {"state": "Wait"}},
+    {"do": "feed", "event": {"kind": "signal", "name": "halt"}, "expect": {"state": "Wait", "journal": [{"code": "event_unknown", "params": {"name": "halt"}}]}}
+  ]
+}

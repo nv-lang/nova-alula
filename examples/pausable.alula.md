@@ -6,7 +6,7 @@
 - language: en
 
 The fragment `Pause` (spec 9): a human stops the machine in the middle of the work of the agent, the open request is cancelled and the machine waits in `Pause`; `continue` enters the state it was stopped
-in again, with a new request; `halt` ends the machine with the code `pause_halt`. The fragment brings the state `Pause`, the common events and the party `enhanced`; the table writes only its own work. The scenarios: `pause-*`.
+in again, with a new request; `halt` ends the machine with the code `pause_halt`. The fragment brings the state `Pause`, the common events and the party `enhanced`; the table writes only its own work. The tests: `pause-*`.
 
 ## Data
 

@@ -7,7 +7,7 @@
 
 The destination `same` and the destination `same, rerun` (spec 4.1, AL-111). The agent that is silent is asked again by the row `same, rerun` of its appeal: the state is entered anew, the open request is cancelled and a new one is sent
 (the counter of the attempts of the party is one more). The reviewer, a gate of a human, shows the other signal: the row `same` only runs its actions (a note is taken, the open request stays), the row `same, rerun`
-opens the gate again with a new request. The scenarios: `retry-*`.
+opens the gate again with a new request. The tests: `retry-*`.
 
 ## Data
 

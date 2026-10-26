@@ -1,0 +1,109 @@
+{
+  "format": "test/0",
+  "machine": "caller",
+  "name": "a call: the stop and then the halt of a human; the halt goes to the nested machine, which answers with StoppedByHuman, the parent ends the same way",
+  "start_at": 1000,
+  "steps": [
+    {
+      "do": "feed",
+      "event": {
+        "kind": "start",
+        "request": "up-1",
+        "input": {
+          "task": "t"
+        }
+      },
+      "expect": {
+        "state": "Call",
+        "journal": [],
+        "open": [
+          "callee-1"
+        ],
+        "sent": [
+          "callee-1"
+        ],
+        "queue": [],
+        "outcome": "none",
+        "data": {
+          "call_request_id": "up-1",
+          "child_attempt": 1,
+          "open_requests": [
+            "callee-1"
+          ]
+        }
+      },
+      "also": {
+        "callee-1": {
+          "state": "Ask",
+          "open": [
+            "agent-1"
+          ],
+          "sent": [
+            "agent-1"
+          ],
+          "queue": [],
+          "outcome": "none",
+          "data": {
+            "label": "t",
+            "count": 3,
+            "profile": "fast",
+            "call_request_id": "callee-1",
+            "agent_attempt": 1,
+            "open_requests": [
+              "agent-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "signal",
+        "name": "human_stop",
+        "input": {
+          "human_word": "stop",
+          "author": "ann",
+          "source": "console"
+        }
+      },
+      "expect": {
+        "state": "Pause"
+      },
+      "also": {
+        "callee-1": {
+          "state": "Pause"
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "signal",
+        "name": "halt"
+      },
+      "expect": {
+        "state": "Halted",
+        "outcome": "refusal:StoppedByHuman",
+        "open": [],
+        "queue": [
+          "in failure"
+        ]
+      },
+      "also": {
+        "callee-1": {
+          "state": "Halted",
+          "outcome": "refusal:StoppedByHuman"
+        }
+      }
+    },
+    {
+      "do": "pump",
+      "expect": {
+        "state": "Halted",
+        "outcome": "refusal:StoppedByHuman",
+        "queue": []
+      }
+    }
+  ]
+}

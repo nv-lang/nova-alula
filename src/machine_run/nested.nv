@@ -1,10 +1,10 @@
 // nested.nv - nested machines (task 119, rules 22 and 35 of the specification, `state-machine-call-protocol.md`): the registry of the machines a caller may call, the protocol of the call
 // (the request starts the nested machine, the signals of the parent become events of the nested machine, the end of the nested machine becomes the answer or the refusal of the request)
-// and the runner of a scenario of a parent with its nested machines.
+// and the runner of a test of a parent with its nested machines.
 //
 // A nested machine is one more `Engine[AlulaMachine, AlulaState]` in the same process, with its own journal, snapshot and trace (`<trace of the parent>/<request id>`); its id in the
 // store is the id of its request, so a restart of the process finds it again. The parent knows nothing of it but the party of the kind `machine`: the order `SendOrder` and the events
-// `Answered` and `Refused` are those of an agent. What passes between them is below; the caller that runs them (the runner of the scenarios here, the session server later) picks the
+// `Answered` and `Refused` are those of an agent. What passes between them is below; the caller that runs them (the runner of the tests here, the session server later) picks the
 // effects of each engine itself.
 //
 //   parent sends the request R to the party of the kind machine  ->  `child_start`: the nested machine starts with the event `start`, its input is the request, its `request` is R;

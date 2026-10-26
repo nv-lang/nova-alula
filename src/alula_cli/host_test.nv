@@ -19,7 +19,7 @@ fn hc_registry() -> str => "# the shop\n\n| name | parameters | result | class |
 
 fn hc_journal() -> str => hc_ticked("# the codes of the shop\n\n| Машина | Код события | Русский шаблон | Параметры |\n|---|---|---|---|\n| склад | 'item_reserved' | зарезервировано: {item} | 'item' |\n")
 
-fn hc_shop_scenario() -> str => "{\"format\":\"scenario/0\",\"machine\":\"Shop\",\"name\":\"shop starts\",\"start_at\":1000,\"steps\":[{\"do\":\"feed\",\"event\":{\"kind\":\"start\"},\"expect\":{\"state\":\"Wait\"}},{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"allow\"},\"host\":{\"reserve\":null},\"expect\":{\"state\":\"Wait\",\"journal\":[{\"code\":\"item_reserved\",\"params\":{\"item\":\"tea\"}}]}}]}"
+fn hc_shop_test() -> str => "{\"format\":\"test/0\",\"machine\":\"Shop\",\"name\":\"shop starts\",\"start_at\":1000,\"steps\":[{\"do\":\"feed\",\"event\":{\"kind\":\"start\"},\"expect\":{\"state\":\"Wait\"}},{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"allow\"},\"host\":{\"reserve\":null},\"expect\":{\"state\":\"Wait\",\"journal\":[{\"code\":\"item_reserved\",\"params\":{\"item\":\"tea\"}}]}}]}"
 
 fn hc_files(with_registry bool, with_journal bool) -> []NamedText {
     mut out = [NamedText { name: "/work/shop.alula.md", text: hc_shop() }]
@@ -110,11 +110,11 @@ test "host cli render writes the declaration of an external function from the tr
 
 test "host cli test reads the host from the folder" {
     ro compiled = run_with(["compile", "/work/shop.alula.md"], hc_files(true, true))
-    ro files = [NamedText { name: "/work/shop/shop.alula.json", text: compiled.out }, NamedText { name: "/work/shop/registry.md", text: hc_registry() }, NamedText { name: "/work/shop/journal.md", text: hc_journal() }, NamedText { name: "/work/shop/s1.scenario.test.json", text: hc_shop_scenario() }]
+    ro files = [NamedText { name: "/work/shop/shop.alula.json", text: compiled.out }, NamedText { name: "/work/shop/registry.md", text: hc_registry() }, NamedText { name: "/work/shop/journal.md", text: hc_journal() }, NamedText { name: "/work/shop/s1.alula.test.json", text: hc_shop_test() }]
     ro ran = run_with(["test", "/work/shop"], files)
     assert(ran.code == 0)
-    assert(ran.out.contains("1 of 1 scenarios passed"))
-    ro lonely = run_with(["test", "/work/shop"], [NamedText { name: "/work/shop/shop.alula.json", text: compiled.out }, NamedText { name: "/work/shop/s1.scenario.test.json", text: hc_shop_scenario() }])
+    assert(ran.out.contains("1 of 1 tests passed"))
+    ro lonely = run_with(["test", "/work/shop"], [NamedText { name: "/work/shop/shop.alula.json", text: compiled.out }, NamedText { name: "/work/shop/s1.alula.test.json", text: hc_shop_test() }])
     assert(lonely.code == 1)
     assert(lonely.err.contains("reserve"))
 }

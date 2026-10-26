@@ -1,0 +1,104 @@
+{
+  "format": "test/0",
+  "machine": "caller",
+  "name": "a call: the parent is cancelled by its own parent, the nested machine gets the cancel and ends with Cancelled, its reply is dropped",
+  "start_at": 1000,
+  "steps": [
+    {
+      "do": "feed",
+      "event": {
+        "kind": "start",
+        "request": "up-1",
+        "input": {
+          "task": "t"
+        }
+      },
+      "expect": {
+        "state": "Call",
+        "journal": [],
+        "open": [
+          "callee-1"
+        ],
+        "sent": [
+          "callee-1"
+        ],
+        "queue": [],
+        "outcome": "none",
+        "data": {
+          "call_request_id": "up-1",
+          "child_attempt": 1,
+          "open_requests": [
+            "callee-1"
+          ]
+        }
+      },
+      "also": {
+        "callee-1": {
+          "state": "Ask",
+          "open": [
+            "agent-1"
+          ],
+          "sent": [
+            "agent-1"
+          ],
+          "queue": [],
+          "outcome": "none",
+          "data": {
+            "label": "t",
+            "count": 3,
+            "profile": "fast",
+            "call_request_id": "callee-1",
+            "agent_attempt": 1,
+            "open_requests": [
+              "agent-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "signal",
+        "name": "cancel_request",
+        "input": "up-1"
+      },
+      "expect": {
+        "state": "Halted",
+        "outcome": "refusal:Cancelled",
+        "open": [],
+        "cancelled": [
+          "callee-1"
+        ],
+        "queue": [
+          "in failure"
+        ],
+        "data": {
+          "stop_reason": "cancel_request",
+          "open_requests": []
+        }
+      },
+      "also": {
+        "callee-1": {
+          "state": "Halted",
+          "outcome": "refusal:Cancelled",
+          "open": [],
+          "cancelled": [
+            "agent-1"
+          ],
+          "data": {
+            "stop_reason": "cancel_request"
+          }
+        }
+      }
+    },
+    {
+      "do": "pump",
+      "expect": {
+        "state": "Halted",
+        "outcome": "refusal:Cancelled",
+        "queue": []
+      }
+    }
+  ]
+}

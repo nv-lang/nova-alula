@@ -1,0 +1,71 @@
+{
+  "format": "test/0",
+  "machine": "fan",
+  "name": "a set: the answers come in any order, the second before the first",
+  "start_at": 1000,
+  "steps": [
+    {
+      "do": "feed",
+      "event": {
+        "kind": "start",
+        "request": "up-1",
+        "input": {
+          "order": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "answer",
+        "request": "agent-1",
+        "input": "rb"
+      },
+      "on": "b-1"
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "answer",
+        "request": "agent-1",
+        "input": "ra"
+      },
+      "on": "a-1"
+    },
+    {
+      "do": "pump",
+      "expect": {
+        "state": "Lenses",
+        "data": {
+          "answered": [
+            "b",
+            "a"
+          ]
+        },
+        "open": [
+          "c-1"
+        ]
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "answer",
+        "request": "agent-1",
+        "input": "rc"
+      },
+      "on": "c-1"
+    },
+    {
+      "do": "pump",
+      "expect": {
+        "state": "Done",
+        "outcome": "answer:[\"b\",\"a\",\"c\"]"
+      }
+    }
+  ]
+}
