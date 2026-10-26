@@ -3,7 +3,7 @@
 # Проверяет: (1) `alula version` печатает `alula 0.8.0 (Alula 2.25, machine/2)`, nova.toml — 0.8.0;
 #     (2) файлы проверок названы `*.alula.test.json`, ключ `"format"` в них `test/0`, схема `src/machine/schema/test-0.schema.json`; прежних `*.scenario.test.json`,
 #         `examples/scenarios`, `scenario-0.schema.json` нет; проверка с `scenario/0` отклоняется, в сообщении названо `test/0`;
-#     (3) слово `scenario` в пакете осталось только в истории (журнал изменений, docs/history.md, записи accept-*.log.md), в этом скрипте, в двух копиях образца методики (слово в них входит в хеш образца, `a154`) и в именах чужих файлов `gen_*_scenarios.py`;
+#     (3) слово `scenario` в пакете осталось только в истории (журнал изменений, docs/history.md, записи accept-*.log.md), в этом скрипте и в именах чужих файлов `gen_*_scenarios.py`;
 #     (4) формат Алулы не менялся: хеш словаря 35c571ccda17 (scripts/glossary-names.py и tools/check-alula-keywords.py), образцы и перевод зелёные;
 #     (5) `alula test examples` — все проверки; `nova test` всех папок пакета с тестами (по одной, `--jobs 2`); стражи дерева.
 # Не проверяет: публикацию пакета (метка v0.8.0 — отдельный шаг по слову владельца); прогон набора методики (508 проверок): его делает методика на собранной программе.
@@ -70,7 +70,7 @@ fi
 
 echo "== слово scenario только в истории"
 n_scen=$(grep -rIn "scenario" . --exclude-dir=target --exclude-dir=.git \
-  --exclude=alula-changelog.md --exclude=alula-changelog.en.md --exclude=history.md --exclude='accept-*.log.md' --exclude=accept-230.sh --exclude=agent-step.en.alula.md --exclude=agent-step-methodology-222.en.alula.txt 2>/dev/null \
+  --exclude=alula-changelog.md --exclude=alula-changelog.en.md --exclude=history.md --exclude='accept-*.log.md' --exclude=accept-230.sh 2>/dev/null \
   | grep -vc 'gen_[a-z_]*_scenarios\.py')
 [ "$n_scen" = 0 ] || red "scenario вне истории: $n_scen строк"
 
