@@ -5,7 +5,8 @@ module alula.machine_text
 
 import std.text
 
-fn all_kinds() -> []str => ["header", "section", "column", "kind_state", "key", "kind_party", "kind_param", "event", "destination", "decl", "type", "expr", "action", "operator", "readable", "enum_value", "catalog"]
+// the kinds of the table of 2.26 (the kind `kind_param` is gone with 2.26, AL-140; the layer of 2.25 still has it)
+fn all_kinds() -> []str => ["header", "section", "column", "kind_state", "key", "kind_party", "event", "destination", "decl", "type", "expr", "action", "operator", "readable", "enum_value", "catalog"]
 
 fn method_rows() -> []TxWord {
     mut rows = []TxWord.new()
@@ -38,7 +39,7 @@ fn has_row(rows []TxWord, kind str, key str) -> bool {
 
 test "wt table shape" {
     ro rows = method_rows()
-    assert(rows.len() == 219)
+    assert(rows.len() == 217)
     for k in all_kinds() { assert(kind_count(rows, k) > 0) }
     for r in rows {
         assert(all_kinds().contains(r.kind))
@@ -68,6 +69,8 @@ test "wt product layer" {
     ro method = method_rows()
     for r in rows {
         assert(all_kinds().contains(r.kind) || r.kind == "fragment" || r.kind == "fragment_param")
+        // the events `срок`, `часть` and the key `сторона` of `отменить_открытые` are words of the table since 2.26 (AL-141); the product layer keeps them until stream 3 (the library `контракт`)
+        if moved_226(r) { continue }
         for m in method {
             if m.kind == r.kind {
                 assert(m.ru != r.ru)
@@ -82,8 +85,29 @@ test "wt product layer" {
     assert(kind_count(rows, "fragment_param") == 6)
 }
 
+// A row of the product layer that the table of 2.26 took over (AL-141).
+fn moved_226(r TxWord) -> bool => (r.kind == "event" && (r.ru == "срок" || r.ru == "часть")) || (r.kind == "action" && r.ru == "сторона")
+
 test "wt all rows loaded" {
-    assert(words_rows().len() == 233)
+    // the table of 2.26, the layer of 2.25 (the seam of task 195) and the product layer
+    assert(words_rows().len() == 217 + 28 + 14)
+}
+
+test "wt the layer of 2.25 holds only the words that 2.26 removed" {
+    mut layer = []TxWord.new()
+    words_read(keywords_225_text(), layer)
+    assert(layer.len() == 28)
+    ro method = method_rows()
+    for r in layer {
+        for m in method {
+            assert(!(m.kind == r.kind && m.ru == r.ru && m.en == r.en))
+        }
+    }
+    assert(has_row(layer, "section", "Ends"))
+    assert(has_row(layer, "column", "№"))
+    assert(has_row(layer, "key", "Reads"))
+    assert(has_row(layer, "event", "immediate"))
+    assert(has_row(layer, "decl", "external"))
 }
 
 // ---- reading a word -----------------------------------------------------------------------------------------------------
@@ -415,8 +439,8 @@ test "wt lang inside fence" {
 }
 
 test "wt versions" {
-    assert(format_versions() == ["2.25"])
-    assert(version_strict("2.25"))
+    assert(format_versions() == ["2.25", "2.26"])
+    assert(version_strict("2.25") && version_strict("2.26"))
     assert(!version_strict("2.11") && !version_strict("2.10") && !version_strict("2.9") && !version_strict(""))
 }
 
