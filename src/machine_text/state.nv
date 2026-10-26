@@ -648,8 +648,11 @@ fn state_translate(entries []TxEntry, blk TxBlock, index int, mut cx TxCx) -> Tx
             } else if is_transition_header(e, cx.words) {
                 rows_at = i
             } else if !(i > blk.first && entries[i - 1].kind == EN_ROW) {
-                ro first_words = if cx.v226 { "`${kw(cx.words, "column", "Event")}`, `${kw(cx.words, "column", "Condition")}` или `${kw(cx.words, "column", "Actions")}`" } else { "или `№`" }
-                note(cx, struct_error(e.line, 1, "таблица начинается с заголовка: `${kw(cx.words, "column", "request_field")}`, `${kw(cx.words, "column", "event")}` ${first_words}"))
+                if cx.v226 {
+                    note(cx, struct_error(e.line, 1, "таблица начинается с заголовка: `${kw(cx.words, "column", "request_field")}`, `${kw(cx.words, "column", "event")}`, `${kw(cx.words, "column", "Event")}`, `${kw(cx.words, "column", "Condition")}` или `${kw(cx.words, "column", "Actions")}`"))
+                } else {
+                    note(cx, struct_error(e.line, 1, "таблица начинается с заголовка: `${kw(cx.words, "column", "request_field")}`, `${kw(cx.words, "column", "event")}` или `№`"))
+                }
             }
             i = tab_end(entries, i, blk.last, cx.words)
         } else if e.kind == EN_TEXT && e.text == "—" {
