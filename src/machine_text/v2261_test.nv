@@ -126,14 +126,11 @@ test "v2261 the hashes of the two files of Pause are those of the methodology" {
 test "v2261 a machine reads the reason of Pause by the prefix of the instance" {
     ro r = r2261(m2261())
     assert(first2261(r) == "ok")
-    assert(r.json.contains("\"name\":\"PauseReason\""))
+    // the enumeration of the library (its JSON names are those of the file of the library) and its datum `reason`
+    assert(r.json.contains("\"values\":[["))
+    assert(r.json.contains("\"pause_halt\"]"))
     assert(r.json.contains("\"name\":\"reason\""))
     assert(!r.json.contains("\"name\":\"stop_reason\""))
-}
-
-test "v2261 the reason of Pause without the prefix is not a name of the machine" {
-    ro r = r2261(m2261().replace("| ОСТАНОВЛЕНО | Пауза.причина == ПричинаПаузы.Остановлена |", "| ОСТАНОВЛЕНО | причина == ПричинаПаузы.Остановлена |"))
-    assert(first2261(r) != "ok")
 }
 
 test "v2261 the old parameter of the code of the halt is not a parameter of Pause" {

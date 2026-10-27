@@ -351,12 +351,12 @@ The Pause state is brought by the "Pause" fragment (section "Includes"); it is n
 
 ### Halted — end
 - On entry:
-  - if Pause.reason == PauseReason.Halted then { stop_reason = "pause_halt" };
-  - if Pause.reason == PauseReason.Cancelled then { stop_reason = "cancel_request" };
+  - let stop_or_cancel = if Pause.reason == PauseReason.Cancelled then { "cancel_request" } else { stop_reason };
+  - let stop_with_pause = if Pause.reason == PauseReason.Halted then { "pause_halt" } else { stop_or_cancel };
   - let now = event.at;
   - close_agent_turn();
-  - if not has(usage) then { journal(usage_event(collect_usage(agent_request, stop_reason, transport_usage, started, now))) };
-  - journal("agent_step_stopped", reason: stop_reason)
+  - if not has(usage) then { journal(usage_event(collect_usage(agent_request, stop_with_pause, transport_usage, started, now))) };
+  - journal("agent_step_stopped", reason: stop_with_pause)
 - Except: stop_reason in ["", "pause_halt", "cancel_request"]
 
 ### Errored — end

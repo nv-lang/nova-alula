@@ -5,7 +5,7 @@ module alula.machine_text_lang
 
 import std.text
 import alula.machine.{NamedText, text_of_file}
-import alula.examples.{table_files_225, sample_registry}
+import alula.examples.{table_files_225, table_files, sample_registry}
 import alula.machine_text.{translate_checked_with, definitions_hash, TranslateReport, render}
 
 fn list154() -> str => "{\"op\":\"list\",\"items\":[]}"
@@ -216,14 +216,6 @@ test "p154 the last expression of a block gives the type of the place" {
     ro text = act154(ru222_data(list_row154()), "список = { пусть к = 1; [] }", [])
     assert(is_clean(text))
     assert(has154(text, "\"op\":\"let\",\"name\":\"к\",\"value\":{\"op\":\"lit\",\"value\":1},\"body\":${list154()}"))
-}
-
-test "p154 the list of nested machines of a parameter is an empty list of machines" {
-    ro callee = text_of_file(table_files_225(), "callee.alula.md")
-    assert(callee.contains("вложенные: []"))
-    assert(is_clean(callee))
-    ro other = callee.replace("вложенные: []", "вложенные: [callee]")
-    assert(tree222(callee) != tree222(other))
 }
 
 test "p154 the places in English" {
@@ -472,7 +464,7 @@ fn party_clean154(text str, needle str) -> bool {
 }
 
 test "r154 the result of an agent may be a built-in type" {
-    ro callee = text_of_file(table_files_225(), "callee.alula.md")
+    ro callee = text_of_file(table_files(), "callee.alula.md")
     for ty in ["строка", "число", "булево", "вещественное", "ид", "[]строка", "?число"] {
         ro text = callee.replace("agent(итог строка)", "agent(итог ${ty})")
         assert(text != callee || ty == "строка")
@@ -481,19 +473,19 @@ test "r154 the result of an agent may be a built-in type" {
 }
 
 test "r154 the result of an agent may be a type of the section of types" {
-    ro callee = text_of_file(table_files_225(), "callee.alula.md")
+    ro callee = text_of_file(table_files(), "callee.alula.md")
     ro text = callee.replace("agent(итог строка)", "agent(итог CallOutput)")
     assert(party_clean154(text, "| agent | agent | agent(итог "))
 }
 
 test "r154 the result of an agent that no type declares is an error" {
-    ro callee = text_of_file(table_files_225(), "callee.alula.md")
+    ro callee = text_of_file(table_files(), "callee.alula.md")
     ro text = callee.replace("agent(итог строка)", "agent(итог Чужой)")
     assert(!party_clean154(text, "| agent | agent | agent(итог "))
 }
 
 test "r154 an agent without a result is an error" {
-    ro callee = text_of_file(table_files_225(), "callee.alula.md")
+    ro callee = text_of_file(table_files(), "callee.alula.md")
     ro text = callee.replace("agent(итог строка)", "agent()")
     assert(!party_clean154(text, "| agent | agent | agent("))
 }

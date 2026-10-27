@@ -237,11 +237,20 @@ fn lib_header(lines []str, mut cx TxCx) -> TxLibHead {
     TxLibHead { title, library, format }
 }
 
+// Is the heading the word of the section of the key? By the key of the word: a key may have a word of the layer of 2.25 too (`Requires`: `Обязывает` and `Требует`).
+fn lib_is_section(text str, w TxWords, key str) -> bool {
+    if text == kw(w, "section", key) { return true }
+    match kw_key(w, "section", text) {
+        Some(k) => k == key
+        None => false
+    }
+}
+
 // The section of the entries whose heading is the word of the key (the first pass: the parameters are read before they are put in).
 fn lib_section_raw(entries []TxEntry, w TxWords, key str) -> Option[TxSection] {
     mut i = 0
     while i < entries.len() {
-        if entries[i].kind == EN_HEAD && entries[i].level == 2 && entries[i].text == kw(w, "section", key) {
+        if entries[i].kind == EN_HEAD && entries[i].level == 2 && lib_is_section(entries[i].text, w, key) {
             mut last = i + 1
             while last < entries.len() && !(entries[last].kind == EN_HEAD && entries[last].level <= 2) { last += 1 }
             return Some(TxSection { name: key, title: entries[i].text, line: entries[i].line, first: i + 1, last })
@@ -549,7 +558,7 @@ fn lib_visibility_check(entries []TxEntry, params []TxLibParam, mut cx TxCx) -> 
                         header = false
                     } else if t != kw(cx.words, "kind_state", "end") && !t.starts_with("${kw(cx.words, "action", "party")} ") {
                         for w in lib_words_of(t) {
-                            if param_names.contains(w) { note(cx, tx_err(e.line, e.cells[1].col, "type", "в `## ${kw(cx.words, "section", "Requires")}` тип данного `${e.cells[0].text.trim_ascii()}` называет параметр `${w}` библиотеки: тип в требовании — тип данного машины, имён параметров в нём нет (раздел 9)")) }
+                            if param_names.contains(w) { note(cx, tx_err(e.line, e.cells[1].col, "type", "в `## ${sec.title}` тип данного `${e.cells[0].text.trim_ascii()}` называет параметр `${w}` библиотеки: тип в требовании — тип данного машины, имён параметров в нём нет (раздел 9)")) }
                         }
                     }
                 } else {

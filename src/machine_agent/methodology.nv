@@ -3,7 +3,7 @@
 // machine "Meeting". The files `cases/*-names-222*.tsv` are the output of the reference script of the package (`tools/check-alula-keywords.py`): the JSON names of the declarations.
 //
 // Since 0.9.1 (task 241) the call `Пауза(…)` of 2.25 is an error (a library is connected by its file only, section 9), so the tests read the copies without what the call brought: the line of
-// the call (with its continuation), the party `усиленный` that only the library reads and its counter. The copies themselves stay as they are: the guard of the copies compares them with
+// the call (with its continuation), the party `усиленный` that only the library reads and its counter, the write word of the library in the column `пишет`. The copies themselves stay as they are: the guard of the copies compares them with
 // `spec/samples/` after the migration script; the fingerprints of the files read them raw.
 module alula.machine_agent
 
@@ -31,7 +31,8 @@ fn without_pause(text str) -> str {
         if skip && (t.starts_with(" ") || t.starts_with("\t")) { continue }
         skip = false
         if t.starts_with("| усиленный |") || t.starts_with("| enhanced |") || t.starts_with("| попытка_усиленного |") || t.starts_with("| enhanced_attempt |") { continue }
-        out.push(line)
+        // the write word of the data of the built-in library of 2.25 is gone too: those data are written by the rows
+        out.push(line.replace("| действия и фрагмент |", "| действия |").replace("| rows_and_fragment |", "| rows |"))
     }
     out.join("\n")
 }

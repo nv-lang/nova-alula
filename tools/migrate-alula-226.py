@@ -1044,24 +1044,34 @@ def pause_tests(tests, alula, run):
     её данного `reason` (значение перечисления `ПричинаПаузы` дерева машины): «Пауза» 0.9.1 в данные машины не пишет."""
     if not run.pause_codes or not tests:
         return
+    # the swaps per machine: the enumeration of «Пауза» of its tree (a Russian and an English machine have other JSON names of it)
     swaps = {}
     for md, code in run.pause_codes.items():
         t = tree_of(md, alula)
         if not t:
             continue
+        mine = {}
         for v in t.get('types', {}).get('variants', []):
             vals = dict((w, n) for n, w in v.get('values', []))
             if 'cancel_request' in vals and 'pause_halt' in vals:
                 for word in (code, 'cancel_request'):
                     case = vals['cancel_request'] if word == 'cancel_request' else vals['pause_halt']
-                    swaps['"stop_reason": "%s"' % word] = '"reason": {"$variant": "%s", "name": "%s"}' % (v['name'], case)
+                    mine['"stop_reason": "%s"' % word] = '"reason": {"$variant": "%s", "name": "%s"}' % (v['name'], case)
+        if mine:
+            swaps[t.get('machine')] = mine
     if not swaps:
         return
     for path in tests:
         with open(path, encoding='utf-8', newline='') as f:
             text = f.read()
+        try:
+            machine = json.loads(text).get('machine')
+        except ValueError:
+            continue
+        if machine not in swaps:
+            continue
         new = text
-        for old, rep_ in swaps.items():
+        for old, rep_ in swaps[machine].items():
             new = new.replace(old, rep_)
         if new != text:
             if path not in run.changed:
@@ -1069,7 +1079,6 @@ def pause_tests(tests, alula, run):
             if not run.dry:
                 with open(path, 'w', encoding='utf-8', newline='') as f:
                     f.write(new)
-
 
 def main(argv):
     paths, dry, alula = [], False, os.environ.get('ALULA') or None

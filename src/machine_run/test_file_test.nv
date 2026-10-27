@@ -16,7 +16,8 @@ fn machine_named(name str) -> AlulaMachine {
     if name == "Retry" { return build("retry.alula.json") }
     if name == "Verdict" { return build("verdict.alula.json") }
     if name == "Router" { return build("router.alula.json") }
-    if name == "Pausable" { return build("pausable.alula.json") }
+    // «Пауза» 0.9.1 (task 241): the tests of the examples expect the reason of the library, the tree of 2.26 has it
+    if name == "Pausable" { return build_from(text_of_file(machine_files(), "pausable.alula.json")) }
     if name == "Keeper" { return build("keeper.alula.json") }
     panic("no machine ${name}")
 }
