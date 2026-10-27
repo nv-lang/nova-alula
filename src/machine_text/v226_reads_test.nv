@@ -1,0 +1,160 @@
+// v226_reads_test.nv - task 237 (Alula 2.26, stream 2 part A, AL-138): the translation with the checks of a file of 2.26 derives the reads of the states (the file has no line `Читает:`):
+// the tree carries them as the output of the check, the end ERROR reads all the data, an external function adds its hidden reads from the registry of the host; no issue of rule 11.
+module alula.machine_text
+
+import std.text
+import alula.examples.{sample_registry}
+import alula.machine.{Registry, Primitive, ParamSpec, IntType, Volatile}
+import alula.machine_table.{load_machine}
+
+// A small machine of 2.26 with an external function, a datum that only the function reads and the end ERROR.
+fn rd_text() -> str => rd_fenced(`# Машина: Reads
+
+- machine: Reads
+- machine_version: 1
+- format: 2.26
+
+## Имена
+
+| имя | JSON-имя |
+|---|---|
+| исполнитель_повышенного_внимания | attention_executor |
+| прочитать | peek |
+| ЖДАТЬ | Wait |
+| СЧЁТ | Count |
+| РЕШИТЬ | Decide |
+| КОНЕЦ | Finished |
+| СТОП | Stopped |
+
+## Данные
+
+| имя | тип | начальное | не убывает | пишет |
+|---|---|---|---|---|
+| число_ходов | число>=0 | 0 | да | действия |
+| остановка | "" \| "a" \| "b" | "" | — | действия |
+| попытка_вратаря | число>=0 | 0 | да | механика |
+| флаг | строка | "" | — | действия |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | сигналы | счётчик |
+|---|---|---|---|---|---|
+| вратарь | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — | разрешить, отказать | попытка_вратаря |
+
+## Внешние функции
+
+FENCE
+прочитать() изменчивая -> число
+FENCE
+
+## Состояния
+
+Начальное состояние: ЖДАТЬ
+
+### ЖДАТЬ — обращение
+- Сторона: вратарь
+- Запрос:
+
+| поле запроса | выражение |
+|---|---|
+| число_ходов |  |
+
+| Событие | Условие | Действия | Куда |
+|---|---|---|---|
+| сигнал(разрешить) |  | число_ходов += 1 | СЧЁТ |
+| сигнал(отказать) |  | остановка = "a" | СТОП |
+
+### СЧЁТ — операция
+
+| Действия | Куда |
+|---|---|
+| число_ходов += прочитать() | РЕШИТЬ |
+
+### РЕШИТЬ — развилка
+
+| Условие | Действия | Куда |
+|---|---|---|
+| число_ходов >= 4 |  | КОНЕЦ |
+| иначе |  | ЖДАТЬ |
+
+### КОНЕЦ — конец
+
+### СТОП — конец
+- Кроме: остановка в [""]
+
+### ОШИБКА — конец
+- При входе: журнал(все_данные)
+
+## Выход
+
+- Результат: число
+
+| конец | когда | ответ |
+|---|---|---|
+| КОНЕЦ | истина | Ответ(число_ходов) |
+| СТОП | остановка == "a" | Отказ(FailCode.StoppedByHuman, "stopped") |
+| СТОП | остановка == "b" | Отказ(FailCode.NoResult, "b") |
+| ОШИБКА | истина | Отказ(FailCode.NoResult, "defect") |
+`)
+
+fn rd_fenced(text str) -> str => text.replace("FENCE", "```")
+
+// The registry of the samples with the external function `peek` that reads the datum `flag` without an argument.
+fn rd_registry() -> Registry {
+    ro base = sample_registry()
+    mut prims = []Primitive.new()
+    for p in base.primitives { prims.push(p) }
+    prims.push(Primitive { name: "peek", params: []ParamSpec.new(), result: IntType, class: Volatile, reads: ["flag"], writes: []str.new() })
+    Registry { primitives: prims, journal: base.journal }
+}
+
+fn rd_checked(text str) -> TranslateReport => translate_checked(text, rd_registry())
+
+fn rd_first(report TranslateReport) -> str {
+    if report.errors.len() == 0 { return "ok" }
+    "${report.errors[0].line}:${report.errors[0].col} ${report.errors[0].kind} ${report.errors[0].message}"
+}
+
+test "v226 reads the file of 2.26 without the lines Reads passes the checks" {
+    assert(rd_first(translate_report(rd_text())) == "ok")
+    assert(rd_first(rd_checked(rd_text())) == "ok")
+}
+
+test "v226 reads no issue of rule 11 comes from the checks of a file of 2.26" {
+    for e in rd_checked(rd_text()).errors { assert(!e.message.contains("rule 11")) }
+    for w in rd_checked(rd_text()).warnings { assert(!w.message.contains("rule 11")) }
+}
+
+test "v226 reads the tree of the checked translation carries the derived reads" {
+    ro j = rd_checked(rd_text()).json
+    assert(j.contains("{\"name\":\"Decide\",\"kind\":\"fork\",\"reads\":[\"turn_count\"]"))
+    assert(j.contains("{\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[]"))
+    assert(j.contains("{\"name\":\"Stopped\",\"kind\":\"end\",\"reads\":[\"stop_reason\"]"))
+}
+
+test "v226 reads an appeal carries its reads in the tree" {
+    ro j = rd_checked(rd_text()).json
+    assert(j.contains("{\"name\":\"Wait\",\"kind\":\"appeal\",\"reads\":[\"turn_count\"]"))
+}
+
+test "v226 reads the hidden reads of the external function of the registry are in the tree" {
+    ro j = rd_checked(rd_text()).json
+    assert(j.contains("{\"name\":\"Count\",\"kind\":\"operation\",\"reads\":[\"turn_count\",\"flag\"]"))
+}
+
+test "v226 reads the end ERROR reads all the data" {
+    ro j = rd_checked(rd_text()).json
+    assert(j.contains("{\"name\":\"Errored\",\"kind\":\"end\",\"reads_all\":true"))
+}
+
+test "v226 reads the translation without the checks writes no reads: they are the output of the check" {
+    assert(!translate_report(rd_text()).json.contains("\"reads\":["))
+}
+
+test "v226 reads the checked tree loads again as it is" {
+    ro j = rd_checked(rd_text()).json
+    match load_machine(j, rd_registry()) {
+        Ok(def) => assert(true)
+        Err(list) => assert(false)
+    }
+}
