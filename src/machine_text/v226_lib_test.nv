@@ -273,7 +273,7 @@ test "v226 lib a value of another type is an error" {
 }
 
 test "v226 lib the requirement of a datum that the machine has not is an error" {
-    ro r = rl(lib_with("| остановка | \"\" \\| \"cancel_request\" \\| \"pause_halt\" | \"\" | — | действия и фрагмент |\n", ""))
+    ro r = rl(lib_with("| остановка | \"\" \\| \"cancel_request\" \\| \"pause_halt\" | \"\" | — |\n", ""))
     assert(says_lib(r, "требует"))
 }
 
@@ -370,7 +370,7 @@ test "v226 contract the machine that declares the type of the failure codes is a
 }
 
 test "v226 contract the machine that declares a datum of the engine is an error" {
-    ro text = t226_with("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| открытые_запросы | []строка | [] | — | механика |\n")
+    ro text = t226_with("| остановка | \"\" \\| \"a\" \\| \"b\" | \"\" | — |\n", "| остановка | \"\" \\| \"a\" \\| \"b\" | \"\" | — |\n| открытые_запросы | []строка | [] | — |\n")
     assert(says226(text, "контракт"))
 }
 
