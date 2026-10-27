@@ -3,7 +3,7 @@ module alula.machine_text
 
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
-import alula.machine.{Registry, language_registry}
+import alula.machine.{Registry, language_registry, NamedText}
 
 fn rn_binds(cx RnCx, bind RJ) -> str {
     mut parts = []str.new()
@@ -493,7 +493,15 @@ fn rn_former_note(v RJ, path str) -> str {
 export fn render_machine_with(machine_json str, language str, copy_includes bool) -> RenderReport => render_machine_in(machine_json, language, copy_includes, language_registry())
 
 /// The same with the registry of the host (kept for the callers: the tree T1 of 2.24 holds the class and the signature of an external function itself, the file is written from the tree alone).
-export fn render_machine_in(machine_json str, language str, copy_includes bool, registry Registry) -> RenderReport {
+/// A library is named as the tree names it (no files of the libraries are given: `render_machine_libs` names the twin of a library in the other language).
+export fn render_machine_in(machine_json str, language str, copy_includes bool, registry Registry) -> RenderReport => rn_machine(machine_json, language, copy_includes, registry, []NamedText.new(), false)
+
+/// The same with the files of the libraries that the tree connects and of their twins, by their paths (2.26, section 9, task 241): a library whose file is in the other language than
+/// `language` is named by its twin (`libs/pause.alula.md` <-> `libs/pause.en.alula.md`): its path, its hash, its title, the names of its parameters and the values of the sets of literals
+/// in its language. A twin that is not in `libs` (or a library whose own file is not there, so its parameters can not be matched) is a note.
+export fn render_machine_libs(machine_json str, language str, copy_includes bool, registry Registry, libs []NamedText) -> RenderReport => rn_machine(machine_json, language, copy_includes, registry, libs, true)
+
+fn rn_machine(machine_json str, language str, copy_includes bool, registry Registry, libs []NamedText, twins bool) -> RenderReport {
     if language != "ru" && language != "en" {
         return RenderReport { text: "", notes: ["the language must be `ru` or `en`, got `${language}`"] }
     }
@@ -515,6 +523,8 @@ export fn render_machine_in(machine_json str, language str, copy_includes bool, 
             if former != "" { return RenderReport { text: "", notes: [former] } }
             mut cx = rn_cx_in(language, registry)
             cx.v226 = rj_gstr(root, "alula_version") == "2.26"
+            cx.libs = libs
+            cx.twins = twins
             ro dropped = rn_dropped(cx, root, copy_includes)
             // what the fragments bring is written by the line of connection, not as the machine's own (1b (m), 2.12, AL-32)
             ro shown = if cx.v226 { rn_without_libraries(root, copy_includes) } else if rj_garr(root, "fragments").len() == 0 { root } else { rn_without_fragments(root) }

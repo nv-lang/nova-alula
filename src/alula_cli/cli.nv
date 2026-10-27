@@ -4,7 +4,7 @@
 module alula.alula_cli
 
 // ORACLE-WORKAROUND(32): std.fs comes first: with the imports of the modules of the product before it, `.join` on a `Vec` resolves to `Path.join` (E_RECV_METHOD_MISMATCH); order the imports freely when item 32 is fixed
-import std.fs.{Fs, Path, read, write_text, try_exists, read_dir}
+import std.fs.{Fs, Path, read, write_text, try_exists, read_dir, create_dir_all}
 import std.os.{args}
 import std.io.{stderr, stdout}
 import std.text
@@ -157,25 +157,121 @@ fn output_error(a Args) Fs -> str {
     ""
 }
 
-// The files of the libraries that a machine of 2.26 connects (section 9): the path of `- Файл:` from the folder of the machine, else from the folder of `--lib`; a file that is not found
-// is not given, and the translation says "не найдена".
+// The files of the libraries that a machine of 2.26 connects (section 9): the path of `- Файл:` (of the key `file` of `includes` for a tree) from the folder of the machine, else from the
+// folder of `--lib`; with each its twin in the other language (`libs/pause.alula.md` <-> `libs/pause.en.alula.md`, task 241), found the same way. A file that is not found is not given,
+// and the translation says "не найдена" (a twin that is not found is the error of `convert` and `render` in the other language).
 fn library_files(text str, file str, a Args) Fs -> []NamedText {
     mut out = []NamedText.new()
-    for path in wanted_libraries(text) {
-        ro near = if dir_of(file) == "." { path } else { "${dir_of(file)}/${path}" }
-        match read_file(near) {
-            Some(t) => out.push(NamedText { name: path, text: t })
-            None => {
-                if a.has_lib {
-                    match read_file("${trimmed_dir(a.lib)}/${path}") {
-                        Some(t) => out.push(NamedText { name: path, text: t })
-                        None => ()
+    ro paths = if is_json_file(file) { tree_libraries(text) } else { wanted_libraries(text) }
+    for written in paths {
+        for path in [written, twin_path(written, "en"), twin_path(written, "ru")] {
+            if library_named(out, path).is_some() { continue }
+            ro near = if dir_of(file) == "." { path } else { "${dir_of(file)}/${path}" }
+            match read_file(near) {
+                Some(t) => out.push(NamedText { name: path, text: t })
+                None => {
+                    if a.has_lib {
+                        match read_file("${trimmed_dir(a.lib)}/${path}") {
+                            Some(t) => out.push(NamedText { name: path, text: t })
+                            None => ()
+                        }
                     }
                 }
             }
         }
     }
     out
+}
+
+// The files of the libraries in the language that a converted file names (section 9, task 241): for every library of the machine its twin in the language (or its own file when it
+// is in that language), as it was read; they are written beside the file of `-o`.
+fn twins_for(text str, language str, libs []NamedText) -> []NamedText {
+    mut out = []NamedText.new()
+    for written in wanted_libraries(text) {
+        ro path = twin_path(written, language)
+        if library_named(out, path).is_some() { continue }
+        match library_named(libs, path) {
+            Some(f) => out.push(f)
+            None => ()
+        }
+    }
+    out
+}
+
+// The path of a library beside the file of `-o` (the same path from the folder of that file).
+fn beside_output(a Args, path str) -> str => if dir_of(a.output) == "." { path } else { "${dir_of(a.output)}/${path}" }
+
+// Before a twin is written: a file that is there with another text is not overwritten without `--force`.
+fn twins_clash(twins []NamedText, a Args) Fs -> str {
+    if a.force { return "" }
+    for t in twins {
+        ro target = beside_output(a, t.name)
+        if file_exists(target) {
+            match read_file(target) {
+                Some(have) => {
+                    if have != t.text { return "${target} already exists and is not the twin ${t.name} (use --force to overwrite)" }
+                }
+                None => return "${target} already exists and can not be read (use --force to overwrite)"
+            }
+        }
+    }
+    ""
+}
+
+// Every folder of a path is there.
+// ORACLE-WORKAROUND(55): the memory file system makes only the LAST folder of `create_dir_all`, so every folder of the path is made one by one; make the path in one call when item 55 is fixed
+fn make_folders(dir str) Fs -> () {
+    if dir == "." || dir == "/" || dir == "" { return }
+    mut acc = ""
+    mut first = true
+    for part in dir.split("/") {
+        if first {
+            acc = part
+            first = false
+        } else {
+            acc = "${acc}/${part}"
+        }
+        if part != "" && part != "." && part != ".." && !part.ends_with(":") {
+            ro made = create_dir_all(path_of(acc))
+        }
+    }
+}
+
+// The twins written beside the file of `-o` (a file with the same text is left as it is); the code 2 when one can not be written.
+fn write_twins(twins []NamedText, a Args, command str) Fs Io -> int {
+    for t in twins {
+        ro target = beside_output(a, t.name)
+        if file_exists(target) {
+            match read_file(target) {
+                Some(have) => {
+                    if have == t.text { continue }
+                }
+                None => ()
+            }
+        }
+        make_folders(dir_of(target))
+        match write_text(path_of(target), t.text) {
+            Ok(written) => ()
+            Err(e) => return usage_error(command, "cannot write ${target}")
+        }
+    }
+    0
+}
+
+// `alula convert`: the file, and with `-o` the twins of its libraries beside it (section 9, task 241).
+fn convert_deliver(text str, file str, language str, a Args, registry Registry, libs []NamedText) Fs Io -> int {
+    ro made = convert_command(text, file, language, a.no_check, a.lenient, registry, libs)
+    if made.code != 0 || !a.has_output { return deliver(made, "convert", a) }
+    ro twins = twins_for(text, language, libs)
+    ro clash = twins_clash(twins, a)
+    if clash != "" {
+        put_err(made.err)
+        return usage_error("convert", clash)
+    }
+    if twins.len() > 0 { make_folders(dir_of(a.output)) }
+    ro code = deliver(made, "convert", a)
+    if code != 0 { return code }
+    write_twins(twins, a, "convert")
 }
 
 // The files of the folder of `--lib` for `alula test` (a library is found by the end of its path).
@@ -204,8 +300,8 @@ fn run_file_command(command str, a Args) Fs Io -> int {
     }
     ro libs = library_files(text, file, a)
     if command == "compile" { return deliver(compile_command(text, file, a.no_check, a.lenient, registry, libs), command, a) }
-    if command == "render" { return deliver(render_command(text, file, language, a.lenient, registry), command, a) }
-    if command == "convert" { return deliver(convert_command(text, file, language, a.no_check, a.lenient, registry, libs), command, a) }
+    if command == "render" { return deliver(render_command(text, file, language, a.lenient, registry, libs), command, a) }
+    if command == "convert" { return convert_deliver(text, file, language, a, registry, libs) }
     if command == "check" { return deliver(check_command(text, file, a.no_check, registry, libs), command, a) }
     deliver(summary_command(text, file, a.no_check, registry, libs), command, a)
 }
