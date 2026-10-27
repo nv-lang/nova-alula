@@ -7,7 +7,7 @@
 module alula.machine_table
 
 import std.encoding.json.{Json, JsonValue, JsonObject}
-import alula.machine.{Expr, FieldExpr, Lit, Text, TypeSpec, TypeDefs, FieldDef, RecordDef, VariantDef, EnumValue, CaseDef, Bind, DefFn, expr_from_json, field_def, TextType, ListType, TupleType, parse_spec}
+import alula.machine.{Expr, FieldExpr, Lit, Text, Int, IntMin, TypeSpec, TypeDefs, FieldDef, RecordDef, VariantDef, EnumValue, CaseDef, Bind, DefFn, expr_from_json, field_def, TextType, ListType, TupleType, parse_spec}
 
 /// The format tag of the tree.
 export const MACHINE_FORMAT = "machine/2"
@@ -1168,6 +1168,28 @@ fn dec_ends(root JsonObject, defs TypeDefs) -> Result[EndsPart, LoadError] {
 
 // ---- the machine ------------------------------------------------------------------------------------------------------------
 
+/// The data of a tree of 2.26 with the counters of the parties (design 5, spec section 1, the column `счётчик`): the loader declares each counter itself, `int>=0` with the initial
+/// value 0, does not decrease, written by the engine only; the counter of a set (`name[*].field`) is a path of the field, with no initial value (the constructor of the record gives 0).
+/// The data of the tree hold no row for a counter. A tree of 2.25 names its counters in its data, as before.
+fn data_with_counters(declared []DataDef, parties []PartyDef, language_version str) -> Result[[]DataDef, LoadError] {
+    if language_version != "2.26" { return Ok(declared) }
+    mut out = []DataDef.new()
+    for d in declared { out.push(d) }
+    mut seen = []str.new()
+    for pt in parties {
+        if pt.counter == "" || seen.contains(pt.counter) { continue }
+        seen.push(pt.counter)
+        for d in declared {
+            if d.name == pt.counter {
+                return Err(le("$.data", "the datum ${pt.counter} is the counter of the party ${pt.name}: in a tree of 2.26 the loader declares it (int>=0, 0, does not decrease, written by the engine), the data hold no row for it"))
+            }
+        }
+        ro initial = if pt.counter.contains("[*]") { NoInitial } else { InitialExpr(Lit(Int(0))) }
+        out.push(DataDef { name: pt.counter, spec: IntMin(0), initial, monotonic: MonotonicDef { on: true, bound: []Expr.new() }, writes: MechanicsWrite })
+    }
+    Ok(out)
+}
+
 fn dec_machine(root JsonObject) -> Result[MachineDef, LoadError] {
     for key in root.keys() {
         if key == FORMER_VERSION_KEY {
@@ -1187,8 +1209,9 @@ fn dec_machine(root JsonObject) -> Result[MachineDef, LoadError] {
     ro constants = dec_constants(root, types)?
     ro params = dec_params(root, types)?
     ro input = dec_input(root, types)?
-    ro data = dec_data(root, types)?
+    ro declared = dec_data(root, types)?
     ro parties = dec_parties(root, types)?
+    ro data = data_with_counters(declared, parties, language_version)?
     ro request_limit = j_expr_opt(root, "request_limit", "$")?
     ro signals = dec_signals_or_empty(root, "signals", types, "$")?
     ro definitions = dec_definitions(root, types)?

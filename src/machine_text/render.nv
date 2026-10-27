@@ -250,6 +250,7 @@ fn rn_monotonic_cell(mut cx RnCx, d RJ) -> str {
 }
 
 fn rn_sec_data(mut cx RnCx, root RJ) -> []str {
+    if cx.v226 { return rn_sec_data_226(cx, root) }
     mut rows = []RnRow.new()
     for d in rj_garr(root, "data") {
         ro writes_key = if rj_gstr(d, "writes") == "" { "rows" } else { rj_gstr(d, "writes") }
@@ -258,6 +259,26 @@ fn rn_sec_data(mut cx RnCx, root RJ) -> []str {
     }
     if rows.len() == 0 { return ["—"] }
     rn_table(rn_cols(cx, ["name", "type", "initial", "non_decreasing", "writes"]), rows)
+}
+
+// `## Данные` of 2.26 (design 5): `имя | тип | начальное | не убывает`, no column `пишет`; a datum of the engine of the contract (`engine: true`) has no row, the counters of
+// the parties are not in the data of the tree (the loader declares them).
+fn rn_sec_data_226(mut cx RnCx, root RJ) -> []str {
+    mut rows = []RnRow.new()
+    for d in rj_garr(root, "data") {
+        mut engine = false
+        match rj_get(d, "engine") {
+            Some(e) => match e {
+                RBool(b) => { engine = b }
+                _ => ()
+            }
+            None => ()
+        }
+        if engine { continue }
+        rows.push(RnRow { cells: [rn_datum_name(cx, rj_gstr(d, "name")), rn_type(cx, rj_gstr(d, "type")), rn_initial_cell(cx, d), rn_monotonic_cell(cx, d)] })
+    }
+    if rows.len() == 0 { return ["—"] }
+    rn_table(rn_cols(cx, ["name", "type", "initial", "non_decreasing"]), rows)
 }
 
 fn rn_party_kind(mut cx RnCx, p RJ, path str) -> str {
