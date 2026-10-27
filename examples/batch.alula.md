@@ -37,7 +37,6 @@ type CallOutput { answer str, score int>=0 }
 | jobs | map[str, Job] | input.names.dict(n => n, n => Job { name: n, attempt: 0 }) | — |
 | answered | []str | [] | — |
 | lost | []str | [] | — |
-| stop_reason | "" \| "pause_halt" \| "cancel_request" | "" | — |
 
 ## Parties
 
@@ -52,12 +51,11 @@ type CallOutput { answer str, score int>=0 }
 
 ### Pause
 - File: libs/pause.en.alula.md
-- Hash: 9f67255229c9
+- Hash: d254e6297f61
 
 | parameter | value |
 |---|---|
 | halt_signal | "halt" |
-| halt_code | "pause_halt" |
 | nested | ["callee"] |
 | request_cancel | "without_return_to_send" |
 | reentry | "requests_from_to_send" |
@@ -104,7 +102,6 @@ Initial state: Prepare
 ### Done — end
 
 ### Halted — end
-- Except: stop_reason in [""]
 
 ### Errored — end
 - On entry:
@@ -119,5 +116,5 @@ Initial state: Prepare
 |---|---|---|
 | Done | true | Response(length(answered)) |
 | Errored | true | Refusal(FailCode.NoResult, "a defect of the batch") |
-| Halted | stop_reason == "pause_halt" | Refusal(FailCode.StoppedByHuman, stop_reason) |
-| Halted | stop_reason == "cancel_request" | Refusal(FailCode.Cancelled, stop_reason) |
+| Halted | Pause.reason == PauseReason.Halted | Refusal(FailCode.StoppedByHuman, "pause_halt") |
+| Halted | Pause.reason == PauseReason.Cancelled | Refusal(FailCode.Cancelled, "cancel_request") |

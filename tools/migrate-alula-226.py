@@ -70,6 +70,10 @@ W = {
         'pause_params': {'сигнал_остановки': 'сигнал_остановки', 'код_остановки': 'код_остановки', 'вложенные': 'вложенные',
                          'отмена_запросов': 'отмена_запросов', 'вход_заново': 'вход_заново'},
         'pause_note': ('право_записи', 'право записи'), 'pause_file': 'libs/pause.alula.md', 'functions_kw': 'функции',
+        'halt_code': 'код_остановки', 'stop': 'остановка', 'reason': 'причина', 'reason_type': 'ПричинаПаузы', 'halted': 'Остановлена',
+        'cancelled': 'Отменена', 'on_entry': 'При входе', 'except': 'Кроме', 'if': 'если', 'then': 'то', 'in': 'в', 'name_key': 'Имя',
+        'let': 'пусть', 'else': 'иначе',
+        'halted_end': 'ОСТАНОВЛЕНО',
     },
     'en': {
         'ends': 'Ends', 'output': 'Output', 'obliges': None, 'requires': 'Requires', 'states': 'States', 'data': 'Data',
@@ -87,6 +91,10 @@ W = {
         'pause_params': {'halt_signal': 'halt_signal', 'halt_code': 'halt_code', 'nested': 'nested', 'cancel_requests': 'request_cancel',
                          'reenter': 'reentry'},
         'pause_note': ('write_right', 'write right'), 'pause_file': 'libs/pause.en.alula.md', 'functions_kw': 'functions',
+        'halt_code': 'halt_code', 'stop': 'stop_reason', 'reason': 'reason', 'reason_type': 'PauseReason', 'halted': 'Halted',
+        'cancelled': 'Cancelled', 'on_entry': 'On entry', 'except': 'Except', 'if': 'if', 'then': 'then', 'in': 'in', 'name_key': 'Name',
+        'let': 'let', 'else': 'else',
+        'halted_end': 'Halted',
     },
 }
 HEADER_KEYS = ['machine', 'machine_version', 'format', 'language', 'library', 'fragment', 'functions_version']
@@ -104,6 +112,8 @@ class Run:
         self.places = []
         self.changed = []
         self.notes = []
+        self.upgraded = set()
+        self.pause_codes = {}
 
     def place(self, path, line, kind, todo):
         self.places.append('%s:%d: %s: %s' % (path, line, kind, todo))
@@ -373,6 +383,10 @@ def includes_block(path, lines, a, b, w, lang, run):
                 if k not in w['pause_params']:
                     run.place(path, i + 1, 'подключение', 'параметр `%s` «Паузы» неизвестен: сверьте с libs/pause.alula.md' % k)
                     continue
+                if k == w['halt_code']:
+                    # 0.9.1: «Пауза» has no parameter of the code; the upgrade of the output keeps its value (pause_upgrade)
+                    rows.append((w['halt_code'], quote(v)))
+                    continue
                 if k in PAUSE_QUOTED:
                     v = quote(v)
                 elif v.startswith('['):
@@ -418,7 +432,7 @@ def migrate_md(path, text, run):
     lines = text.replace('\r\n', '\n').split('\n')
     fmt = file_format(lines)
     if fmt == '2.26':
-        return None
+        return pause_upgrade(path, text, run)
     if fmt != '2.25':
         run.place(path, 1, 'формат', 'формат %s: скрипт переносит только 2.25 -> 2.26' % fmt)
         return None
@@ -561,7 +575,196 @@ def migrate_md(path, text, run):
     text2 = '\n'.join(out)
     if part_types:
         run.place(path, 1, 'части', 'нет раздела `## %s`: объявите тип части: %s' % (w['types'], '; '.join(part_types)))
-    return text2
+    up = pause_upgrade(path, text2, run)
+    return text2 if up is None else up
+
+
+# ---- «Пауза» 0.9.1: библиотека не пишет в данные машины ---------------------------------------------------------------------------------------
+
+PAUSE_OLD_MARKS = ('код_остановки', 'halt_code')
+
+
+def pause_upgrade(path, text, run):
+    """Подключение «Паузы» с параметром `код_остановки` (пакет 0.9.0, вызов 2.25) — на «Паузу» 0.9.1: у библиотеки своё перечисление
+    `ПричинаПаузы` и своё данное `причина`, машина читает `Пауза.причина` (раздел 9). Строка `код_остановки` таблицы значений убирается, файл
+    библиотеки рядом — файл пакета (хеш заново); строки «Выхода» `остановка == "<код>"` и `остановка == "cancel_request"` ветвятся по
+    `Пауза.причина`, ответ — с прежним текстом кода. Если конец ОСТАНОВЛЕНО читает `остановка` в «При входе», машина первым пунктом «При входе»
+    пишет в своё данное прежний код (`если Пауза.причина == ПричинаПаузы.Остановлена то { остановка = "<код>" }`), а коды «Паузы» снимаются строкой
+    `Кроме` — поведение и журнал прежние; иначе коды «Паузы» уходят из набора `остановка`. None — менять нечего."""
+    lines = text.replace('\r\n', '\n').split('\n')
+    lang = file_lang(lines)
+    w = W[lang]
+    secs = sections_of(lines)
+    inc = [(a, b) for a, b, t in secs if t == w['includes']]
+    if not inc:
+        return None
+    a, b = inc[0]
+    head = None
+    for i in range(a + 1, b):
+        if lines[i].strip() == '### %s' % w['pause']:
+            head = i
+    if head is None:
+        return None
+    end = head + 1
+    while end < b and not lines[end].startswith('### '):
+        end += 1
+    code, code_at, inst, file_at, hash_at = None, None, w['pause'], None, None
+    for i in range(head + 1, end):
+        c = split_row(lines[i]) if lines[i].strip().startswith('|') else []
+        if len(c) == 2 and c[0] == w['halt_code']:
+            code, code_at = c[1].strip().strip('"'), i
+        m = re.match(r'^- (%s|%s):\s*(\S+)' % (w['file'], w['hash']), lines[i])
+        if m and m.group(1) == w['file']:
+            file_at = (i, m.group(2))
+        elif m:
+            hash_at = i
+        m = re.match(r'^- %s:\s*(\S+)' % w['name_key'], lines[i])
+        if m:
+            inst = m.group(1)
+    if code is None:
+        return None
+    del lines[code_at]
+    if hash_at is not None and hash_at > code_at:
+        hash_at -= 1
+    # the file of the library beside the machine: the file of the package when it is the former one
+    if file_at:
+        dest = os.path.normpath(os.path.join(os.path.dirname(path), file_at[1]))
+        src = os.path.join(LIBS, os.path.basename(w['pause_file']))
+        old = None
+        if os.path.exists(dest):
+            with open(dest, encoding='utf-8') as f:
+                old = f.read()
+        if old is None or any(mk in old for mk in PAUSE_OLD_MARKS):
+            with open(src, encoding='utf-8') as f:
+                old = f.read()
+            if not run.dry:
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                with open(dest, 'w', encoding='utf-8', newline='\n') as f:
+                    f.write(old)
+            if dest not in run.changed:
+                run.changed.append(dest)
+        if hash_at is not None:
+            lines[hash_at] = '- %s: %s' % (w['hash'], lib_hash(old))
+    stop = w['stop']
+    reason = '%s.%s' % (inst, w['reason'])
+    halted = '%s.%s' % (w['reason_type'], w['halted'])
+    cancelled = '%s.%s' % (w['reason_type'], w['cancelled'])
+    codes = {code: halted, 'cancel_request': cancelled}
+    word = re.compile(r'(?<![\w.])%s(?![\w])' % re.escape(stop))
+    secs = sections_of(lines)
+    # the output: the rows of the codes of «Пауза» branch on its reason
+    for sa, sb, t in secs:
+        if t != w['output']:
+            continue
+        for ta, tb in tables_in(lines, sa, sb):
+            for r in range(ta + 2, tb):
+                c = split_row(lines[r])
+                if len(c) != 3:
+                    continue
+                m = re.match(r'^%s\s*==\s*"([^"]*)"$' % re.escape(stop), c[1].strip())
+                if m and m.group(1) in codes:
+                    c[1] = '%s == %s' % (reason, codes[m.group(1)])
+                    c[2] = word.sub('"%s"' % m.group(1), c[2])
+                    lines[r] = join_row(c)
+                    continue
+                # `остановка в [..., "<код>"]`: the codes of «Пауза» leave the list, each gets its own row by the reason
+                m = re.match(r'^%s\s+%s\s+\[(.*)\]$' % (re.escape(stop), re.escape(w['in'])), c[1].strip())
+                if m:
+                    items = [x.strip() for x in m.group(1).split(',') if x.strip()]
+                    mine = [x for x in items if x.strip('"') in codes]
+                    if mine:
+                        rest = [x for x in items if x not in mine]
+                        added = [join_row([c[0], '%s == %s' % (reason, codes[x.strip('"')]), word.sub(x, c[2])]) for x in mine]
+                        if not rest:
+                            lines[r] = '\n'.join(added)
+                        else:
+                            cond = '%s == %s' % (stop, rest[0]) if len(rest) == 1 else '%s %s [%s]' % (stop, w['in'], ', '.join(rest))
+                            lines[r] = '\n'.join([join_row([c[0], cond, c[2]])] + added)
+    lines = '\n'.join(lines).split('\n')
+    # the end Halted: does it read the datum in On entry?
+    end_head = None
+    for i, l in enumerate(lines):
+        if re.match(r'^### %s\s+—\s+' % re.escape(w['halted_end']), l):
+            end_head = i
+    reads = False
+    if end_head is not None:
+        j = end_head + 1
+        while j < len(lines) and not lines[j].startswith('#'):
+            if not lines[j].lstrip('- ').startswith(w['except'] + ':') and word.search(lines[j]):
+                reads = True
+            j += 1
+    if reads:
+        # «При входе» changes no data (rule 29): the end reads the former code by a binding `пусть`, the reads of the datum in its entry read the binding
+        let_name = 'остановка_с_паузой' if lang == 'ru' else 'stop_with_pause'
+        let_cancel = 'остановка_или_отмена' if lang == 'ru' else 'stop_or_cancel'
+        # two bindings: an `если` does not nest in a branch of another one (format 3.3)
+        let_items = ['%s %s = %s %s == %s %s { "cancel_request" } %s { %s }' % (w['let'], let_cancel, w['if'], reason, cancelled, w['then'], w['else'], stop),
+                     '%s %s = %s %s == %s %s { "%s" } %s { %s }' % (w['let'], let_name, w['if'], reason, halted, w['then'], code, w['else'], let_cancel)]
+        k = end_head + 1
+        entry_at = None
+        while k < len(lines) and not lines[k].startswith('#'):
+            if re.match(r'^- %s:' % re.escape(w['on_entry']), lines[k]):
+                entry_at = k
+            k += 1
+        if entry_at is not None:
+            rest = lines[entry_at].split(':', 1)[1].strip()
+            if rest:
+                lines[entry_at:entry_at + 1] = ['- %s:' % w['on_entry'], '  - %s' % rest]
+            k = entry_at + 1
+            while k < len(lines) and lines[k].startswith('  '):
+                lines[k] = word.sub(let_name, lines[k])
+                k += 1
+            lines[entry_at + 1:entry_at + 1] = ['  - %s;' % x for x in let_items]
+        # the codes of «Пауза» are taken off the chain of the datum by the line Except
+        k = end_head + 1
+        done = False
+        while k < len(lines) and not lines[k].startswith('#'):
+            m = re.match(r'^(- %s:\s*%s\s+%s\s+\[)(.*)\]\s*$' % (re.escape(w['except']), re.escape(stop), re.escape(w['in'])), lines[k])
+            if m:
+                vals = [x.strip() for x in m.group(2).split(',') if x.strip()]
+                for v in ['"%s"' % code, '"cancel_request"']:
+                    if v not in vals:
+                        vals.append(v)
+                lines[k] = '%s%s]' % (m.group(1), ', '.join(vals))
+                done = True
+            k += 1
+        if not done:
+            run.place(path, end_head + 1, 'Пауза', 'у конца %s нет строки `- %s: %s %s […]`: добавьте коды "%s" и "cancel_request"' % (w['halted_end'], w['except'], stop, w['in'], code))
+    else:
+        # the codes of «Пауза» leave the set of the datum when the machine itself does not write them
+        drop_at = None
+        for sa, sb, t in secs:
+            if t != w['data']:
+                continue
+            for ta, tb in tables_in(lines, sa, sb):
+                for r in range(ta + 2, tb):
+                    c = split_row(lines[r])
+                    if c and c[0] == stop and len(c) > 1:
+                        vals = [x.strip() for x in c[1].replace('\\|', '|').split('|')]
+                        keep = []
+                        for v in vals:
+                            lit = v.strip('"')
+                            if lit in codes and not re.search(r'%s\s*=\s*"%s"' % (re.escape(stop), re.escape(lit)), text):
+                                continue
+                            keep.append(v)
+                        if len(keep) >= 2:
+                            c[1] = ' \\| '.join(keep)
+                            lines[r] = join_row(c)
+                        else:
+                            drop_at = r
+        if drop_at is not None:
+            # a set of one value is no type: the datum that only «Пауза» wrote goes with its line Except when nothing else names it, else it is a text
+            except_line = re.compile(r'^- %s:\s*%s\s' % (re.escape(w['except']), re.escape(stop)))
+            others = [k for k, l in enumerate(lines) if k != drop_at and word.search(l) and not except_line.match(l)]
+            if others:
+                c = split_row(lines[drop_at])
+                c[1] = 'строка' if lang == 'ru' else 'str'
+                lines[drop_at] = join_row(c)
+            else:
+                lines = [l for k, l in enumerate(lines) if k != drop_at and not except_line.match(l)]
+    run.upgraded.add(os.path.normpath(path))
+    run.pause_codes[os.path.normpath(path)] = code
+    return '\n'.join(lines)
 
 
 def table(path, lines, ta, tb, section, kind, w, counters, parts, run, ctx):
@@ -817,6 +1020,13 @@ def migrate_tests(tests, machines, tree_paths, alula, run):
         for old in sorted(set(re.findall(r'"code":\s*"machine_data",\s*"params":\s*\{\s*"data":\s*"((?:[^"\\]|\\.)*)"', text))):
             value = json.loads('"%s"' % old)
             pairs = split_top(value, ';')
+            # a datum that a library brought and the expected journal does not name (the reason of «Пауза» 0.9.1) is written with its initial value none
+            have = {p.split('=', 1)[0].strip() for p in pairs}
+            for inc in tree.get('includes', []):
+                for n in (inc.get('brings') or {}).get('data', []):
+                    d = [x for x in tree.get('data', []) if x.get('name') == n]
+                    if n not in have and d and (d[0].get('initial') or {}).get('expr', {}).get('value', 0) is None:
+                        pairs.append('%s=none' % n)
             rank = {n: k for k, n in enumerate(order)}
             keyed = [(rank.get(p.split('=', 1)[0].strip(), len(order) + k), p) for k, p in enumerate(pairs)]
             again = '; '.join(p for _, p in sorted(keyed, key=lambda x: x[0]))
@@ -824,6 +1034,38 @@ def migrate_tests(tests, machines, tree_paths, alula, run):
                 new = new.replace('"%s"' % old, json.dumps(again, ensure_ascii=False))
         if new != text:
             run.changed.append(path)
+            if not run.dry:
+                with open(path, 'w', encoding='utf-8', newline='') as f:
+                    f.write(new)
+
+
+def pause_tests(tests, alula, run):
+    """Тесты машин, перенесённых на «Паузу» 0.9.1: ожидание данного `stop_reason` с кодом «Паузы» (`"pause_halt"`, `"cancel_request"`) — ожидание
+    её данного `reason` (значение перечисления `ПричинаПаузы` дерева машины): «Пауза» 0.9.1 в данные машины не пишет."""
+    if not run.pause_codes or not tests:
+        return
+    swaps = {}
+    for md, code in run.pause_codes.items():
+        t = tree_of(md, alula)
+        if not t:
+            continue
+        for v in t.get('types', {}).get('variants', []):
+            vals = dict((w, n) for n, w in v.get('values', []))
+            if 'cancel_request' in vals and 'pause_halt' in vals:
+                for word in (code, 'cancel_request'):
+                    case = vals['cancel_request'] if word == 'cancel_request' else vals['pause_halt']
+                    swaps['"stop_reason": "%s"' % word] = '"reason": {"$variant": "%s", "name": "%s"}' % (v['name'], case)
+    if not swaps:
+        return
+    for path in tests:
+        with open(path, encoding='utf-8', newline='') as f:
+            text = f.read()
+        new = text
+        for old, rep_ in swaps.items():
+            new = new.replace(old, rep_)
+        if new != text:
+            if path not in run.changed:
+                run.changed.append(path)
             if not run.dry:
                 with open(path, 'w', encoding='utf-8', newline='') as f:
                     f.write(new)
@@ -896,9 +1138,13 @@ def main(argv):
             tree = json.loads(text)
         except ValueError:
             tree = None
-        if isinstance(tree, dict) and tree.get('alula_version') == '2.26':
-            continue
         md = path[:-len('.alula.json')] + '.alula.md'
+        if isinstance(tree, dict) and tree.get('alula_version') == '2.26':
+            if os.path.normpath(md) in run.upgraded and alula and not dry:
+                compile_tree(path, md, alula, run)
+            elif os.path.normpath(md) in run.upgraded:
+                run.place(path, 1, 'дерево', 'файл машины %s перенесён на «Паузу» 0.9.1: пересоберите дерево `alula compile` (или запустите скрипт с --alula)' % md)
+            continue
         if isinstance(tree, dict) and tree.get('alula_version') == '2.25' and os.path.exists(md):
             if alula:
                 compile_tree(path, md, alula, run)
@@ -914,6 +1160,7 @@ def main(argv):
                 if alula:
                     canonical_tree(path, alula, run)
     migrate_tests(tests, machines, [p for p, _ in trees], alula, run)
+    pause_tests(tests, alula, run)
     verb ='изменился бы' if dry else 'перенесён'
     for p in run.changed:
         print('%s: %s' % (verb, p))

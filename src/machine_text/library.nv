@@ -773,7 +773,6 @@ fn lib_data_row(r TxEntry, four bool, mut cx TxCx) -> Result[TxJ, TranslateError
             None => ()
         }
     }
-    pairs.push(kv("writes", js("fragment")))
     if !name.is_path {
         if pair_has(cx.env.globals, name.ru) { return Err(tx_err(r.line, r.cells[0].col, "name", "имя `${name.ru}` уже объявлено")) }
         pair_add(cx.env.globals, name.ru, name.en)

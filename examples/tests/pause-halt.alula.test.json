@@ -6,6 +6,6 @@
   "steps": [
     {"do": "feed", "event": {"kind": "start"}, "expect": {"state": "Work"}},
     {"do": "feed", "event": {"kind": "signal", "name": "human_stop", "input": {"human_word": "stop", "author": "ann", "source": "console"}}, "expect": {"state": "Pause"}},
-    {"do": "feed", "event": {"kind": "signal", "name": "halt"}, "expect": {"state": "Halted", "outcome": "refusal:StoppedByHuman", "data": {"stop_reason": "pause_halt"}}}
+    {"do": "feed", "event": {"kind": "signal", "name": "halt"}, "expect": {"state": "Halted", "outcome": "refusal:StoppedByHuman", "data": {"reason": {"$variant": "PauseReason", "name": "Halted"}}}}
   ]
 }

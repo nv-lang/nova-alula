@@ -606,8 +606,13 @@ fn dec_includes(root JsonObject) -> Result[[]IncludeDef, LoadError] {
         j_only(o, ["name", "version", "hash", "file", "heading", "instance", "args", "brings"], p)?
         ro file = j_str_or(o, "file", "", p)?
         ro version = if file == "" { j_need_str(o, "version", p)? } else { j_str_or(o, "version", "", p)? }
+        mut data = []str.new()
+        if j_has(o, "brings") {
+            ro bo = j_need_obj(o, "brings", p)?
+            data = j_strings_or_empty(bo, "data", "${p}.brings")?
+        }
         out.push(IncludeDef {
-            name: j_need_str(o, "name", p)?, version, hash: j_need_str(o, "hash", p)?, file
+            name: j_need_str(o, "name", p)?, version, hash: j_need_str(o, "hash", p)?, file, data
         })
         i += 1
     }
@@ -681,9 +686,7 @@ fn write_kind_of(word str, path str) -> Result[WriteKind, LoadError] {
         "rows" => Ok(RowsWrite)
         "mechanics" => Ok(MechanicsWrite)
         "rows_and_mechanics" => Ok(RowsAndMechanics)
-        "fragment" => Ok(FragmentWrite)
-        "rows_and_fragment" => Ok(RowsAndFragment)
-        _ => Err(le(path, "writes must be rows, mechanics, rows_and_mechanics, fragment or rows_and_fragment, got ${word}"))
+        _ => Err(le(path, "writes must be rows, mechanics or rows_and_mechanics, got ${word}"))
     }
 }
 

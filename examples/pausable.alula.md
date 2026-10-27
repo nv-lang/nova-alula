@@ -13,7 +13,7 @@ in again, with a new request; `halt` ends the machine with the code `pause_halt`
 | name | type | initial | non_decreasing |
 |---|---|---|---|
 | reply | ?str | none | — |
-| stop_reason | "" \| "failed" \| "pause_halt" \| "cancel_request" | "" | — |
+| stop_reason | "" \| "failed" | "" | — |
 
 ## Parties
 
@@ -28,12 +28,11 @@ in again, with a new request; `halt` ends the machine with the code `pause_halt`
 
 ### Pause
 - File: libs/pause.en.alula.md
-- Hash: 9f67255229c9
+- Hash: d254e6297f61
 
 | parameter | value |
 |---|---|
 | halt_signal | "halt" |
-| halt_code | "pause_halt" |
 | nested | [] |
 | request_cancel | "mechanics" |
 | reentry | "nothing" |
@@ -76,5 +75,5 @@ Initial state: Work
 | Done | true | Response(require(reply)) |
 | Errored | true | Refusal(FailCode.NoResult, "a defect of the machine") |
 | Halted | stop_reason == "failed" | Refusal(FailCode.NoResult, stop_reason) |
-| Halted | stop_reason == "pause_halt" | Refusal(FailCode.StoppedByHuman, stop_reason) |
-| Halted | stop_reason == "cancel_request" | Refusal(FailCode.Cancelled, stop_reason) |
+| Halted | Pause.reason == PauseReason.Halted | Refusal(FailCode.StoppedByHuman, "pause_halt") |
+| Halted | Pause.reason == PauseReason.Cancelled | Refusal(FailCode.Cancelled, "cancel_request") |

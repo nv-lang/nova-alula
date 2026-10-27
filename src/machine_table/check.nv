@@ -817,8 +817,13 @@ fn check_binds(mut cx Checker, binds []Bind, fields []FieldDef, path str) -> () 
 
 fn check_bind_shadow(mut cx Checker, ev EventPat, path str) -> () {
     ro globals = data_roots(cx.def)
+    // the data of a library are read by the prefix of the instance (`Пауза.причина`, section 9): a binding with the JSON name of one of them (`сбой(причина)`) shadows nothing in the text
+    mut lib_data = []str.new()
+    for inc in cx.def.includes {
+        for d in inc.data { lib_data.push(d) }
+    }
     for n in bind_names_of(ev) {
-        if globals.contains(n) { cx_issue(cx, path, "the binding ${n} has the name of a datum (no shadowing)") }
+        if globals.contains(n) && !lib_data.contains(n) { cx_issue(cx, path, "the binding ${n} has the name of a datum (no shadowing)") }
         for c in cx.def.constants {
             if c.name == n { cx_issue(cx, path, "the binding ${n} has the name of a constant") }
         }
@@ -841,7 +846,7 @@ fn check_event_for(mut cx Checker, ev EventPat, party_ix int, path str, mut used
     check_bind_shadow(cx, ev, path)
     match ev {
         SignalEv { name, binds } => {
-            // a signal of the party of the appeal (AL-38), else a signal of the machine (a common event, the protocol of a fragment)
+            // a signal of the party of the appeal (AL-38), else a signal of the machine (a common event, the protocol of a call)
             if party_ix >= 0 {
                 ro party = def.parties[party_ix]
                 ro at = signal_decl(party.signals, name)
@@ -1006,7 +1011,7 @@ fn check_targets_of_row(mut cx Checker, r TableRow, path str, may_stay bool) -> 
         }
         ToPrevious => {
             ro at = find_data(def, "previous")
-            if at < 0 { cx_issue(cx, "${path}.to", "@previous needs the datum previous (the fragment Pause brings it)") }
+            if at < 0 { cx_issue(cx, "${path}.to", "@previous needs the datum previous (the library Pause brings it)") }
         }
         ToPrepareReturn => {
             ro at = find_data(def, "preparation_return")
@@ -1173,14 +1178,12 @@ fn primitive_reads(cx Checker, e Expr) -> []str {
 
 fn is_data_root(def MachineDef, name str) -> bool => data_roots(def).contains(name)
 
-// The data of a fragment (the marks `fragment`, `rows and fragment`, `mechanics`): the common events read them without an Input (format section 9).
-fn fragment_data_names(def MachineDef) -> []str {
+// The data written by the mechanics: the common events read them without an Input (a tree of 2.25, rule 11).
+fn mechanics_data_names(def MachineDef) -> []str {
     mut out = []str.new()
     for d in def.data {
         if d.name.contains("[") { continue }
         match d.writes {
-            FragmentWrite => out.push(d.name)
-            RowsAndFragment => out.push(d.name)
             MechanicsWrite => out.push(d.name)
             _ => ()
         }
@@ -1199,7 +1202,7 @@ fn check_reads(mut cx Checker) -> () {
     // the names of the executor and where they stand
     for s in cx.sites {
         ro free = expr_free(s.expr, s.bound)
-        ro allowed = if s.state >= 0 { state_names_with_parse(cx, def.states[s.state]) } else if s.area == area_body() { fragment_data_names(def) } else { []str.new() }
+        ro allowed = if s.state >= 0 { state_names_with_parse(cx, def.states[s.state]) } else if s.area == area_body() { mechanics_data_names(def) } else { []str.new() }
         for n in free {
             if consts.contains(n) { continue }
             if roots.contains(n) {
@@ -1268,22 +1271,22 @@ fn trace_allowed(def MachineDef, s Site) -> bool {
     pi >= 0 && def.parties[pi].kind == MachineParty
 }
 
-fn check_writes_in(mut cx Checker, actions []Action, path str, accept bool, fragment bool) -> () {
+fn check_writes_in(mut cx Checker, actions []Action, path str, accept bool) -> () {
     ro def = cx.def
     mut i = 0
     for a in actions {
         ro p = "${path}[${i}]"
         match a {
             AssignAct { target, value } => {
-                check_target(cx, target, "${p}.target", fragment)
+                check_target(cx, target, "${p}.target")
                 check_literal_target(cx, target, value, "${p}.value")
             }
-            AddAct { target, value } => check_target(cx, target, "${p}.target", fragment)
-            ForEachAct { var, list, body } => check_writes_in(cx, body, "${p}.body", accept, fragment)
-            LetAct { name, value, body } => check_writes_in(cx, body, "${p}.body", accept, fragment)
+            AddAct { target, value } => check_target(cx, target, "${p}.target")
+            ForEachAct { var, list, body } => check_writes_in(cx, body, "${p}.body", accept)
+            LetAct { name, value, body } => check_writes_in(cx, body, "${p}.body", accept)
             IfAct { cond, then_actions, else_actions } => {
-                check_writes_in(cx, then_actions, "${p}.then", accept, fragment)
-                check_writes_in(cx, else_actions, "${p}.else", accept, fragment)
+                check_writes_in(cx, then_actions, "${p}.then", accept)
+                check_writes_in(cx, else_actions, "${p}.else", accept)
             }
             JournalAct { code, params } => {
                 if accept { cx_issue(cx, p, "On accept has no journal (format 4.4)") }
@@ -1347,15 +1350,7 @@ fn check_literal_target(mut cx Checker, target LValue, value Expr, path str) -> 
     if problem != "" { cx_issue(cx, path, problem) }
 }
 
-fn fragment_may_write(kind WriteKind) -> bool {
-    match kind {
-        FragmentWrite => true
-        RowsAndFragment => true
-        _ => rows_may_write(kind)
-    }
-}
-
-fn check_target(mut cx Checker, target LValue, path str, fragment bool) -> () {
+fn check_target(mut cx Checker, target LValue, path str) -> () {
     ro def = cx.def
     ro at = find_data(def, target.root)
     if at < 0 {
@@ -1363,8 +1358,8 @@ fn check_target(mut cx Checker, target LValue, path str, fragment bool) -> () {
         return
     }
     ro d = def.data[at]
-    ro may = if fragment { fragment_may_write(d.writes) } else { rows_may_write(d.writes) }
-    ro who = if fragment { "rows or a fragment" } else { "rows" }
+    ro may = rows_may_write(d.writes)
+    ro who = "rows"
     if !may {
         if engine_only(def, d.writes) {
             cx_issue(cx, path, "the datum ${target.root} is written by the engine only: ${engine_data_words()}")
@@ -1475,15 +1470,15 @@ fn check_all_writes(mut cx Checker) -> () {
         ro p = "$.states[${i}]"
         mut k = 0
         for r in st.rows {
-            check_writes_in(cx, r.actions, "${p}.rows[${k}].actions", false, false)
+            check_writes_in(cx, r.actions, "${p}.rows[${k}].actions", false)
             k += 1
         }
         k = 0
         for a in st.accept {
-            check_writes_in(cx, a.actions, "${p}.accept[${k}].actions", true, false)
+            check_writes_in(cx, a.actions, "${p}.accept[${k}].actions", true)
             k += 1
         }
-        check_writes_in(cx, st.entry, "${p}.entry", false, false)
+        check_writes_in(cx, st.entry, "${p}.entry", false)
         if st.kind != EndKind {
             // the entry of an operation changes no data (rule 29): the changes are in the row
             check_no_data_writes(cx, st.entry, "${p}.entry")
@@ -1494,7 +1489,7 @@ fn check_all_writes(mut cx Checker) -> () {
     }
     i = 0
     for r in def.common {
-        check_writes_in(cx, r.actions, "$.common_events[${i}].actions", false, true)
+        check_writes_in(cx, r.actions, "$.common_events[${i}].actions", false)
         i += 1
     }
 }
@@ -1876,6 +1871,10 @@ fn cover_of(e Expr) -> Cover {
                                     _ => ()
                                 }
                             }
+                            // a value of an enumeration (`Пауза.причина == ПричинаПаузы.Остановлена`, section 10): the value is `Type.Case`
+                            VariantLit { type_name, name, fields } => {
+                                if fields.len() == 0 { return Cover { ok: true, always: false, field: n, values: ["${type_name}.${name}"] } }
+                            }
                             _ => ()
                         }
                     }
@@ -1888,13 +1887,37 @@ fn cover_of(e Expr) -> Cover {
     }
 }
 
+// The values of the closed type of a datum that the rows of an end must cover: the words of a set of literals, the cases `Type.Case` of an enumeration (also optional, section 10); None for another type.
+fn closed_values(def MachineDef, spec TypeSpec) -> Option[[]str] {
+    match spec {
+        TextSet(words) => return Some(words)
+        OptionalType(inner) => return closed_values(def, inner)
+        VariantType(t) => {
+            for v in def.types.variants {
+                if v.name == t {
+                    mut out = []str.new()
+                    for c in v.cases {
+                        if c.fields.len() > 0 { return None }
+                        out.push("${t}.${c.name}")
+                    }
+                    return Some(out)
+                }
+            }
+            return None
+        }
+        _ => None
+    }
+}
+
+// The rows of an end are a row `when true`, or chains `datum == value` over closed data: the chain of each datum is exclusive and covers the values of its type (but those of `Кроме`).
+// A machine with a library branches on its own datum and on the reasons of the library (`Пауза.причина`), each datum by its own chain (section 10).
 fn check_ends(mut cx Checker) -> () {
     ro def = cx.def
     mut i = 0
     for st in def.states {
         if st.kind == EndKind {
             mut always = false
-            mut field = ""
+            mut fields = []str.new()
             mut covered = []str.new()
             mut analysable = true
             for er in def.end_rows {
@@ -1905,36 +1928,38 @@ fn check_ends(mut cx Checker) -> () {
                 } else if c.always {
                     always = true
                 } else {
-                    if field != "" && field != c.field { analysable = false }
-                    field = c.field
+                    if !fields.contains(c.field) { fields.push(c.field) }
                     for v in c.values {
-                        if covered.contains(v) {
+                        ro key = "${c.field}=${v}"
+                        if covered.contains(key) {
                             cx_issue(cx, "$.states[${i}]", "the rows of the end ${st.name} are not exclusive: \"${v}\" is covered twice")
                         }
-                        covered.push(v)
+                        covered.push(key)
                     }
                 }
             }
             if !always {
-                if !analysable || field == "" {
-                    cx_issue(cx, "$.states[${i}]", "the rows of the end ${st.name} must be a row with when true, or a chain of ${st.name} == \"...\" over one closed datum")
+                if !analysable || fields.len() == 0 {
+                    cx_issue(cx, "$.states[${i}]", "the rows of the end ${st.name} must be a row with when true, or chains of datum == \"...\" over closed data")
                 } else {
-                    ro at = find_data(def, field)
-                    if at < 0 {
-                        cx_issue(cx, "$.states[${i}]", "the end ${st.name} branches on ${field}, which is not a datum")
-                    } else {
-                        match def.data[at].spec {
-                            TextSet(words) => {
-                                mut missing = []str.new()
-                                for w in words {
-                                    ro excepted = st.except_field == field && st.except_values.contains(w)
-                                    if !covered.contains(w) && !excepted { missing.push(w) }
+                    for field in fields {
+                        ro at = find_data(def, field)
+                        if at < 0 {
+                            cx_issue(cx, "$.states[${i}]", "the end ${st.name} branches on ${field}, which is not a datum")
+                        } else {
+                            match closed_values(def, def.data[at].spec) {
+                                Some(words) => {
+                                    mut missing = []str.new()
+                                    for w in words {
+                                        ro excepted = st.except_field == field && st.except_values.contains(w)
+                                        if !covered.contains("${field}=${w}") && !excepted { missing.push(w) }
+                                    }
+                                    if missing.len() > 0 {
+                                        cx_issue(cx, "$.states[${i}]", "the rows of the end ${st.name} do not cover ${missing.len()} values of ${field}: ${missing.join(", ")}")
+                                    }
                                 }
-                                if missing.len() > 0 {
-                                    cx_issue(cx, "$.states[${i}]", "the rows of the end ${st.name} do not cover ${missing.len()} values of ${field}: ${missing.join(", ")}")
-                                }
+                                None => cx_issue(cx, "$.states[${i}]", "the end ${st.name} branches on ${field}, which is not a closed text or an enumeration")
                             }
-                            _ => cx_issue(cx, "$.states[${i}]", "the end ${st.name} branches on ${field}, which is not a closed text")
                         }
                     }
                 }

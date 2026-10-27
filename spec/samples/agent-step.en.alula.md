@@ -209,12 +209,11 @@ Correspondence to the automaton code: the names of the functions are the names o
 
 ### Pause
 - File: libs/pause.en.alula.md
-- Hash: 9f67255229c9
+- Hash: d254e6297f61
 
 | parameter | value |
 |---|---|
 | halt_signal | "halt" |
-| halt_code | "pause_halt" |
 | nested | [] |
 | request_cancel | "stop_transport_turn" |
 | reentry | "nothing" |
@@ -352,11 +351,13 @@ The Pause state is brought by the "Pause" fragment (section "Includes"); it is n
 
 ### Halted — end
 - On entry:
+  - if Pause.reason == PauseReason.Halted then { stop_reason = "pause_halt" };
+  - if Pause.reason == PauseReason.Cancelled then { stop_reason = "cancel_request" };
   - let now = event.at;
   - close_agent_turn();
   - if not has(usage) then { journal(usage_event(collect_usage(agent_request, stop_reason, transport_usage, started, now))) };
   - journal("agent_step_stopped", reason: stop_reason)
-- Except: stop_reason in [""]
+- Except: stop_reason in ["", "pause_halt", "cancel_request"]
 
 ### Errored — end
 - On entry:
@@ -385,8 +386,8 @@ Errored is entered from the `else` rows of the forks (`machine_error("fork_no_ma
 | Halted | stop_reason == "cost_limit" | Refusal(FailCode.MaxTokens, stop_reason) |
 | Halted | stop_reason == "max_turn_requests" | Refusal(FailCode.MaxTurnRequests, stop_reason) |
 | Halted | stop_reason == "stopped_by_agent" | Refusal(FailCode.Cancelled, stop_reason) |
-| Halted | stop_reason == "pause_halt" | Refusal(FailCode.StoppedByHuman, stop_reason) |
-| Halted | stop_reason == "cancel_request" | Refusal(FailCode.Cancelled, stop_reason) |
+| Halted | Pause.reason == PauseReason.Halted | Refusal(FailCode.StoppedByHuman, "pause_halt") |
+| Halted | Pause.reason == PauseReason.Cancelled | Refusal(FailCode.Cancelled, "cancel_request") |
 
 The set of `stop_reason` has 12 values; Halted covers 11, the twelfth (`""`) is taken off by the `Except` line. The values `pause_halt` and `cancel_request` are required by the "Pause" fragment; both rows exist (No. 10 and No. 11). The cost limit has no code of its own (`cost_limit` leads to `MaxTokens`, decision 7 of the source).
 
