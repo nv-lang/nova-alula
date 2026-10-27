@@ -54,6 +54,16 @@ fn rn_event(cx RnCx, ev RJ, locals []str) -> RnEvent {
         for r in reasons { codes.push("${rn_type_name(cx, "FailCode")}.${rn_case_name(cx, rj_str(r))}") }
         return RnEvent { text: "${rn_kw(cx, "event", "failure")}(${name} ${rn_kw(cx, "operator", "in")} [${codes.join(", ")}])", locals: rn_with(locals, name) }
     }
+    // the part of an answer of 2.26 (section 7а): `часть`, `часть(имя)` (the whole part), `часть { поле: имя }`; the type of the part is the column `части` of the party, not written in the event
+    if kind == "progress" && cx.v226 {
+        ro head = rn_kw(cx, "event", "part")
+        ro whole = rj_str(bind)
+        if whole != "" { return RnEvent { text: "${head}(${whole})", locals: rn_with(locals, whole) } }
+        ro inner = rn_binds(cx, bind)
+        mut all = rn_copy(locals)
+        for l in rn_bind_locals(bind) { all.push(l) }
+        return RnEvent { text: if inner == "" { head } else { "${head} { ${inner} }" }, locals: all }
+    }
     if kind == "signal" || kind == "progress" {
         ro head_key = if kind == "signal" { "signal" } else { "part" }
         ro phrase = rj_gstr(ev, "name")

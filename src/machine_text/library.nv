@@ -465,6 +465,7 @@ fn lib_load(u TxLibUse, file NamedText, mut cx TxCx) -> TxLibRun {
     ro head = lib_header(raw_lines, cx)
     ro first = tx_classify_in(raw_lines, cx.words, true, true).entries
     ro params = lib_params_read(first, cx)
+    lib_visibility_check(first, params, cx)
     lib_args_check(u, head.title, params, cx)
     ro text = lib_substitute(file.text, u.args, params, cx.words)
     ro classified = tx_classify_in(lines_of(text), cx.words, true, true)
@@ -481,6 +482,135 @@ fn lib_load(u TxLibUse, file NamedText, mut cx TxCx) -> TxLibRun {
         None => ()
     }
     TxLibRun { use: u, library: head.library, title: head.title, entries, sections, blocks: []TxBlock.new(), params, reqs }
+}
+
+// ---- the visibility (section 9, 0.9.1) -----------------------------------------------------------------------------------------------------------
+
+// The names of a line outside the strings and outside a field after a dot, in their order.
+fn lib_words_of(line str) -> []str {
+    mut out = []str.new()
+    mut word = []str.new()
+    mut in_str = false
+    mut esc = false
+    mut after_dot = false
+    for c in line.chars() {
+        if in_str {
+            if esc { esc = false } else if c == '\\' { esc = true } else if c == '"' { in_str = false }
+            continue
+        }
+        if tx_is_name_char(c) {
+            word.push("${c}")
+            continue
+        }
+        if word.len() > 0 {
+            if !after_dot { out.push(lib_join(word, "")) }
+            word = []str.new()
+        }
+        after_dot = c == '.'
+        if c == '"' { in_str = true }
+    }
+    if word.len() > 0 && !after_dot { out.push(lib_join(word, "")) }
+    out
+}
+
+/// The functions, the types and the constants of a library are seen in the machine without a prefix and are the same in every instance: they use no parameter and no datum of the library
+/// (section 9, 0.9.1); a value they need comes as an argument. The check reads the text before the parameters are put in; the names of the parameters of a function are its own.
+fn lib_visibility_check(entries []TxEntry, params []TxLibParam, mut cx TxCx) -> () {
+    mut data = []str.new()
+    match lib_section_raw(entries, cx.words, "Data") {
+        Some(sec) => {
+            mut i = sec.first
+            mut header = true
+            while i < sec.last {
+                ro e = entries[i]
+                if e.kind == EN_ROW && e.cells.len() > 0 {
+                    if header { header = false } else { data.push(e.cells[0].text.trim_ascii()) }
+                } else {
+                    header = true
+                }
+                i += 1
+            }
+        }
+        None => ()
+    }
+    mut param_names = []str.new()
+    for q in params { param_names.push(q.name) }
+    if data.len() == 0 && param_names.len() == 0 { return }
+    // a requirement of a datum names the type of the datum of the machine: no parameter of the library stands in it (section 9, 0.9.1); a party and an end are not types of a datum
+    match lib_section_raw(entries, cx.words, "Requires") {
+        Some(sec) => {
+            mut i = sec.first
+            mut header = true
+            while i < sec.last {
+                ro e = entries[i]
+                if e.kind == EN_ROW && e.cells.len() >= 2 {
+                    ro t = e.cells[1].text.trim_ascii()
+                    if header {
+                        header = false
+                    } else if t != kw(cx.words, "kind_state", "end") && !t.starts_with("${kw(cx.words, "action", "party")} ") {
+                        for w in lib_words_of(t) {
+                            if param_names.contains(w) { note(cx, tx_err(e.line, e.cells[1].col, "type", "в `## ${kw(cx.words, "section", "Requires")}` тип данного `${e.cells[0].text.trim_ascii()}` называет параметр `${w}` библиотеки: тип в требовании — тип данного машины, имён параметров в нём нет (раздел 9)")) }
+                        }
+                    }
+                } else {
+                    header = true
+                }
+                i += 1
+            }
+        }
+        None => ()
+    }
+    ro fn_word = kw(cx.words, "decl", "fn")
+    ro type_word = kw(cx.words, "decl", "type")
+    for key in ["Functions", "Types", "Constants"] {
+        match lib_section_raw(entries, cx.words, key) {
+            Some(sec) => {
+                mut owner = ""
+                mut what = ""
+                mut own = []str.new()
+                mut i = sec.first
+                while i < sec.last {
+                    ro e = entries[i]
+                    ro text = e.text
+                    ro words = lib_words_of(text)
+                    if words.len() >= 2 && (words[0] == fn_word || words[0] == type_word) && text.trim_ascii().starts_with(words[0]) {
+                        owner = words[1]
+                        what = if words[0] == fn_word { "fn" } else { "type" }
+                        own = []str.new()
+                        // the parameters of a function: the first name of each item between the brackets of the head
+                        ro open = text.find("(") ?? -1
+                        ro close = text.find(")") ?? -1
+                        if what == "fn" && open >= 0 && close > open {
+                            for item in text[open + 1..close].split(",") {
+                                ro iw = lib_words_of(item)
+                                if iw.len() > 0 { own.push(iw[0]) }
+                            }
+                        }
+                    }
+                    if key == "Constants" && e.kind == EN_ROW && e.cells.len() > 1 {
+                        owner = e.cells[0].text.trim_ascii()
+                        what = "const"
+                    }
+                    if owner != "" {
+                        mut k = 0
+                        for w in words {
+                            if k >= 2 || what != "fn" || !(k == 1 && w == owner) {
+                                if param_names.contains(w) && !own.contains(w) && w != owner {
+                                    note(cx, tx_err(e.line, 1, "name", "${if what == "fn" { "функция" } else if what == "type" { "тип" } else { "константа" }} ${owner} использует параметр ${w} библиотеки; передайте его аргументом (раздел 9)"))
+                                }
+                                if data.contains(w) && !own.contains(w) && w != owner {
+                                    note(cx, tx_err(e.line, 1, "name", "${if what == "fn" { "функция" } else if what == "type" { "тип" } else { "константа" }} ${owner} использует данное ${w} библиотеки; передайте его аргументом (раздел 9)"))
+                                }
+                            }
+                            k += 1
+                        }
+                    }
+                    i += 1
+                }
+            }
+            None => ()
+        }
+    }
 }
 
 // The notes made since `from` belong to the library: they are put at the line of its connection, with the place in its file.
@@ -608,7 +738,10 @@ fn libs_open(entries []TxEntry, sec TxSection, registry []NamedText, mut cx TxCx
                 libraries.push(run.library)
                 cx.env.instances.push(inst)
                 match section_of(run.sections, "Names") {
-                    Some(nsec) => { jn_rows_read(run.entries, nsec, cx) }
+                    Some(nsec) => {
+                        lib_names_protocol(run.entries, nsec, u, cx)
+                        jn_rows_read(run.entries, nsec, cx)
+                    }
                     None => ()
                 }
                 match section_of(run.sections, "States") {
@@ -651,6 +784,19 @@ fn tj_name(j TxJ) -> str {
     ""
 }
 
+// The object with another `name`.
+fn tj_renamed(j TxJ, name str) -> TxJ {
+    match j {
+        TxObj(pairs) => {
+            mut out = []TxKV.new()
+            for q in pairs { out.push(if q.key == "name" { kv("name", js(name)) } else { q }) }
+            return TxObj(out)
+        }
+        _ => ()
+    }
+    jobj([kv("name", js(name))])
+}
+
 fn tj_str_of(j TxJ, key str) -> str {
     match j {
         TxObj(pairs) => {
@@ -675,7 +821,15 @@ fn libs_decls(runs []TxLibRun, mut cx TxCx) -> TxLibDecls {
     mut constants = []TxJ.new()
     mut definitions = []TxJ.new()
     mut names = []TxLibNames.new()
+    mut given = []str.new()
     for run in runs {
+        // a second copy of a library (the same file, another instance): its functions, types and constants are those of the first (they use no parameter, section 9)
+        ro key = "${run.library}#${run.use.hash}"
+        if given.contains(key) {
+            names.push(TxLibNames { items: []str.new() })
+            continue
+        }
+        given.push(key)
         ro before = cx.errors.len()
         ro places_from = cx.places.len()
         ro jn_before = cx.jn.decls.len()
@@ -794,9 +948,31 @@ fn libs_data(runs []TxLibRun, mut cx TxCx) -> TxLibData {
                 ro places_from = cx.places.len()
                 ro jn_before = cx.jn.decls.len()
                 ro scope = lib_enter(cx, run.use.instance)
+                // a copy of a library named by `- Имя:` (a library of data and functions may be connected more than once, section 9): its data take the JSON name of the instance
+                // before their own, so the data of two copies are two data of the tree
+                ro pfx = if run.use.named && !lib_has(run, "States") && !lib_has(run, "Common events") { "${jn_peek(cx, run.use.instance, "данного", [run.use.instance])}_" } else { "" }
+                ro globals_from = cx.env.globals.len()
                 for d in lib_data_rows(run.entries, sec, cx) {
-                    data.push(d)
-                    own.push(tj_name(d))
+                    ro named = if pfx == "" { d } else { tj_renamed(d, "${pfx}${tj_name(d)}") }
+                    data.push(named)
+                    own.push(tj_name(named))
+                }
+                if pfx != "" {
+                    mut g = []TxPair.new()
+                    mut k = 0
+                    for q in cx.env.globals {
+                        g.push(if k >= globals_from { TxPair { ru: q.ru, en: "${pfx}${q.en}" } } else { q })
+                        k += 1
+                    }
+                    cx.env.globals = g
+                    ro form_space = "данные"
+                    mut ds = []TxJnDecl.new()
+                    mut j = 0
+                    for jd in cx.jn.decls {
+                        ds.push(if j >= jn_before && jd.space == form_space { TxJnDecl { line: jd.line, col: jd.col, where: jd.where, space: jd.space, name: jd.name, path: jd.path, json: "${pfx}${jd.json}", auto: "${pfx}${jd.auto}", row: jd.row, without: "${pfx}${jd.without}", fixed: jd.fixed } } else { jd })
+                        j += 1
+                    }
+                    cx.jn.decls = ds
                 }
                 lib_leave(cx, scope, run.use.instance)
                 jn_fix_since(cx, jn_before)
@@ -860,12 +1036,66 @@ fn libs_states(runs []TxLibRun, at int, mut cx TxCx) -> TxLibStates {
     TxLibStates { states, names }
 }
 
-/// Do the libraries bring the signals of the protocol of a call (a library with common events or states reads `стоп`, `отмена` and the signals from the parent, section 9)?
-fn libs_need_protocol(runs []TxLibRun) -> bool {
-    for run in runs {
-        if lib_has(run, "Common events") || lib_has(run, "States") { return true }
+/// The signals of the protocol of a call that the rows of the libraries read (section 9, 0.9.1): a signal of the protocol is declared by a connected library with a row of it only,
+/// so a library that reads `отмена_запроса` alone brings `cancel_request` alone. The Latin names, in the order of the protocol.
+fn libs_protocol_used(runs []TxLibRun, cx TxCx) -> []str {
+    mut out = []str.new()
+    ro head = "${kw(cx.words, "event", "signal")}("
+    for s in protocol_signals() {
+        ro word = proto_word(cx, s.en)
+        mut used = false
+        for run in runs {
+            if !(lib_has(run, "Common events") || lib_has(run, "States")) { continue }
+            for e in run.entries {
+                if e.kind != EN_ROW || e.cells.len() == 0 { continue }
+                ro t = e.cells[0].text.trim_ascii()
+                if t.starts_with("${head}${word}") {
+                    ro rest = t["${head}${word}".byte_len()..]
+                    if rest.starts_with(")") || rest.starts_with(" ") { used = true }
+                }
+            }
+        }
+        if used { out.push(s.en) }
     }
-    false
+    out
+}
+
+/// The signals of the protocol that the libraries read, put into the environment; returns their JSON (the fields are texts). `continue` is declared by the party that a library names.
+fn libs_protocol_json(wanted []str, mut cx TxCx) -> []TxJ {
+    mut out = []TxJ.new()
+    if wanted.len() == 0 { return out }
+    pair_add(cx.env.signals, proto_word(cx, "continue"), "continue")
+    for s in protocol_signals() {
+        if !wanted.contains(s.en) { continue }
+        pair_add(cx.env.signals, proto_word(cx, s.en), s.en)
+        // the JSON names of the signals of the protocol are the registry's: no row of `## Имена` changes them (AL-58)
+        jn_declare_fixed(cx, 0, 0, proto_word(cx, s.en), "сигнала машины", "сигналы машины", [s.en], s.en)
+        mut fields = []TxJ.new()
+        for f in s.fields {
+            fields.push(jobj([kv("name", js(f)), kv("type", js("text"))]))
+            ro f_word = proto_field_word(cx, f)
+            if !pair_has(cx.env.fields, f_word) { pair_add(cx.env.fields, f_word, f) }
+        }
+        out.push(jobj([kv("name", js(s.en)), kv("fields", TxArr(fields))]))
+    }
+    out
+}
+
+/// A row of `## Имена` of a library for a signal of the protocol is an error, not a row that changes nothing in silence: the JSON name of a signal of the protocol is the language's (section 9).
+fn lib_names_protocol(entries []TxEntry, sec TxSection, u TxLibUse, mut cx TxCx) -> () {
+    mut i = sec.first
+    while i < sec.last {
+        ro e = entries[i]
+        if e.kind == EN_ROW && e.cells.len() >= 2 {
+            ro key = e.cells[0].text.trim_ascii()
+            for s in protocol_signals() {
+                if key == proto_word(cx, s.en) {
+                    note(cx, tx_err(u.line, u.col, "name", "в библиотеке ${u.heading} (${u.file}:${e.line}): строка `## Имена` для `${key}`: JSON-имя сигнала протокола задано языком (`${s.en}`), строкой не меняется (раздел 9)"))
+                }
+            }
+        }
+        i += 1
+    }
 }
 
 // ---- the requirements ----------------------------------------------------------------------------------------------------------------------------------

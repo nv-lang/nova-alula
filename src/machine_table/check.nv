@@ -856,6 +856,17 @@ fn check_event_for(mut cx Checker, ev EventPat, party_ix int, path str, mut used
                     return
                 }
             }
+            // the word of a free input (a human with no counter, spec 1, 4.3) carries no gate: a row of the current state takes it by the name of the signal, whatever party it appeals to
+            for fp in def.parties {
+                if is_free_party(fp) {
+                    ro fat = signal_decl(fp.signals, name)
+                    if fat >= 0 {
+                        check_binds(cx, binds, fp.signals[fat].fields, path)
+                        used_signals.push("${fp.name}/${name}")
+                        return
+                    }
+                }
+            }
             ro at = signal_decl(def.signals, name)
             if at < 0 {
                 if party_ix >= 0 {

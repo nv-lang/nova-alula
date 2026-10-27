@@ -255,11 +255,9 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
         match section_of(sections, "Includes") {
             Some(sec) => {
                 lib_runs = libs_open(entries, sec, registry, cx)
-                if libs_need_protocol(lib_runs) {
-                    for sj in protocol_signals_json(cx) {
-                        signals.push(sj)
-                        lib_signals.push(tj_name(sj))
-                    }
+                for sj in libs_protocol_json(libs_protocol_used(lib_runs, cx), cx) {
+                    signals.push(sj)
+                    lib_signals.push(tj_name(sj))
                 }
                 lib_decls = libs_decls(lib_runs, cx)
             }
