@@ -982,7 +982,7 @@ A library (rule 36) is an included file of the format `library`; the former “f
 
 ### Pause
 - File: libs/pause.alula.md
-- Hash: d4d1c0d31d19
+- Hash: 9f67255229c9
 - Name: Pause2             // optional
 
 | parameter | value |
@@ -1003,7 +1003,7 @@ Includes of the pilots. “Agent step” has one library, “Meeting” two (the
 
 ### Pause
 - File: libs/pause.alula.md
-- Hash: d4d1c0d31d19
+- Hash: 9f67255229c9
 
 | parameter | value |
 |---|---|
@@ -1020,7 +1020,7 @@ Includes of the pilots. “Agent step” has one library, “Meeting” two (the
 
 ### Pause
 - File: libs/pause.alula.md
-- Hash: d4d1c0d31d19
+- Hash: 9f67255229c9
 
 | parameter | value |
 |---|---|
@@ -1032,7 +1032,7 @@ Includes of the pilots. “Agent step” has one library, “Meeting” two (the
 
 ### cycle_arithmetic
 - File: libs/cycle_arithmetic.alula.md
-- Hash: 13e1c84a810d
+- Hash: da03ee226723
 ```
 
 An example of a library of functions (“Meeting”: the arithmetic of a cycle is common to the meeting and the cycle check). The hash is the SHA-256 of the given file (12 signs): of the text of the block from the header line `# Library: cycle_arithmetic` to the closing fence after the normalization (above); it differs from the hash of the Russian sample because this file is in the English form and contains the line `- language: en`. The hash is the value of version 2.26.

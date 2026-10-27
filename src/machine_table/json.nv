@@ -12,17 +12,23 @@ import alula.machine.{Expr, FieldExpr, Lit, Text, Int, IntMin, TypeSpec, TypeDef
 /// The format tag of the tree.
 export const MACHINE_FORMAT = "machine/2"
 
-/// The version of the language Alula of the methodology that the tree follows (the optional key `alula_version`; absent means this one). The key was named `table_format`
+/// The version of the language Alula of the methodology that the tree follows (the key `alula_version`; the translator writes it in every tree). The key was named `table_format`
 /// before task 113 and `alula_version` before task 148; neither old name is accepted (the language is called Alula, there is no transition period).
-export const ALULA_VERSION = "2.25"
+export const ALULA_VERSION = "2.26"
+
+/// The version of a tree without the key `alula_version`: 2.25. The translator writes the key in every tree; a tree without it is a tree of the tests of the package written by hand
+/// in the form of 2.25 (the seam of 2.25, task 239: the files of the users are migrated by `tools/migrate-alula-226.py`, the texts of the tests of the package keep the form of 2.25).
+const TREE_VERSION_ABSENT = "2.25"
 
 /// The former name of the key of the version (the language was called Alula before 2.14): a tree that holds it is refused with its own message, not with "not in the schema".
 const FORMER_VERSION_KEY = "portolan_version" // guard-allow(legacy-name): the former key is named here to be refused
 
-/// The versions of the language whose tree this decoder reads: one. There is no transition period (the word of the owner, 2026-10-20), so a tree of 2.12 or of an older version is refused.
-export fn alula_versions() -> []str => ["2.25"]
+/// The versions of the language that this package writes and names (`alula version`): one, 2.26. There is no transition period (the word of the owner, 2026-10-20): the files of 2.25
+/// are migrated by the script `tools/migrate-alula-226.py` (task 239), a tree of 2.24 or of an older version is refused.
+export fn alula_versions() -> []str => ["2.26"]
 
-/// The versions whose tree the decoder takes during the move to 2.26 (task 195, the seam): a tree of 2.26 and a tree of 2.25; stream 4 leaves 2.26 alone.
+/// The versions whose tree the decoder takes: 2.26 and 2.25. The tree of 2.25 is read for the texts of the tests of the package that keep the form of 2.25 (the seam of 2.25, task 239,
+/// decided by the fact: about 130 texts in 57 files of tests); the files of the users and the samples are of 2.26.
 export fn alula_versions_read() -> []str => ["2.25", "2.26"]
 
 fn le(path str, message str) -> LoadError => { path, message }
@@ -1199,9 +1205,9 @@ fn dec_machine(root JsonObject) -> Result[MachineDef, LoadError] {
     j_only(root, top_keys(), "$")?
     ro format = j_need_str(root, "format", "$")?
     if format != MACHINE_FORMAT { return Err(le("$.format", "the format must be ${MACHINE_FORMAT}, got ${format}")) }
-    ro language_version = j_str_or(root, "alula_version", ALULA_VERSION, "$")?
+    ro language_version = j_str_or(root, "alula_version", TREE_VERSION_ABSENT, "$")?
     if !alula_versions_read().contains(language_version) {
-        return Err(le("$.alula_version", "the alula_version must be 2.25 (the version of the language of the methodology; there is no transition period), got ${language_version}"))
+        return Err(le("$.alula_version", "the alula_version must be ${ALULA_VERSION} (the version of the language of the methodology; there is no transition period: a file of 2.25 is migrated by tools/migrate-alula-226.py), got ${language_version}"))
     }
     ro name = j_need_str(root, "machine", "$")?
     ro version = j_str_or(root, "version", "", "$")?

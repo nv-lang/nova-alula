@@ -2,7 +2,7 @@
 
 - machine: Batch
 - machine_version: 1
-- format: 2.25
+- format: 2.26
 - language: en
 
 A set of nested calls (spec 4.2, `set:`; the party of the kind `machine`): one request to the machine `callee` for every name of the input `names`, no more than `LIMIT` at once (`Request limit`). The answers
@@ -30,16 +30,14 @@ type CallOutput { answer str, score int>=0 }
 
 ## Data
 
-| name | type | initial | non_decreasing | writes |
-|---|---|---|---|---|
-| names | []str | input.names | — | rows |
-| to_send | []str | [] | — | rows_and_mechanics |
-| jobs | map[str, Job] | input.names.dict(n => n, n => Job { name: n, attempt: 0 }) | — | rows |
-| jobs[*].attempt | int>=0 | — | yes | mechanics |
-| answered | []str | [] | — | rows |
-| lost | []str | [] | — | rows |
-| stop_reason | "" \| "pause_halt" \| "cancel_request" | "" | — | rows_and_fragment |
-| enhanced_attempt | int>=0 | 0 | yes | mechanics |
+| name | type | initial | non_decreasing |
+|---|---|---|---|
+| names | []str | input.names | — |
+| to_send | []str | [] | — |
+| jobs | map[str, Job] | input.names.dict(n => n, n => Job { name: n, attempt: 0 }) | — |
+| answered | []str | [] | — |
+| lost | []str | [] | — |
+| stop_reason | "" \| "pause_halt" \| "cancel_request" | "" | — |
 
 ## Parties
 
@@ -52,73 +50,74 @@ type CallOutput { answer str, score int>=0 }
 
 ## Includes
 
-```
-Pause(halt_signal: halt, halt_code: "pause_halt", nested: [callee], cancel_requests: without_return_to_send, reenter: requests_from_to_send, write_right: "the batch writes nothing in the pause")
-```
+### Pause
+- File: libs/pause.en.alula.md
+- Hash: 9f67255229c9
+
+| parameter | value |
+|---|---|
+| halt_signal | "halt" |
+| halt_code | "pause_halt" |
+| nested | ["callee"] |
+| request_cancel | "without_return_to_send" |
+| reentry | "requests_from_to_send" |
+// write right: the batch writes nothing in the pause
 
 ## States
 
 Initial state: Prepare
 
 ### Prepare — operation
-- Reads: names
 
-| № | Event | Condition | Actions | To |
-|---|---|---|---|---|
-| 1 | immediate | — | to_send = names | Split |
+| Actions | To |
+|---|---|
+| to_send = names | Split |
 
 ### Split — fork
-- Reads: names
 
-| № | Condition | Actions | To |
-|---|---|---|---|
-| 1 | length(names) == 0 | — | Done |
-| 2 | else | — | Jobs |
+| Condition | Actions | To |
+|---|---|---|
+| length(names) == 0 |  | Done |
+| else |  | Jobs |
 
 ### Jobs — appeal
 - Party: job; set: names
 - Request:
 
-| request_field | expression | reads |
-|---|---|---|
-| label | party | party |
-| count | 1 | party |
-| answered | — | executor |
-| lost | — | executor |
+| request_field | expression |
+|---|---|
+| label | party |
+| count | 1 |
 
-| № | Event | Condition | Actions | To |
-|---|---|---|---|---|
-| 1 | response(result) | — | answered += [party]; journal("job_answered", party: party, answer: result.answer) | Join |
-| 2 | failure(reason) | — | lost += [party]; journal("job_lost", party: party, code: text(reason)) | Join |
+| Event | Condition | Actions | To |
+|---|---|---|---|
+| response(result) |  | answered += [party]; journal("job_answered", party: party, answer: result.answer) | Join |
+| failure(reason) |  | lost += [party]; journal("job_lost", party: party, code: text(reason)) | Join |
 
 ### Join — fork
-- Reads: answered, lost, names
 
-| № | Condition | Actions | To |
-|---|---|---|---|
-| 1 | length(answered) + length(lost) >= length(names) | — | Done |
-| 2 | else | — | Jobs |
+| Condition | Actions | To |
+|---|---|---|
+| length(answered) + length(lost) >= length(names) |  | Done |
+| else |  | Jobs |
 
 ### Done — end
-- Reads: answered, lost
 
 ### Halted — end
-- Reads: stop_reason
 - Except: stop_reason in [""]
 
 ### Errored — end
-- Reads: all_data
 - On entry:
   - journal(transition_note);
   - journal(all_data)
 
-## Ends
+## Output
 
 - Result: int
 
-| end | № | when | response |
-|---|---|---|---|
-| Done | 1 | true | Response(length(answered)) |
-| Errored | 1 | true | Refusal(FailCode.NoResult, "a defect of the batch") |
-| Halted | 1 | stop_reason == "pause_halt" | Refusal(FailCode.StoppedByHuman, stop_reason) |
-| Halted | 2 | stop_reason == "cancel_request" | Refusal(FailCode.Cancelled, stop_reason) |
+| end | when | response |
+|---|---|---|
+| Done | true | Response(length(answered)) |
+| Errored | true | Refusal(FailCode.NoResult, "a defect of the batch") |
+| Halted | stop_reason == "pause_halt" | Refusal(FailCode.StoppedByHuman, stop_reason) |
+| Halted | stop_reason == "cancel_request" | Refusal(FailCode.Cancelled, stop_reason) |

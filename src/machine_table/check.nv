@@ -2767,7 +2767,8 @@ fn check_forks(mut cx Checker) -> () {
             for r in st.rows {
                 if r.is_else { has_else = true }
             }
-            if !has_else && !fork_proved(cx.def, st) {
+            // 2.26 (AL-137, section 4.1): the row else is not required, an uncovered fork leads to the error by the engine (`fork_no_match`); AL-57 holds for a tree of 2.25
+            if !has_else && cx.def.alula_version != "2.26" && !fork_proved(cx.def, st) {
                 cx_issue(cx, "$.states[${i}].rows", "the fork ${st.name} has no row else and the type does not prove that one of the rows is taken (the rows must be `x == value` for one name and name every value of an enum, of a variant without fields or of a set of literals) (AL-57)")
             }
         }

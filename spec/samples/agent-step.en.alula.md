@@ -2,7 +2,7 @@
 
 - machine: agent_step
 - machine_version: alula-2.24
-- format: 2.25
+- format: 2.26
 - language: en
 
 This is an **illustration**: the "Agent step" machine in full, written in the Alula format, format version 2.24 ([spec/alula-spec.md](../alula-spec.md); it is the only definition of the notation). It is the English-language twin of [spec/samples/agent-step.alula.md](agent-step.alula.md): the same machine, row for row, with the English keywords of the [word table](../alula-keywords.tsv) (spec, section 1a); the JSON tree `machine/2` is the same for both files up to the internal names (constants, parameters, functions, party names, bindings). The file lets a reader open and see a real machine: types, data, parties, functions, all 37 transition rows, the ends with the "end to response" table, the attached "Pause" fragment; what the fragment brings (parameters, common events COMMON 1-6, the Pause state with events PAUSE 1-4) is described in section 9 of the specification.
@@ -27,18 +27,6 @@ type ActionKind enum
   | SwitchMode = "switch_mode"
   | Other = "other"
 type ReplyCheck enum Valid | Violated | Empty
-type FailCode enum
-  | NoResult = "no_result"
-  | ModelRefused = "model_refused"
-  | ConnectionLost = "connection_lost"
-  | FormNotFixed = "form_not_fixed"
-  | Timeout = "timeout"
-  | StoppedByHuman = "stopped_by_human"
-  | CeilingReached = "ceiling_reached"
-  | Cancelled = "cancelled"
-  | MaxTokens = "max_tokens"
-  | MaxTurnRequests = "max_turn_requests"
-
 type AgentModel { id str, provider str, variant ?str }
 type TokenUsage { input ?int, output ?int, reasoning ?int, cache_read ?int, cache_write ?int }
 type AgentProfile { family str, model str, effort ?str }
@@ -101,26 +89,23 @@ The input fields are exactly the fields of `AgentRequest`: the callers name the 
 
 The data of the "Pause" fragment (`previous`, `call_request_id`, `open_requests`) comes from the fragment and is not repeated here (section "Includes"); in `all_data` it comes first. The executor's data (`state`, `trace`, `step`, the event counter, the step reason, accepted requests, the journal) and the store's data (`human_words`, failure texts) are not entered in the table.
 
-| name | type | initial | non_decreasing | writes |
-|---|---|---|---|---|
-| agent_request | AgentRequest | AgentRequest { kind: input.kind, profile: input.profile, session: input.session, dialog_kind: input.dialog_kind, context: input.context, limits: input.limits, trace: input.trace, step: input.step } | — | rows |
-| turn | "first" \| "retry" \| "continue" \| "fix" \| "permission" | "first" | — | rows |
-| retry_count | int>=0 | 0 | yes, <= RETRIES | rows |
-| continuation_count | int>=0 | 0 | yes, <= CONTINUATIONS | rows |
-| return_count | int>=0 | 0 | yes, <= FORM_RETURNS | rows |
-| turn_count | int>=0 | 0 | yes | rows |
-| turn_before_retry | ?("first" \| "retry" \| "continue" \| "fix" \| "permission") | none | — | rows |
-| transport_usage | ?TransportUsage | none | — | rows |
-| reply_text | ?str | none | — | rows |
-| reply_artifact | ?str | none | — | rows |
-| permission_request | ?PermissionRequest | none | — | rows |
-| permission_decision | ?("allow" \| "deny") | none | — | rows |
-| started | ?int | none | — | rows |
-| usage | ?Usage | none | — | rows |
-| stop_reason | "" \| "no_result" \| "model_refused" \| "connection_lost" \| "form_not_fixed" \| "timeout" \| "max_tokens" \| "cost_limit" \| "max_turn_requests" \| "stopped_by_agent" \| "pause_halt" \| "cancel_request" | "" | — | rows_and_fragment |
-| agent_attempt | int>=0 | 0 | yes | mechanics |
-| gatekeeper_attempt | int>=0 | 0 | yes | mechanics |
-| enhanced_attempt | int>=0 | 0 | yes | mechanics |
+| name | type | initial | non_decreasing |
+|---|---|---|---|
+| agent_request | AgentRequest | AgentRequest { kind: input.kind, profile: input.profile, session: input.session, dialog_kind: input.dialog_kind, context: input.context, limits: input.limits, trace: input.trace, step: input.step } | — |
+| turn | "first" \| "retry" \| "continue" \| "fix" \| "permission" | "first" | — |
+| retry_count | int>=0 | 0 | yes, <= RETRIES |
+| continuation_count | int>=0 | 0 | yes, <= CONTINUATIONS |
+| return_count | int>=0 | 0 | yes, <= FORM_RETURNS |
+| turn_count | int>=0 | 0 | yes |
+| turn_before_retry | ?("first" \| "retry" \| "continue" \| "fix" \| "permission") | none | — |
+| transport_usage | ?TransportUsage | none | — |
+| reply_text | ?str | none | — |
+| reply_artifact | ?str | none | — |
+| permission_request | ?PermissionRequest | none | — |
+| permission_decision | ?("allow" \| "deny") | none | — |
+| started | ?int | none | — |
+| usage | ?Usage | none | — |
+| stop_reason | "" \| "no_result" \| "model_refused" \| "connection_lost" \| "form_not_fixed" \| "timeout" \| "max_tokens" \| "cost_limit" \| "max_turn_requests" \| "stopped_by_agent" \| "pause_halt" \| "cancel_request" | "" | — |
 
 The bound `turn_count <= turn limit` is not written: when the limit is below 1, Start sets 1, and the bound in the source is wrong for part of the values. The machine does not read `turn` to branch (the transport branches on it); `turn_before_retry` keeps the turn that is repeated after a transient error. `stop_reason` is written by the rows of the machine and by the "Pause" fragment (`pause_halt`, `cancel_request`). The name `transport_usage` serves both the data and the field of the `TurnResult` forms (the glossary calls the form field `usage`, which would clash with the data `usage`).
 
@@ -222,11 +207,18 @@ Correspondence to the automaton code: the names of the functions are the names o
 
 ## Includes
 
-```
-Pause(halt_signal: halt, halt_code: "pause_halt", nested: [],
-      cancel_requests: stop_transport_turn, reenter: nothing,
-      write_right: "files the agent edits; the pause does not touch their rights")
-```
+### Pause
+- File: libs/pause.en.alula.md
+- Hash: 9f67255229c9
+
+| parameter | value |
+|---|---|
+| halt_signal | "halt" |
+| halt_code | "pause_halt" |
+| nested | [] |
+| request_cancel | "stop_transport_turn" |
+| reentry | "nothing" |
+// write right: files the agent edits; the pause does not touch their rights
 
 ## States
 
@@ -235,9 +227,9 @@ Initial state: Start
 ### Start — operation
 - On entry: let moment = event.at
 
-| № | Event | Condition | Actions | To |
-|---|---|---|---|---|
-| 1 | immediate | — | started = moment; turn_count = 1 | AgentTurn |
+| Actions | To |
+|---|---|
+| started = moment; turn_count = 1 | AgentTurn |
 
 ### AgentTurn — appeal
 - Party: agent
@@ -245,130 +237,120 @@ Initial state: Start
 - Form returns: 0
 - Request:
 
-| request_field | expression | reads |
-|---|---|---|
-| agent_request | — | party |
-| turn | — | party |
-| retry_count | — | party |
-| turn_before_retry | — | party |
-| permission_decision | — | party |
-| transport_usage | — | executor |
+| request_field | expression |
+|---|---|
+| agent_request |  |
+| turn |  |
+| retry_count |  |
+| turn_before_retry |  |
+| permission_decision |  |
 
-| № | Event | Condition | Actions | To |
-|---|---|---|---|---|
-| 1 | response: Finished { text, artifact, transport_usage: received } | — | transport_usage = add_usage(transport_usage, received); reply_text = text; reply_artifact = artifact | ReplyValidation |
-| 2 | response: Truncated { transport_usage: received } | — | transport_usage = add_usage(transport_usage, received) | Continuation |
-| 3 | response: TurnRequestLimit { transport_usage: received } | — | transport_usage = add_usage(transport_usage, received); stop_reason = "max_turn_requests"; journal("turn_requests_exhausted") | Accounting |
-| 4 | response: ModelRefusal { transport_usage: received } | — | transport_usage = add_usage(transport_usage, received); stop_reason = "model_refused"; journal("model_refused") | Accounting |
-| 5 | response: Stopped { transport_usage: received } | — | transport_usage = add_usage(transport_usage, received); stop_reason = "stopped_by_agent"; journal("turn_cancelled") | Accounting |
-| 6 | response: TransientError | — | — | Retry |
-| 7 | response: PermanentError | — | stop_reason = "no_result"; journal("agent_permanent_error") | Accounting |
-| 8 | response: NeedsPermission { permission_request: request } | — | permission_request = request | Policy |
-| 9 | failure(reason in [FailCode.ConnectionLost, FailCode.Timeout, FailCode.NoResult]) | — | stop_reason = text(reason); journal("turn_failed", reason: text(reason)) | Accounting |
+| Event | Condition | Actions | To |
+|---|---|---|---|
+| response: Finished { text, artifact, transport_usage: received } |  | transport_usage = add_usage(transport_usage, received); reply_text = text; reply_artifact = artifact | ReplyValidation |
+| response: Truncated { transport_usage: received } |  | transport_usage = add_usage(transport_usage, received) | Continuation |
+| response: TurnRequestLimit { transport_usage: received } |  | transport_usage = add_usage(transport_usage, received); stop_reason = "max_turn_requests"; journal("turn_requests_exhausted") | Accounting |
+| response: ModelRefusal { transport_usage: received } |  | transport_usage = add_usage(transport_usage, received); stop_reason = "model_refused"; journal("model_refused") | Accounting |
+| response: Stopped { transport_usage: received } |  | transport_usage = add_usage(transport_usage, received); stop_reason = "stopped_by_agent"; journal("turn_cancelled") | Accounting |
+| response: TransientError |  |  | Retry |
+| response: PermanentError |  | stop_reason = "no_result"; journal("agent_permanent_error") | Accounting |
+| response: NeedsPermission { permission_request: request } |  | permission_request = request | Policy |
+| failure(reason in [FailCode.ConnectionLost, FailCode.Timeout, FailCode.NoResult]) |  | stop_reason = text(reason); journal("turn_failed", reason: text(reason)) | Accounting |
 
 The appeal has no "On accept" (in the code `on_accept` is empty). A form fix goes not as a return within the same request but as a new turn "fix" by the rows of ReplyValidation, hence `Form returns: 0`. A failure code outside the list of row 9 is brought by the executor to `NoResult`, which is in the list.
 
 ### Retry — fork
-- Reads: retry_count, turn
 
-| № | Condition | Actions | To |
-|---|---|---|---|
-| 1 | retry_count < RETRIES and turn != "retry" | retry_count += 1; turn_before_retry = turn; turn = "retry"; journal("agent_transient_error", retry: text(retry_count)) | Budget |
-| 2 | retry_count < RETRIES and turn == "retry" | retry_count += 1; journal("agent_transient_error", retry: text(retry_count)) | Budget |
-| 3 | retry_count >= RETRIES | stop_reason = "no_result"; journal("agent_transient_error_exhausted", retries: text(RETRIES)) | Accounting |
-| 4 | else | machine_error("fork_no_match", fork: "Retry") | — |
+| Condition | Actions | To |
+|---|---|---|
+| retry_count < RETRIES and turn != "retry" | retry_count += 1; turn_before_retry = turn; turn = "retry"; journal("agent_transient_error", retry: text(retry_count)) | Budget |
+| retry_count < RETRIES and turn == "retry" | retry_count += 1; journal("agent_transient_error", retry: text(retry_count)) | Budget |
+| retry_count >= RETRIES | stop_reason = "no_result"; journal("agent_transient_error_exhausted", retries: text(RETRIES)) | Accounting |
+| else | machine_error("fork_no_match", fork: "Retry") |  |
 
 ### Continuation — fork
-- Reads: continuation_count
 
-| № | Condition | Actions | To |
-|---|---|---|---|
-| 1 | continuation_count < CONTINUATIONS | continuation_count += 1; turn = "continue"; journal("output_truncated_continue") | Budget |
-| 2 | continuation_count >= CONTINUATIONS | stop_reason = "max_tokens"; journal("output_truncated_again") | Accounting |
-| 3 | else | machine_error("fork_no_match", fork: "Continuation") | — |
+| Condition | Actions | To |
+|---|---|---|
+| continuation_count < CONTINUATIONS | continuation_count += 1; turn = "continue"; journal("output_truncated_continue") | Budget |
+| continuation_count >= CONTINUATIONS | stop_reason = "max_tokens"; journal("output_truncated_again") | Accounting |
+| else | machine_error("fork_no_match", fork: "Continuation") |  |
 
 ### ReplyValidation — fork
-- Reads: return_count, reply_text, reply_artifact, agent_request
 - On entry: let validation = reply_validation()
 
-| № | Condition | Actions | To |
-|---|---|---|---|
-| 1 | validation == ReplyCheck.Valid | — | Accounting |
-| 2 | validation == ReplyCheck.Empty | stop_reason = "no_result"; journal("agent_no_result") | Accounting |
-| 3 | validation == ReplyCheck.Violated and return_count < FORM_RETURNS | return_count += 1; turn = "fix"; journal("reply_form_violated") | Budget |
-| 4 | validation == ReplyCheck.Violated and return_count >= FORM_RETURNS | stop_reason = "form_not_fixed"; journal("reply_form_not_fixed") | Accounting |
-| 5 | else | machine_error("fork_no_match", fork: "ReplyValidation") | — |
+| Condition | Actions | To |
+|---|---|---|
+| validation == ReplyCheck.Valid |  | Accounting |
+| validation == ReplyCheck.Empty | stop_reason = "no_result"; journal("agent_no_result") | Accounting |
+| validation == ReplyCheck.Violated and return_count < FORM_RETURNS | return_count += 1; turn = "fix"; journal("reply_form_violated") | Budget |
+| validation == ReplyCheck.Violated and return_count >= FORM_RETURNS | stop_reason = "form_not_fixed"; journal("reply_form_not_fixed") | Accounting |
+| else | machine_error("fork_no_match", fork: "ReplyValidation") |  |
 
 ### Policy — fork
-- Reads: agent_request, permission_request
 - On entry:
   - let request = require(permission_request);
   - let decision = decision_by_policy(request.action, agent_request.kind)
 
-| № | Condition | Actions | To |
-|---|---|---|---|
-| 1 | decision == "allow" | permission_decision = "allow"; turn = "permission"; journal("permission_auto_allowed", action: text(request.action)) | Budget |
-| 2 | decision == "deny" | permission_decision = "deny"; turn = "permission"; journal("permission_auto_denied", action: text(request.action)) | Budget |
-| 3 | decision == "ask" | — | Permission |
-| 4 | else | machine_error("fork_no_match", fork: "Policy") | — |
+| Condition | Actions | To |
+|---|---|---|
+| decision == "allow" | permission_decision = "allow"; turn = "permission"; journal("permission_auto_allowed", action: text(request.action)) | Budget |
+| decision == "deny" | permission_decision = "deny"; turn = "permission"; journal("permission_auto_denied", action: text(request.action)) | Budget |
+| decision == "ask" |  | Permission |
+| else | machine_error("fork_no_match", fork: "Policy") |  |
 
 ### Permission — appeal
 - Party: gatekeeper
 - Request:
 
-| request_field | expression | reads |
-|---|---|---|
-| agent_request | — | party |
-| permission_request | require(permission_request) | party |
+| request_field | expression |
+|---|---|
+| agent_request |  |
+| permission_request | require(permission_request) |
 
-| № | Event | Condition | Actions | To |
-|---|---|---|---|---|
-| 1 | signal(allow) | — | permission_decision = "allow"; turn = "permission"; journal("permission_human_allowed", action: text(require(permission_request).action)) | Budget |
-| 2 | signal(deny) | — | permission_decision = "deny"; turn = "permission"; journal("permission_human_denied", action: text(require(permission_request).action)) | Budget |
+| Event | Condition | Actions | To |
+|---|---|---|---|
+| signal(allow) |  | permission_decision = "allow"; turn = "permission"; journal("permission_human_allowed", action: text(require(permission_request).action)) | Budget |
+| signal(deny) |  | permission_decision = "deny"; turn = "permission"; journal("permission_human_denied", action: text(require(permission_request).action)) | Budget |
 
 The request field `permission_request` is named as the data but with another expression: when building the request the code applies `require`, the rows read the data and take `require` themselves.
 
 ### Budget — fork
-- Reads: agent_request, transport_usage, turn_count
 - On entry:
   - let tokens_exhausted = token_limit_reached(agent_request, transport_usage);
   - let cost_exhausted = cost_limit_reached(agent_request, transport_usage);
   - let turns_exhausted = turn_limit_reached(agent_request, turn_count)
 
-| № | Condition | Actions | To |
-|---|---|---|---|
-| 1 | tokens_exhausted | stop_reason = "max_tokens"; journal("token_limit", spent: text(tokens_spent(transport_usage))) | Accounting |
-| 2 | not tokens_exhausted and cost_exhausted | stop_reason = "cost_limit"; journal("cost_limit", spent: text(cost_spent(transport_usage))) | Accounting |
-| 3 | not tokens_exhausted and not cost_exhausted and turns_exhausted | stop_reason = "max_turn_requests"; journal("turn_limit", sent: text(turn_count)) | Accounting |
-| 4 | not tokens_exhausted and not cost_exhausted and not turns_exhausted | turn_count += 1 | AgentTurn |
-| 5 | else | machine_error("fork_no_match", fork: "Budget") | — |
+| Condition | Actions | To |
+|---|---|---|
+| tokens_exhausted | stop_reason = "max_tokens"; journal("token_limit", spent: text(tokens_spent(transport_usage))) | Accounting |
+| not tokens_exhausted and cost_exhausted | stop_reason = "cost_limit"; journal("cost_limit", spent: text(cost_spent(transport_usage))) | Accounting |
+| not tokens_exhausted and not cost_exhausted and turns_exhausted | stop_reason = "max_turn_requests"; journal("turn_limit", sent: text(turn_count)) | Accounting |
+| not tokens_exhausted and not cost_exhausted and not turns_exhausted | turn_count += 1 | AgentTurn |
+| else | machine_error("fork_no_match", fork: "Budget") |  |
 
 ### Accounting — operation
-- Reads: agent_request, stop_reason, transport_usage, started
 - On entry:
   - let now = event.at;
   - let collected = collect_usage(agent_request, stop_reason, transport_usage, started, now)
 
-| № | Event | Condition | Actions | To |
-|---|---|---|---|---|
-| 1 | immediate | — | usage = collected; journal(usage_event(collected)) | StepOutcome |
+| Actions | To |
+|---|---|
+| usage = collected; journal(usage_event(collected)) | StepOutcome |
 
 ### StepOutcome — fork
-- Reads: stop_reason
 
-| № | Condition | Actions | To |
-|---|---|---|---|
-| 1 | stop_reason == "" | — | End |
-| 2 | stop_reason != "" | — | Halted |
-| 3 | else | machine_error("fork_no_match", fork: "StepOutcome") | — |
+| Condition | Actions | To |
+|---|---|---|
+| stop_reason == "" |  | End |
+| stop_reason != "" |  | Halted |
+| else | machine_error("fork_no_match", fork: "StepOutcome") |  |
 
 The Pause state is brought by the "Pause" fragment (section "Includes"); it is not declared here, its rows PAUSE 1-4 and the common events COMMON 1-6 are in section 9 of the specification.
 
 ### End — end
-- Reads: transport_usage, reply_text, reply_artifact, usage
 
 ### Halted — end
-- Reads: usage, agent_request, stop_reason, transport_usage, started
 - On entry:
   - let now = event.at;
   - close_agent_turn();
@@ -377,7 +359,6 @@ The Pause state is brought by the "Pause" fragment (section "Includes"); it is n
 - Except: stop_reason in [""]
 
 ### Errored — end
-- Reads: all_data
 - On entry:
   - let now = event.at;
   - close_agent_turn();
@@ -387,33 +368,33 @@ The Pause state is brought by the "Pause" fragment (section "Includes"); it is n
 
 Errored is entered from the `else` rows of the forks (`machine_error("fork_no_match", …)`), from COMMON 6 (`machine_error("cancel_parse_no_match")`) and by a machine error of the executor; on all paths `transition_note` is defined. The usage in Halted and Errored is written only if Accounting was not passed (entry by a common event or a defect): then `usage` is none.
 
-## Ends
+## Output
 
 - Result: AgentReply
 
-| end | № | when | response |
-|---|---|---|---|
-| End | 1 | true | Response(AgentReply { text: reply_text, artifact: reply_artifact, usage: require(usage), request_started: if has(transport_usage) then { require(transport_usage).request_started } else { none } }) |
-| Errored | 1 | true | Refusal(FailCode.NoResult, "agent step defect: " + transition_note.code) |
-| Halted | 1 | stop_reason == "no_result" | Refusal(FailCode.NoResult, stop_reason) |
-| Halted | 2 | stop_reason == "model_refused" | Refusal(FailCode.ModelRefused, stop_reason) |
-| Halted | 3 | stop_reason == "connection_lost" | Refusal(FailCode.ConnectionLost, stop_reason) |
-| Halted | 4 | stop_reason == "form_not_fixed" | Refusal(FailCode.FormNotFixed, stop_reason) |
-| Halted | 5 | stop_reason == "timeout" | Refusal(FailCode.Timeout, stop_reason) |
-| Halted | 6 | stop_reason == "max_tokens" | Refusal(FailCode.MaxTokens, stop_reason) |
-| Halted | 7 | stop_reason == "cost_limit" | Refusal(FailCode.MaxTokens, stop_reason) |
-| Halted | 8 | stop_reason == "max_turn_requests" | Refusal(FailCode.MaxTurnRequests, stop_reason) |
-| Halted | 9 | stop_reason == "stopped_by_agent" | Refusal(FailCode.Cancelled, stop_reason) |
-| Halted | 10 | stop_reason == "pause_halt" | Refusal(FailCode.StoppedByHuman, stop_reason) |
-| Halted | 11 | stop_reason == "cancel_request" | Refusal(FailCode.Cancelled, stop_reason) |
+| end | when | response |
+|---|---|---|
+| End | true | Response(AgentReply { text: reply_text, artifact: reply_artifact, usage: require(usage), request_started: if has(transport_usage) then { require(transport_usage).request_started } else { none } }) |
+| Errored | true | Refusal(FailCode.NoResult, "agent step defect: " + transition_note.code) |
+| Halted | stop_reason == "no_result" | Refusal(FailCode.NoResult, stop_reason) |
+| Halted | stop_reason == "model_refused" | Refusal(FailCode.ModelRefused, stop_reason) |
+| Halted | stop_reason == "connection_lost" | Refusal(FailCode.ConnectionLost, stop_reason) |
+| Halted | stop_reason == "form_not_fixed" | Refusal(FailCode.FormNotFixed, stop_reason) |
+| Halted | stop_reason == "timeout" | Refusal(FailCode.Timeout, stop_reason) |
+| Halted | stop_reason == "max_tokens" | Refusal(FailCode.MaxTokens, stop_reason) |
+| Halted | stop_reason == "cost_limit" | Refusal(FailCode.MaxTokens, stop_reason) |
+| Halted | stop_reason == "max_turn_requests" | Refusal(FailCode.MaxTurnRequests, stop_reason) |
+| Halted | stop_reason == "stopped_by_agent" | Refusal(FailCode.Cancelled, stop_reason) |
+| Halted | stop_reason == "pause_halt" | Refusal(FailCode.StoppedByHuman, stop_reason) |
+| Halted | stop_reason == "cancel_request" | Refusal(FailCode.Cancelled, stop_reason) |
 
 The set of `stop_reason` has 12 values; Halted covers 11, the twelfth (`""`) is taken off by the `Except` line. The values `pause_halt` and `cancel_request` are required by the "Pause" fragment; both rows exist (No. 10 and No. 11). The cost limit has no code of its own (`cost_limit` leads to `MaxTokens`, decision 7 of the source).
 
 ## External functions
 
 ```
-external fn reply_validation() volatile -> ReplyCheck
-external fn close_agent_turn() acting
+reply_validation() volatile -> ReplyCheck
+close_agent_turn() acting
 ```
 
 `event.at` is the stamp of the event, milliseconds of the epoch. `reply_validation` is measured by the executor before the ReplyValidation fork: the form of the reply is valid, violated, or the reply is empty; the form remarks stay with the executor and do not enter the data. `close_agent_turn` tells the transport about the cancellation of the open turn, including one held until the permission decision; it runs as the last stage of fixation and may be repeated without harm.

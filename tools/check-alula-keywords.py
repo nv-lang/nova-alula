@@ -16,8 +16,9 @@
      английское структурное слово (есть в колонке `en`, нет в `ru`) в русском образце — ошибка;
   3. английский образец: те же структурные слова по колонке `en` (`Initial state:` вместо `Начальное состояние:`);
      русское структурное слово (есть в колонке `ru`, нет в `en`) в нём — ошибка; строка шапки `- language: en` обязательна
-     (в русском образце допустима `- language: ru` или её отсутствие, иной язык — ошибка); шов 2.26 (задача 195): образец с
-     `- format: 2.25` читается и со словами, которые 2.26 убрала (`src/machine_text/keywords_225.tsv`), пока поток 4 не перенесёт образцы;
+     (в русском образце допустима `- language: ru` или её отсутствие, иной язык — ошибка); образцы — формата 2.26 (задача 239
+     перенесла их скриптом `tools/migrate-alula-226.py`, слов 2.25 скрипт больше не читает); внешняя функция в разделе
+     `## Внешние функции` — без слов `внешняя функция` (AL-142), подключение — подзаголовком `### Имя` (AL-140);
   4. знаки операторов (спецификация, 1а, AL-42): в блоках кода, строках таблиц и строках-ключах нет знаков `≥`, `≤`, `≠`, `→`, `⇒`, `∈`, `‥`
      (только ASCII: `>=`, `<=`, `!=`, `->`, `=>`, `in`, `..`); в прозе знак `→` допустим; прежняя запись (до 2.18, AL-67…AL-69) — ошибка:
      в заголовке функции `функция имя(…) -> Тип` (`fn`) первый знак `=` после типа результата (если раньше нет `{`
@@ -167,8 +168,6 @@ TABLE_226_ADDED = (
 TABLE_226_REMOVED = (
     ('column', '№'), ('column', 'пишет'), ('key', 'Читает'), ('event', 'сразу'), ('decl', 'внешняя'), ('section', 'Концы'),
     ('header', 'Функции'), ('header', 'Фрагмент'))
-# шов 2.26 (задача 195): слова 2.25, которые 2.26 убрала, — ими читается образец с `- format: 2.25`, пока поток 4 не перенесёт образцы
-SEAM_225 = 'src/machine_text/keywords_225.tsv'
 FRAGMENT_STATE = 'Pause'  # JSON-имя состояния, которое приносит подключённый фрагмент «Пауза» (раздел 9)
 # данные контракта и фрагмента «Пауза» — читаемые имена таблицы слов: их JSON-имена (слово `en`) занимают пространство данных (AL-58)
 CONTRACT_DATA = ('предыдущее', 'запрос_вызова', 'открытые_запросы', 'остановка', 'к_отправке', 'слова_человека')
@@ -285,6 +284,8 @@ def structural(text, lang='ru'):
 UNICODE_OPS = '≥≤≠→⇒∈‥'
 DEF_HEAD = re.compile(r'^\s*(?:(?:внешняя|external)\s+)?(?:функция|fn|определение|define|definition)\s+[^\s(]+\s*\(')
 EXTERNAL_HEAD = re.compile(r'^\s*(?:внешняя|external)\s+')  # объявление внешней функции без тела (AL-123)
+EXTERNAL_226 = re.compile(r'^\s*(?:(?:внешняя|external)\s+(?:функция|fn)\s+)?([^\s(]+)\s*\(')  # с 2.26 — без слов `внешняя функция` (AL-142)
+EXTERNAL_SECTIONS = ('Внешние функции', 'External functions')
 EXTERNAL_CLASS = re.compile(r'\s*(?:изменчивая|действующая|volatile|acting)(?!\w)')  # необязательное слово класса после списка параметров (AL-123)  # начало заголовка функции (AL-83); прежнее слово — чтобы знаки заголовка читались верно, ошибку даёт `check_v221`
 OLD_DEF_HEAD = re.compile(r'^\s*(?:определение|define|definition)\s+[^\s(]+\s*\(')  # прежнее слово объявления (до 2.21)
 OLD_INCLUDE = re.compile(r'^\s*(?:определения|definitions):')  # прежняя строка подключения (до 2.21; с 2.21 — файл функций)
@@ -301,6 +302,7 @@ class DefHeader:
 
     def __init__(self):
         self.empty_block = False
+        self.ext_section = False  # строки блока кода раздела `## Внешние функции`: объявления без слов `внешняя функция` (2.26, AL-142)
         self.reset()
 
     def reset(self):
@@ -322,10 +324,10 @@ class DefHeader:
                 self.empty_block = rest.startswith('}')
                 self.reset()
             return None, False, False
-        m = DEF_HEAD.match(line)
+        m = DEF_HEAD.match(line) or (EXTERNAL_226.match(line) if self.ext_section and not self.depth and self.seek is None else None)
         if m:
             self.depth, self.seek, pos = 1, None, m.end()
-            self.external = bool(EXTERNAL_HEAD.match(line))
+            self.external = bool(EXTERNAL_HEAD.match(line)) or self.ext_section
         if self.depth:
             i = pos
             while i < len(line) and self.depth:
@@ -703,6 +705,8 @@ def check_operators(text, name):
             in_code = not in_code
             header.reset()
             continue
+        if not in_code and line.startswith('## '):
+            header.ext_section = strip_comment(line[3:]).strip() in EXTERNAL_SECTIONS
         if not (in_code or line.startswith('|') or line.lstrip().startswith('- ')):
             continue
         if in_code:
@@ -991,15 +995,17 @@ def check_v221(text, name, lang):
             in_code = not in_code
             header.reset()
             continue
+        if not in_code and line.startswith('## '):
+            header.ext_section = strip_comment(line[3:]).strip() in EXTERNAL_SECTIONS
+        m = OLD_INCLUDE.match(strip_comment(line))  # в блоке кода (до 2.26) и строкой раздела `## Подключения` (2.26: подключения без блока кода)
+        if m:
+            errs.append('%s:%d: %s' % (name, n, V221_MSG['INCLUDE'] % (inc, line.split(':')[0].strip())))
         if not in_code:
             continue
         line = strip_comment(line)  # комментарий `//` (AL-90)
         m = OLD_DEF_HEAD.match(line)
         if m:
             errs.append('%s:%d: %s' % (name, n, V221_MSG['DEF'] % (word, line.split()[0])))
-        m = OLD_INCLUDE.match(line)
-        if m:
-            errs.append('%s:%d: %s' % (name, n, V221_MSG['INCLUDE'] % (inc, line.split(':')[0].strip())))
         if header.line(line)[2]:
             errs.append('%s:%d: %s' % (name, n, V221_MSG['ARROW_BLOCK']))
         if header.empty_block:
@@ -1186,7 +1192,7 @@ def old_type_words(text, lang='en'):
                 for body in re.findall(r'\{([^{}]*)\}', line):
                     for t in field_types(body):
                         scan(n, t)
-            m = DEF_NAME.match(line) or re.match(r'^\s*(?:внешняя|external)\s+(?:функция|fn)\s+([^\s(]+)\s*\(', line)  # и объявление внешней функции (AL-123)
+            m = DEF_NAME.match(line) or re.match(r'^\s*(?:внешняя|external)\s+(?:функция|fn)\s+([^\s(]+)\s*\(', line) or (EXTERNAL_226.match(line) if sec in ('Внешние', 'External') else None)  # и объявление внешней функции (AL-123; 2.26 — без слов, AL-142)
             if m:
                 open_ = line.index('(', m.end() - 1)
                 close = block_close(line, open_)
@@ -1467,7 +1473,7 @@ def declarations(text, lang, readable=()):
         if in_code:
             line = strip_comment(line)  # комментарий `//` (AL-90)
             if sec == sec_prim:  # объявление внешней функции (AL-123): имя выходит в реестр хозяина, как прежняя строка «Примитивов»
-                dm = re.match(r'^\s*(?:внешняя|external)\s+(?:функция|fn)\s+([^\s(]+)\s*\(', line)
+                dm = EXTERNAL_226.match(line)  # с 2.26 — без слов `внешняя функция` (AL-142)
                 if dm:
                     out.append((n, 'примитива', False, dm.group(1), (dm.group(1),), None))
             if sec == sec_types and line.strip():
@@ -1653,7 +1659,7 @@ def check_json_names(text, words, name, lang, gloss, contract=None):
             for w in mixed_words(part):
                 errs.append('%s:%d: в слове `%s` имени `%s` смешаны кириллица и латиница (AL-59)' % (name, n, w, key))
     spaces = {}
-    if re.search(r'^(?:Пауза|Pause)\(', text, re.M):  # состояния фрагмента входят в пространство состояний машины (AL-58)
+    if re.search(r'^(?:Пауза|Pause)\(|^### (?:Пауза|Pause)\s*$', text, re.M):  # состояния библиотеки «Пауза» входят в пространство состояний машины (AL-58; 2.26 — подзаголовок `### Пауза`, AL-140)
         spaces[('состояния',)] = {FRAGMENT_STATE: 'состояния фрагмента «Пауза»'}
     spaces[('данного',)] = {js: 'данного контракта или фрагмента' for js in (contract or ())}
     for n, where, pascal, nm, path, js in names:
@@ -1667,23 +1673,8 @@ def check_json_names(text, words, name, lang, gloss, contract=None):
     return errs
 
 
-def seam_225_words(lang):
-    """Слова 2.25, которые убрала 2.26 (шов, задача 195): вид -> множество слов колонки языка."""
-    out = {}
-    path = os.path.join(ROOT, SEAM_225)
-    if not os.path.isfile(path):
-        return out
-    for line in read(SEAM_225).split('\n'):
-        cells = line.split('\t')
-        if len(cells) != 3 or line.startswith('#') or cells[0] == 'kind':
-            continue
-        out.setdefault(cells[0], set()).add(cells[1] if lang == 'ru' else cells[2])
-    return out
-
-
 def check_sample(text, words, name, lang, gloss):
     contract = [en for ru, en in words['readable_pairs'] if ru in CONTRACT_DATA] if 'readable_pairs' in words else []
-    seam = seam_225_words(lang) if re.search(r'^- format: 2\.25\s*$', text, re.M) else {}
     errs = check_operators(text, name) + check_v219(text, name, lang) + check_v220(text, name, lang) + check_v221(text, name, lang) + check_v222(text, name, lang) + (check_calls(text, words, name, lang, gloss) if gloss is not None else []) + check_removed(text, name) + check_json_names(text, words, name, lang, gloss, contract)
     own = {k: v[0 if lang == 'ru' else 1] for k, v in words.items() if k in KINDS}
     other = {k: v[1 if lang == 'ru' else 0] for k, v in words.items() if k in KINDS}
@@ -1693,7 +1684,7 @@ def check_sample(text, words, name, lang, gloss):
     if lang == 'ru' and declared and declared.group(1) != 'ru':
         errs.append('%s:1: в русском образце объявлен `- language: %s`' % (name, declared.group(1)))
     for n, kind, word in structural(text, lang):
-        if word in own[kind] or word in seam.get(kind, ()):
+        if word in own[kind]:
             continue
         if word in other[kind]:
             errs.append('%s:%d: %s слово `%s` (вид `%s`) в %s образце' % (
@@ -1709,11 +1700,11 @@ MUTATIONS = {
         ('заголовок раздела', '\n## Состояния\n', '\n## Статусы\n'),
         ('английский раздел', '\n## Данные\n', '\n## Data\n'),
         ('строка-ключ', '- Срок тишины:', '- Срок тишыны:'),
-        ('столбец таблицы состояний', '| № | Событие | Условие | Действия | Куда |', '| № | Событие | Условия | Действия | Куда |'),
+        ('столбец таблицы состояний', '| Событие | Условие | Действия | Куда |', '| Событие | Условия | Действия | Куда |'),
         ('столбец таблицы имён', '| имя | JSON-имя |', '| имя | JSON имя |'),
         ('вид состояния', '### СТАРТ — операция\n', '### СТАРТ — операция2\n'),
-        ('английская строка-ключ чтений', '- Читает: число_повторов, ход', '- Reads: число_повторов, ход'),
-        ('знак оператора не ASCII', '| 3 | число_повторов >= ЧИСЛО_ПОВТОРОВ |', '| 3 | число_повторов ≥ ЧИСЛО_ПОВТОРОВ |'),
+        ('английская строка-ключ', '- Сторона: агент', '- Party: агент'),
+        ('знак оператора не ASCII', '| число_повторов >= ЧИСЛО_ПОВТОРОВ |', '| число_повторов ≥ ЧИСЛО_ПОВТОРОВ |'),
         ('тело функции через `=` (до 2.18)', 'функция пауза_повтора(п число>=0) -> число =>', 'функция пауза_повтора(п число>=0) -> число ='),
         ('ветка `выбор` через `->` (до 2.18)', 'иначе => ложь\n', 'иначе -> ложь\n'),
         ('лямбда через `->` (до 2.18)', '(н, _) => н * 2', '(н, _) -> н * 2'),
@@ -1725,7 +1716,7 @@ MUTATIONS = {
         ('макросы `фильтр` и `количество` функцией в ячейке', '| число_ходов += 1 | ХОД_АГЕНТА |', '| число_ходов += количество(фильтр([1], x => x > 0), x => истина) | ХОД_АГЕНТА |'),
         ('образец ответа в круглых скобках (до 2.19)', 'ответ: Закончен { текст, артефакт, расход: полученный }', 'ответ: Закончен(текст, артефакт, расход: полученный)'),
         ('образец ответа с одним полем в круглых скобках', 'ответ: Обрезан { расход: полученный }', 'ответ: Обрезан(расход: полученный)'),
-        ('сигнал с полями в круглых скобках (до 2.19)', '| 1 | сигнал(разрешить) |', '| 1 | сигнал(разрешить(решение: р)) |'),
+        ('сигнал с полями в круглых скобках (до 2.19)', '| сигнал(разрешить) |', '| сигнал(разрешить(решение: р)) |'),
         ('`в {…}` в ячейке события (до 2.19)', 'сбой(причина в [КодСбоя.СоединениеОборвалось, КодСбоя.НетОтветаВСрок, КодСбоя.НетРезультата])', 'сбой(причина в {КодСбоя.СоединениеОборвалось, КодСбоя.НетОтветаВСрок, КодСбоя.НетРезультата})'),
         ('`в {…}` в `Кроме` (до 2.19)', '- Кроме: остановка в [""]', '- Кроме: остановка в {""}'),
         ('объявление сигнала с полями в круглых скобках (до 2.20)', 'продолжить { слово_человека строка, автор строка, источник строка }', 'продолжить(слово_человека строка, автор строка, источник строка)'),
@@ -1787,15 +1778,15 @@ MUTATIONS = {
         ('данное с JSON-именем данного фрагмента', ROW_RU, ROW_RU + '| начато | open_requests |\n'),
         ('данное с JSON-именем данного контракта', ROW_RU, ROW_RU + '| начато | stop_reason |\n'),
         ('смешанное слово (кириллица и латиница)', '| начато | ?число |', '| начатоAt | ?число |'),
-        ('убранное событие слово', '| 1 | сигнал(разрешить) |', '| 1 | слово(разрешить) |'),
+        ('убранное событие слово', '| сигнал(разрешить) |', '| слово(разрешить) |'),
         ('слово объявления `определение` (до 2.21)', 'функция пауза_повтора(п число>=0) -> число =>', 'определение пауза_повтора(п число>=0) -> число =>'),
         ('раздел `## Определения` (до 2.21)', '\n## Функции\n', '\n## Определения\n'),
-        ('строка подключения `определения:` (до 2.21)', '```\nПауза(сигнал_остановки', '```\nопределения: арифметика_цикла версия 1 хеш 62231d0d7c15\nПауза(сигнал_остановки'),
+        ('строка подключения `определения:` (до 2.21)', '### Пауза\n', 'определения: арифметика_цикла версия 1 хеш 62231d0d7c15\n\n### Пауза\n'),
         ('тело-блок через `=> {` (до 2.21)', '-> число {\n  пусть добавка', '-> число => {\n  пусть добавка'),
         ('`=>` и `{` тела на следующей строке', '-> число {\n  пусть добавка', '-> число =>\n  {\n  пусть добавка'),
         ('литерал словаря в фигурных скобках (до 2.21)', '| число_ходов += 1 | ХОД_АГЕНТА |', '| ход = {ВидДействия.Чтение: "first"}[ВидДействия.Чтение] ?? "first" | ХОД_АГЕНТА |'),
         ('литерал словаря в фигурных скобках в ветке `то`', '| число_ходов += 1 | ХОД_АГЕНТА |', '| ход = если истина то { {"a": "first"}["a"] ?? "first" } иначе { "first" } | ХОД_АГЕНТА |'),
-        ('пустой словарь `{}` в «начальном»', '| попытка_агента | число>=0 | 0 |', '| попытка_агента | число>=0 | {} |'),
+        ('пустой словарь `{}` в «начальном»', '| число_повторов | число>=0 | 0 |', '| число_повторов | число>=0 | {} |'),
         ('включающий диапазон с пробелом `.. =`', '(1..п).свёртка(', '(1.. =п).свёртка('),
         ('включающий диапазон `..==`', '(1..п).свёртка(', '(1..==п).свёртка('),
         ('пустое тело-блок `{}`', 'функция пауза_повтора(п число>=0) -> число =>', 'функция ноль() -> число {}\n\nфункция пауза_повтора(п число>=0) -> число =>'),
@@ -1848,7 +1839,7 @@ MUTATIONS = {
         ('тип результата `дробное` функции', 'функция израсходовано_стоимости(р ?РасходТранспорта) -> вещественное =>', 'функция израсходовано_стоимости(р ?РасходТранспорта) -> дробное =>'),
         ('тип параметра `текст` функции', 'ход_запроса строка,', 'ход_запроса текст,'),
         ('тип поля сигнала `текст`', 'продолжить { слово_человека строка,', 'продолжить { слово_человека текст,'),
-        ('тип `текст` в столбце «результат» примитива', 'внешняя функция reply_validation() изменчивая -> ПроверкаОтвета', 'внешняя функция reply_validation() изменчивая -> текст'),
+        ('тип `текст` в столбце «результат» примитива', 'reply_validation() изменчивая -> ПроверкаОтвета', 'reply_validation() изменчивая -> текст'),
         ('вызов `текст(x)` (до 2.22)', 'остановка = строка(причина)', 'остановка = текст(причина)'),
         ('вызов `дробное(x)` (до 2.22)', '| число_ходов += 1 | ХОД_АГЕНТА |', '| число_ходов += число(дробное(1)) | ХОД_АГЕНТА |'),
         ('цикл `для каждого` (до 2.22)', '| число_ходов += 1 | ХОД_АГЕНТА |', '| для каждого x из [1] { число_ходов += x } | ХОД_АГЕНТА |'),
@@ -1861,9 +1852,9 @@ MUTATIONS = {
         ('русский раздел', '\n## Data\n', '\n## Данные\n'),
         ('строка-ключ', '- Idle term:', '- Idle terms:'),
         ('русская строка-ключ', '- Party: agent', '- Сторона: agent'),
-        ('столбец таблицы состояний', '| № | Event | Condition | Actions | To |', '| № | Event | Conditions | Actions | To |'),
+        ('столбец таблицы состояний', '| Event | Condition | Actions | To |', '| Event | Conditions | Actions | To |'),
         ('вид состояния', '### Start — operation', '### Start — operation2'),
-        ('русская строка-ключ чтений', '- Reads: retry_count, turn', '- Читает: retry_count, turn'),
+        ('русская строка-ключ', '- Party: agent', '- Сторона: agent'),
         ('знак оператора не ASCII', '(1..n).fold(RETRY_PAUSE, (m, _) => m * 2)', '(1..n).fold(RETRY_PAUSE, (m, _) ⇒ m * 2)'),
         ('тело функции через `=` (до 2.18)', 'fn retry_pause(n int>=0) -> int =>', 'fn retry_pause(n int>=0) -> int ='),
         ('ветка `match` через `->` (до 2.18)', 'ActionKind.SwitchMode => true\n', 'ActionKind.SwitchMode -> true\n'),
@@ -1874,7 +1865,7 @@ MUTATIONS = {
         ('макрос `fold` функцией (до 2.19)', '(1..n).fold(RETRY_PAUSE, (m, _) => m * 2)', 'fold(1..n, RETRY_PAUSE, (m, _) => m * 2)'),
         ('макросы `filter` и `count` функцией в ячейке', '| turn_count += 1 | AgentTurn |', '| turn_count += count(filter([1], x => x > 0), x => true) | AgentTurn |'),
         ('образец ответа в круглых скобках (до 2.19)', 'response: Finished { text, artifact, transport_usage: received }', 'response: Finished(text, artifact, transport_usage: received)'),
-        ('сигнал с полями в круглых скобках (до 2.19)', '| 1 | signal(allow) |', '| 1 | signal(allow(decision: d)) |'),
+        ('сигнал с полями в круглых скобках (до 2.19)', '| signal(allow) |', '| signal(allow(decision: d)) |'),
         ('`in {…}` в ячейке события (до 2.19)', 'failure(reason in [FailCode.ConnectionLost, FailCode.Timeout, FailCode.NoResult])', 'failure(reason in {FailCode.ConnectionLost, FailCode.Timeout, FailCode.NoResult})'),
         ('`in {…}` в `Except` (до 2.19)', '- Except: stop_reason in [""]', '- Except: stop_reason in {""}'),
         ('объявление сигнала с полями в круглых скобках (до 2.20)', 'continue { human_word str, author str, source str }', 'continue(human_word str, author str, source str)'),
@@ -1910,13 +1901,13 @@ MUTATIONS = {
         ('`for each` без блока', '| turn_count += 1 | AgentTurn |', '| for x in [1] turn_count += x | AgentTurn |'),
         ('`if` с блоком без `then`', '| turn_count += 1 | AgentTurn |', '| if true { turn_count += 1 } | AgentTurn |'),
         ('пустая ветка `else { }`', '| turn_count += 1 | AgentTurn |', '| if true then { turn_count += 1 } else { } | AgentTurn |'),
-        ('убранное событие word', '| 1 | signal(allow) |', '| 1 | word(allow) |'),
+        ('убранное событие word', '| signal(allow) |', '| word(allow) |'),
         ('слово объявления `define` (до 2.21)', 'fn retry_pause(n int>=0) -> int =>', 'define retry_pause(n int>=0) -> int =>'),
         ('раздел `## Definitions` (до 2.21)', '\n## Functions\n', '\n## Definitions\n'),
-        ('строка подключения `definitions:` (до 2.21)', '```\nPause(halt_signal', '```\ndefinitions: cycle_arithmetic version 1 hash d61cb3c687a1\nPause(halt_signal'),
+        ('строка подключения `definitions:` (до 2.21)', '### Pause\n', 'definitions: cycle_arithmetic version 1 hash d61cb3c687a1\n\n### Pause\n'),
         ('тело-блок через `=> {` (до 2.21)', '-> int {\n  let extra', '-> int => {\n  let extra'),
         ('литерал словаря в фигурных скобках (до 2.21)', '| turn_count += 1 | AgentTurn |', '| turn = {ActionKind.Read: "first"}[ActionKind.Read] ?? "first" | AgentTurn |'),
-        ('пустой словарь `{}` в `initial`', '| agent_attempt | int>=0 | 0 |', '| agent_attempt | int>=0 | {} |'),
+        ('пустой словарь `{}` в `initial`', '| retry_count | int>=0 | 0 |', '| retry_count | int>=0 | {} |'),
         ('включающий диапазон с пробелом `.. =`', '(1..n).fold(', '(1.. =n).fold('),
         ('включающий диапазон `..==`', '(1..n).fold(', '(1..==n).fold('),
         ('пустое тело-блок `{}`', 'fn retry_pause(n int>=0) -> int =>', 'fn zero() -> int {}\n\nfn retry_pause(n int>=0) -> int =>'),
@@ -1948,7 +1939,7 @@ MUTATIONS = {
         ('тип результата `float` функции', 'fn cost_spent(tu ?TransportUsage) -> f64 =>', 'fn cost_spent(tu ?TransportUsage) -> float =>'),
         ('тип параметра `text` функции', 'request_turn str,', 'request_turn text,'),
         ('тип поля сигнала `text`', 'continue { human_word str,', 'continue { human_word text,'),
-        ('тип `text` в столбце `result` примитива', 'external fn reply_validation() volatile -> ReplyCheck', 'external fn reply_validation() volatile -> text'),
+        ('тип `text` в столбце `result` примитива', 'reply_validation() volatile -> ReplyCheck', 'reply_validation() volatile -> text'),
         ('тип `float` в виде стороны', 'agent(result TurnResult)', 'agent(result float)'),
         ('начальное состояние', 'Initial state: Start', 'Initial stat: Start'),
         ('ключ шапки', '- machine_version:', '- machine_ver:'),
@@ -1962,7 +1953,7 @@ MUTATIONS = {
 }
 CLEAN = {  # порча, которая ошибки давать не должна
     'ru': [
-        ('примитив `новый_ид` в объявлениях внешних функций (AL-107, AL-116: класс `изменчивая`)', 'внешняя функция reply_validation() изменчивая -> ПроверкаОтвета', 'внешняя функция reply_validation() изменчивая -> ПроверкаОтвета\nвнешняя функция новый_ид() изменчивая -> ид'),
+        ('примитив `новый_ид` в объявлениях внешних функций (AL-107, AL-116: класс `изменчивая`)', 'reply_validation() изменчивая -> ПроверкаОтвета', 'reply_validation() изменчивая -> ПроверкаОтвета\nновый_ид() изменчивая -> ид'),
         ('одно JSON-имя в разных пространствах (поле записи и данное)', ROW_RU, ROW_RU + '| Токены.вход | retry_count |\n'),
         ('смешение письменностей через `_`', '| начато | ?число |', '| начато_at | ?число |'),
         ('однострочное тело-блок с `пусть`, `>=` и `==`', '-> число =>\n  (1..п).свёртка(ПАУЗА_ПОВТОРА, (н, _) => н * 2)', '-> число { пусть к = п >= 0; если к == истина то { (1..п).свёртка(ПАУЗА_ПОВТОРА, (н, _) => н * 2) } иначе { 0 } }'),
@@ -2031,7 +2022,7 @@ CLEAN = {  # порча, которая ошибки давать не долж�
          'ВидДействия.СменаРежима => {\n      пусть x = истина\n      x\n    }\n'),
     ],
     'en': [
-        ('примитив `new_id` в объявлениях внешних функций (AL-107, AL-116: класс `volatile`)', 'external fn reply_validation() volatile -> ReplyCheck', 'external fn reply_validation() volatile -> ReplyCheck\nexternal fn new_id() volatile -> id'),
+        ('примитив `new_id` в объявлениях внешних функций (AL-107, AL-116: класс `volatile`)', 'reply_validation() volatile -> ReplyCheck', 'reply_validation() volatile -> ReplyCheck\nnew_id() volatile -> id'),
         ('функция с именем `new_id` (AL-107)', 'fn retry_pause(n int>=0) -> int =>', 'fn new_id(a int) -> int =>\n  a\n\nfn retry_pause(n int>=0) -> int =>'),
         ('однострочное тело-блок с `let`, `>=` и `==`', '-> int =>\n  (1..n).fold(RETRY_PAUSE, (m, _) => m * 2)', '-> int { let k = n >= 0; if k == true then { (1..n).fold(RETRY_PAUSE, (m, _) => m * 2) } else { 0 } }'),
         ('включающий диапазон `..=`', '(1..n).fold(', '(1..=n).fold('),

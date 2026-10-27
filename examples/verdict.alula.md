@@ -2,7 +2,7 @@
 
 - machine: Verdict
 - machine_version: 1
-- format: 2.25
+- format: 2.26
 - language: en
 
 An enumeration with fields (spec 2, AL-99, AL-102): the answer of the judge is a `Verdict`, one of three forms, two of them with fields. The event `response: Form { field: name }` binds the fields of the
@@ -19,11 +19,10 @@ type Verdict enum
 
 ## Data
 
-| name | type | initial | non_decreasing | writes |
-|---|---|---|---|---|
-| total | int>=0 | 0 | — | rows |
-| note | str | "" | — | rows |
-| judge_attempt | int>=0 | 0 | yes | mechanics |
+| name | type | initial | non_decreasing |
+|---|---|---|---|
+| total | int>=0 | 0 | — |
+| note | str | "" | — |
 
 ## Parties
 
@@ -40,31 +39,29 @@ Initial state: Judge
 - Idle term: 5000
 - Request:
 
-| request_field | expression | reads |
-|---|---|---|
-| prompt | "the work" | party |
+| request_field | expression |
+|---|---|
+| prompt | "the work" |
 
-| № | Event | Condition | Actions | To |
-|---|---|---|---|---|
-| 1 | response: Accepted { score: points } | — | total = points; journal("verdict_accepted", score: text(points)) | Passed |
-| 2 | response: Rejected { reason: why } | — | note = why; journal("verdict_rejected", reason: why) | Failed |
-| 3 | response: Unsure | — | journal("verdict_unsure") | Doubt |
-| 4 | failure(reason) | — | note = text(reason); journal("verdict_lost", reason: text(reason)) | Failed |
+| Event | Condition | Actions | To |
+|---|---|---|---|
+| response: Accepted { score: points } |  | total = points; journal("verdict_accepted", score: text(points)) | Passed |
+| response: Rejected { reason: why } |  | note = why; journal("verdict_rejected", reason: why) | Failed |
+| response: Unsure |  | journal("verdict_unsure") | Doubt |
+| failure(reason) |  | note = text(reason); journal("verdict_lost", reason: text(reason)) | Failed |
 
 ### Passed — end
-- Reads: total
 
 ### Failed — end
-- Reads: note
 
 ### Doubt — end
 
-## Ends
+## Output
 
 - Result: str
 
-| end | № | when | response |
-|---|---|---|---|
-| Passed | 1 | true | Response("accepted with ${total}") |
-| Failed | 1 | true | Refusal(FailCode.NoResult, note) |
-| Doubt | 1 | true | Refusal(FailCode.NoResult, "unsure") |
+| end | when | response |
+|---|---|---|
+| Passed | true | Response("accepted with ${total}") |
+| Failed | true | Refusal(FailCode.NoResult, note) |
+| Doubt | true | Refusal(FailCode.NoResult, "unsure") |

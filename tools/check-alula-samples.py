@@ -9,9 +9,9 @@
      заголовки соответствуют по таблице слов `spec/alula-keywords.tsv`; в каждой таблице раздела одинаковое
      число строк (типы — число объявлений и строк в блоке кода; функции — число и порядок объявлений `функция`/`fn`);
   2. состояния: одинаковые виды и порядок; JSON-имя состояния совпадает (строка `## Имена` или автоматическое имя, 1а); число строк переходов у каждого состояния,
-     метки `№`, значения «куда» (русские имена состояний переведены в латинские по заголовкам, слова «куда» — по таблице слов),
+     место строки в состоянии (с 2.26 столбца `№` нет, AL-137), значения «куда» (русские имена состояний переведены в латинские по заголовкам, слова «куда» — по таблице слов),
      число действий (разделитель `;`) и коды журнала `журнал("код", …)`/`journal("code", …)` в каждой строке;
-  3. строки «Концов»: число, конец (имя переведено), метка `№`, число конструкторов `Отказ(…)`/`Refusal(…)` и `Ответ(…)`/`Response(…)`
+  3. строки «Выхода» (до 2.26 — «Концов»): число, конец (имя переведено), место строки у своего конца (с 2.26 столбца `№` нет), число конструкторов `Отказ(…)`/`Refusal(…)` и `Ответ(…)`/`Response(…)`
      в ответе (имена кодов отказа в двух языках разные — по глоссарию — и не сверяются);
   4. набор кодов журнала файла целиком (`журнал("код", …)`, кроме вызовов с выражением) одинаков;
   5. JSON-имена объявленных имён, которые выходят из машины (состояния, поля входа, данные, примитивы, имя настройки вратаря,
@@ -19,7 +19,7 @@
      автоматическое (спецификация, 1а, AL-53, AL-60: словарь, затем транслитерация; функция `json_names` из `check-alula-keywords.py`),
      у английского — само имя; списки по порядку объявления равны (дерево `machine/2` одно).
 Самопроверка (`--selftest`): порча английского образца (другое «куда», удалённая строка, другой код журнала, лишнее действие,
-лишнее состояние, лишняя функция, лишняя строка концов, другая метка строки, другое имя поля) и русского (снятая строка
+лишнее состояние, лишняя функция, лишняя строка «Выхода», другой конец строки «Выхода», другое имя поля) и русского (снятая строка
 `## Имена` у поля и у настройки вратаря, строка с другим JSON-именем у состояния) даёт расхождение, неискажённая пара — нет.
 Чего не проверяет: тела выражений и имена внутри выражений (структурные слова и таблицу `## Имена` проверяет `check-alula-keywords.py`); строки фрагмента «Пауза»
 (образцы его не раскрывают, раздел 9 спецификации); значения-строки (тексты отказов, сообщения, текстовые литералы) — автор пишет их
@@ -53,12 +53,6 @@ def load_words():
         c = line.split('\t')
         if len(c) == 3:
             out.setdefault(c[0], {})[c[1]] = c[2]
-    # шов 2.26 (задача 195): образцы ещё в форме 2.25 — слова, которые 2.26 убрала (`Концы`, `№`, …), читаются из слоя 2.25, пока поток 4 не перенесёт образцы
-    if os.path.isfile(os.path.join(KW.ROOT, KW.SEAM_225)):
-        for line in read(KW.SEAM_225).split('\n'):
-            c = line.split('\t')
-            if len(c) == 3 and not line.startswith('#') and c[0] != 'kind':
-                out.setdefault(c[0], {}).setdefault(c[1], c[2])
     return out
 
 
@@ -188,19 +182,21 @@ def summarize(text, lang, words, gloss):
             for n, k, lat, body in states_in(lines, gloss, smap):
                 rows = []
                 for hdr, trs in tables(body):
-                    if hdr and hdr[0] == '№':
+                    if hdr and hdr[-1] in ('Куда', 'To'):
                         for r in trs:
                             acts = r[-2]
-                            rows.append((r[0], norm_to(r[-1]), len([a for a in acts.split(';') if a.strip() and a.strip() != '—']),
+                            rows.append((str(len(rows) + 1), norm_to(r[-1]), len([a for a in re.split(r';|<br>', acts) if a.strip() and a.strip() != '—']),
                                          tuple(journal_codes(acts)), 'machine_error' in acts or 'ошибка_машины' in acts))
                 st.append((lat, kinds.get(k, k), rows))
             info['states'] = st
-        if key == 'Ends':
-            rows = []
+        if key in ('Ends', 'Output'):
+            rows, seen = [], {}
             for hdr, trs in tables(lines):
                 for r in trs:
                     resp = r[-1]
-                    rows.append((rename.get(r[0], r[0]), r[1], len(re.findall(r'\b(?:Отказ|Refusal)\(', resp)),
+                    end = rename.get(r[0], r[0])
+                    seen[end] = seen.get(end, 0) + 1  # место строки у своего конца (2.26: столбца `№` нет, AL-137)
+                    rows.append((end, seen[end], len(re.findall(r'\b(?:Отказ|Refusal)\(', resp)),
                                  len(re.findall(r'\b(?:Ответ|Response)\(', resp))))
             info['ends'] = rows
     S['codes'] = sorted(journal_codes(text))
@@ -265,13 +261,13 @@ def mutations(en_text):
         ('другое «куда»', sub('stop_reason = "no_result"; journal("agent_permanent_error") | Accounting |',
                               'stop_reason = "no_result"; journal("agent_permanent_error") | Halted |')),
         ('удалённая строка перехода', en_text.replace(
-            [l for l in en_text.split('\n') if l.startswith('| 6 | response: TransientError')][0] + '\n', '', 1)),
+            [l for l in en_text.split('\n') if l.startswith('| response: TransientError')][0] + '\n', '', 1)),
         ('другой код журнала', sub('journal("model_refused")', 'journal("model_refusedd")')),
         ('лишнее действие', sub('turn_count += 1 | AgentTurn', 'turn_count += 1; turn_count += 1 | AgentTurn')),
-        ('лишнее состояние', sub('### End — end', '### Extra — end\n- Reads: usage\n\n### End — end')),
+        ('лишнее состояние', sub('### End — end', '### Extra — end\n\n### End — end')),
         ('лишняя функция', sub('fn interactive(', 'fn extra(x int) -> int => x\n\nfn interactive(')),
-        ('лишняя строка концов', sub('| Halted | 11 |', '| Halted | 12 | stop_reason == "x" | Refusal(FailCode.Cancelled, stop_reason) |\n| Halted | 11 |')),
-        ('другая метка строки', sub('| 9 | failure(', '| 10 | failure(')),
+        ('лишняя строка концов', sub('| Halted | stop_reason == "cancel_request" |', '| Halted | stop_reason == "x" | Refusal(FailCode.Cancelled, stop_reason) |\n| Halted | stop_reason == "cancel_request" |')),
+        ('конец строки «Выхода» другой', sub('| Halted | stop_reason == "no_result" |', '| End | stop_reason == "no_result" |')),
         ('другое имя поля', sub('cache_write ?int', 'cache_writes ?int')),
     ]
     return muts

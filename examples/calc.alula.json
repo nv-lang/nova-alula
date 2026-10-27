@@ -1,82 +1,417 @@
 {
   "format": "machine/2",
-  "alula_version": "2.25",
+  "alula_version": "2.26",
   "machine": "Calc",
   "version": "1",
   "title": "Operations, forks and every kind of action: counts up by a definition until a constant limit",
-  "constants": [ { "name": "LIMIT", "type": "int>=0", "value": { "op": "lit", "value": 3 } } ],
-  "params": [ { "name": "STEP", "type": "int>=1", "default": { "op": "lit", "value": 2 }, "project_key": "calc.step" } ],
+  "constants": [
+    {
+      "name": "LIMIT",
+      "type": "int>=0",
+      "value": {
+        "op": "lit",
+        "value": 3
+      }
+    }
+  ],
+  "params": [
+    {
+      "name": "STEP",
+      "type": "int>=1",
+      "default": {
+        "op": "lit",
+        "value": 2
+      },
+      "project_key": "calc.step"
+    }
+  ],
   "definitions": [
-    { "name": "twice", "params": [ { "name": "k", "type": "int" } ], "result": "int",
-      "body": { "op": "*", "left": { "op": "name", "name": "k" }, "right": { "op": "lit", "value": 2 } } }
+    {
+      "name": "twice",
+      "params": [
+        {
+          "name": "k",
+          "type": "int"
+        }
+      ],
+      "result": "int",
+      "body": {
+        "op": "*",
+        "left": {
+          "op": "name",
+          "name": "k"
+        },
+        "right": {
+          "op": "lit",
+          "value": 2
+        }
+      }
+    }
   ],
   "input": {
-    "fields": [ { "name": "start", "type": "int>=0" }, { "name": "label", "type": "text" } ],
-    "invariants": [ { "op": "<=", "left": { "op": "name", "name": "start" }, "right": { "op": "lit", "value": 100 } } ]
+    "fields": [
+      {
+        "name": "start",
+        "type": "int>=0"
+      },
+      {
+        "name": "label",
+        "type": "text"
+      }
+    ],
+    "invariants": [
+      {
+        "op": "<=",
+        "left": {
+          "op": "name",
+          "name": "start"
+        },
+        "right": {
+          "op": "lit",
+          "value": 100
+        }
+      }
+    ]
   },
   "data": [
-    { "name": "count", "type": "int>=0", "initial": { "from_input": "start" }, "monotonic": true, "writes": "rows" },
-    { "name": "label", "type": "text", "initial": { "from_input": "label" } },
-    { "name": "began", "type": "int", "initial": { "expr": { "op": "lit", "value": 0 } } },
-    { "name": "log", "type": "[]text", "initial": { "expr": { "op": "list", "items": [] } } },
-    { "name": "table", "type": "{text: int}", "initial": { "expr": { "op": "dict", "entries": [] } } },
-    { "name": "stop", "type": "\"\" | \"done\"", "initial": { "expr": { "op": "lit", "value": "" } } }
+    {
+      "name": "count",
+      "type": "int>=0",
+      "initial": {
+        "from_input": "start"
+      },
+      "monotonic": true
+    },
+    {
+      "name": "label",
+      "type": "text",
+      "initial": {
+        "from_input": "label"
+      }
+    },
+    {
+      "name": "began",
+      "type": "int",
+      "initial": {
+        "expr": {
+          "op": "lit",
+          "value": 0
+        }
+      }
+    },
+    {
+      "name": "log",
+      "type": "[]text",
+      "initial": {
+        "expr": {
+          "op": "list",
+          "items": []
+        }
+      }
+    },
+    {
+      "name": "table",
+      "type": "{text: int}",
+      "initial": {
+        "expr": {
+          "op": "dict",
+          "entries": []
+        }
+      }
+    },
+    {
+      "name": "stop",
+      "type": "\"\" | \"done\"",
+      "initial": {
+        "expr": {
+          "op": "lit",
+          "value": ""
+        }
+      }
+    }
   ],
   "initial": "Start",
   "error_end": "Errored",
   "states": [
     {
-      "name": "Start", "kind": "operation", "reads": [ "label" ],
-      "entry": [ { "do": "bind", "name": "moment", "value": { "op": "field", "of": { "op": "name", "name": "event" }, "name": "at" } } ],
-      "rows": [ {
-        "n": 1, "event": { "kind": "now" },
-        "actions": [
-          { "do": "assign", "target": "began", "value": { "op": "name", "name": "moment" } },
-          { "do": "journal", "code": "started", "params": [ { "name": "label", "value": { "op": "name", "name": "label" } } ] }
-        ],
-        "to": "Check"
-      } ]
-    },
-    {
-      "name": "Check", "kind": "fork", "reads": [ "count" ],
+      "name": "Start",
+      "kind": "operation",
+      "reads": [
+        "label"
+      ],
+      "entry": [
+        {
+          "do": "bind",
+          "name": "moment",
+          "value": {
+            "op": "field",
+            "of": {
+              "op": "name",
+              "name": "event"
+            },
+            "name": "at"
+          }
+        }
+      ],
       "rows": [
         {
-          "n": 1, "event": { "kind": "now" },
-          "cond": { "op": ">=", "left": { "op": "name", "name": "count" }, "right": { "op": "name", "name": "LIMIT" } },
+          "n": 1,
+          "event": {
+            "kind": "now"
+          },
           "actions": [
-            { "do": "journal", "code": "reached_limit", "params": [ { "name": "count", "value": { "op": "call", "fn": "text", "args": [ { "op": "name", "name": "count" } ] } } ] },
-            { "do": "assign", "target": "stop", "value": { "op": "lit", "value": "done" } }
+            {
+              "do": "assign",
+              "target": "began",
+              "value": {
+                "op": "name",
+                "name": "moment"
+              }
+            },
+            {
+              "do": "journal",
+              "code": "started",
+              "params": [
+                {
+                  "name": "label",
+                  "value": {
+                    "op": "name",
+                    "name": "label"
+                  }
+                }
+              ]
+            }
           ],
-          "to": "Finish"
-        },
-        { "n": 2, "event": { "kind": "now" }, "else": true, "to": "Step" }
+          "to": "Check"
+        }
       ]
     },
     {
-      "name": "Step", "kind": "operation", "reads": [ "count", "log", "table" ],
-      "entry": [ { "do": "bind", "name": "doubled", "value": { "op": "call", "fn": "twice", "args": [ { "op": "name", "name": "STEP" } ] } } ],
-      "rows": [ {
-        "n": 1, "event": { "kind": "now" },
-        "actions": [
-          { "do": "assign", "target": "count", "value": { "op": "+", "left": { "op": "name", "name": "count" }, "right": { "op": "name", "name": "doubled" } } },
-          { "do": "add", "target": "log", "value": { "op": "list", "items": [ { "op": "lit", "value": "up" } ] } },
-          { "do": "assign", "target": { "name": "table", "path": [ { "key": { "op": "lit", "value": "k" } } ] }, "value": { "op": "name", "name": "count" } },
-          { "do": "journal", "code": "stepped", "params": [ { "name": "count", "value": { "op": "call", "fn": "text", "args": [ { "op": "name", "name": "count" } ] } } ] }
-        ],
-        "to": "Check"
-      } ]
+      "name": "Check",
+      "kind": "fork",
+      "reads": [
+        "count"
+      ],
+      "rows": [
+        {
+          "n": 1,
+          "event": {
+            "kind": "now"
+          },
+          "cond": {
+            "op": ">=",
+            "left": {
+              "op": "name",
+              "name": "count"
+            },
+            "right": {
+              "op": "name",
+              "name": "LIMIT"
+            }
+          },
+          "actions": [
+            {
+              "do": "journal",
+              "code": "reached_limit",
+              "params": [
+                {
+                  "name": "count",
+                  "value": {
+                    "op": "call",
+                    "fn": "text",
+                    "args": [
+                      {
+                        "op": "name",
+                        "name": "count"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "do": "assign",
+              "target": "stop",
+              "value": {
+                "op": "lit",
+                "value": "done"
+              }
+            }
+          ],
+          "to": "Finish"
+        },
+        {
+          "n": 2,
+          "event": {
+            "kind": "now"
+          },
+          "else": true,
+          "to": "Step"
+        }
+      ]
     },
-    { "name": "Finish", "kind": "end", "reads": [ "count" ] },
-    { "name": "Errored", "kind": "end", "reads_all": true, "entry": [ { "do": "journal_all" } ] }
+    {
+      "name": "Step",
+      "kind": "operation",
+      "reads": [
+        "count",
+        "log",
+        "table"
+      ],
+      "entry": [
+        {
+          "do": "bind",
+          "name": "doubled",
+          "value": {
+            "op": "call",
+            "fn": "twice",
+            "args": [
+              {
+                "op": "name",
+                "name": "STEP"
+              }
+            ]
+          }
+        }
+      ],
+      "rows": [
+        {
+          "n": 1,
+          "event": {
+            "kind": "now"
+          },
+          "actions": [
+            {
+              "do": "assign",
+              "target": "count",
+              "value": {
+                "op": "+",
+                "left": {
+                  "op": "name",
+                  "name": "count"
+                },
+                "right": {
+                  "op": "name",
+                  "name": "doubled"
+                }
+              }
+            },
+            {
+              "do": "add",
+              "target": "log",
+              "value": {
+                "op": "list",
+                "items": [
+                  {
+                    "op": "lit",
+                    "value": "up"
+                  }
+                ]
+              }
+            },
+            {
+              "do": "assign",
+              "target": {
+                "name": "table",
+                "path": [
+                  {
+                    "key": {
+                      "op": "lit",
+                      "value": "k"
+                    }
+                  }
+                ]
+              },
+              "value": {
+                "op": "name",
+                "name": "count"
+              }
+            },
+            {
+              "do": "journal",
+              "code": "stepped",
+              "params": [
+                {
+                  "name": "count",
+                  "value": {
+                    "op": "call",
+                    "fn": "text",
+                    "args": [
+                      {
+                        "op": "name",
+                        "name": "count"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ],
+          "to": "Check"
+        }
+      ]
+    },
+    {
+      "name": "Finish",
+      "kind": "end",
+      "reads": [
+        "count"
+      ]
+    },
+    {
+      "name": "Errored",
+      "kind": "end",
+      "reads_all": true,
+      "entry": [
+        {
+          "do": "journal_all"
+        }
+      ]
+    }
   ],
   "ends": {
     "result": "int",
     "rows": [
-      { "state": "Finish", "n": 1, "when": { "op": "lit", "value": true }, "answer": { "kind": "answer", "value": { "op": "name", "name": "count" } } },
       {
-        "state": "Errored", "n": 1, "when": { "op": "lit", "value": true },
-        "answer": { "kind": "refusal", "code": { "op": "variant", "type": "FailCode", "name": "NoResult" },
-                    "text": { "op": "call", "fn": "record_text", "args": [ { "op": "name", "name": "transition_note" } ] } }
+        "state": "Finish",
+        "n": 1,
+        "when": {
+          "op": "lit",
+          "value": true
+        },
+        "answer": {
+          "kind": "answer",
+          "value": {
+            "op": "name",
+            "name": "count"
+          }
+        }
+      },
+      {
+        "state": "Errored",
+        "n": 1,
+        "when": {
+          "op": "lit",
+          "value": true
+        },
+        "answer": {
+          "kind": "refusal",
+          "code": {
+            "op": "variant",
+            "type": "FailCode",
+            "name": "NoResult"
+          },
+          "text": {
+            "op": "call",
+            "fn": "record_text",
+            "args": [
+              {
+                "op": "name",
+                "name": "transition_note"
+              }
+            ]
+          }
+        }
       }
     ]
   }

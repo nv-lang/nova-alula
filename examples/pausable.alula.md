@@ -2,7 +2,7 @@
 
 - machine: Pausable
 - machine_version: 1
-- format: 2.25
+- format: 2.26
 - language: en
 
 The fragment `Pause` (spec 9): a human stops the machine in the middle of the work of the agent, the open request is cancelled and the machine waits in `Pause`; `continue` enters the state it was stopped
@@ -10,12 +10,10 @@ in again, with a new request; `halt` ends the machine with the code `pause_halt`
 
 ## Data
 
-| name | type | initial | non_decreasing | writes |
-|---|---|---|---|---|
-| reply | ?str | none | — | rows |
-| stop_reason | "" \| "failed" \| "pause_halt" \| "cancel_request" | "" | — | rows_and_fragment |
-| worker_attempt | int>=0 | 0 | yes | mechanics |
-| enhanced_attempt | int>=0 | 0 | yes | mechanics |
+| name | type | initial | non_decreasing |
+|---|---|---|---|
+| reply | ?str | none | — |
+| stop_reason | "" \| "failed" \| "pause_halt" \| "cancel_request" | "" | — |
 
 ## Parties
 
@@ -28,9 +26,18 @@ in again, with a new request; `halt` ends the machine with the code `pause_halt`
 
 ## Includes
 
-```
-Pause(halt_signal: halt, halt_code: "pause_halt", nested: [], cancel_requests: mechanics, reenter: nothing, write_right: "the machine writes nothing in the pause")
-```
+### Pause
+- File: libs/pause.en.alula.md
+- Hash: 9f67255229c9
+
+| parameter | value |
+|---|---|
+| halt_signal | "halt" |
+| halt_code | "pause_halt" |
+| nested | [] |
+| request_cancel | "mechanics" |
+| reentry | "nothing" |
+// write right: the machine writes nothing in the pause
 
 ## States
 
@@ -41,36 +48,33 @@ Initial state: Work
 - Idle term: 5000
 - Request:
 
-| request_field | expression | reads |
-|---|---|---|
-| prompt | "the work" | party |
+| request_field | expression |
+|---|---|
+| prompt | "the work" |
 
-| № | Event | Condition | Actions | To |
-|---|---|---|---|---|
-| 1 | response(text) | — | reply = text; journal("worked", text: text) | Done |
-| 2 | failure(reason) | — | stop_reason = "failed"; journal("work_lost", reason: text(reason)) | Halted |
+| Event | Condition | Actions | To |
+|---|---|---|---|
+| response(text) |  | reply = text; journal("worked", text: text) | Done |
+| failure(reason) |  | stop_reason = "failed"; journal("work_lost", reason: text(reason)) | Halted |
 
 ### Done — end
-- Reads: reply
 
 ### Halted — end
-- Reads: stop_reason
 - Except: stop_reason in [""]
 
 ### Errored — end
-- Reads: all_data
 - On entry:
   - journal(transition_note);
   - journal(all_data)
 
-## Ends
+## Output
 
 - Result: str
 
-| end | № | when | response |
-|---|---|---|---|
-| Done | 1 | true | Response(require(reply)) |
-| Errored | 1 | true | Refusal(FailCode.NoResult, "a defect of the machine") |
-| Halted | 1 | stop_reason == "failed" | Refusal(FailCode.NoResult, stop_reason) |
-| Halted | 2 | stop_reason == "pause_halt" | Refusal(FailCode.StoppedByHuman, stop_reason) |
-| Halted | 3 | stop_reason == "cancel_request" | Refusal(FailCode.Cancelled, stop_reason) |
+| end | when | response |
+|---|---|---|
+| Done | true | Response(require(reply)) |
+| Errored | true | Refusal(FailCode.NoResult, "a defect of the machine") |
+| Halted | stop_reason == "failed" | Refusal(FailCode.NoResult, stop_reason) |
+| Halted | stop_reason == "pause_halt" | Refusal(FailCode.StoppedByHuman, stop_reason) |
+| Halted | stop_reason == "cancel_request" | Refusal(FailCode.Cancelled, stop_reason) |
