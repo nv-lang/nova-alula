@@ -4,7 +4,7 @@ module alula.alula_eq
 
 import std.text
 import alula.machine.{text_of_file}
-import alula.examples.{machine_files, table_files}
+import alula.examples.{machine_files_225, table_files_225}
 
 fn probe_names() -> []str => ["callee.alula.json", "caller.alula.json", "fan.alula.json", "batch.alula.json"]
 
@@ -30,7 +30,7 @@ test "pn the tables compile to the json of the product" {
     // the file of Alula of a machine and its JSON in src/machine/machines/ are the same tree
     for name in probe_names() {
         ro base = name.replace(".alula.json", "")
-        ro ran = run_with(["compile", "/m/${base}.alula.md"], one("/m/${base}.alula.md", text_of_file(table_files(), "${base}.alula.md")))
+        ro ran = run_with(["compile", "/m/${base}.alula.md"], one("/m/${base}.alula.md", text_of_file(table_files_225(), "${base}.alula.md")))
         assert(!ran.err.contains(": error:") && !ran.err.contains(": check:"))
         assert(ran.code == 0)
         assert(same_tree(machine_json(name), ran.out) == "")
@@ -49,6 +49,6 @@ test "pn check the probe machines" {
 test "pn the machines are the files of the product" {
     ro names = probe_names()
     assert(names.len() == 4)
-    assert(machine_files().len() == 15)
+    assert(machine_files_225().len() == 15)
     for name in names { assert(machine_json(name).byte_len() > 100) }
 }

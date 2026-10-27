@@ -4,7 +4,7 @@ module alula.machine_table
 
 import std.text
 import alula.machine.{text_of_file}
-import alula.examples.{machine_files}
+import alula.examples.{machine_files_225}
 
 fn with_version154(value str) -> str => tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"alula_version\":${value},")
 
@@ -92,7 +92,7 @@ test "v154 the check says nothing about the mark at a target that is no appeal" 
 }
 
 test "v154 the sample with the retry has the rerun of the same state" {
-    ro text = text_of_file(machine_files(), "variants.alula.json")
+    ro text = text_of_file(machine_files_225(), "variants.alula.json")
     assert(text.contains("\"@same\""))
     assert(text.contains("\"restart\": true"))
 }

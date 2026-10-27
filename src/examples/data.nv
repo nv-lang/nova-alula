@@ -109,6 +109,55 @@ export fn test_files() -> []NamedText => [
     NamedText { name: "verdict-unsure.alula.test.json", text: embed_str("../../examples/tests/verdict-unsure.alula.test.json") }
 ]
 
+/// The examples as they were in the form of 2.25 (the files of `examples/` before task 239 moved them to 2.26), kept beside this module in `v225/`: the tests of the
+/// readings and of the generator of 2.25 that take an example apart line by line read these (the seam of 2.25 of the texts of the tests, task 239); the program and the tests of
+/// the examples read the files of `examples/`.
+export fn machine_files_225() -> []NamedText => [
+    NamedText { name: "actions.alula.json", text: embed_str("v225/actions.alula.json") },
+    NamedText { name: "batch.alula.json", text: embed_str("v225/batch.alula.json") },
+    NamedText { name: "calc.alula.json", text: embed_str("v225/calc.alula.json") },
+    NamedText { name: "callee.alula.json", text: embed_str("v225/callee.alula.json") },
+    NamedText { name: "caller.alula.json", text: embed_str("v225/caller.alula.json") },
+    NamedText { name: "echo.alula.json", text: embed_str("v225/echo.alula.json") },
+    NamedText { name: "fan.alula.json", text: embed_str("v225/fan.alula.json") },
+    NamedText { name: "gate.alula.json", text: embed_str("v225/gate.alula.json") },
+    NamedText { name: "keeper.alula.json", text: embed_str("v225/keeper.alula.json") },
+    NamedText { name: "lenses.alula.json", text: embed_str("v225/lenses.alula.json") },
+    NamedText { name: "pausable.alula.json", text: embed_str("v225/pausable.alula.json") },
+    NamedText { name: "retry.alula.json", text: embed_str("v225/retry.alula.json") },
+    NamedText { name: "router.alula.json", text: embed_str("v225/router.alula.json") },
+    NamedText { name: "variants.alula.json", text: embed_str("v225/variants.alula.json") },
+    NamedText { name: "verdict.alula.json", text: embed_str("v225/verdict.alula.json") }
+]
+
+/// The tables of the examples in the form of 2.25 (see `machine_files_225`).
+export fn table_files_225() -> []NamedText => [
+    NamedText { name: "batch.alula.md", text: embed_str("v225/batch.alula.md") },
+    NamedText { name: "callee.alula.md", text: embed_str("v225/callee.alula.md") },
+    NamedText { name: "caller.alula.md", text: embed_str("v225/caller.alula.md") },
+    NamedText { name: "echo.alula.md", text: embed_str("v225/echo.alula.md") },
+    NamedText { name: "fan.alula.md", text: embed_str("v225/fan.alula.md") },
+    NamedText { name: "keeper.alula.md", text: embed_str("v225/keeper.alula.md") },
+    NamedText { name: "pausable.alula.md", text: embed_str("v225/pausable.alula.md") },
+    NamedText { name: "retry.alula.md", text: embed_str("v225/retry.alula.md") },
+    NamedText { name: "router.alula.md", text: embed_str("v225/router.alula.md") },
+    NamedText { name: "verdict.alula.md", text: embed_str("v225/verdict.alula.md") }
+]
+
+/// The libraries of `examples/libs/` (Alula 2.26, section 9; task 239), by the path beside a machine of the folder (`libs/pause.alula.md`): the tables of the examples that connect
+/// «Пауза» name the file by this path, a test that translates such a table puts these files beside it.
+export fn library_files() -> []NamedText => [
+    NamedText { name: "libs/pause.alula.md", text: embed_str("../../examples/libs/pause.alula.md") },
+    NamedText { name: "libs/pause.en.alula.md", text: embed_str("../../examples/libs/pause.en.alula.md") }
+]
+
+/// The libraries of the examples put into the folder `dir` (`/m` -> `/m/libs/pause.alula.md`).
+export fn library_files_in(dir str) -> []NamedText {
+    mut out = []NamedText.new()
+    for f in library_files() { out.push(NamedText { name: "${dir}/${f.name}", text: f.text }) }
+    out
+}
+
 /// The names of the files that the folders hold (read at compile time with `embed_dir`): `machines` (the JSON), `tables`, `tests`.
 export fn example_dir_names(dir str) -> []str {
     if dir == "machines" { return only_ending(embed_dir("../../examples").paths(), [".alula.json"]) }
@@ -120,6 +169,7 @@ export fn example_dir_names(dir str) -> []str {
 fn only_ending(names []str, suffixes []str) -> []str {
     mut out = []str.new()
     for n in names {
+        if n.contains("/") || n.contains("\\") { continue } // the files of the folder itself: not the libraries of `libs/` (2.26, task 239)
         for suffix in suffixes {
             if n.ends_with(suffix) { out.push(n) }
         }

@@ -3,8 +3,8 @@
 module alula.machine_run
 
 import std.text
-import alula.machine.{Value, Int, Text, TypeDefs, RecordDef, VariantDef, CaseDef, FieldDef, EnumValue, TextType, IntType, DefTable, DefFn, Binding, Lit, call, enum_value, eval_defs, NoHost, Scope, value_text, value_json}
-import alula.examples.{sample_registry}
+import alula.machine.{Value, Int, Text, TypeDefs, RecordDef, VariantDef, CaseDef, FieldDef, EnumValue, TextType, IntType, DefTable, DefFn, Binding, Lit, call, enum_value, eval_defs, NoHost, Scope, value_text, value_json, text_of_file}
+import alula.examples.{sample_registry, machine_files_225}
 
 fn plain_case(name str) -> CaseDef => { name, fields: []FieldDef.new() }
 
@@ -87,7 +87,7 @@ fn more_data() -> str {
 
 // The calc machine with more data; its overflow ends in the ERROR end, which writes all the data.
 fn full_machine() -> AlulaMachine {
-    ro base = machine_text("calc.alula.json")
+    ro base = text_of_file(machine_files_225(), "calc.alula.json")  // the tree of 2.25 as it was written: the test edits its text (task 239)
     ro with_types = base.replace("\"data\": [", more_types())
     ro stop_end = "\"initial\": { \"expr\": { \"op\": \"lit\", \"value\": \"\" } } }"
     ro with_data = with_types.replace(stop_end, "${stop_end}${more_data()}")

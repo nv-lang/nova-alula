@@ -4,9 +4,10 @@ module alula.machine_run
 import std.text
 import alula.machine.{Value, PrimitiveHost, EvalError, Null, enum_value, text_of_file, record_get, value_json}
 import alula.engine.{Incoming, EventKind, Order, StepEnvironment, JournalEvent, SignalOrder}
-import alula.examples.{machine_files, sample_registry}
+import alula.examples.{machine_files_225, sample_registry}
 
-fn machine_text(name str) -> str => text_of_file(machine_files(), name)
+// the trees of the examples as they were written in the form of 2.25: the tests edit their text (task 239)
+fn machine_text(name str) -> str => text_of_file(machine_files_225(), name)
 
 fn build_from(text str) -> AlulaMachine {
     match load_alula_machine(text, sample_registry()) {

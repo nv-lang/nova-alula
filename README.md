@@ -32,9 +32,9 @@ Since task 239 (version 0.9.0, epic 194, stream 4) the language is **2.26** (AL-
 [--alula <alula>] <file or folder>...`): the tables, the trees (rebuilt by `alula compile` with `--alula`), the libraries (the files of the package [libs/](libs/): `pause.alula.md`
 and `cycle_arithmetic.alula.md` with their English twins, put beside the machine in `libs/` with their hashes) and the order of `все_данные` in the expected journals of the tests;
 the code 0 means moved, 1 means moved with the places it does not decide (each as `file:line: kind: what to do`), 2 an error of the start. The examples and the samples of
-the package are of 2.26 (moved by the script); the methodology set (508 tests) and the product set (81 tests) pass on copies moved by it (criterion `scripts/accept-239.sh`).
+the package are of 2.26 (moved by the script); the methodology set (508 tests) passes on a copy moved by it (criterion `scripts/accept-239.sh`).
 The seam of 2.25 (decided by the fact, item 44 of [docs/history.md](docs/history.md)): the translator and the decoder still read a file and a tree of 2.25, because about
-130 texts in 57 files of the tests of the package keep that form; the scripts `tools/check-alula-*.py` read 2.26 only.
+130 texts in 57 files of the tests of the package keep that form, and the tests of the readings and of the generator of 2.25 that take an example apart read the examples as they were, the snapshot [src/examples/v225/](src/examples/v225/); the scripts `tools/check-alula-*.py` read 2.26 only. The product set needs its owner: its machines send the signal of the machine `отмена` in an appeal of the agent, which 2.26 can not declare (only the signals of the protocol of a call); the script names the place.
 Open questions to the methodology (a field with two JSON names named without its owner, the JSON name of a nested machine, the `title` of a tree) are in the logs of the tasks 149, 151, 152 and 154 of the CrewHarness repository. Task 154 aligned the package with the clarified text of the specification (AL-104 ... AL-111): the label of a form with fields is "формы", the bare names of the elements, the places of the empty `[]`, `новый_ид`, `то же, запуск заново`.
 
 The package has no dependencies except Nova's `std` (`std.io`, `std.os` and `std.fs` are used only in `src/alula_cli/` and `src/alula.nv`).

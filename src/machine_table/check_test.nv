@@ -3,7 +3,7 @@ module alula.machine_table
 
 import alula.machine.{text_of_file}
 import std.text
-import alula.examples.{machine_files, sample_registry}
+import alula.examples.{machine_files_225, sample_registry}
 
 fn wait_rows_with(go_value str) -> str {
     ro inc = jassign("n", go_value)
@@ -216,7 +216,7 @@ test "issue text" {
 }
 
 test "example machines" {
-    ro files = machine_files()
+    ro files = machine_files_225()
     assert(files.len() == 15)
     for f in files {
         ro issues = issues_of(f.text)
@@ -226,7 +226,7 @@ test "example machines" {
 }
 
 test "set rule" {
-    ro lenses = text_of_file(machine_files(), "lenses.alula.json")
+    ro lenses = text_of_file(machine_files_225(), "lenses.alula.json")
     assert(ok_text(lenses))
     // the set is a list of the ids of the parties; the datum to_send (rows_and_mechanics) is what the mechanics hand over, a set that is another datum is allowed (task 119)
     assert(ok_text(lenses.replace("\"writes\": \"rows_and_mechanics\"", "\"writes\": \"rows\"")))
@@ -235,7 +235,7 @@ test "set rule" {
 }
 
 test "error end" {
-    ro calc = text_of_file(machine_files(), "calc.alula.json")
+    ro calc = text_of_file(machine_files_225(), "calc.alula.json")
     assert(ok_text(calc))
     assert(says(calc.replace("\"error_end\": \"Errored\",", ""), "transition_note is defined in the error end only"))
     assert(says(calc.replace("\"error_end\": \"Errored\",", "\"error_end\": \"Check\","), "must be a state of the kind end"))
@@ -243,7 +243,7 @@ test "error end" {
 }
 
 test "variants rule" {
-    ro v = text_of_file(machine_files(), "variants.alula.json")
+    ro v = text_of_file(machine_files_225(), "variants.alula.json")
     assert(ok_text(v))
     assert(says(v.replace("\"variant\": \"Done\"", "\"variant\": \"Nope\""), "has no case Nope"))
     assert(says(v.replace("\"result\": \"Outcome\"", "\"result\": \"text\""), "must be a variant"))

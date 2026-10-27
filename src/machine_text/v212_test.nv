@@ -4,7 +4,7 @@ module alula.machine_text
 
 import std.text
 import alula.machine.{text_of_file}
-import alula.examples.{table_files, sample_registry}
+import alula.examples.{table_files_225, sample_registry}
 
 test "v212 fragment files are 2.25" {
     assert(fragment_source("Pause", "ru").contains("- format: 2.25"))
@@ -27,7 +27,7 @@ test "v212 fragment files carry the parameters" {
 // ---- what the fragment brings (the shape the generator leaves out) is what the translator puts in --------------------------------------------------------
 
 fn dialog_steps_tree() -> RJ {
-    ro report = translate_checked(text_of_file(table_files(), "callee.alula.md"), sample_registry())
+    ro report = translate_checked(text_of_file(table_files_225(), "callee.alula.md"), sample_registry())
     if report.errors.len() > 0 { panic("callee: ${report.errors[0].message}") }
     match rj_parse(report.json) {
         Ok(root) => root

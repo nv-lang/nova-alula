@@ -9,7 +9,7 @@ import std.io.{IoCapture, mock_io}
 import std.os.{MockOs, mock_os}
 import alula.machine.{NamedText, text_of_file}
 import alula.alula_cli.{execute}
-import alula.examples.{machine_files, test_files, table_files, example_registry_text, example_journal_text}
+import alula.examples.{machine_files_225, test_files, table_files_225, example_registry_text, example_journal_text}
 
 /// Ran: what a run of the program left.
 type Ran { code int, out str, err str }
@@ -66,7 +66,7 @@ fn one(name str, text str) -> []NamedText {
     [NamedText { name, text }, NamedText { name: "${dir}/registry.md", text: example_registry_text() }, NamedText { name: "${dir}/journal.md", text: example_journal_text() }]
 }
 
-fn machine_json(name str) -> str => text_of_file(machine_files(), name)
+fn machine_json(name str) -> str => text_of_file(machine_files_225(), name)
 
 // The keys that a circle does not keep: the title (the header of the canonical file holds the Latin name of the machine) and the version of the language of the tree.
 fn dropped_keys() -> []str => ["title", "alula_version"]

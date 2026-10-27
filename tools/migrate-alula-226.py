@@ -34,7 +34,8 @@
   - фрагмент 2.25 (`# Фрагмент:`) — библиотека пишется по разделу 9 (`## Требует`, параметры обычных типов); образец — `libs/pause.alula.md`;
   - строка операции с условием или не с событием `сразу`; вторая строка операции;
   - сигнал машины из `## Сигналы` (слой продукта 2.25) в строке обращения к стороне, у которой такого сигнала нет: в 2.26 сигнал
-    машины вне контракта — только в общих событиях и ПАУЗЕ библиотеки (4.3, 9);
+    машины — только сигнал протокола вызова в общих событиях и ПАУЗЕ библиотеки (4.3, 9), свой сигнал машины не объявить
+    (строка `## Имена` такого сигнала убирается вместе с разделом);
   - подключение незнакомой библиотеки функций (нет файла в `libs/` пакета) и проза в `## Подключения`;
   - `КодСбоя`, объявленный машиной с кодами, которых нет в контракте (продукт добавляет коды своей библиотекой);
   - дерево с фрагментами/подключениями; файл другого формата, кроме 2.25 и 2.26.
@@ -102,6 +103,7 @@ class Run:
     def __init__(self):
         self.places = []
         self.changed = []
+        self.notes = []
 
     def place(self, path, line, kind, todo):
         self.places.append('%s:%d: %s: %s' % (path, line, kind, todo))
@@ -435,6 +437,8 @@ def migrate_md(path, text, run):
             for ta, tb in tables_in(lines, a, b):
                 for r in range(ta + 2, tb):
                     ctx['msignals'].add(split_row(lines[r])[0])
+    # сигнал машины, которого нет ни у одной стороны, уходит вместе с `## Сигналы`: его строка `## Имена` тоже (место строки обращения называется отдельно)
+    ctx['dropped'] |= {x for x in ctx['msignals'] if not any(x in sig for sig in psignals.values())}
     # части ответа (слой продукта 2.25): сторона -> имя части; объявления типов
     parts, part_types = {}, []
     for a, b, t in secs:
@@ -596,7 +600,7 @@ def table(path, lines, ta, tb, section, kind, w, counters, parts, run, ctx):
                 e = r[ev]
                 sm = re.match(r'^%s\(\s*([^\s({)]+)' % re.escape(w['signal_ev']), e)
                 if sm and sm.group(1) in ctx['msignals'] and section == w['states'] and ctx['party'] and sm.group(1) not in ctx['psignals'].get(ctx['party'], set()):
-                    run.place(path, ta + 3 + len(out_rows), 'сигнал машины', 'сигнал `%s` из `## %s` в строке обращения %s к стороне `%s`: в 2.26 сигнал машины вне контракта — только в общих событиях и ПАУЗЕ библиотеки (4.3, 9), раздела `## %s` нет; перенесите строку в общие события библиотеки или дайте сигнал стороне' % (sm.group(1), w['signals_sec'], ctx['state'], ctx['party'], w['signals_sec']))
+                    run.place(path, ta + 3 + len(out_rows), 'сигнал машины', 'сигнал `%s` из `## %s` в строке обращения %s к стороне `%s`: в 2.26 раздела `## %s` нет, сигнал машины — только сигнал протокола вызова (стоп, отмена запроса, сигналы от родителя) в общих событиях и ПАУЗЕ библиотеки (4.3, 9); строка не переносится механически — дайте сигнал стороне обращения или замените сигналом протокола (решение владельца машины)' % (sm.group(1), w['signals_sec'], ctx['state'], ctx['party'], w['signals_sec']))
                 m = re.match(r'^%s\(\s*([^\s({]+)\s*(\{.*\})?\s*\)$' % re.escape(w['part_ev']), e)
                 if m:
                     r[ev] = w['part_ev'] + (' ' + m.group(2) if m.group(2) else '')
@@ -721,6 +725,27 @@ def compile_tree(path, md, alula, run):
     with open(path, encoding='utf-8', newline='') as f:
         if f.read() != before:
             run.changed.append(path)
+
+
+def canonical_tree(path, alula, run):
+    """Дерево без файла машины после переноса полей — в канонический вид 2.26: `alula render` во временный файл рядом (реестр и журнал
+    хозяина — рядом) и `alula compile` обратно; так в дереве чтения, выведенные проверкой (AL-138), как у дерева из файла машины."""
+    import subprocess
+    tmp_md = path[:-len('.alula.json')] + '.migrate-226.alula.md'
+    try:
+        done = subprocess.run([alula, 'render', path, '-o', tmp_md, '--force'], capture_output=True, text=True, encoding='utf-8')
+        if done.returncode == 0:
+            done = subprocess.run([alula, 'compile', tmp_md, '-o', path, '--force'], capture_output=True, text=True, encoding='utf-8')
+        if done.returncode != 0:
+            first = [l for l in (done.stderr or done.stdout).splitlines() if l.strip()][:1]
+            # дерево, написанное руками, может нести то, чего нет в тексте 2.26 (свой сигнал машины, общие события без библиотеки): оно остаётся перенесённым полями
+            run.notes.append('%s: заметка: дерево перенесено полями и не приведено к виду файла 2.26 (`alula render` + `alula compile`: %s); движок его читает' % (path, first[0] if first else 'код %d' % done.returncode))
+    except OSError as e:
+        sys.stderr.write('alula не запускается: %s\n' % e)
+        sys.exit(2)
+    finally:
+        if os.path.exists(tmp_md):
+            os.remove(tmp_md)
 
 
 def data_order(tree):
@@ -886,10 +911,14 @@ def main(argv):
             if not dry:
                 with open(path, 'w', encoding='utf-8', newline='') as f:
                     f.write(new)
+                if alula:
+                    canonical_tree(path, alula, run)
     migrate_tests(tests, machines, [p for p, _ in trees], alula, run)
     verb ='изменился бы' if dry else 'перенесён'
     for p in run.changed:
         print('%s: %s' % (verb, p))
+    for p in run.notes:
+        print(p)
     for p in run.places:
         print(p)
     print('итог: файлов %d, мест %d' % (len(run.changed), len(run.places)))

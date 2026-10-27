@@ -6,7 +6,7 @@ module alula.machine_table
 import alula.machine.{Value, IdType, IntType, TextType, TextSet, OptionalType, ListType, DictType, FullDictType, TupleType, Text, Int, Null}
 import alula.machine.{spec_text, check_value, empty_type_defs, make_tuple, parse_spec, find_primitive, Volatile, record_get, Record, text_of_file}
 import std.text
-import alula.examples.{machine_files, sample_registry}
+import alula.examples.{machine_files_225, sample_registry}
 
 fn uuid_ok() -> str => "0192f3a0-7c1e-7b2a-9d4e-5a6b7c8d9e0f"
 
@@ -211,7 +211,7 @@ test "v25 table format" {
 
 // ---- the common events of a fragment (format section 9) and the built-in record JournalEvent --------------------------------------------------------
 
-fn gate_text() -> str => text_of_file(machine_files(), "gate.alula.json")
+fn gate_text() -> str => text_of_file(machine_files_225(), "gate.alula.json")
 
 test "v25 fragment reads" {
     assert(ok_text(gate_text()))

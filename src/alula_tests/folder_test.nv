@@ -5,7 +5,7 @@ module alula.alula_tests
 import std.fs.{Path}
 import std.text
 import alula.machine.{NamedText, text_of_file}
-import alula.examples.{machine_files, test_files, table_files}
+import alula.examples.{machine_files, test_files, table_files, library_files_in}
 
 test "ps test folder all tests" {
     ro ran = run_with(["test", "/machine"], machine_folder())
@@ -15,11 +15,16 @@ test "ps test folder all tests" {
     assert(ran.code == 0)
 }
 
-fn nested_files(callee_file str, callee_text str) -> []NamedText => [
-    NamedText { name: "/n/caller.alula.json", text: text_of_file(machine_files(), "caller.alula.json") },
-    NamedText { name: callee_file, text: callee_text },
-    NamedText { name: "/n/nested-call-ok.alula.test.json", text: text_of_file(test_files(), "nested-call-ok.alula.test.json") }
-]
+fn nested_files(callee_file str, callee_text str) -> []NamedText {
+    mut out = [
+        NamedText { name: "/n/caller.alula.json", text: text_of_file(machine_files(), "caller.alula.json") },
+        NamedText { name: callee_file, text: callee_text },
+        NamedText { name: "/n/nested-call-ok.alula.test.json", text: text_of_file(test_files(), "nested-call-ok.alula.test.json") }
+    ]
+    // the table of the callee connects «Пауза» (2.26, task 239): its library lies beside it
+    for f in library_files_in("/n") { out.push(f) }
+    out
+}
 
 test "ps test folder nested" {
     ro ran = run_with(["test", "/n"], nested_files("/n/callee.alula.json", text_of_file(machine_files(), "callee.alula.json")))
