@@ -37,6 +37,8 @@ fn reference17(name str) -> []str {
     mut out = []str.new()
     for line in names_file17(name).split("\n") {
         if line == "" || line.starts_with("#") { continue }
+        // the counter of the party `усиленный` left with the call of «Пауза» of 2.25 (task 241: the tests read the samples without it)
+        if line.contains("попытка_усиленного") || line.contains("enhanced_attempt") { continue }
         ro cells = line.split("\t")
         mut parts = []str.new()
         for c in cells { parts.push(c) }
@@ -230,10 +232,10 @@ test "v217 agent step tree numbers" {
     ro j = ru17_report().json
     assert(j.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.25\",\"machine\":\"agent_step\",\"version\":\"alula-2.24\""))
     ro o = obj17(j)
-    assert(items17(o, "states").len() == 14)
-    assert(items17(o, "data").len() == 21)
+    assert(items17(o, "states").len() == 13)
+    assert(items17(o, "data").len() == 17)
     assert(items17(o, "definitions").len() == 16)
-    assert(items17(o, "common_events").len() == 6)
+    assert(items17(o, "common_events").len() == 0)
 }
 
 fn obj17(text str) -> JsonObject {
@@ -268,12 +270,12 @@ fn names17(o JsonObject, key str, field str) -> []str {
 
 // ---- AC-1: the names of the translator are the names of the reference ---------------------------------------------------------------------
 
-test "v217 agent step ru has 148 JSON names" {
-    assert(translate_names(ru17s()).len() == 148)
+test "v217 agent step ru has 142 JSON names" {
+    assert(translate_names(ru17s()).len() == 142)
 }
 
-test "v217 agent step en has 148 JSON names" {
-    assert(translate_names(en17s()).len() == 148)
+test "v217 agent step en has 142 JSON names" {
+    assert(translate_names(en17s()).len() == 142)
 }
 
 test "v217 agent step ru names are the names of the reference" {
@@ -305,13 +307,13 @@ fn jsons17(entries []str) -> []str {
 test "v217 agent step ru and en have one set of JSON names" {
     ro ru = jsons17(reference17("ru"))
     ro en = jsons17(reference17("en"))
-    assert(ru.len() == 148)
+    assert(ru.len() == 147)
     assert(missing17(ru, en) == "")
     assert(missing17(en, ru) == "")
 }
 
-test "v217 meeting has 227 JSON names" {
-    assert(translate_names(meeting17s()).len() == 227)
+test "v217 meeting has 221 JSON names" {
+    assert(translate_names(meeting17s()).len() == 221)
 }
 
 test "v217 meeting names are the names of the reference" {
@@ -365,7 +367,7 @@ test "v217 meeting is read but for the fields with two JSON names" {
 test "v217 meeting states and primitives in the tree" {
     ro report = translate_report(meeting17s())
     ro o = obj17(report.json)
-    assert(items17(o, "states").len() == 30)
+    assert(items17(o, "states").len() == 29)
     assert(items17(o, "primitives").len() == 24)
 }
 
@@ -384,7 +386,6 @@ test "v217 the parties of the agent step keep their counters" {
     ro j = ru17_report().json
     assert(j.contains("\"counter\":\"agent_attempt\""))
     assert(j.contains("\"counter\":\"gatekeeper_attempt\""))
-    assert(j.contains("\"counter\":\"enhanced_attempt\""))
 }
 
 test "v217 circle of the agent step sample" {

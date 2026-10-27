@@ -30,6 +30,11 @@ fn without_pause(text str) -> str {
         }
         if skip && (t.starts_with(" ") || t.starts_with("\t")) { continue }
         skip = false
+        if t.starts_with("| попытка_усиленного |") && text.contains("открытые_запросы != []") {
+            // the rows of the meeting read `открытые_запросы`, which the call of 2.25 declared: the copy declares it in place of the counter of the party
+            out.push("| открытые_запросы | []строка | [] | — | механика |")
+            continue
+        }
         if t.starts_with("| усиленный |") || t.starts_with("| enhanced |") || t.starts_with("| попытка_усиленного |") || t.starts_with("| enhanced_attempt |") { continue }
         // the write word of the data of the built-in library of 2.25 is gone too: those data are written by the rows
         out.push(line.replace("| действия и фрагмент |", "| действия |").replace("| rows_and_fragment |", "| rows |"))

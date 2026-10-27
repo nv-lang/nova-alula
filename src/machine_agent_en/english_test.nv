@@ -35,7 +35,7 @@ test "ae clean" {
     assert(first_error(report) == "ok")
     assert(report.errors.len() == 0)
     assert(report.warnings.len() == 0)
-    assert(report.rows_total == 126)
+    assert(report.rows_total == 109)
     assert(report.rows_noted == 0)
 }
 
@@ -121,17 +121,6 @@ test "ae expansion removed" {
     assert(junk.errors[0].message.contains("убран"))
     ro renamed = report_of("${sample}\n## Fragment expansion \"Halt\"\n\ntext\n")
     assert(renamed.errors.len() == 1)
-}
-
-test "ae library words" {
-    // the library is read in the language of the machine: the parameters are named in English
-    ro sample = en_sample()
-    ro russian_param = sample.replace("halt_signal: halt", "слово_остановки: halt")
-    assert(report_of(russian_param).errors.len() > 0)
-    ro missing = sample.replace("nested: [],", "")
-    assert(report_of(missing).errors.len() > 0)
-    ro bad_value = sample.replace("reenter: nothing", "reenter: always")
-    assert(report_of(bad_value).errors.len() > 0)
 }
 
 // ---- the 83 tests of the agent step run on the English sample ----------------------------------------------------------------

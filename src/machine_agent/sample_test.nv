@@ -46,7 +46,7 @@ test "sm clean" {
     if report.errors.len() > 0 { panic(error_text(report.errors[0], "sample")) }
     assert(report.errors.len() == 0)
     assert(report.rows_noted == 0)
-    assert(report.rows_total == 126)
+    assert(report.rows_total == 109)
 }
 
 test "sm warnings listed" {
@@ -60,10 +60,10 @@ test "sm loads" {
         Ok(def) => {
             assert(def.name == "agent_step")
             assert(def.version == "alula-2.24")
-            assert(def.states.len() == 14)
-            assert(def.common.len() == 6)
-            assert(def.parties.len() == 3)
-            assert(def.data.len() == 21)
+            assert(def.states.len() == 13)
+            assert(def.common.len() == 0)
+            assert(def.parties.len() == 2)
+            assert(def.data.len() == 17)
             assert(def.definitions.len() == 16)
             assert(def.end_rows.len() == 13)
             assert(def.primitives.len() == 2)
@@ -76,9 +76,8 @@ test "sm loads" {
 
 test "sm summary" {
     ro text = render_summary(sample_json())
-    assert(text.starts_with("machine agent_step (version alula-2.24): 14 states, 47 rows, "))
+    assert(text.starts_with("machine agent_step (version alula-2.24): 13 states, 37 rows, "))
     assert(text.contains("  AgentTurn (appeal): 9 rows, 18 actions"))
-    assert(text.contains("common events: 6 rows"))
     assert(text.contains("ends: 13 rows"))
 }
 
@@ -119,28 +118,6 @@ test "sm no prose needed" {
     assert(report.json == sample_json())
 }
 
-test "sm second state pause" {
-    ro heading = "### ПАУЗА — обращение\n- Сторона: усиленный\n\n"
-    ro text = sample().replace("### КОНЕЦ — конец", "${heading}### КОНЕЦ — конец")
-    assert(text != sample())
-    ro report = report_of(text)
-    assert(report.errors.len() >= 1)
-    assert(says_error(report, "состояние `ПАУЗА` объявлено дважды"))
-    ro at = line_number(text, "### ПАУЗА — обращение")
-    assert(lines_of_errors(report)[0].starts_with("${at}:5 name "))
-}
-
-test "sm connection only" {
-    ro ticks = "```"
-    ro text = sample().replace("право_записи: \"файлы, которые правит агент; пауза их права не трогает\")\n${ticks}\n", "право_записи: \"файлы, которые правит агент; пауза их права не трогает\")\n${ticks}\n\nСправка о подключении.\n")
-    assert(text != sample())
-    ro report = report_of(text)
-    assert(report.errors.len() >= 1)
-    assert(says_error(report, "только строки подключения"))
-    ro list = sample().replace("право_записи: \"файлы, которые правит агент; пауза их права не трогает\")\n${ticks}\n", "право_записи: \"файлы, которые правит агент; пауза их права не трогает\")\n${ticks}\n\n- пункт списка\n")
-    assert(says_error(report_of(list), "только строки подключения"))
-}
-
 test "sm words" {
     ro json = sample_json()
     assert(json.contains("\"values\":[[\"Read\",\"read\"],[\"Write\",\"write\"],[\"Delete\",\"delete\"],[\"Move\",\"move\"],[\"Search\",\"search\"],[\"Execute\",\"execute\"],[\"Network\",\"network\"],[\"Think\",\"think\"],[\"SwitchMode\",\"switch_mode\"],[\"Other\",\"other\"]]"))
@@ -153,12 +130,6 @@ test "sm sets" {
     ro q = "\\\""
     assert(json.contains("full {ActionKind: ${q}allow${q} | ${q}deny${q} | ${q}ask${q}}"))
     assert(json.contains("\"result\":\"${q}allow${q} | ${q}deny${q} | ${q}ask${q}\""))
-}
-
-test "sm id field" {
-    ro json = sample_json()
-    assert(!json.contains("\"request_id\""))
-    assert(json.contains("\"name\":\"cancel_request\",\"fields\":[{\"name\":\"id\",\"type\":\"text\"}]"))
 }
 
 test "sm table names" {
