@@ -5,7 +5,7 @@ import std.text
 import alula.machine_table.{alula_versions, MACHINE_FORMAT}
 
 /// The version of the program.
-export const PROGRAM_VERSION = "0.9.0"
+export const PROGRAM_VERSION = "0.9.1"
 
 /// The line of `alula version`: the program, the version of the language it writes (2.26: there is no transition period), the format of the compiled machine.
 export fn version_text() -> str {
@@ -24,10 +24,10 @@ Usage:
 Commands:
   alula compile <file.alula.md> [-o <file.alula.json>] [--lenient] [--no-check] [--force]
       Alula -> the JSON machine/2 (the language of the file is read from its header).
-  alula render <file.alula.json> [--language ru|en] [-o <file.alula.md>] [--lenient] [--force]
+  alula render <file.alula.json> [--language ru|en] [-o <file.alula.md>] [--lenient] [--force] [--lib <folder>]
       the JSON machine/2 -> a file of Alula in the canonical form (Russian by default).
-  alula convert <file.alula.md> --language ru|en [-o <file.alula.md>] [--no-check] [--lenient] [--force]
-      a file of Alula in the other language, through the JSON.
+  alula convert <file.alula.md> --language ru|en [-o <file.alula.md>] [--no-check] [--lenient] [--force] [--lib <folder>]
+      a file of Alula in the other language, through the JSON, with the twins of its libraries in that language.
   alula check <file.alula.md|file.alula.json> [--no-check]
       the translation and the checks of the table; the errors and the warnings.
   alula summary <file.alula.md|file.alula.json> [--no-check]
@@ -69,10 +69,12 @@ The errors and the warnings go to the standard error as "file:line:column: kind:
 `
     }
     if command == "render" {
-        return `alula render <file.alula.json> [--language ru|en] [-o <file.alula.md>] [--lenient] [--force]
+        return `alula render <file.alula.json> [--language ru|en] [-o <file.alula.md>] [--lenient] [--force] [--lib <folder>]
 
 The JSON machine/2 -> a file of Alula in the canonical form of the specification (section 1b). Russian by default.
 What the file cannot say goes to the standard error and the code is 1.
+A library in the other language is named by its twin in the language of the file (2.26, section 9: libs/pause.alula.md <-> libs/pause.en.alula.md):
+its file and its twin are read beside the machine, else in the folder of --lib; a library without a twin is an error.
 
   --language ru|en      the language of the file to write (default ru)
   -o, --output <file>   write the file (an existing file is not overwritten without --force)
@@ -80,13 +82,18 @@ What the file cannot say goes to the standard error and the code is 1.
   --lenient             print what could be said even when something could not
   --registry <file>     the registry of the host (default: registry.md beside the file)
   --journal <file>      the table of the journal codes of the host (default: journal.md beside the file)
+  --lib <folder>        the folder of the libraries (2.26): the file of a library and its twin that are not beside the machine are looked for there
 `
     }
     if command == "convert" {
-        return `alula convert <file.alula.md> --language ru|en [-o <file.alula.md>] [--no-check] [--lenient] [--force]
+        return `alula convert <file.alula.md> --language ru|en [-o <file.alula.md>] [--no-check] [--lenient] [--force] [--lib <folder>]
 
 A file of Alula in the other language: compile, then render. The meaning is kept; the comments (the paragraphs of free text and the lines
 starting with ">" or "//") are not carried over, and the program says so on the standard error.
+Every library goes over too (2.26, section 9): the machine names the twin of the library in the language of the result (the name with .en
+before .alula.md: libs/pause.alula.md <-> libs/pause.en.alula.md) with its hash. The twin is read beside the machine, else in the folder of
+--lib; with -o it is written beside the result at the same path (an existing other file is not overwritten without --force).
+A library without a twin is an error that lists them all (the code 1).
 
   --language ru|en      the language of the result (needed)
   -o, --output <file>   write the file (an existing file is not overwritten without --force)
@@ -95,7 +102,7 @@ starting with ">" or "//") are not carried over, and the program says so on the 
   --lenient             go on when there are errors
   --registry <file>     the registry of the host (default: registry.md beside the file)
   --journal <file>      the table of the journal codes of the host (default: journal.md beside the file)
-  --lib <folder>        the folder of the libraries (2.26): the file of a library that is not beside the machine is looked for there
+  --lib <folder>        the folder of the libraries (2.26): the file of a library and its twin that are not beside the machine are looked for there
 `
     }
     if command == "check" {

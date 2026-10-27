@@ -6,7 +6,7 @@ module alula.alula_cli
 import std.text
 import alula.machine.{NamedText, Registry}
 import alula.machine_table.{load_machine, parse_machine, issue_text}
-import alula.machine_text.{translate_report_with, translate_checked_with, TranslateReport, error_text, render_summary, render_machine_in, library_registry, is_library_text, library_paths}
+import alula.machine_text.{translate_report_with, translate_checked_with, TranslateReport, error_text, render_summary, render_machine_libs, library_registry, is_library_text, library_paths, library_twin_path, tree_library_paths}
 import alula.machine_run.{AlulaMachine, NestedRegistry, check_registry, run_nested_test, load_alula_machine, parse_test, test_problem, run_test, run_ok, report_text}
 import alula.machine_table.{MachineParty}
 
@@ -32,6 +32,37 @@ export fn is_json_file(file str) -> bool => file.ends_with(".json")
 /// The paths of the libraries that a file of 2.26 connects (its lines `- Файл:`); the program reads them.
 // ORACLE-WORKAROUND(32): cli.nv calls this function and does not import the module of the translator, whose `.join` would then resolve to `Path.join`; import it there when item 32 is fixed
 export fn wanted_libraries(text str) -> []str => library_paths(alula_text(text))
+
+/// The paths of the libraries that a tree connects (the key `file` of its nodes of `includes`); the program reads them for `alula render`.
+export fn tree_libraries(json str) -> []str => tree_library_paths(json)
+
+/// The path of the twin of a library in the language (section 9: `libs/pause.alula.md` <-> `libs/pause.en.alula.md`); the path itself when the file is in that language.
+export fn twin_path(path str, language str) -> str => library_twin_path(path, language)
+
+/// The file of a library among the files read, by the path as written.
+export fn library_named(libs []NamedText, path str) -> Option[NamedText] {
+    for f in libs {
+        if f.name == path { return Some(f) }
+    }
+    None
+}
+
+/// The libraries whose file in the language is not among `libs` (section 9, task 241): each `<the file in the other language> (<the twin in the language>)`.
+fn missing_twins(paths []str, libs []NamedText, language str) -> []str {
+    ro other = if language == "en" { "ru" } else { "en" }
+    mut out = []str.new()
+    for p in paths {
+        ro twin = library_twin_path(p, language)
+        if library_named(libs, twin).is_none() {
+            ro line = "${library_twin_path(twin, other)} (${twin})"
+            if !out.contains(line) { out.push(line) }
+        }
+    }
+    out
+}
+
+// The name of the language in a message.
+fn language_word(language str) -> str => if language == "en" { "English" } else { "Russian" }
 
 // `libs`: the files of the libraries that the machine connects (2.26, section 9), by the paths of its lines `- Файл:`.
 fn translated(text str, no_check bool, registry Registry, libs []NamedText) -> TranslateReport {
@@ -69,8 +100,9 @@ export fn compile_command(text str, file str, no_check bool, lenient bool, regis
 // ---- render ------------------------------------------------------------------------------------------------------------------------
 
 /// `alula render`: the JSON `machine/2` -> a file of Alula in the language. What the generator cannot say is a note (code 1); with `lenient` the text is printed all the same.
-export fn render_command(text str, file str, language str, lenient bool, registry Registry) -> CmdResult {
-    ro made = render_machine_in(text, language, false, registry)
+/// `libs`: the files of the libraries that the tree connects and their twins (2.26, section 9): a library in the other language is named by its twin, a twin that is not there is a note.
+export fn render_command(text str, file str, language str, lenient bool, registry Registry, libs []NamedText) -> CmdResult {
+    ro made = render_machine_libs(text, language, false, registry, libs)
     if made.notes.len() == 0 { return done(made.text, "", 0) }
     ro out = if lenient { made.text } else { "" }
     done(out, lines_text(note_lines(made.notes, file)), 1)
@@ -79,14 +111,17 @@ export fn render_command(text str, file str, language str, lenient bool, registr
 // ---- convert -----------------------------------------------------------------------------------------------------------------------
 
 /// `alula convert`: a file of Alula -> the file in the language, through the JSON. The comments do not go through the JSON; the program says so.
+/// Every library goes over too (2.26, section 9, task 241): the file names the twin of the library in the language; a library whose twin is not among `libs` is the error that lists them all.
 export fn convert_command(text str, file str, language str, no_check bool, lenient bool, registry Registry, libs []NamedText) -> CmdResult {
+    ro missing = missing_twins(wanted_libraries(text), libs, language)
+    if missing.len() > 0 { return done("", "alula convert: no ${language_word(language)} twin of the libraries: ${missing.join(", ")}\n", 1) }
     ro report = translated(text, no_check, registry, libs)
     mut lines = report_lines(report, file)
     if report.errors.len() > 0 && !lenient {
         lines.push("alula convert: ${report.errors.len()} errors in ${file} (${report.rows_noted} of ${report.rows_total} rows with notes)")
         return done("", lines_text(lines), 1)
     }
-    ro made = render_machine_in(report.json, language, false, registry)
+    ro made = render_machine_libs(report.json, language, false, registry, libs)
     for l in note_lines(made.notes, file) { lines.push(l) }
     lines.push("alula: note: the comments of ${file} (paragraphs of free text, lines starting with > or //) are not carried over")
     ro failed = report.errors.len() > 0 || made.notes.len() > 0

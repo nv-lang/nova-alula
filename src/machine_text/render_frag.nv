@@ -103,29 +103,192 @@ fn rn_without_libraries(root RJ, copy_includes bool) -> RJ {
 
 /// The section `## Подключения` of 2.26 (1b (м)): per library the subheading `### Имя`, `- Файл:`, `- Хеш:`, `- Имя:` when the instance has another name, and the table of the values of the parameters
 /// in the order of `## Параметры` of the library. `copy_includes` writes no connection (the types, the constants and the functions are written as the machine's own; the library of states can not be).
+/// A library in the other language is named by its twin (section 9, task 241: `rn_twin_of`).
 fn rn_library_lines(mut cx RnCx, root RJ, copy_includes bool) -> []str {
     mut out = []str.new()
     for inc in rj_garr(root, "includes") {
         if !rj_has(inc, "file") { continue }
         if copy_includes && !rj_has(inc, "args") && !rn_brings_state(inc) { continue }
+        ro twin = rn_twin_of(cx, inc)
         if out.len() > 0 { out.push("") }
-        out.push("### ${rj_gstr(inc, "heading")}")
-        out.push("- ${rn_kw(cx, "key", "File")}: ${rj_gstr(inc, "file")}")
-        out.push("- ${rn_kw(cx, "key", "Hash")}: ${rj_gstr(inc, "hash")}")
+        out.push("### ${twin.heading}")
+        out.push("- ${rn_kw(cx, "key", "File")}: ${twin.file}")
+        out.push("- ${rn_kw(cx, "key", "Hash")}: ${twin.hash}")
         if rj_gstr(inc, "instance") != "" { out.push("- ${rn_kw(cx, "key", "Name")}: ${rj_gstr(inc, "instance")}") }
         ro args = rj_garr(inc, "args")
         if args.len() > 0 {
             mut rows = []RnRow.new()
             for a in args {
+                ro name = rj_gstr(a, "name")
+                ro at = rn_lib_param_at(twin.from, name)
                 ro value = match rj_get(a, "value") {
-                    Some(v) => rn_expr(cx, v, []str.new())
+                    Some(v) => rn_twin_value(cx, twin, at, v)
                     None => ""
                 }
-                rows.push(RnRow { cells: [rj_gstr(a, "name"), value] })
+                ro shown = if at >= 0 && at < twin.to.len() { twin.to[at].name } else { name }
+                rows.push(RnRow { cells: [shown, value] })
             }
             out.push("")
             rn_add(out, rn_table(rn_cols(cx, ["parameter", "value"]), rows))
         }
+    }
+    out
+}
+
+// ---- the twin of a library (section 9, task 241) ---------------------------------------------------------------------------------------------
+
+/// The path of the twin of a library in the language (section 9): `libs/pause.alula.md` -> `libs/pause.en.alula.md` for `en`, `libs/pause.en.alula.md` -> `libs/pause.alula.md` for `ru`;
+/// the path itself when the file is in that language already (or is not named `*.alula.md`).
+export fn library_twin_path(path str, language str) -> str {
+    if language == "en" {
+        if path.ends_with(".en.alula.md") { return path }
+        match path.strip_suffix(".alula.md") {
+            Some(stem) => return "${stem}.en.alula.md"
+            None => return path
+        }
+    }
+    match path.strip_suffix(".en.alula.md") {
+        Some(stem) => "${stem}.alula.md"
+        None => path
+    }
+}
+
+/// The paths of the files of the libraries that a tree connects (the key `file` of the nodes of `includes`), in their order; none for a text that is not a tree.
+export fn tree_library_paths(machine_json str) -> []str {
+    mut out = []str.new()
+    match rj_parse(machine_json) {
+        Ok(root) => {
+            for inc in rj_garr(root, "includes") {
+                ro file = rj_gstr(inc, "file")
+                if file != "" && !out.contains(file) { out.push(file) }
+            }
+        }
+        Err(e) => ()
+    }
+    out
+}
+
+/// RnLibParam: a parameter of a library as its table `## Параметры` writes it: the name and the literals of its set (none for a type that is not a set of literals).
+type RnLibParam { name str, set []str }
+
+/// RnTwin: how a connection is written: the path, the hash and the title of the file named; `from` and `to` are the parameters of the file of the tree and of the twin (both empty when the
+/// file of the tree is written as it is).
+type RnTwin { file str, hash str, heading str, from []RnLibParam, to []RnLibParam }
+
+// The sign that stands for `\|` of a cell while the row is cut at `|`.
+const RN_LIB_BAR = "¦"
+
+// The connection as the tree writes it.
+fn rn_twin_same(inc RJ) -> RnTwin => { file: rj_gstr(inc, "file"), hash: rj_gstr(inc, "hash"), heading: rj_gstr(inc, "heading"), from: []RnLibParam.new(), to: []RnLibParam.new() }
+
+/// The connection of a node of `includes` in the language of the file written: a file in the other language is named by its twin of `cx.libs` (its path, `definitions_hash` of its text,
+/// its title, its parameters); a twin or a file of the tree that is not given is a note, and the node is written as it is.
+fn rn_twin_of(mut cx RnCx, inc RJ) -> RnTwin {
+    ro same = rn_twin_same(inc)
+    if !cx.twins { return same }
+    ro file = rj_gstr(inc, "file")
+    ro twin_path = library_twin_path(file, cx.lang)
+    if twin_path == file { return same }
+    ro which = if cx.lang == "en" { "English" } else { "Russian" }
+    ro original = match lib_find(file, cx.libs) {
+        Some(f) => f.text
+        None => ""
+    }
+    match lib_find(twin_path, cx.libs) {
+        None => {
+            rn_note(cx, "no ${which} twin of the library `${rj_gstr(inc, "heading")}` (${file}): the file ${twin_path} is not given (section 9)")
+            same
+        }
+        Some(t) => {
+            if original == "" {
+                rn_note(cx, "the file ${file} of the library `${rj_gstr(inc, "heading")}` is not given: the names of its parameters can not be matched to its ${which} twin ${twin_path} (section 9)")
+                return same
+            }
+            ro title = rn_lib_title(t.text)
+            RnTwin { file: twin_path, hash: definitions_hash(t.text), heading: if title == "" { rj_gstr(inc, "heading") } else { title }, from: rn_lib_params(original), to: rn_lib_params(t.text) }
+        }
+    }
+}
+
+// The place of a parameter in the table of a library; -1 when it is not there.
+fn rn_lib_param_at(params []RnLibParam, name str) -> int {
+    mut i = 0
+    while i < params.len() {
+        if params[i].name == name { return i }
+        i += 1
+    }
+    -1
+}
+
+// The value of an argument: a literal of the set of the parameter is the literal at the same place of the set of the twin; another value is written as it is.
+fn rn_twin_value(mut cx RnCx, twin RnTwin, at int, v RJ) -> str {
+    if at >= 0 && at < twin.from.len() && at < twin.to.len() && rj_gstr(v, "op") == "lit" {
+        match rj_get(v, "value") {
+            Some(x) => {
+                match x {
+                    RStr(s) => {
+                        ro from = twin.from[at].set
+                        ro to = twin.to[at].set
+                        mut j = 0
+                        while j < from.len() {
+                            if from[j] == s && j < to.len() { return rn_quote(to[j]) }
+                            j += 1
+                        }
+                    }
+                    _ => ()
+                }
+            }
+            None => ()
+        }
+    }
+    rn_expr(cx, v, []str.new())
+}
+
+// The title of a library: the text after `# Библиотека:` (`# Library:`) of its first line; "" when the first line is not a heading.
+fn rn_lib_title(text str) -> str {
+    for raw in text.split("\n") {
+        ro line = (raw.strip_suffix("\r") ?? raw).trim_ascii()
+        if line == "" { continue }
+        if !line.starts_with("# ") { return "" }
+        ro at = line.find(":") ?? -1
+        if at < 0 { return "" }
+        return line[at + 1..].trim_ascii()
+    }
+    ""
+}
+
+// The parameters of a library in the order of its table `## Параметры` (`## Parameters`): `| имя | тип | комментарий |`.
+fn rn_lib_params(text str) -> []RnLibParam {
+    mut out = []RnLibParam.new()
+    mut inside = false
+    mut rows = 0
+    for raw in text.split("\n") {
+        ro line = (raw.strip_suffix("\r") ?? raw).trim_ascii()
+        if line.starts_with("## ") {
+            ro title = lx_cut_comment(line[3..]).trim_ascii()
+            inside = title == kw(words_load("ru"), "section", "Parameters") || title == kw(words_load("en"), "section", "Parameters")
+            rows = 0
+            continue
+        }
+        if !inside || !line.starts_with("|") { continue }
+        rows += 1
+        // the first row is the header, the second the dashes
+        if rows <= 2 { continue }
+        mut cells = []str.new()
+        for c in line.replace("\\|", RN_LIB_BAR).split("|") { cells.push(c.trim_ascii()) }
+        if cells.len() < 3 { continue }
+        out.push(RnLibParam { name: cells[1], set: rn_set_literals(cells[2].replace(RN_LIB_BAR, "|")) })
+    }
+    out
+}
+
+// The literals of a type that is a set of literals (`"a" | "b"`), without their quotes; none for another type.
+fn rn_set_literals(type_text str) -> []str {
+    mut out = []str.new()
+    for part in type_text.split("|") {
+        ro v = part.trim_ascii()
+        if v.byte_len() < 2 || !v.starts_with("\"") || !v.ends_with("\"") { return []str.new() }
+        out.push(v[1..v.byte_len() - 1])
     }
     out
 }
