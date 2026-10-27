@@ -1,0 +1,499 @@
+// v226_lib_test.nv - task 197 (Alula 2.26, stream 3: the libraries and the built-in library `контракт`, sections 9 and 7а of the specification): the subheading `### Имя` in `## Подключения`
+// with `- Файл:`, `- Хеш:`, `- Имя:` and the table of the values of the parameters, the file of a library (`# Библиотека:`, `## Параметры`, `## Требует`, the data, the common events, the states), the
+// visibility (the functions, the types and the constants without a prefix, the data and the states with the prefix of the instance), the contract (`КодСбоя`, the data of the engine, the event `часть`
+// of the column `части`, `срок`), the old forms refused with the hint. A file of 2.25 is read as before (the seam until stream 4 migrates the files).
+module alula.machine_text
+
+import std.text
+import alula.machine.{NamedText}
+
+// The fence of a block of code: the texts below are raw strings, a backtick can not stand in them.
+fn lib_fenced(text str) -> str => text.replace("~~~", "```")
+
+// The library of functions of the specification (section 9): one function, no parameters.
+fn cycle_lib_text() -> str => lib_fenced(`# Библиотека: арифметика_цикла
+
+- library: cycle_arithmetic
+- format: 2.26
+
+## Функции
+
+~~~
+функция потолок_исчерпан(номер число>=1, отсчёт число>=1, предел число>=0) -> булево =>
+  (номер - 1) - отсчёт + 1 >= предел
+~~~
+`)
+
+// The library «Пауза» of the specification (section 9): the parameters, the requirements, a datum, the common events and the state ПАУЗА.
+fn pause_lib_text() -> str => `# Библиотека: Пауза
+
+- library: pause
+- format: 2.26
+
+## Параметры
+
+| имя | тип | комментарий |
+|---|---|---|
+| сигнал_остановки | строка | сигнал стороны «усиленный», по которому машина останавливается |
+| код_остановки | строка | значение набора остановка машины |
+| вложенные | []строка | имена машин, которым идут сигналы цепочки |
+| отмена_запросов | "механика" \| "без_возврата_в_к_отправке" \| "прекратить_ход_транспорта" | эффекты — таблица спецификации |
+| вход_заново | "ничего" \| "запросы_из_к_отправке" | эффекты — таблица спецификации |
+
+## Требует
+
+| имя | тип |
+|---|---|
+| остановка | "cancel_request" \| код_остановки |
+| усиленный | сторона enhanced с сигналами продолжить { слово_человека строка, автор строка, источник строка } и сигнал_остановки |
+| ОСТАНОВЛЕНО | конец |
+| ОШИБКА | конец |
+
+## Данные
+
+| имя | тип | начальное |
+|---|---|---|
+| предыдущее | ?Состояние | пусто |
+
+## Общие события
+
+| Событие | Условие | Действия | Куда |
+|---|---|---|---|
+| сигнал(стоп человека { слово_человека, автор, источник }) | не конец(состояние) и состояние != ПАУЗА | журнал("human_stop", author: автор, source: источник, event: событие.идентификатор)<br>предыдущее = состояние<br>передать(вложенные, стоп)<br>отменить_открытые(кроме: вложенные) | ПАУЗА |
+| сигнал(стоп от родителя { идентификатор_запроса }) | не конец(состояние) и состояние != ПАУЗА и идентификатор_запроса == запрос_вызова | журнал("pause_by_parent_stop", request: идентификатор_запроса, event: событие.идентификатор)<br>предыдущее = состояние<br>передать(вложенные, стоп)<br>отменить_открытые(кроме: вложенные) | ПАУЗА |
+| сигнал(отмена_запроса { идентификатор_запроса }) | идентификатор_запроса != запрос_вызова | журнал("cancel_discarded_foreign_request", request: идентификатор_запроса, event: событие.идентификатор) | то же |
+| сигнал(отмена_запроса { идентификатор_запроса }) | идентификатор_запроса == запрос_вызова и конец(состояние) | журнал("cancel_discarded_already_replied", request: идентификатор_запроса, event: событие.идентификатор) | то же |
+| сигнал(отмена_запроса { идентификатор_запроса }) | идентификатор_запроса == запрос_вызова и не конец(состояние) | журнал("request_cancelled", request: идентификатор_запроса, event: событие.идентификатор)<br>остановка = "cancel_request"<br>передать(вложенные, отмена)<br>отменить_открытые | ОСТАНОВЛЕНО |
+| сигнал(отмена_запроса { идентификатор_запроса }) | иначе | ошибка_машины("cancel_parse_no_match") |  |
+
+## Состояния
+
+### ПАУЗА — обращение
+- Сторона: усиленный
+- Запрос:
+
+| поле запроса | выражение |
+|---|---|
+| предыдущее | обязательно(предыдущее) |
+| запрос_вызова |  |
+
+| Событие | Условие | Действия | Куда |
+|---|---|---|---|
+| сигнал(продолжить { автор, источник }) |  | журнал("human_continue", previous: строка(обязательно(предыдущее)), author: автор, source: источник, event: событие.идентификатор)<br>передать(вложенные, продолжить) | предыдущее |
+| сигнал(сигнал_остановки) |  | остановка = код_остановки<br>передать(вложенные, остановить) | ОСТАНОВЛЕНО |
+| сигнал(продолжить от родителя { идентификатор_запроса }) | идентификатор_запроса == запрос_вызова | журнал("parent_continue", previous: строка(обязательно(предыдущее)), request: идентификатор_запроса, event: событие.идентификатор)<br>передать(вложенные, продолжить) | предыдущее |
+| сигнал(остановить от родителя { идентификатор_запроса }) | идентификатор_запроса == запрос_вызова | остановка = код_остановки<br>передать(вложенные, остановить) | ОСТАНОВЛЕНО |
+`
+
+fn libs_of(pause str, cycle str) -> []NamedText => [
+    NamedText { name: "libs/pause.alula.md", text: pause },
+    NamedText { name: "libs/cycle_arithmetic.alula.md", text: cycle }
+]
+
+fn libs226() -> []NamedText => libs_of(pause_lib_text(), cycle_lib_text())
+
+// The connection of «Пауза» with the values of the parameters of the pilot «Шаг агента»; HASH is the hash of the file.
+fn pause_include() -> str => `### Пауза
+- Файл: libs/pause.alula.md
+- Хеш: HASH
+
+| параметр | значение |
+|---|---|
+| сигнал_остановки | "остановить" |
+| код_остановки | "pause_halt" |
+| вложенные | [] |
+| отмена_запросов | "механика" |
+| вход_заново | "ничего" |
+`
+
+fn cycle_include() -> str => `### арифметика_цикла
+- Файл: libs/cycle_arithmetic.alula.md
+- Хеш: CHASH
+`
+
+// A machine of 2.26 that connects both libraries: an agent works, the enhanced human may stop it (the library «Пауза»), the work counts its rounds by the library of functions.
+fn lib226_text() -> str {
+    ro text = `# Машина: Lib
+
+- machine: Lib
+- machine_version: 1
+- format: 2.26
+
+## Имена
+
+| имя | JSON-имя |
+|---|---|
+| РАБОТА | Work |
+| КОНЕЦ | Finished |
+
+## Данные
+
+| имя | тип | начальное | не убывает | пишет |
+|---|---|---|---|---|
+| остановка | "" \| "cancel_request" \| "pause_halt" | "" | — | действия и фрагмент |
+| исчерпан | булево | ложь | — | действия |
+| попытка_агента | число>=0 | 0 | да | механика |
+| попытка_усиленного | число>=0 | 0 | да | механика |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | сигналы | счётчик |
+|---|---|---|---|---|---|
+| агент | agent | agent(итог строка) | — | — | попытка_агента |
+| усиленный | enhanced | enhanced(итог ИсходВорот) | — | продолжить { слово_человека строка, автор строка, источник строка }, остановить | попытка_усиленного |
+
+## Подключения
+
+INCLUDES
+## Состояния
+
+Начальное состояние: РАБОТА
+
+### РАБОТА — обращение
+- Сторона: агент
+- Запрос:
+
+| поле запроса | выражение |
+|---|---|
+| вопрос | "q" |
+
+| Событие | Условие | Действия | Куда |
+|---|---|---|---|
+| ответ |  | исчерпан = потолок_исчерпан(1, 1, 0) | КОНЕЦ |
+
+### КОНЕЦ — конец
+
+### ОСТАНОВЛЕНО — конец
+- Кроме: остановка в [""]
+
+### ОШИБКА — конец
+
+## Выход
+
+- Результат: строка
+
+| конец | когда | ответ |
+|---|---|---|
+| КОНЕЦ | истина | Ответ("ok") |
+| ОСТАНОВЛЕНО | остановка == "pause_halt" | Отказ(КодСбоя.ОстановленоЧеловеком, остановка) |
+| ОСТАНОВЛЕНО | остановка == "cancel_request" | Отказ(КодСбоя.ОтмененоРодителем, остановка) |
+| ОШИБКА | истина | Отказ(КодСбоя.НетРезультата, "error") |
+`
+    ro includes = "${pause_include()}\n${cycle_include()}"
+    text.replace("INCLUDES", includes).replace("CHASH", definitions_hash(cycle_lib_text())).replace("HASH", definitions_hash(pause_lib_text()))
+}
+
+fn lib_with(old str, new str) -> str => lib226_text().replace(old, new)
+
+fn rl(text str) -> TranslateReport => translate_report_with(text, libs226())
+
+fn rl_with(text str, libs []NamedText) -> TranslateReport => translate_report_with(text, libs)
+
+fn first_lib(report TranslateReport) -> str {
+    ro errors = report.errors
+    if errors.len() == 0 { return "ok" }
+    "${errors[0].line}:${errors[0].col} ${errors[0].kind} ${errors[0].message}"
+}
+
+fn says_lib(report TranslateReport, needle str) -> bool {
+    for e in report.errors {
+        if e.message.contains(needle) { return true }
+    }
+    false
+}
+
+// ---- the libraries are connected --------------------------------------------------------------------------------------------------------------------
+
+test "v226 lib a machine that connects two libraries by subheadings is translated with no error" {
+    assert(first_lib(rl(lib226_text())) == "ok")
+}
+
+test "v226 lib the tree holds what the library brings: the state, the datum, the common events, the function" {
+    ro j = rl(lib226_text()).json
+    assert(j.contains("\"name\":\"Pause\",\"kind\":\"appeal\""))
+    assert(j.contains("\"name\":\"previous\""))
+    assert(j.contains("\"common_events\":["))
+    assert(j.contains("\"code\":\"human_stop\""))
+    assert(j.contains("\"name\":\"ceiling_reached\"") || j.contains("потолок_исчерпан") || j.contains("\"definitions\":["))
+}
+
+test "v226 lib the tree names each library in includes by its name and hash, without a version" {
+    ro j = rl(lib226_text()).json
+    assert(j.contains("\"includes\":["))
+    assert(j.contains("\"name\":\"pause\""))
+    assert(j.contains("\"name\":\"cycle_arithmetic\""))
+    assert(j.contains("\"hash\":\"${definitions_hash(pause_lib_text())}\""))
+    assert(j.contains("\"hash\":\"${definitions_hash(cycle_lib_text())}\""))
+    assert(!j.contains("\"version\":\"1\",\"hash\""))
+    assert(!j.contains("\"fragments\""))
+}
+
+test "v226 lib the parameter is read by its name in the library: the code of the halt is put in" {
+    ro j = rl(lib226_text()).json
+    assert(j.contains("\"target\":\"stop_reason\",\"value\":{\"op\":\"lit\",\"value\":\"pause_halt\"}") || j.contains("\"value\":\"pause_halt\""))
+}
+
+test "v226 lib the signal parameter names the signal of the party: the row of the halt takes the signal halt" {
+    ro j = rl(lib226_text()).json
+    assert(j.contains("\"kind\":\"signal\",\"name\":\"halt\""))
+}
+
+test "v226 lib a signal parameter that the party does not declare is an error" {
+    ro r = rl(lib_with("| сигнал_остановки | \"остановить\" |", "| сигнал_остановки | \"прекратить\" |"))
+    assert(says_lib(r, "прекратить"))
+}
+
+test "v226 lib the hash that differs from the file is an error" {
+    ro r = rl(lib_with("- Хеш: ${definitions_hash(pause_lib_text())}", "- Хеш: 000000000000"))
+    assert(says_lib(r, "хеш"))
+}
+
+test "v226 lib a file that is not found is an error" {
+    ro r = rl(lib_with("- Файл: libs/pause.alula.md", "- Файл: libs/none.alula.md"))
+    assert(says_lib(r, "libs/none.alula.md"))
+}
+
+test "v226 lib a parameter that is not named is an error" {
+    ro r = rl(lib_with("| вход_заново | \"ничего\" |\n", ""))
+    assert(says_lib(r, "вход_заново"))
+}
+
+test "v226 lib a parameter that the library does not have is an error" {
+    ro r = rl(lib_with("| вход_заново | \"ничего\" |\n", "| вход_заново | \"ничего\" |\n| право_записи | \"нет\" |\n"))
+    assert(says_lib(r, "право_записи"))
+}
+
+test "v226 lib a value outside the set of the type of the parameter is an error" {
+    ro r = rl(lib_with("| отмена_запросов | \"механика\" |", "| отмена_запросов | \"всё\" |"))
+    assert(says_lib(r, "отмена_запросов"))
+}
+
+test "v226 lib a value of another type is an error" {
+    ro r = rl(lib_with("| код_остановки | \"pause_halt\" |", "| код_остановки | 5 |"))
+    assert(says_lib(r, "код_остановки"))
+}
+
+test "v226 lib the requirement of a datum that the machine has not is an error" {
+    ro r = rl(lib_with("| остановка | \"\" \\| \"cancel_request\" \\| \"pause_halt\" | \"\" | — | действия и фрагмент |\n", ""))
+    assert(says_lib(r, "требует"))
+}
+
+test "v226 lib the requirement of an end that the machine has not is an error" {
+    ro r = rl(lib_with("### ОШИБКА — конец\n", "").replace("| ОШИБКА | истина | Отказ(КодСбоя.НетРезультата, \"error\") |\n", ""))
+    assert(says_lib(r, "ОШИБКА"))
+}
+
+// ---- the visibility ----------------------------------------------------------------------------------------------------------------------------------
+
+test "v226 lib the state of the library is called with the prefix of the instance" {
+    ro r = rl(lib_with("| ответ |  | исчерпан = потолок_исчерпан(1, 1, 0) | КОНЕЦ |", "| ответ |  | исчерпан = потолок_исчерпан(1, 1, 0) | Пауза.ПАУЗА |"))
+    assert(first_lib(r) == "ok")
+    assert(r.json.contains("\"to\":\"Pause\""))
+}
+
+test "v226 lib the state of the library without the prefix is not a name of the machine" {
+    ro r = rl(lib_with("| ответ |  | исчерпан = потолок_исчерпан(1, 1, 0) | КОНЕЦ |", "| ответ |  | исчерпан = потолок_исчерпан(1, 1, 0) | ПАУЗА |"))
+    assert(says_lib(r, "ПАУЗА"))
+}
+
+test "v226 lib the datum of the library is read with the prefix of the instance" {
+    ro r = rl(lib_with("| ответ |  | исчерпан = потолок_исчерпан(1, 1, 0) | КОНЕЦ |", "| ответ | есть(Пауза.предыдущее) | исчерпан = потолок_исчерпан(1, 1, 0) | КОНЕЦ |"))
+    assert(first_lib(r) == "ok")
+    assert(r.json.contains("\"name\":\"previous\"}"))
+}
+
+test "v226 lib the datum of the library without the prefix is not a name of the machine" {
+    ro r = rl(lib_with("| ответ |  | исчерпан = потолок_исчерпан(1, 1, 0) | КОНЕЦ |", "| ответ | есть(предыдущее) | исчерпан = потолок_исчерпан(1, 1, 0) | КОНЕЦ |"))
+    assert(says_lib(r, "предыдущее"))
+}
+
+test "v226 lib the line Name sets another name of the instance" {
+    ro text = lib_with("- Хеш: ${definitions_hash(pause_lib_text())}\n", "- Хеш: ${definitions_hash(pause_lib_text())}\n- Имя: Пауза2\n")
+    ro r = rl(text.replace("| ответ |  | исчерпан = потолок_исчерпан(1, 1, 0) | КОНЕЦ |", "| ответ |  | исчерпан = потолок_исчерпан(1, 1, 0) | Пауза2.ПАУЗА |"))
+    assert(first_lib(r) == "ok")
+}
+
+test "v226 lib a library with states is connected once" {
+    ro twice = pause_include().replace("### Пауза", "### Пауза\n- Имя: Ещё").replace("HASH", definitions_hash(pause_lib_text()))
+    ro r = rl(lib_with("### арифметика_цикла", "${twice}\n### арифметика_цикла"))
+    assert(says_lib(r, "один раз"))
+}
+
+test "v226 lib a function of the library that clashes with a function of the machine is an error" {
+    ro own = lib_fenced("## Функции\n\n~~~\nфункция потолок_исчерпан(а число) -> булево => а > 0\n~~~\n\n## Состояния\n")
+    ro r = rl(lib_with("## Состояния\n", own))
+    assert(says_lib(r, "потолок_исчерпан"))
+}
+
+test "v226 lib a library declares no external functions" {
+    ro bad = lib_fenced(`# Библиотека: арифметика_цикла
+
+- library: cycle_arithmetic
+- format: 2.26
+
+## Внешние функции
+
+~~~
+отметить(н число) действующая
+~~~
+`)
+    ro text = lib226_text().replace(definitions_hash(cycle_lib_text()), definitions_hash(bad))
+    ro r = rl_with(text, libs_of(pause_lib_text(), bad))
+    assert(says_lib(r, "Внешние функции"))
+}
+
+// ---- the old forms of the connection --------------------------------------------------------------------------------------------------------------
+
+test "v226 lib the old line of the functions is an error with the hint of the subheading" {
+    ro r = rl(lib_with(cycle_include().replace("CHASH", definitions_hash(cycle_lib_text())), "функции: арифметика_цикла версия 1 хеш ${definitions_hash(cycle_lib_text())}\n"))
+    assert(says_lib(r, "подзаголовок `### Имя`"))
+}
+
+test "v226 lib the old call of a fragment is an error with the hint of the subheading" {
+    ro r = rl(lib_with("### Пауза", "Пауза(сигнал_остановки: остановить, код_остановки: \"pause_halt\", вложенные: [], отмена_запросов: механика, вход_заново: ничего, право_записи: \"нет\")\n\n### Пауза"))
+    assert(says_lib(r, "подзаголовок `### Имя`"))
+}
+
+test "v226 lib prose in the section of the connections is an error" {
+    ro r = rl(lib_with("### арифметика_цикла", "Библиотеки машины.\n\n### арифметика_цикла"))
+    assert(r.errors.len() > 0)
+}
+
+// ---- the contract ----------------------------------------------------------------------------------------------------------------------------------
+
+test "v226 contract the codes of the failure are not declared by the machine" {
+    assert(first226(tiny226_text().replace("Отказ(FailCode.NoResult, \"b\")", "Отказ(КодСбоя.ПредельЗапросовХода, \"b\")")) == "ok")
+}
+
+test "v226 contract the machine that declares the type of the failure codes is an error: the name is taken by the contract" {
+    ro text = t226_with("## Имена\n", lib_fenced("## Типы\n\n~~~\nтип КодСбоя перечисление А | Б\n~~~\n\n## Имена\n"))
+    assert(says226(text, "контракт"))
+}
+
+test "v226 contract the machine that declares a datum of the engine is an error" {
+    ro text = t226_with("| попытка_вратаря | число>=0 | 0 | да | механика |\n", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| открытые_запросы | []строка | [] | — | механика |\n")
+    assert(says226(text, "контракт"))
+}
+
+test "v226 contract a datum of the engine is read by its name and enters the tree as a datum of the engine" {
+    ro text = t226_with("| число_ходов >= 4 |  | КОНЕЦ |", "| число_ходов >= 4 и запрос_вызова != \"\" |  | КОНЕЦ |")
+    assert(first226(text) == "ok")
+    ro j = json226(text)
+    assert(j.contains("{\"name\":\"call_request_id\",\"type\":\"text\",\"initial\":{\"expr\":{\"op\":\"lit\",\"value\":\"\"}},\"engine\":true}") || j.contains("\"name\":\"call_request_id\",\"type\":\"text\",\"initial\":{\"op\":\"lit\",\"value\":\"\"},\"engine\":true"))
+}
+
+test "v226 contract the term is an event of the party" {
+    ro text = t226_with("| сигнал(отказать) |  | остановка = \"a\" | СТОП |", "| сигнал(отказать) |  | остановка = \"a\" | СТОП |\n| срок |  | остановка = \"b\" | СТОП |")
+    ro r = r226(text.replace("- Сторона: вратарь\n", "- Сторона: вратарь\n- Срок тишины: 1000\n"))
+    assert(first_lib(r) == "ok")
+    assert(r.json.contains("\"kind\":\"timeout\""))
+}
+
+// A machine of 2.26 whose agent sends parts of its answer: the column `части` of the party names the type of a part.
+fn parts226_text() -> str => lib_fenced(`# Машина: Parts
+
+- machine: Parts
+- machine_version: 1
+- format: 2.26
+
+## Типы
+
+~~~
+тип ПорцияОтвета { текст строка }
+~~~
+
+## Имена
+
+| имя | JSON-имя |
+|---|---|
+| ПорцияОтвета | ReplyPortion |
+| ЖДАТЬ | Wait |
+| КОНЕЦ | Finished |
+
+## Данные
+
+| имя | тип | начальное | не убывает | пишет |
+|---|---|---|---|---|
+| ответ_агента | строка | "" | — | действия |
+| попытка_агента | число>=0 | 0 | да | механика |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | сигналы | части | счётчик |
+|---|---|---|---|---|---|---|
+| агент | agent | agent(итог строка) | — | — | ПорцияОтвета | попытка_агента |
+
+## Состояния
+
+Начальное состояние: ЖДАТЬ
+
+### ЖДАТЬ — обращение
+- Сторона: агент
+- Срок тишины: 1000
+- Запрос:
+
+| поле запроса | выражение |
+|---|---|
+| ответ_агента |  |
+
+| Событие | Условие | Действия | Куда |
+|---|---|---|---|
+| часть { текст: кусок } |  | ответ_агента = ответ_агента + кусок | то же |
+| ответ |  |  | КОНЕЦ |
+
+### КОНЕЦ — конец
+
+## Выход
+
+- Результат: строка
+
+| конец | когда | ответ |
+|---|---|---|
+| КОНЕЦ | истина | Ответ(ответ_агента) |
+`)
+
+test "v226 contract the column parts names the type of a part, the event part binds its fields" {
+    ro r = r226(parts226_text())
+    assert(first_lib(r) == "ok")
+    assert(r.json.contains("\"progress\":[{\"name\":\"ReplyPortion\""))
+    assert(r.json.contains("\"kind\":\"progress\",\"name\":\"ReplyPortion\",\"bind\":{"))
+}
+
+test "v226 contract the event part without the fields and with the name of the whole part" {
+    ro bare = r226(parts226_text().replace("| часть { текст: кусок } |  | ответ_агента = ответ_агента + кусок | то же |", "| часть |  |  | то же |"))
+    assert(first_lib(bare) == "ok")
+    assert(bare.json.contains("\"kind\":\"progress\",\"name\":\"ReplyPortion\"}"))
+    ro whole = r226(parts226_text().replace("| часть { текст: кусок } |  | ответ_агента = ответ_агента + кусок | то же |", "| часть(п) |  | ответ_агента = ответ_агента + п.текст | то же |"))
+    assert(first_lib(whole) == "ok")
+    assert(whole.json.contains("\"kind\":\"progress\",\"name\":\"ReplyPortion\",\"bind\":\"п\"") || whole.json.contains("\"kind\":\"progress\",\"name\":\"ReplyPortion\",\"bind\":\""))
+}
+
+test "v226 contract the event part of a party without the column parts is an error" {
+    ro r = r226(parts226_text().replace("| ПорцияОтвета | попытка_агента |", "| — | попытка_агента |"))
+    assert(says_lib(r, "части"))
+}
+
+test "v226 contract the section of the parts of an answer is an error in a file of 2.26" {
+    ro text = t226_with("## Состояния\n", "## Части ответа\n\n| сторона | имя | поля |\n|---|---|---|\n| вратарь | кусок | текст строка |\n\n## Состояния\n")
+    assert(r226(text).errors.len() > 0)
+}
+
+test "v226 contract the section of the signals is an error in a file of 2.26" {
+    ro text = t226_with("## Состояния\n", "## Сигналы\n\n| имя | поля |\n|---|---|\n| отмена | — |\n\n## Состояния\n")
+    assert(r226(text).errors.len() > 0)
+}
+
+// ---- the generator writes the connection of 2.26 -------------------------------------------------------------------------------------------------
+
+test "v226 lib the generator writes the connection by the subheading and the circle gives the same tree" {
+    ro j = rl(lib226_text()).json
+    ro text = render(j, "ru")
+    assert(text.contains("### Пауза"))
+    assert(text.contains("- Файл: libs/pause.alula.md"))
+    assert(text.contains("- Хеш: ${definitions_hash(pause_lib_text())}"))
+    assert(text.contains("| сигнал_остановки | \"остановить\" |"))
+    assert(!text.contains("### ПАУЗА"))
+    ro again = rl(text)
+    assert(first_lib(again) == "ok")
+    assert(again.json == j)
+}
