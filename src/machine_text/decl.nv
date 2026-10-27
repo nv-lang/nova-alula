@@ -633,9 +633,30 @@ fn data_name(cell TxCell, line int, mut cx TxCx) -> Result[TxDatumName, Translat
     Ok(TxDatumName { en, ru: root.text, is_path: false })
 }
 
+// The columns of `## Данные` of 2.26 (design 5): `имя | тип | начальное [| не убывает]`, no column `пишет` (the writes are not marked: the rows write the data of the machine,
+// the engine writes the data of the contract and the counters of the parties). A header with `пишет` is the former form: the error with the hint, the rows are read without it.
+fn data_columns_226(entries []TxEntry, sec TxSection, mut cx TxCx) -> []str {
+    mut i = sec.first
+    while i < sec.last {
+        ro e = entries[i]
+        if e.kind == EN_ROW {
+            ro n = e.cells.len()
+            if n == 5 && header_norm(e.cells[4].text) == header_norm(kw(cx.words, "column", "writes")) {
+                note(cx, struct_error(e.line, e.cells[4].col, "с 2.26 столбца `${kw(cx.words, "column", "writes")}` нет: данные машины пишут строки, данные контракта и счётчики сторон — движок; столбцы: ${kw_all(cx.words, "column", ["name", "type", "initial", "non_decreasing"]).join(" | ")} (последний необязателен)"))
+                return ["name", "type", "initial", "non_decreasing", "writes"]
+            }
+            if n == 3 { return ["name", "type", "initial"] }
+            return ["name", "type", "initial", "non_decreasing"]
+        }
+        i += 1
+    }
+    ["name", "type", "initial", "non_decreasing"]
+}
+
 fn decl_data(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
     mut out = []TxJ.new()
-    for r in section_table(entries, sec, ["name", "type", "initial", "non_decreasing", "writes"], cx) {
+    ro columns = if cx.v226 { data_columns_226(entries, sec, cx) } else { ["name", "type", "initial", "non_decreasing", "writes"] }
+    for r in section_table(entries, sec, columns, cx) {
         cx.rows_total += 1
         ro before = cx.errors.len()
         match decl_data_row(r, cx) {
@@ -654,18 +675,20 @@ fn decl_data_row(r TxEntry, mut cx TxCx) -> Result[TxJ, TranslateError] {
     ro name = data_name(r.cells[0], r.line, cx)?
     ro type_text = cell_type(r.cells[1], r.line, cx)?
     ro initial = data_initial(r.cells[2], r.line, cx)?
-    ro mono = data_monotonic(r.cells[3], r.line, cx)?
-    ro writes = data_writes(r.cells[4], r.line, cx.words)?
     mut pairs = [kv("name", js(name.en)), kv("type", js(type_text))]
     match initial {
         Some(j) => pairs.push(kv("initial", j))
         None => ()
     }
-    match mono {
-        Some(j) => pairs.push(kv("monotonic", j))
-        None => ()
+    // the column `не убывает` may be left out in a file of 2.26
+    if r.cells.len() > 3 {
+        match data_monotonic(r.cells[3], r.line, cx)? {
+            Some(j) => pairs.push(kv("monotonic", j))
+            None => ()
+        }
     }
-    pairs.push(kv("writes", js(writes)))
+    // a file of 2.26 marks no writes (design 5): the tree has no key `writes`, the loader reads the rows
+    if !cx.v226 { pairs.push(kv("writes", js(data_writes(r.cells[4], r.line, cx.words)?))) }
     if !name.is_path {
         if pair_has(cx.env.globals, name.ru) { return Err(tx_err(r.line, r.cells[0].col, "name", "имя `${name.ru}` уже объявлено")) }
         pair_add(cx.env.globals, name.ru, name.en)

@@ -60,11 +60,26 @@ fn party_en(mut cx TxCx, n TxTok, id str) -> str {
 }
 
 // The counter: a datum (`попытка_агента`) or a path (`линзы[*].попытка`); `—` is no counter (a party of a free input, AL-52, the caller checks the kind).
+// In a file of 2.26 the column declares the datum (design 5): the loader of the tree makes it (`число>=0`, 0, does not decrease, written by the engine), `## Данные` has no row for it;
+// a path names a field of the record of the set, the root is a datum of `## Данные`.
 fn party_counter(cell TxCell, line int, mut cx TxCx) -> Result[str, TranslateError] {
     mut p = cell_p(cell, line)?
     ro root = p_tok(p)
     if root.kind != TK_NAME { return Err(p_fail(p, "ожидается имя данного — счётчика попыток")) }
     p_adv(p)
+    if cx.v226 && !p_is(p, "[") {
+        p_end(p)?
+        match pair_get(cx.env.globals, root.text) {
+            Some(en) => {
+                cx_error(cx, root, "name", "данное `${root.text}` — счётчик стороны: с 2.26 его заводит загрузчик (`число>=0`, начальное 0, не убывает, пишет только движок), строка в `## Данные` под него не пишется; читать его можно по имени")
+                return Ok(en)
+            }
+            None => ()
+        }
+        ro en = jn_declare(cx, root, root.text, "данного", "данные", [root.text])
+        pair_add(cx.env.globals, root.text, en)
+        return Ok(en)
+    }
     ro root_en = tr_global(cx, root)
     mut text = root_en
     if p_eat(p, "[") {

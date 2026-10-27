@@ -13,7 +13,7 @@ import std.text
 import std.unicode.{GeneralCategory}
 import alula.machine.{Expr, TypeDefs, FieldDef, Bind, DefFn, Registry, Position, check_expr_positions, check_call_position, find_primitive, primitive_names, has_tail, class_word, journal_find}
 import alula.machine.{ConditionPos, InputPos, ProfilePos, ForkEntryPos, OperationEntryPos, EndEntryPos, AcceptPos, ActionPos}
-import alula.machine.{Pure, Volatile, Value, Text, TypeSpec, TextSet, IdType, OptionalType, VariantType, spec_text, is_uuid}
+import alula.machine.{Pure, Volatile, Acting, Value, Text, TypeSpec, TextSet, IdType, OptionalType, VariantType, spec_text, is_uuid}
 
 // ---- the places of expressions ------------------------------------------------------------------------------------------
 
@@ -1271,18 +1271,106 @@ fn check_target(mut cx Checker, target LValue, path str, fragment bool) -> () {
     ro d = def.data[at]
     ro may = if fragment { fragment_may_write(d.writes) } else { rows_may_write(d.writes) }
     ro who = if fragment { "rows or a fragment" } else { "rows" }
-    if !may { cx_issue(cx, path, "the datum ${target.root} is written by ${write_kind_word(d.writes)}, not by ${who}") }
+    if !may {
+        if engine_only(def, d.writes) {
+            cx_issue(cx, path, "the datum ${target.root} is written by the engine only: ${engine_data_words()}")
+        } else {
+            cx_issue(cx, path, "the datum ${target.root} is written by ${write_kind_word(d.writes)}, not by ${who}")
+        }
+    }
     // a path `name[key].field` against the marks of `name[*].field`
     if target.steps.len() == 2 {
         match target.steps[1] {
             FieldStep(f) => {
                 ro meta = find_data(def, "${target.root}[*].${f}")
                 if meta >= 0 && !rows_may_write(def.data[meta].writes) {
-                    cx_issue(cx, path, "the field ${f} of ${target.root} is written by ${write_kind_word(def.data[meta].writes)}, not by rows")
+                    if engine_only(def, def.data[meta].writes) {
+                        cx_issue(cx, path, "the field ${f} of ${target.root} is written by the engine only: ${engine_data_words()}")
+                    } else {
+                        cx_issue(cx, path, "the field ${f} of ${target.root} is written by ${write_kind_word(def.data[meta].writes)}, not by rows")
+                    }
                 }
             }
             KeyStep(k) => ()
         }
+    }
+}
+
+// ---- the data of the engine (2.26, design 5) ---------------------------------------------------------------------------------------------------
+
+// A datum of a tree of 2.26 that only the engine writes: a counter of a party (the loader declares it) or a datum of the engine of the contract (`open_requests`,
+// `call_request_id`); `to_send` is written by the rows and by the engine. A tree of 2.25 keeps the former words of the mark.
+fn engine_only(def MachineDef, kind WriteKind) -> bool {
+    if def.alula_version != "2.26" { return false }
+    match kind {
+        MechanicsWrite => true
+        _ => false
+    }
+}
+
+fn engine_data_words() -> str => "a counter of a party or a datum of the engine of the contract; the rows, On accept and the acting functions do not write it, they read it (2.26, design 5)"
+
+// The acting functions called by a machine of 2.26 (an action of a row, of On entry, of a common event, an expression of a binding) whose hidden writes (`writes` in the
+// registry of the host) name a datum of the engine: an error at the call.
+fn check_engine_writes(mut cx Checker) -> () {
+    ro def = cx.def
+    if def.alula_version != "2.26" { return }
+    mut i = 0
+    for st in def.states {
+        ro p = "$.states[${i}]"
+        mut k = 0
+        for r in st.rows {
+            engine_writes_in(cx, r.actions, "${p}.rows[${k}].actions")
+            k += 1
+        }
+        k = 0
+        for a in st.accept {
+            engine_writes_in(cx, a.actions, "${p}.accept[${k}].actions")
+            k += 1
+        }
+        engine_writes_in(cx, st.entry, "${p}.entry")
+        i += 1
+    }
+    i = 0
+    for r in def.common {
+        engine_writes_in(cx, r.actions, "$.common_events[${i}].actions")
+        i += 1
+    }
+    for s in cx.sites {
+        for name in primitive_names(s.expr) { engine_writes_of(cx, name, s.place) }
+    }
+}
+
+fn engine_writes_in(mut cx Checker, actions []Action, path str) -> () {
+    mut i = 0
+    for a in actions {
+        ro p = "${path}[${i}]"
+        match a {
+            CallAct { name, args, named } => engine_writes_of(cx, name, p)
+            ForEachAct { var, list, body } => engine_writes_in(cx, body, "${p}.body")
+            LetAct { name, value, body } => engine_writes_in(cx, body, "${p}.body")
+            IfAct { cond, then_actions, else_actions } => {
+                engine_writes_in(cx, then_actions, "${p}.then")
+                engine_writes_in(cx, else_actions, "${p}.else")
+            }
+            _ => ()
+        }
+        i += 1
+    }
+}
+
+fn engine_writes_of(mut cx Checker, name str, path str) -> () {
+    match find_primitive(cx.registry, name) {
+        Some(prim) => {
+            if prim.class != Acting { return }
+            for w in prim.writes {
+                ro at = find_data(cx.def, w)
+                if at >= 0 && engine_only(cx.def, cx.def.data[at].writes) {
+                    cx_issue(cx, path, "the acting function ${name} writes ${w}: only the engine writes it, ${engine_data_words()}")
+                }
+            }
+        }
+        None => ()
     }
 }
 
@@ -2628,6 +2716,7 @@ export fn check_machine(def MachineDef, registry Registry) -> []LoadError {
     collect_sites(cx)
     check_reads(cx)
     check_all_writes(cx)
+    check_engine_writes(cx)
     check_positions(cx)
     check_new_id(cx)
     check_journal(cx)

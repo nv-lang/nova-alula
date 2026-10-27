@@ -158,9 +158,9 @@ export type PrimParamDecl { name str, type_text str, tail bool }
 /// PrimDecl: the declaration of an external function in the file (AL-123, tree T1): the JSON name, the parameters, the result as the tree writes it (empty: no result) and the class (`pure`, `volatile`, `acting`).
 export type PrimDecl { name str, params []PrimParamDecl, result str, class str }
 
-/// MachineDef: the whole machine.
+/// MachineDef: the whole machine. `alula_version` is the version of the language of the tree (`2.25`, `2.26`): in 2.26 the reads of the states are derived by the check (AL-138).
 export type MachineDef {
-    name str, version str, types TypeDefs,
+    name str, version str, alula_version str, types TypeDefs,
     constants []ConstDef, params []ParamDef, input InputDef, data []DataDef,
     parties []PartyDef, request_limit []Expr, signals []SignalDef,
     definitions []DefFn, includes []IncludeDef, fragments []FragmentUse,
