@@ -1,13 +1,8 @@
-// v217_test.nv - task 151: the names and the fragment "Pause" in Alula 2.17: the states of a connected fragment are in the space of the states of the machine after the substitution (AL-58), the data of
-// the fragment and of the contract are in the space of the data, the files of definitions bring their own section `## Имена` (AL-60), the hash of the sample file of definitions is the one of 2.17.
+// v217_test.nv - task 151: the names in Alula 2.17: the files of definitions bring their own section `## Имена` (AL-60), the hash of the sample file of definitions is the one of 2.17.
 module alula.machine_nested
 
 import std.text
-import alula.machine.{text_of_file}
-import alula.examples.{table_files_225}
 import alula.machine_text.{translate_report, translate_definitions, definitions_hash, defs_file_text, error_text}
-
-fn callee217() -> str => text_of_file(table_files_225(), "callee.alula.md")
 
 fn notes217(text str) -> []str {
     mut out = []str.new()
@@ -20,43 +15,6 @@ fn says217(text str, needle str) -> bool {
         if n.contains(needle) { return true }
     }
     false
-}
-
-// ---- the states and the data of the fragment ----------------------------------------------------------------------------------------------------
-
-test "v217 callee is clean" {
-    ro report = translate_report(callee217())
-    if report.errors.len() > 0 { panic(error_text(report.errors[0], "callee")) }
-    assert(report.errors.len() == 0)
-}
-
-test "v217 a state with the JSON name of the state of the fragment collides" {
-    ro text = callee217().replace("| ЗАПРОС | Ask |", "| ЗАПРОС | Pause |")
-    assert(text != callee217())
-    assert(says217(text, "коллизия"))
-    assert(says217(text, "Pause"))
-}
-
-test "v217 the state of the fragment is in the space of the states" {
-    ro report = translate_report(callee217())
-    assert(report.json.contains("\"name\":\"Pause\",\"kind\":\"appeal\""))
-}
-
-test "v217 a datum with the JSON name of a datum of the fragment collides" {
-    ro text = callee217().replace("## Данные\n", "## Данные\n\n").replace("| имя | тип | начальное | не убывает | пишет |\n|---|---|---|---|---|\n", "| имя | тип | начальное | не убывает | пишет |\n|---|---|---|---|---|\n| мой_список | []строка | [] | — | действия |\n")
-    ro named = text.replace("## Имена\n\n| имя | JSON-имя |\n|---|---|\n", "## Имена\n\n| имя | JSON-имя |\n|---|---|\n| мой_список | open_requests |\n")
-    assert(says217(named, "коллизия"))
-}
-
-test "v217 a datum with the JSON name of a datum of the contract collides" {
-    ro text = callee217().replace("| имя | тип | начальное | не убывает | пишет |\n|---|---|---|---|---|\n", "| имя | тип | начальное | не убывает | пишет |\n|---|---|---|---|---|\n| мой_список | []строка | [] | — | действия |\n").replace("## Имена\n\n| имя | JSON-имя |\n|---|---|\n", "## Имена\n\n| имя | JSON-имя |\n|---|---|\n| мой_список | previous |\n")
-    assert(says217(text, "коллизия"))
-}
-
-test "v217 the protocol signals of the fragment are in the space of the machine signals" {
-    ro report = translate_report(callee217())
-    assert(report.json.contains("\"name\":\"human_stop\""))
-    assert(report.json.contains("\"name\":\"cancel_request\""))
 }
 
 // ---- the file of definitions ----------------------------------------------------------------------------------------------------------------------

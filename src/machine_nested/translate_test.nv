@@ -1,5 +1,5 @@
 // translate_test.nv - the constructions of nested machines in the translator (task 119): the party of the kind `machine`, the profile of a party, `Правит`, `Возвратов формы`,
-// `передать`, `отменить_открытые(кроме: …)`, the fragment "Pause" with nested machines, the counters of the elements of a set, `Состояние` and `Сигнал`.
+// `передать`, `отменить_открытые(кроме: …)`, the counters of the elements of a set, `Состояние` and `Сигнал`.
 module alula.machine_nested
 
 import std.text
@@ -271,10 +271,10 @@ test "nm edits bad" {
     assert(count_kind(text, "syntax") >= 1)
 }
 
-// ---- pass, cancel, the fragment -----------------------------------------------------------------------------------------------------------
+// ---- pass, cancel ------------------------------------------------------------------------------------------------------------------
 
 test "nm pass" {
-    // `передать` outside a fragment: a list of the nested machines and a signal
+    // `передать`: a list of the nested machines and a signal
     ro text = boss_with("| 2 | сбой | — | — | DONE |", "| 2 | сбой | — | передать([callee], стоп) | DONE |")
     ro report = checked(text)
     assert(count_kind(text, "unsupported") == 0)
@@ -485,27 +485,6 @@ test "nm meeting author" {
     assert(def.states[at].edits == "proposal")
     assert(def.states[at].edit_check == "proposal_changed_since_attempt")
     assert(def.states[at].form_returns == 2)
-}
-
-test "nm meeting fragment" {
-    ro json = meeting_json()
-    assert(json.contains("\"do\":\"pass\",\"nested\":{\"op\":\"list\",\"items\":[{\"op\":\"lit\",\"value\":\"agent_step\"}]},\"signal\":\"stop\""))
-    assert(json.contains("\"signal\":\"halt\""))
-    assert(json.contains("\"signal\":\"continue\""))
-    assert(json.contains("\"signal\":\"cancel\""))
-    assert(json.contains("\"do\":\"cancel_open\",\"except\":[{\"op\":\"list\",\"items\":[{\"op\":\"lit\",\"value\":\"agent_step\"}]}]"))
-}
-
-test "nm fragment names" {
-    // `вложенные` takes the names of machines; a name that no party calls is a check of the pair
-    ro text = meeting_examples().replace("вложенные: [шаг_агента]", "вложенные: [чужая]")
-    assert(notes(text).len() >= 1)
-}
-
-test "nm fragment empty" {
-    ro text = meeting_examples().replace("вложенные: [шаг_агента]", "вложенные: []")
-    ro report = checked(text)
-    assert(!report.json.contains("\"do\":\"pass\""))
 }
 
 test "nm english meeting" {

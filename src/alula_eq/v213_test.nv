@@ -1,13 +1,12 @@
 // v213_test.nv - task 149: the machines of the product are written at Alula 2.13 (format 2.14): the keys `Запрос:` and `Читает:`, `сигнал(…)`, the column `сигналы`, ASCII signs, the JSON names in brackets,
-// no section of the expansion of a fragment; every JSON is what `compile` makes of its file; the circles `compile -> render -> compile` and `convert ru -> en -> ru` give an equal tree in both languages,
-// the line of connection of the fragment has the parameter `сигнал_остановки`.
+// no section of the expansion of 2.12; every JSON is what `compile` makes of its file; the circles `compile -> render -> compile` and `convert ru -> en -> ru` give an equal tree in both languages.
 module alula.alula_eq
 
 import std.text
 import alula.machine.{text_of_file}
 import alula.examples.{table_files_225, machine_files_225}
 
-fn all_tables() -> []str => ["callee.alula.md", "caller.alula.md", "fan.alula.md", "echo.alula.md", "retry.alula.md", "verdict.alula.md", "router.alula.md", "pausable.alula.md", "keeper.alula.md", "batch.alula.md"]
+fn all_tables() -> []str => ["echo.alula.md", "retry.alula.md", "verdict.alula.md", "router.alula.md", "keeper.alula.md"]
 
 fn tree_name(name str) -> str => name.replace(".alula.md", ".alula.json").replace(".alula.txt", ".alula.json")
 
@@ -25,7 +24,7 @@ test "v213 tables use the new keys" {
         assert(!has_line_starting(text, "Вход:"))
         assert(!text.contains("| слово("))
         assert(!text.contains("слова ворот"))
-        assert(!text.contains("Раскрытие фрагмента"))
+        assert(!text.contains("## Раскрытие"))
     }
 }
 

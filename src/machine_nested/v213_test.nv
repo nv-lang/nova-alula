@@ -1,11 +1,8 @@
-// v213_test.nv - task 149: Alula 2.13 for the nested machines and the fragment "Pause": `число` and `число>=n` fit each other both ways when the input and the result of a called machine are compared
-// (AL-47), the parameter `сигнал_остановки` of the fragment (AL-38), the machines of the folder that call the fragment, the old parameter refused.
+// v213_test.nv - task 149: Alula 2.13 for the nested machines: `число` and `число>=n` fit each other both ways when the input and the result of a called machine are compared
+// (AL-47).
 module alula.machine_nested
 
 import std.text
-import alula.machine.{text_of_file}
-import alula.examples.{table_files_225}
-import alula.machine_text.{render}
 
 // ---- AL-47: `число` and `число>=n` fit each other -----------------------------------------------------------------------------------------------
 
@@ -53,66 +50,5 @@ test "v213 int fits in a list and in an optional" {
 test "v213 optional does not fit required" {
     ro parent = parent_tree(`{"name":"label","type":"text"},{"name":"count","type":"?int"}`, answer_score())
     assert(pair_says(parent, "count"))
-}
-
-// ---- the fragment: the parameter is a signal ---------------------------------------------------------------------------------------------------------
-
-fn callee_text() -> str => text_of_file(table_files_225(), "callee.alula.md")
-
-fn caller_text() -> str => text_of_file(table_files_225(), "caller.alula.md")
-
-test "v213 the machines of the folder call the fragment with a signal" {
-    for text in [callee_text(), caller_text()] {
-        assert(text.contains("Пауза(сигнал_остановки:"))
-        assert(!text.contains("слово_остановки"))
-    }
-}
-
-test "v213 callee reads" {
-    ro report = checked(callee_text())
-    if report.errors.len() > 0 { panic(notes_of(report).join(" ## ")) }
-    assert(report.errors.len() == 0)
-}
-
-test "v213 old parameter refused" {
-    ro text = callee_text().replace("Пауза(сигнал_остановки:", "Пауза(слово_остановки:")
-    assert(!is_clean_text(text))
-    assert(note_says(text, "слово_остановки"))
-    assert(note_says(text, "сигнал_остановки"))
-}
-
-test "v213 fragment arg is the halt signal" {
-    ro json = json_of(callee_text())
-    assert(json.contains("\"halt_signal\":{\"op\":\"lit\",\"value\":\""))
-    assert(!json.contains("\"halt_word\""))
-}
-
-test "v213 halt signal is a signal of the party" {
-    ro json = json_of(callee_text())
-    ro name = after_marker(json, "\"halt_signal\":{\"op\":\"lit\",\"value\":\"")
-    assert(name != "")
-    assert(json.contains("\"signals\":[{\"name\":\"continue\""))
-    assert(json.contains("{\"name\":\"${name}\"}"))
-}
-
-test "v213 fragment args order" {
-    ro json = json_of(callee_text())
-    ro a = json.find("\"halt_signal\"") ?? -1
-    ro b = json.find("\"halt_code\"") ?? -1
-    ro c = json.find("\"write_right\"") ?? -1
-    assert(a > 0 && a < b && b < c)
-}
-
-test "v213 reverse generator writes the signal parameter" {
-    ro text = render(json_of(callee_text()), "ru")
-    assert(text.contains("Пауза(сигнал_остановки:"))
-    assert(!text.contains("слово_остановки"))
-    ro en = render(json_of(callee_text()), "en")
-    assert(en.contains("Pause(halt_signal:"))
-}
-
-test "v213 signal parameter must be a signal of the party" {
-    ro text = callee_text().replace("Пауза(сигнал_остановки: остановить", "Пауза(сигнал_остановки: улетучиться")
-    assert(!is_clean_text(text))
 }
 

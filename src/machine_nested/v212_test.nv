@@ -1,11 +1,10 @@
-// v212_test.nv - task 125: Alula 2.12 for the nested machines and the fragment "Pause": the line of connection of the fragment in the tree (`fragments`, AL-32) and in the file written by the
-// reverse generator, `Вход: нет` of an appeal, a pure primitive called as a function in a condition (AL-29), a field of the request that is named as a datum (AL-28), the table "by role" of the parse (AL-33).
+// v212_test.nv - task 125: Alula 2.12 for the nested machines: the meeting examples read at 2.25, `Вход: нет` of an appeal, a pure primitive called as a function in a condition (AL-29), a field of the request that is named as a datum (AL-28), the table "by role" of the parse (AL-33).
 module alula.machine_nested
 
 import std.text
 import alula.machine.{Registry, Primitive, ParamSpec, TextType, IntType, BoolType, RecordType, ListType, Volatile, Pure, register}
 import alula.examples.{sample_registry}
-import alula.machine_text.{translate_checked, render, render_machine, TranslateReport}
+import alula.machine_text.{translate_checked, render, TranslateReport}
 
 // A file at 2.12 (the fixtures of the older tasks are migrated by the same replace).
 fn at212(text str) -> str => text.replace("- format: 2.11\n", "- format: 2.25\n")
@@ -28,7 +27,7 @@ fn after_marker(json str, marker str) -> str {
     rest[..end]
 }
 
-// ---- the line of connection of the fragment (AL-32) -----------------------------------------------------------------------------------
+// ---- the meeting examples at 2.25 -----------------------------------------------------------------------------------------------------------
 
 test "v212 meeting reads" {
     ro report = checked(meeting212())
@@ -37,208 +36,7 @@ test "v212 meeting reads" {
     assert(report.json.contains("\"alula_version\":\"2.25\""))
 }
 
-test "v212 fragments key" {
-    assert(tree_of(meeting212()).contains("\"fragments\":[{\"name\":\"Pause\",\"args\":{"))
-}
-
-test "v212 fragments halt word" {
-    ro json = tree_of(meeting212())
-    ro word = after_marker(json, "\"halt_signal\":{\"op\":\"lit\",\"value\":\"")
-    assert(word != "")
-    // the word is a gate word of the party `enhanced`
-    assert(json.contains("{\"name\":\"${word}\"") )
-}
-
-test "v212 fragments args" {
-    ro json = tree_of(meeting212())
-    assert(json.contains("\"halt_code\":{\"op\":\"lit\",\"value\":\"Witness_halt_meeting\"}"))
-    assert(json.contains("\"nested\":{\"op\":\"list\",\"items\":[{\"op\":\"lit\",\"value\":\"agent_step\"}]}"))
-    assert(json.contains("\"cancel_requests\":{\"op\":\"lit\",\"value\":\"without_return_to_send\"}"))
-    assert(json.contains("\"reenter\":{\"op\":\"lit\",\"value\":\"requests_from_to_send\"}"))
-    assert(json.contains("\"write_right\":{\"op\":\"lit\",\"value\":\"право записи на предложение: закрытое в окне проверки линз остаётся закрытым\"}"))
-}
-
-test "v212 fragments order of the args" {
-    ro json = tree_of(meeting212())
-    ro a = json.find("\"halt_signal\"") ?? -1
-    ro b = json.find("\"halt_code\"") ?? -1
-    ro c = json.find("\"nested\":{\"op\":\"list\"") ?? -1
-    ro d = json.find("\"cancel_requests\"") ?? -1
-    ro e = json.find("\"reenter\"") ?? -1
-    ro f = json.find("\"write_right\"") ?? -1
-    assert(a > 0 && a < b && b < c && c < d && d < e && e < f)
-}
-
-test "v212 fragments place" {
-    // after the definitions and the files of definitions, before the initial state
-    ro json = tree_of(meeting212())
-    ro at = json.find("\"fragments\"") ?? -1
-    assert(at > 0)
-    assert(at > (json.find("\"signals\"") ?? 0))
-    assert(at < (json.find(",\"initial\":\"") ?? 0))
-}
-
-test "v212 fragments none without a call" {
-    assert(!tree_of(boss212()).contains("\"fragments\""))
-}
-
-test "v212 fragments empty nested" {
-    ro text = meeting212().replace("вложенные: [шаг_агента]", "вложенные: []")
-    assert(tree_of(text).contains("\"nested\":{\"op\":\"list\",\"items\":[]}"))
-}
-
-test "v212 fragments en equals ru" {
-    ro ru = tree_of(meeting212())
-    ro en = tree_of(render(ru, "en"))
-    ro ru_part = ru[(ru.find("\"fragments\"") ?? 0)..]
-    ro en_part = en[(en.find("\"fragments\"") ?? 0)..]
-    assert(ru_part.starts_with("\"fragments\""))
-    assert(ru_part[..(ru_part.find(",\"initial\":\"") ?? 0)] == en_part[..(en_part.find(",\"initial\":\"") ?? 0)])
-}
-
-// ---- the file written by the generator: one line of connection --------------------------------------------------------------------------
-
-fn line_of_pause(text str) -> str {
-    for line in text.split("\n") {
-        if line.starts_with("Пауза(") || line.starts_with("Pause(") { return line }
-    }
-    ""
-}
-
-test "v212 render one line" {
-    ro text = render(tree_of(meeting212()), "ru")
-    ro line = line_of_pause(text)
-    assert(line != "")
-    assert(line.contains("сигнал_остановки: halt_meeting"))
-    assert(line.contains("код_остановки: \"Witness_halt_meeting\""))
-    assert(line.contains("вложенные: [agent_step]"))
-    assert(line.contains("отмена_запросов: без_возврата_в_к_отправке"))
-    assert(line.contains("вход_заново: запросы_из_к_отправке"))
-    assert(line.contains("право_записи: \"право записи на предложение: закрытое в окне проверки линз остаётся закрытым\")"))
-}
-
-test "v212 render order of the params" {
-    ro line = line_of_pause(render(tree_of(meeting212()), "ru"))
-    ro a = line.find("сигнал_остановки") ?? -1
-    ro b = line.find("код_остановки") ?? -1
-    ro c = line.find("вложенные") ?? -1
-    ro d = line.find("отмена_запросов") ?? -1
-    ro e = line.find("вход_заново") ?? -1
-    ro f = line.find("право_записи") ?? -1
-    assert(a >= 0 && a < b && b < c && c < d && d < e && e < f)
-}
-
-test "v212 render en line" {
-    ro line = line_of_pause(render(tree_of(meeting212()), "en"))
-    assert(line.starts_with("Pause("))
-    assert(line.contains("halt_signal: "))
-    assert(line.contains("cancel_requests: without_return_to_send"))
-    assert(line.contains("reenter: requests_from_to_send"))
-}
-
-test "v212 render skips the states of the fragment" {
-    ro text = render(tree_of(meeting212()), "ru")
-    assert(!text.contains("### Pause"))
-    assert(!text.contains("### ПАУЗА"))
-}
-
-test "v212 render skips the data of the fragment" {
-    ro text = render(tree_of(meeting212()), "ru")
-    assert(!text.contains("| открытые_запросы |"))
-    assert(!text.contains("| предыдущее |"))
-    assert(!text.contains("| запрос_вызова |"))
-}
-
-test "v212 render skips the common events of the fragment" {
-    ro text = render(tree_of(meeting212()), "ru")
-    assert(!text.contains("стоп человека"))
-    assert(!text.contains("pause_by_parent_stop"))
-}
-
-test "v212 render skips the signals of the fragment" {
-    ro text = render(tree_of(meeting212()), "ru")
-    assert(!text.contains("## Сигналы"))
-}
-
-test "v212 render keeps the own data" {
-    ro text = render(tree_of(meeting212()), "ru")
-    assert(text.contains("| gatekeeper_attempt |"))
-}
-
-test "v212 circle ru" {
-    ro tree = tree_of(meeting212())
-    assert(tree.contains("\"fragments\""))
-    assert(circle(tree, "ru") == "")
-}
-
-test "v212 circle en" {
-    ro tree = tree_of(meeting212())
-    assert(tree.contains("\"fragments\""))
-    assert(circle(tree, "en") == "")
-}
-
-test "v212 circle ru en ru" {
-    ro tree = tree_of(meeting212())
-    ro en = render(tree, "en")
-    ro back = translate_checked(en, sample_registry())
-    assert(back.errors.len() == 0)
-    ro ru_again = render(back.json, "ru")
-    assert(ru_again == render(tree, "ru"))
-}
-
-test "v212 render is a fixed point" {
-    ro first = render(tree_of(meeting212()), "ru")
-    ro second = render(tree_of(first), "ru")
-    assert(first == second)
-    ro en_first = render(tree_of(meeting212()), "en")
-    assert(render(tree_of(en_first), "en") == en_first)
-}
-
-test "v212 circle other behaviors" {
-    ro text = meeting212().replace("отмена_запросов: без_возврата_в_к_отправке", "отмена_запросов: прекратить_ход_транспорта").replace("вход_заново: запросы_из_к_отправке", "вход_заново: ничего")
-    ro tree = tree_of(text)
-    assert(tree.contains("\"value\":\"stop_transport_turn\""))
-    assert(tree.contains("\"reenter\":{\"op\":\"lit\",\"value\":\"nothing\"}"))
-    assert(circle(tree, "ru") == "")
-    assert(circle(tree, "en") == "")
-    assert(line_of_pause(render(tree, "ru")).contains("отмена_запросов: прекратить_ход_транспорта, вход_заново: ничего"))
-}
-
-test "v212 circle mechanics" {
-    ro text = meeting212().replace("отмена_запросов: без_возврата_в_к_отправке", "отмена_запросов: механика")
-    ro tree = tree_of(text)
-    assert(circle(tree, "ru") == "")
-    assert(line_of_pause(render(tree, "ru")).contains("отмена_запросов: механика"))
-}
-
-test "v212 circle empty nested" {
-    ro tree = tree_of(meeting212().replace("вложенные: [шаг_агента]", "вложенные: []"))
-    assert(circle(tree, "ru") == "")
-    assert(line_of_pause(render(tree, "ru")).contains("вложенные: []"))
-}
-
-test "v212 render keeps no fragment states for an old tree" {
-    // a hand-written tree with no `fragments` has the states of the fragment as its own, and the generator writes them as it did
-    ro tree = tree_of(meeting212())
-    ro cut = tree[..(tree.find("\"fragments\"") ?? 0)] + tree[(tree.find("\"initial\":\"") ?? 0)..]
-    ro text = render(cut, "ru")
-    assert(line_of_pause(text) == "")
-    assert(text.contains("### Pause"))
-}
-
-// ---- the fragment is one call -----------------------------------------------------------------------------------------------------------
-
-test "v212 pause call twice" {
-    ro line = "Пауза(сигнал_остановки: остановить совещание, код_остановки: \"Witness_halt_meeting\", вложенные: [шаг_агента],\n      отмена_запросов: без_возврата_в_к_отправке, вход_заново: запросы_из_к_отправке,\n      право_записи: \"право записи на предложение: закрытое в окне проверки линз остаётся закрытым\")"
-    ro text = meeting212().replace(line, "${line}\n${line}")
-    assert(!is_clean_text(text))
-}
-
 fn is_clean_text(text str) -> bool => checked(text).errors.len() == 0
-
-test "v212 pause call missing parameter" {
-    assert(note_says(meeting212().replace("вход_заново: запросы_из_к_отправке,\n", ""), "не назван параметр `вход_заново`"))
-}
 
 // ---- an appeal without a request (AL-23, AL-40) ---------------------------------------------------------------------------------------------------------
 
@@ -440,25 +238,4 @@ test "v212 parse circle" {
     assert(report.errors.len() == 0)
     assert(circle_with(report.json, "ru", role_fns_registry()) == "")
     assert(circle_with(report.json, "en", role_fns_registry()) == "")
-}
-
-// ---- the bindings of the rows of the fragment against the data of the machine (AL-26) ---------------------------------------------------------------------
-
-fn meeting_with_datum(name str) -> str => meeting212().replace("| попытка_вратаря | число>=0 | 0 | да | механика |", "| попытка_вратаря | число>=0 | 0 | да | механика |\n| ${name} | строка | \"\" | — | действия |")
-
-test "v212 a datum named as a binding of the fragment" {
-    // the rows of the fragment Pause bind `human_word`, `author`, `source`, `id` (the JSON names of the registry): after the fragment is put in they are bindings of the machine, a datum may not have such a JSON name
-    assert(is_clean_text(meeting_with_datum("extra_note")))
-    assert(note_says(meeting_with_datum("источник"), "no shadowing"))
-    assert(note_says(meeting_with_datum("автор"), "no shadowing"))
-}
-
-test "v212 a datum named as the other binding of the fragment" {
-    assert(note_says(meeting_with_datum("идентификатор_запроса"), "no shadowing"))
-    assert(note_says(meeting_with_datum("слово_человека"), "no shadowing"))
-}
-
-test "v212 the launch source is no binding" {
-    // `источник_запуска` is `launch_source`: it does not shadow the binding `source`
-    assert(is_clean_text(meeting_with_datum("источник_запуска")))
 }

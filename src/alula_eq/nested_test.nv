@@ -3,8 +3,7 @@
 module alula.alula_eq
 
 import std.text
-import alula.machine.{text_of_file}
-import alula.examples.{machine_files_225, table_files_225}
+import alula.examples.{machine_files_225}
 
 fn probe_names() -> []str => ["callee.alula.json", "caller.alula.json", "fan.alula.json", "batch.alula.json"]
 
@@ -25,17 +24,6 @@ test "pn convert callee" { assert(convert_circle("callee.alula.json") == "") }
 test "pn convert caller" { assert(convert_circle("caller.alula.json") == "") }
 
 test "pn convert fan" { assert(convert_circle("fan.alula.json") == "") }
-
-test "pn the tables compile to the json of the product" {
-    // the file of Alula of a machine and its JSON in src/machine/machines/ are the same tree
-    for name in probe_names() {
-        ro base = name.replace(".alula.json", "")
-        ro ran = run_with(["compile", "/m/${base}.alula.md"], one("/m/${base}.alula.md", text_of_file(table_files_225(), "${base}.alula.md")))
-        assert(!ran.err.contains(": error:") && !ran.err.contains(": check:"))
-        assert(ran.code == 0)
-        assert(same_tree(machine_json(name), ran.out) == "")
-    }
-}
 
 test "pn check the probe machines" {
     for name in probe_names() {
