@@ -633,10 +633,13 @@ fn ext_one(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
         if p_eat(p, ",") { continue }
         break
     }
+    ro close = p_tok(p)
     p_expect(p, ")")?
     mut class = "pure"
     ro ct = p_tok(p)
-    if ct.kind == TK_NAME && !t_is_kw(ct, cx.words, "decl", "external") {
+    // in 2.26 a declaration is one line (AL-142): a name on a later line begins the next declaration, it is no word of the class
+    ro next_decl = cx.v226 && ct.line > close.line
+    if ct.kind == TK_NAME && !t_is_kw(ct, cx.words, "decl", "external") && !next_decl {
         ro key = kw_key(cx.words, "enum_value", ct.text) ?? ""
         if key == "volatile" || key == "acting" {
             class = key
@@ -659,7 +662,7 @@ fn ext_one(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
     if tx_fat(p_tok(p)) || p_is(p, "{") {
         return Err(tx_err(p_tok(p).line, p_tok(p).col, "syntax", "объявление внешней функции — без тела (AL-123): тело у неё в хозяине; функция с телом пишется в разделе `## ${kw(cx.words, "section", "Functions")}`"))
     }
-    if !p_done(p) && !p_is_kw(p, cx.words, "decl", "external") { return Err(p_fail(p, "после объявления ожидается следующее объявление")) }
+    if !p_done(p) && !p_is_kw(p, cx.words, "decl", "external") && !(cx.v226 && p_tok(p).line > n.line && p_tok(p).col == 1) { return Err(p_fail(p, "после объявления ожидается следующее объявление")) }
     pair_add(cx.env.prims, n.text, json)
     if tail { pair_add(cx.env.tails, n.text, json) }
     Ok(jobj(pairs))

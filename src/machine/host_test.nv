@@ -325,6 +325,9 @@ fn hst_section_7a(spec str, heading str, next str) -> str {
     rest[..to]
 }
 
+// Since 2.26 the section 7a names the built-in library `контракт` too (AL-141): the words of the ten codes of `КодСбоя` and the data of the engine, which are no codes of the journal.
+fn hst_contract_words() -> []str => ["no_result", "model_refused", "connection_lost", "form_not_fixed", "stopped_by_human", "ceiling_reached", "max_tokens", "max_turn_requests", "запрос_вызова", "открытые_запросы", "call_request_id", "open_requests"]
+
 fn hst_section_names_exactly_the_language(section str) -> bool {
     if section == "" { return false }
     // the two standard external functions, written as calls (2.25)
@@ -338,7 +341,7 @@ fn hst_section_names_exactly_the_language(section str) -> bool {
     for part in section.split("`") {
         if part.contains("_") && !part.contains(" ") && !part.contains("(") && !part.contains("-") {
             listed += 1
-            if part != "new_id" && part != "новый_ид" && part != "bind_pure" && part != "bind_volatile" && part != "bind_acting" && journal_find(language_journal(), part).is_none() { return false }
+            if part != "new_id" && part != "новый_ид" && part != "bind_pure" && part != "bind_volatile" && part != "bind_acting" && !hst_contract_words().contains(part) && journal_find(language_journal(), part).is_none() { return false }
         }
     }
     listed >= 35

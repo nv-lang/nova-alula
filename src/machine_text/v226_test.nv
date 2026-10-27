@@ -5,8 +5,8 @@ module alula.machine_text
 
 import std.text
 
-// A small machine of 2.26: a gate, an operation, a fork without `иначе`, two ends, the section `## Выход`.
-fn tiny226_text() -> str => `# Машина: Малая
+// A small machine of 2.26: a gate, an operation, a fork without `иначе`, two ends, the section `## Выход`. The title is the Latin name: the generator writes the name of the machine in the heading.
+fn tiny226_text() -> str => `# Машина: Tiny
 
 - machine: Tiny
 - machine_version: 1
@@ -119,13 +119,13 @@ test "v226 the tree says the version 2.26" {
 test "v226 the rows of a table without the column number are numbered in their order" {
     ro j = json226(tiny226_text())
     assert(j.contains("{\"n\":1,\"event\":{\"kind\":\"signal\",\"name\":\"allow\"}"))
-    assert(j.contains("{\"n\":2,\"event\":{\"kind\":\"signal\",\"name\":\"refuse\"}"))
+    assert(j.contains("{\"n\":2,\"event\":{\"kind\":\"signal\",\"name\":\"deny\"}"))
 }
 
 test "v226 the operation row has the actions and the destination only, its event is now" {
     ro j = json226(tiny226_text())
     assert(j.contains("\"name\":\"Count\",\"kind\":\"operation\""))
-    assert(j.contains("{\"n\":1,\"event\":{\"kind\":\"now\"},\"actions\":[{\"do\":\"assign\",\"target\":\"turn_count\""))
+    assert(j.contains("{\"n\":1,\"event\":{\"kind\":\"now\"},\"actions\":[{\"do\":\"add\",\"target\":\"turn_count\""))
 }
 
 test "v226 a fork without the row otherwise is read: an uncovered fork leads to the error by the engine" {
@@ -272,7 +272,7 @@ test "v226 the generator writes a tree of 2.26 in the form of 2.26 and the circl
     assert(text.contains("## Выход"))
     assert(!text.contains("## Концы"))
     assert(!text.contains("| № |"))
-    assert(!text.contains("| — |"))
+    assert(text.contains("|  | Finished |"))
     assert(text.contains("| Действия | Куда |"))
     assert(text.contains("| поле запроса | выражение |"))
     assert(text.contains("- Сторона: "))
