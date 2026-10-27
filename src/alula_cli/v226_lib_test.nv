@@ -84,9 +84,11 @@ test "lib226 a library that is not found is an error of the file" {
     assert(ran.err.contains("libs/cycle.alula.md"))
 }
 
-test "lib226 the option lib needs a folder and is not an option of render" {
+test "lib226 the option lib needs a folder and is an option of render" {
     assert(run_with(["compile", "/work/calc.alula.md", "--lib"], [file("/work/calc.alula.md", lib_calc_text())]).code == 2)
-    assert(run_with(["render", "/work/calc.alula.json", "--lib", "/shared"], [file("/work/calc.alula.json", "{}")]).code == 2)
+    // 0.9.1 (task 241): `render` reads the twins of the libraries of the tree, beside the machine or in `--lib`
+    assert(run_with(["render", "/work/calc.alula.json", "--lib"], [file("/work/calc.alula.json", "{}")]).code == 2)
+    assert(!run_with(["render", "/work/calc.alula.json", "--lib", "/shared"], [file("/work/calc.alula.json", "{}")]).err.contains("unknown option"))
 }
 
 test "lib226 the help of compile names the option lib" {
