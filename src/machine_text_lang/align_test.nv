@@ -99,7 +99,7 @@ test "p154 the cell expression of the request has the type of the datum of the s
 
 test "p154 the cell expression of the request has the type of the field of the input of the called machine" {
     ro caller = text_of_file(table_files(), "caller.alula.md")
-    ro text = caller.replace("тип CallInput { label строка, count число>=0, profile строка }", "тип CallInput { label строка, count число>=0, profile строка, tags []число }").replace("| count | 3 | сторона |", "| count | 3 | сторона |\n| tags | [] | сторона |")
+    ro text = caller.replace("тип CallInput { label строка, count число>=0, profile строка }", "тип CallInput { label строка, count число>=0, profile строка, tags []число }").replace("| count | 3 |", "| count | 3 |\n| tags | [] |")
     assert(text != caller)
     assert(!note_says(text, "AL-85"))
     assert(has154(text, "{\"field\":\"tags\",\"value\":${list154()}"))
@@ -107,7 +107,7 @@ test "p154 the cell expression of the request has the type of the field of the i
 
 test "p154 a name of neither the input nor a datum gives no type to the cell of the request" {
     ro caller = text_of_file(table_files(), "caller.alula.md")
-    ro text = caller.replace("| count | 3 | сторона |", "| count | 3 | сторона |\n| лишнее | [] | сторона |")
+    ro text = caller.replace("| count | 3 |", "| count | 3 |\n| лишнее | [] |")
     assert(note_says(text, "AL-85"))
 }
 

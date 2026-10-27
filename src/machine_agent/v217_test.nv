@@ -37,8 +37,8 @@ fn reference17(name str) -> []str {
     mut out = []str.new()
     for line in names_file17(name).split("\n") {
         if line == "" || line.starts_with("#") { continue }
-        // the counter of the party `усиленный` left with the call of «Пауза» of 2.25 (task 241: the tests read the samples without it)
-        if line.contains("попытка_усиленного") || line.contains("enhanced_attempt") { continue }
+        // the party `усиленный` (its counter and its signals) left with the call of «Пауза» of 2.25 (task 241: the tests read the samples without it)
+        if line.contains("попытка_усиленного") || line.contains("enhanced_attempt") || line.contains("	усиленный.") || line.contains("	enhanced.") { continue }
         ro cells = line.split("\t")
         mut parts = []str.new()
         for c in cells { parts.push(c) }
