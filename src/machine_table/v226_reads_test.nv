@@ -7,8 +7,8 @@ import std.text
 import alula.examples.{sample_registry}
 import alula.machine.{Registry, Primitive, ParamSpec, IntType, Volatile}
 
-// The small machine of the support as a tree of 2.26: the states have no reads written.
-fn rd226(text str) -> str => text.replace("{\"format\":\"machine/2\",", "{\"format\":\"machine/2\",\"alula_version\":\"2.26\",").replace("\"reads\":[\"n\"]", "\"reads\":[]").replace("\"reads\":[\"stop\"]", "\"reads\":[]")
+// The small machine of the support as a tree of 2.26: the states have no reads written, the counter of the party has no row in the data (stream 2 part B).
+fn rd226(text str) -> str => text.replace(up226(), "").replace("{\"format\":\"machine/2\",", "{\"format\":\"machine/2\",\"alula_version\":\"2.26\",").replace("\"reads\":[\"n\"]", "\"reads\":[]").replace("\"reads\":[\"stop\"]", "\"reads\":[]")
 
 fn rd_tiny() -> str => rd226(tiny())
 
