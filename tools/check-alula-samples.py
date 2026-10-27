@@ -53,6 +53,12 @@ def load_words():
         c = line.split('\t')
         if len(c) == 3:
             out.setdefault(c[0], {})[c[1]] = c[2]
+    # шов 2.26 (задача 195): образцы ещё в форме 2.25 — слова, которые 2.26 убрала (`Концы`, `№`, …), читаются из слоя 2.25, пока поток 4 не перенесёт образцы
+    if os.path.isfile(os.path.join(KW.ROOT, KW.SEAM_225)):
+        for line in read(KW.SEAM_225).split('\n'):
+            c = line.split('\t')
+            if len(c) == 3 and not line.startswith('#') and c[0] != 'kind':
+                out.setdefault(c[0], {}).setdefault(c[1], c[2])
     return out
 
 
