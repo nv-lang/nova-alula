@@ -112,7 +112,7 @@ Each unit is a folder; `nova test` runs a unit with all its `*_test.nv` files (t
 
 ```powershell
 nova test src/alula_cli --timeout 600            # 174 tests (task 152: the program of 0.3.0 and the files of 2.22, 15 of them new): help, version, compile, render, convert, check, summary, run, test on a small machine (Russian and English), the errors and the codes, the tests with `standalone` (task 122)
-nova test src/alula_eq --timeout 600             # 89 tests (every table says 2.22 since task 152, `compile` makes the JSON of the product, 2.12 and 2.11 are refused, the line of connection of the fragment Pause in both languages): compile -> render -> compile and convert ru -> en -> ru give an equal JSON on the 7 machines of the product and on the 4 of the nested machines (task 119: `caller`, `callee`, `fan`, `dialog_steps`), the commands are the functions of the translator
+nova test src/alula_eq --timeout 600             # 89 tests (every table says 2.22 since task 152, `compile` makes the JSON of the product, 2.12 and 2.11 are refused): compile -> render -> compile and convert ru -> en -> ru give an equal JSON on the 7 machines of the product and on the 4 of the nested machines (task 119: `caller`, `callee`, `fan`, `dialog_steps`), the commands are the functions of the translator
 nova test src/alula_tests --timeout 600      # 22 tests: `test` passes the 364 tests of src/machine (the 32 of the nested machines and the 101 of the cycle check too; a parent with its callee from JSON and from a table, a callee that is missing or does not fit, `run` of a parent refused), `run` passes the 75 of the agent step one by one, the chat, the small machines
 ```
 

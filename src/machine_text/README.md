@@ -75,7 +75,7 @@ The marks AL-23 ... AL-33 and AL-37 of section 0 of the changelog of the specifi
 | AL-27, AL-28 | The column `читает` stays obligatory (the rule of AL-27 is for the author who carries a table over: write `сторона` when the source does not say). The expression of a field that is named as a datum is any expression of the table "Input" (`вызвать`, `если`); the rows read the datum. |
 | AL-29, AL-123 | An external function that the machine declares in `## Внешние функции` is called as a function `имя(арг)`, in an expression and as an action `имя(арг);` (the node `primitive_call` / the action `call`); since 2.24 this is the only form (`вызвать(…)` and the heading `## Примитивы` are errors with the hint, there is no transition period). Which class may stand where is the check, not the translator: a volatile primitive in a condition is an error that names the class. |
 | AL-30 | The input of the nested machine is the record of the fields of its `## Вход`: the agent step of the product has the eight fields of `ЗапросАгента`, its datum `запрос_агента` is built by the record constructor; the callers name the party `machine шаг_агента(вход ЗапросАгента, итог ОтветАгента)` and give the profile by the column. |
-| AL-32 | The tree has the key `fragments` (below); the generator writes the line of connection and leaves out what the fragment brings. |
+| AL-32 | The tree had the key `fragments` (gone since 0.9.1, task 241: a library is connected by its file, section 9). |
 | AL-33, AL-131 | `разбор` of a party: since 2.24 one function per role (`parse_witness_reply`, `parse_author_reply`, `parse_lens_reply`), named without brackets; the type after `->` is checked against the result of the function; a literal of a role in `разбор:` is the error "литерал роли в разбор: с 2.24 — отдельная функция на роль" (`party.nv`, `role_literal_message`), the table "by role" of the host registry is gone; see `src/machine/README.md`. |
 
 ## Format 2.14: the rules AL-38 ... AL-49 (task 149)
@@ -98,7 +98,7 @@ The marks of the format 2.13 (the language 2.14), what the translator (`machine_
 | AL-49 | The readable words (`причина` -> `reason`) are the table kind `readable`; a binding named by such a word has the JSON name of the table. |
 
 
-**The key `fragments` of the tree** (a key of the product, not of the format: the methodology answered on 2026-10-20 that the form is the product's and the circle md -> JSON -> md needs only equal trees). `"fragments": [{ "name": "Pause", "args": { "halt_signal": lit, "halt_code": lit, "nested": list of lit, "cancel_requests": lit, "reenter": lit, "write_right": lit } }]`, the arguments in the order of the table `## Параметры` of the fragment, the values are expressions of the tree: the Latin name of the signal of the party that halts (`halt`), the text of the code, the names of the nested machines (`agent_step`), the Latin keys of the behavior words (`mechanics`, `without_return_to_send`, `stop_transport_turn`; `nothing`, `requests_from_to_send`), the note. It stands after `includes`, before `initial`. The fragment stays substituted in the ordinary keys (`data`, `common_events`, `states`, `signals`), so the interpreter needs no change. The generator (`render_frag.nv`) knows by the name what a fragment brings (`fragment_shape`: the data `previous`, `call_request_id`, `open_requests`, 6 common events, the state `Pause`, the 5 signals of the protocol; a test pins it to the file of the fragment) and leaves it out of the sections; a hand-written tree with no `fragments` is written as before. The text of a fragment says the states and the parties of the machine by words (`ОСТАНОВЛЕНО`, `усиленный`): a state whose heading is its Latin name is also called by its word of the dictionary, and the party of the fragment is named by the id of the column `идентификатор` (`enhanced`).
+**The key `fragments` of the tree** is gone since 0.9.1 (task 241): a tree with it is refused; a library is connected by its file (section 9, the key `includes`).
 
 ## Two languages (task 113)
 
@@ -226,10 +226,9 @@ Extensions of the product (they are the proposals of section 14 of the changelog
 `часть(имя(поле: имя))` for a part of an answer that keeps the request open; the event `срок` (the term made by the executor); the section `## Сигналы` (`| имя | поля |`) and `сигнал(имя)` in the
 rows of any appeal; `отменить_открытые(сторона: имя)` cancels the open requests of one party. The chat machine (`src/machine/machines/chat.alula.md`) uses all four.
 
-**Fragments and definitions.** `## Подключения` holds `Пауза(сигнал_остановки: …, код_остановки: "…", вложенные: [], отмена_запросов: …, вход_заново: …, право_записи: "…")` (all six parameters; the
-text of the fragment, `fragments/pause.fragment.md`, is compiled in, `<параметр>` is put in before it is read; its data come before the data of the machine, its common events before the
-machine's own, its state `ПАУЗА` after the machine's states) and `функции: <имя> версия <N> хеш <hex12>` (the file is found in the registry by the name, the version and the hash are
-checked, a copy of its types, constants and definitions is put in the tree, `includes` gets the line). `вложенные: []` makes `передать(вложенные, …)` and `отменить_открытые(кроме: вложенные)` plain.
+**Libraries and definitions.** Since 0.9.1 (task 241) a file of 2.25 connects no Pause: the old call `Пауза(…)` is the error of the old form of connection (a library of 2.26 is
+connected by `### Имя` with `- Файл:` and `- Хеш:`, section 9); `## Подключения` of 2.25 holds `функции: <имя> версия <N> хеш <hex12>` (the file is found in the registry by the name, the version and the hash are
+checked, a copy of its types, constants and definitions is put in the tree, `includes` gets the line).
 
 ## Nested machines (task 119)
 

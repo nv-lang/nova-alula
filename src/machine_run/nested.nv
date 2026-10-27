@@ -117,7 +117,7 @@ export type ChildRun { request str, nested str, engine Engine[AlulaMachine, Alul
 /// The event `start` of a nested machine for a request: its input is the input of the request, its `request` is the id of the request (the request of the call, rule 35 item 1).
 export fn call_start(request PartyRequest[str]) -> Incoming => Incoming.incoming(EventKind.Input, "start", Some(request.id), request.input)
 
-/// The name of the event of the nested machine for a signal of the parent: `parent_stop`, `parent_continue`, `parent_halt` (the fragment "Pause", section 9) and `cancel_request`.
+/// The name of the event of the nested machine for a signal of the parent: `parent_stop`, `parent_continue`, `parent_halt` (the library "Pause", section 9) and `cancel_request`.
 /// An unknown signal has no event.
 export fn call_signal_name(signal str) -> str {
     if signal == "stop" { return "parent_stop" }
@@ -127,7 +127,7 @@ export fn call_signal_name(signal str) -> str {
     ""
 }
 
-/// The event of the nested machine for a signal of the parent about the request `request_id`; the input is the id (the field `id` of the signals of the fragment).
+/// The event of the nested machine for a signal of the parent about the request `request_id`; the input is the id (the field `id` of the signals of the call protocol).
 export fn call_signal(request_id str, signal str) -> Incoming => Incoming.incoming(EventKind.Input, call_signal_name(signal), None, request_id)
 
 /// The event for the parent when the nested machine has ended: the answer with its result, or the refusal with the name of its code. None while it runs.
