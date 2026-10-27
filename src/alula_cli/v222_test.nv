@@ -114,9 +114,7 @@ test "c222 the tables of the examples keep their tree through the English file" 
     for name in example_tables() {
         ro first = run_with(["compile", "/m/${name}"], one_in_host("/m/${name}", text_of_file(table_files(), name)))
         if first.code != 0 { panic("compile ${name}: ${first.err}") }
-        // 2.26 (task 239): a Russian table that connects a library (`### Пауза`) keeps the path of its Russian file in the English text, and a library is read in the language
-        // of the machine only (section 9): the English twin of the file is not named by the format, so such a table does not go through the English file
-        if text_of_file(table_files(), name).contains("\n### Пауза\n") { continue }
+        // 0.9.1 (task 241): a table that connects a library (`### Пауза`) goes through the English file too: the conversion names the English twin of the library (section 9)
         ro english = run_with(["convert", "/m/${name}", "--language", "en"], one_in_host("/m/${name}", text_of_file(table_files(), name)))
         if english.code != 0 { panic("convert ${name}: ${english.err}") }
         ro back = run_with(["compile", "/m/e.alula.md"], one_in_host("/m/e.alula.md", english.out))

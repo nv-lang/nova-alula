@@ -1,0 +1,517 @@
+// v2261_test.nv - task 241 (package 0.9.1, Alula 2.26, section 9 of the specification): the library does not write into the data of the machine. «Пауза» brings its own
+// enumeration `ПричинаПаузы` and its own datum `причина` (the machine reads `Пауза.причина`), it has no parameter `код_остановки` and no row `остановка` in `## Требует`; the
+// functions, the types and the constants of a library use no parameter and no datum of the library; two copies of one library share the functions and keep their data apart by the
+// prefix of the instance; the built-in fragment of 2.25 is gone (a connection is only `- Файл:`); the findings of 0.9.0: the word of a free input in an appeal to another party,
+// the signals of the protocol brought only by a row of a library that reads them, a row of `## Имена` that renames a signal of the protocol, the part written by the generator.
+module alula.machine_text
+
+import std.text
+import alula.machine.{NamedText, language_registry}
+
+fn pause_file() -> str => embed_str("../../libs/pause.alula.md")
+
+fn pause_en_file() -> str => embed_str("../../libs/pause.en.alula.md")
+
+fn libs2261() -> []NamedText => [NamedText { name: "libs/pause.alula.md", text: pause_file() }]
+
+// A machine of 2.26 that connects the new «Пауза»: the output reads the reason of the library by the prefix of the instance.
+fn m2261() -> str {
+    ro text = `# Машина: Halt
+
+- machine: Halt
+- machine_version: 1
+- format: 2.26
+
+## Имена
+
+| имя | JSON-имя |
+|---|---|
+| РАБОТА | Work |
+| КОНЕЦ | Finished |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | сигналы | счётчик |
+|---|---|---|---|---|---|
+| агент | agent | agent(итог строка) | — | — | попытка_агента |
+| усиленный | enhanced | enhanced(итог ИсходВорот) | — | продолжить { слово_человека строка, автор строка, источник строка }, остановить | попытка_усиленного |
+
+## Подключения
+
+### Пауза
+- Файл: libs/pause.alula.md
+- Хеш: HASH
+
+| параметр | значение |
+|---|---|
+| сигнал_остановки | "остановить" |
+| вложенные | [] |
+| отмена_запросов | "механика" |
+| вход_заново | "ничего" |
+
+## Состояния
+
+Начальное состояние: РАБОТА
+
+### РАБОТА — обращение
+- Сторона: агент
+
+| Событие | Условие | Действия | Куда |
+|---|---|---|---|
+| ответ |  |  | КОНЕЦ |
+
+### КОНЕЦ — конец
+
+### ОСТАНОВЛЕНО — конец
+
+### ОШИБКА — конец
+
+## Выход
+
+- Результат: строка
+
+| конец | когда | ответ |
+|---|---|---|
+| КОНЕЦ | истина | Ответ("ok") |
+| ОСТАНОВЛЕНО | Пауза.причина == ПричинаПаузы.Остановлена | Отказ(КодСбоя.ОстановленоЧеловеком, строка(Пауза.причина)) |
+| ОСТАНОВЛЕНО | Пауза.причина == ПричинаПаузы.Отменена | Отказ(КодСбоя.ОтмененоРодителем, строка(Пауза.причина)) |
+| ОШИБКА | истина | Отказ(КодСбоя.НетРезультата, "error") |
+`
+    text.replace("HASH", definitions_hash(pause_file()))
+}
+
+fn r2261(text str) -> TranslateReport => translate_report_with(text, libs2261())
+
+fn first2261(report TranslateReport) -> str {
+    if report.errors.len() == 0 { return "ok" }
+    "${report.errors[0].line}:${report.errors[0].col} ${report.errors[0].kind} ${report.errors[0].message}"
+}
+
+fn says2261(report TranslateReport, needle str) -> bool {
+    for e in report.errors {
+        if e.message.contains(needle) { return true }
+    }
+    false
+}
+
+// ---- the file of «Пауза» -----------------------------------------------------------------------------------------------------------------------------
+
+test "v2261 the file of Pause has its own enumeration and its own datum of the reason" {
+    ro t = pause_file()
+    assert(t.contains("тип ПричинаПаузы перечисление"))
+    assert(t.contains("| Остановлена = \"pause_halt\""))
+    assert(t.contains("| Отменена = \"cancel_request\""))
+    assert(t.contains("| причина | ?ПричинаПаузы | пусто |"))
+    assert(t.contains("причина = ПричинаПаузы.Остановлена"))
+    assert(t.contains("причина = ПричинаПаузы.Отменена"))
+}
+
+test "v2261 the file of Pause has no parameter of the code and no requirement of the datum of the machine" {
+    ro t = pause_file()
+    assert(!t.contains("код_остановки"))
+    assert(!t.contains("| остановка |"))
+    assert(!t.contains("остановка ="))
+    ro e = pause_en_file()
+    assert(!e.contains("halt_code"))
+    assert(!e.contains("| stop_reason |"))
+    assert(e.contains("type PauseReason enum"))
+    assert(e.contains("| reason | ?PauseReason | none |"))
+}
+
+test "v2261 the hashes of the two files of Pause are those of the methodology" {
+    assert(definitions_hash(pause_file()) == "f39b92ae91f6")
+    assert(definitions_hash(pause_en_file()) == "d254e6297f61")
+}
+
+test "v2261 a machine reads the reason of Pause by the prefix of the instance" {
+    ro r = r2261(m2261())
+    assert(first2261(r) == "ok")
+    assert(r.json.contains("\"name\":\"PauseReason\""))
+    assert(r.json.contains("\"name\":\"reason\""))
+    assert(!r.json.contains("\"name\":\"stop_reason\""))
+}
+
+test "v2261 the reason of Pause without the prefix is not a name of the machine" {
+    ro r = r2261(m2261().replace("| ОСТАНОВЛЕНО | Пауза.причина == ПричинаПаузы.Остановлена |", "| ОСТАНОВЛЕНО | причина == ПричинаПаузы.Остановлена |"))
+    assert(first2261(r) != "ok")
+}
+
+test "v2261 the old parameter of the code of the halt is not a parameter of Pause" {
+    ro r = r2261(m2261().replace("| вложенные | [] |", "| код_остановки | \"pause_halt\" |\n| вложенные | [] |"))
+    assert(says2261(r, "код_остановки"))
+}
+
+// ---- the visibility: the functions, the types and the constants use no parameter and no datum of the library ------------------------------------------------
+
+fn vis_lib(fn_body str) -> str => `# Библиотека: Счёт
+
+- library: tally
+- format: 2.26
+
+## Параметры
+
+| имя | тип | комментарий |
+|---|---|---|
+| предел | число>=0 | предел счёта |
+
+## Данные
+
+| имя | тип | начальное |
+|---|---|---|
+| счёт | число>=0 | 0 |
+
+## Функции
+
+~~~
+FN
+~~~
+`.replace("~~~", "```").replace("FN", fn_body)
+
+fn vis_machine(lib str, includes str) -> str {
+    ro text = `# Машина: Vis
+
+- machine: Vis
+- machine_version: 1
+- format: 2.26
+
+## Имена
+
+| имя | JSON-имя |
+|---|---|
+| РАБОТА | Work |
+| КОНЕЦ | Finished |
+
+## Данные
+
+| имя | тип | начальное | не убывает |
+|---|---|---|---|
+| готово | булево | ложь | — |
+
+## Подключения
+
+INCLUDES
+## Состояния
+
+Начальное состояние: РАБОТА
+
+### РАБОТА — операция
+
+| Действия | Куда |
+|---|---|
+| готово = много(2) | КОНЕЦ |
+
+### КОНЕЦ — конец
+
+## Выход
+
+- Результат: строка
+
+| конец | когда | ответ |
+|---|---|---|
+| КОНЕЦ | истина | Ответ("ok") |
+`
+    text.replace("INCLUDES", includes).replace("HASH", definitions_hash(lib))
+}
+
+fn vis_one(lib str) -> str => vis_machine(lib, `### Счёт
+- Файл: libs/tally.alula.md
+- Хеш: HASH
+
+| параметр | значение |
+|---|---|
+| предел | 3 |
+`)
+
+fn vis_two(lib str) -> str => vis_machine(lib, `### Счёт
+- Файл: libs/tally.alula.md
+- Хеш: HASH
+- Имя: Малый
+
+| параметр | значение |
+|---|---|
+| предел | 3 |
+
+### Счёт
+- Файл: libs/tally.alula.md
+- Хеш: HASH
+- Имя: Большой
+
+| параметр | значение |
+|---|---|
+| предел | 30 |
+`)
+
+fn vis_report(lib str, machine str) -> TranslateReport => translate_report_with(machine, [NamedText { name: "libs/tally.alula.md", text: lib }])
+
+test "v2261 a function of a library that takes its values by arguments is translated" {
+    ro lib = vis_lib("функция много(н число>=0) -> булево => н > 1")
+    assert(first2261(vis_report(lib, vis_one(lib))) == "ok")
+}
+
+test "v2261 a function of a library that reads a parameter of the library is an error" {
+    ro lib = vis_lib("функция много(н число>=0) -> булево => н > предел")
+    ro r = vis_report(lib, vis_one(lib))
+    assert(says2261(r, "функция много использует параметр предел библиотеки; передайте его аргументом"))
+}
+
+test "v2261 a function of a library that reads a datum of the library is an error" {
+    ro lib = vis_lib("функция много(н число>=0) -> булево => н > счёт")
+    ro r = vis_report(lib, vis_one(lib))
+    assert(says2261(r, "функция много использует данное счёт библиотеки; передайте его аргументом"))
+}
+
+test "v2261 two copies of one library with other values share the functions and keep the data apart" {
+    ro lib = vis_lib("функция много(н число>=0) -> булево => н > 1")
+    ro r = vis_report(lib, vis_two(lib))
+    assert(first2261(r) == "ok")
+    // the function is one: it is the same in every copy
+    ro j = r.json
+    ro first = j.find("\"name\":\"много\"") ?? -1
+    assert(first >= 0)
+    assert((j[first + 1..].find("\"name\":\"много\"") ?? -1) < 0)
+    // the data of the two copies are two data with other names in the tree
+    assert(!j.contains("\"name\":\"schyot\",\"type\""))
+    assert(j.contains("\"instance\":\"Малый\""))
+    assert(j.contains("\"instance\":\"Большой\""))
+}
+
+test "v2261 the data of the two copies are read by the prefixes of their instances" {
+    ro lib = vis_lib("функция много(н число>=0) -> булево => н > 1")
+    ro m = vis_two(lib).replace("| готово = много(2) | КОНЕЦ |", "| готово = много(Малый.счёт + Большой.счёт) | КОНЕЦ |")
+    assert(first2261(vis_report(lib, m)) == "ok")
+}
+
+test "v2261 a function of the machine with the name of a function of a library is an error" {
+    ro lib = vis_lib("функция много(н число>=0) -> булево => н > 1")
+    ro m = vis_one(lib).replace("## Состояния\n", "## Функции\n\n```\nфункция много(н число>=0) -> булево => н > 2\n```\n\n## Состояния\n")
+    assert(first2261(vis_report(lib, m)) != "ok")
+}
+
+test "v2261 a parameter of the library in a type of the requirements is an error" {
+    ro lib = vis_lib("функция много(н число>=0) -> булево => н > 1").replace("## Данные\n", "## Требует\n\n| имя | тип |\n|---|---|\n| готово | число>=предел |\n\n## Данные\n")
+    ro r = vis_report(lib, vis_one(lib))
+    assert(says2261(r, "предел"))
+}
+
+// ---- the fragment of 2.25 is gone ---------------------------------------------------------------------------------------------------------------------
+
+test "v2261 the call of the fragment Pause in a file of 2.25 is an error: a library is connected by its file only" {
+    ro text = m2261().replace("format: 2.26", "format: 2.25").replace("### Пауза\n- Файл: libs/pause.alula.md\n", "Пауза(сигнал_остановки: остановить, код_остановки: \"pause_halt\", вложенные: [], отмена_запросов: механика, вход_заново: ничего, право_записи: \"x\")\n")
+    ro r = r2261(text)
+    assert(first2261(r) != "ok")
+    assert(!r.json.contains("\"fragments\""))
+}
+
+// ---- the findings of 0.9.0 --------------------------------------------------------------------------------------------------------------------------
+
+// A machine whose human party of a free input says `отмена` while the agent works: the row of the appeal to the agent reads the word (spec 1 and 4.3: «строкой текущего состояния»).
+fn free_word_text() -> str => `# Машина: Free
+
+- machine: Free
+- machine_version: 1
+- format: 2.26
+
+## Имена
+
+| имя | JSON-имя |
+|---|---|
+| ОЖИДАНИЕ | Waiting |
+| КОНЕЦ | Finished |
+| ОТМЕНЕНО | Cancelled |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | сигналы | счётчик |
+|---|---|---|---|---|---|
+| агент | agent | agent(итог строка) | — | — | попытка_агента |
+| пользователь | user | human(итог ИсходВорот) | — | отмена | — |
+
+## Состояния
+
+Начальное состояние: ОЖИДАНИЕ
+
+### ОЖИДАНИЕ — обращение
+- Сторона: агент
+
+| Событие | Условие | Действия | Куда |
+|---|---|---|---|
+| ответ |  |  | КОНЕЦ |
+| сигнал(отмена) |  |  | ОТМЕНЕНО |
+
+### КОНЕЦ — конец
+
+### ОТМЕНЕНО — конец
+
+## Выход
+
+- Результат: строка
+
+| конец | когда | ответ |
+|---|---|---|
+| КОНЕЦ | истина | Ответ("ok") |
+| ОТМЕНЕНО | истина | Отказ(КодСбоя.ОстановленоЧеловеком, "cancelled") |
+`
+
+test "v2261 the word of a free input is read by a row of the appeal to another party" {
+    ro r = translate_checked(free_word_text(), language_registry())
+    assert(first2261(r) == "ok")
+}
+
+// A library of one common event that reads the signal of the protocol `отмена_запроса` only.
+fn cancel_lib() -> str => `# Библиотека: Отмена
+
+- library: call_cancel
+- format: 2.26
+
+## Требует
+
+| имя | тип |
+|---|---|
+| ОСТАНОВЛЕНО | конец |
+
+## Общие события
+
+| Событие | Условие | Действия | Куда |
+|---|---|---|---|
+| сигнал(отмена_запроса { идентификатор_запроса }) | не конец(состояние) | журнал("request_cancelled", request: идентификатор_запроса, event: событие.идентификатор) | ОСТАНОВЛЕНО |
+`
+
+fn cancel_machine() -> str {
+    ro text = `# Машина: Cancel
+
+- machine: Cancel
+- machine_version: 1
+- format: 2.26
+
+## Имена
+
+| имя | JSON-имя |
+|---|---|
+| РАБОТА | Work |
+| КОНЕЦ | Finished |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | сигналы | счётчик |
+|---|---|---|---|---|---|
+| агент | agent | agent(итог строка) | — | — | попытка_агента |
+
+## Подключения
+
+### Отмена
+- Файл: libs/cancel.alula.md
+- Хеш: HASH
+
+## Состояния
+
+Начальное состояние: РАБОТА
+
+### РАБОТА — обращение
+- Сторона: агент
+
+| Событие | Условие | Действия | Куда |
+|---|---|---|---|
+| ответ |  |  | КОНЕЦ |
+
+### КОНЕЦ — конец
+
+### ОСТАНОВЛЕНО — конец
+
+## Выход
+
+- Результат: строка
+
+| конец | когда | ответ |
+|---|---|---|
+| КОНЕЦ | истина | Ответ("ok") |
+| ОСТАНОВЛЕНО | истина | Отказ(КодСбоя.ОтмененоРодителем, "cancelled") |
+`
+    text.replace("HASH", definitions_hash(cancel_lib()))
+}
+
+fn cancel_report(machine str) -> TranslateReport => translate_report_with(machine, [NamedText { name: "libs/cancel.alula.md", text: cancel_lib() }])
+
+test "v2261 a library brings only the signals of the protocol that its rows read" {
+    ro r = cancel_report(cancel_machine())
+    assert(first2261(r) == "ok")
+    assert(r.json.contains("\"name\":\"cancel_request\""))
+    assert(!r.json.contains("\"name\":\"human_stop\""))
+    assert(!r.json.contains("\"name\":\"parent_halt\""))
+}
+
+test "v2261 a row of the names of the machine that renames a signal of the protocol is an error" {
+    ro r = cancel_report(cancel_machine().replace("| КОНЕЦ | Finished |\n", "| КОНЕЦ | Finished |\n| отмена_запроса | cancel |\n"))
+    assert(says2261(r, "отмена_запроса"))
+}
+
+test "v2261 a row of the names of a library that renames a signal of the protocol is an error, not a silent row" {
+    ro lib = cancel_lib().replace("## Общие события", "## Имена\n\n| имя | JSON-имя |\n|---|---|\n| отмена_запроса | cancel |\n\n## Общие события")
+    ro m = cancel_machine().replace(definitions_hash(cancel_lib()), definitions_hash(lib))
+    ro r = translate_report_with(m, [NamedText { name: "libs/cancel.alula.md", text: lib }])
+    assert(says2261(r, "отмена_запроса"))
+}
+
+test "v2261 the generator writes the part of an answer in the form of 2.26" {
+    ro text = `# Машина: Part
+
+- machine: Part
+- machine_version: 1
+- format: 2.26
+
+## Имена
+
+| имя | JSON-имя |
+|---|---|
+| РАБОТА | Work |
+| КОНЕЦ | Finished |
+| КусокОтвета | agent_chunk |
+
+## Типы
+
+~~~
+тип КусокОтвета { содержание строка }
+~~~
+
+## Данные
+
+| имя | тип | начальное | не убывает |
+|---|---|---|---|
+| текст | строка | "" | — |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | сигналы | части | счётчик |
+|---|---|---|---|---|---|---|
+| агент | agent | agent(итог строка) | — | — | КусокОтвета | попытка_агента |
+
+## Состояния
+
+Начальное состояние: РАБОТА
+
+### РАБОТА — обращение
+- Сторона: агент
+
+| Событие | Условие | Действия | Куда |
+|---|---|---|---|
+| часть { содержание: кусок } |  | текст = текст + кусок | то же |
+| ответ |  |  | КОНЕЦ |
+
+### КОНЕЦ — конец
+
+## Выход
+
+- Результат: строка
+
+| конец | когда | ответ |
+|---|---|---|
+| КОНЕЦ | истина | Ответ(текст) |
+`.replace("~~~", "```")
+    ro first = translate_report(text)
+    assert(first2261(first) == "ok")
+    ro rendered = render_machine_with(first.json, "ru", false)
+    assert(rendered.notes.len() == 0)
+    assert(!rendered.text.contains("часть(agent_chunk"))
+    ro again = translate_report(rendered.text)
+    assert(first2261(again) == "ok")
+    assert(again.json == first.json)
+}

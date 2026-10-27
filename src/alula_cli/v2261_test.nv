@@ -1,0 +1,70 @@
+// v2261_test.nv - task 241 (package 0.9.1): the English twin of a library (section 9). `alula convert --language en` translates a machine and every library it connects: the machine
+// names the twin of each library (`libs/pause.en.alula.md`, the name with `.en` before `.alula.md`) with its hash, the twins are written beside the file of `-o`; a library without
+// a twin that can be read is the error with the list of them. `alula render --language en` of a tree with a library names the twin as well. The version is 0.9.1.
+module alula.alula_cli
+
+import std.text
+import alula.machine.{NamedText, text_of_file}
+import alula.machine_text.{definitions_hash}
+import alula.examples.{table_files, library_files_in}
+
+fn twin_text() -> str => text_of_file(library_files_in("/m"), "/m/libs/pause.en.alula.md")
+
+fn pausable() -> str => text_of_file(table_files(), "pausable.alula.md")
+
+// The files of the host and the Russian library only: no English twin beside the machine.
+fn without_twin(name str, text str) -> []NamedText {
+    mut out = []NamedText.new()
+    for f in one_in_host(name, text) {
+        if !f.name.ends_with(".en.alula.md") { out.push(f) }
+    }
+    out
+}
+
+test "c2261 the version is 0.9.1" {
+    assert(PROGRAM_VERSION == "0.9.1")
+    assert(run0(["version"]).out.starts_with("alula 0.9.1 (Alula 2.26"))
+}
+
+test "c2261 the conversion to English names the twin of the library with its hash" {
+    ro ran = run_with(["convert", "/m/pausable.alula.md", "--language", "en"], one_in_host("/m/pausable.alula.md", pausable()))
+    if ran.code != 0 { panic(ran.err) }
+    assert(ran.out.contains("- File: libs/pause.en.alula.md"))
+    assert(ran.out.contains("- Hash: ${definitions_hash(twin_text())}"))
+    assert(!ran.out.contains("libs/pause.alula.md"))
+    assert(ran.out.contains("### Pause"))
+}
+
+test "c2261 the English file of a machine with a library is compiled to the same tree" {
+    ro first = run_with(["compile", "/m/pausable.alula.md"], one_in_host("/m/pausable.alula.md", pausable()))
+    assert(first.code == 0)
+    ro en = run_with(["convert", "/m/pausable.alula.md", "--language", "en"], one_in_host("/m/pausable.alula.md", pausable()))
+    assert(en.code == 0)
+    ro back = run_with(["compile", "/m/pausable.en.alula.md"], one_in_host("/m/pausable.en.alula.md", en.out))
+    if back.code != 0 { panic(back.err) }
+    assert(back.out.contains("\"name\":\"pause\""))
+    assert(back.out.contains("\"hash\":\"${definitions_hash(twin_text())}\""))
+}
+
+test "c2261 the conversion writes the twins of the libraries beside the file of -o" {
+    ro ran = run_cli(["convert", "/m/pausable.alula.md", "--language", "en", "-o", "/out/pausable.en.alula.md"], one_in_host("/m/pausable.alula.md", pausable()), "/out/libs/pause.en.alula.md")
+    if ran.code != 0 { panic(ran.err) }
+    assert(ran.present)
+    assert(ran.back == twin_text())
+}
+
+test "c2261 a library without its twin is the error with the list of the libraries" {
+    ro ran = run_with(["convert", "/m/pausable.alula.md", "--language", "en"], without_twin("/m/pausable.alula.md", pausable()))
+    assert(ran.code == 1)
+    assert(ran.err.contains("libs/pause.alula.md"))
+    assert(ran.err.contains("libs/pause.en.alula.md"))
+}
+
+test "c2261 the rendering in English of a tree with a library names the twin" {
+    ro first = run_with(["compile", "/m/pausable.alula.md"], one_in_host("/m/pausable.alula.md", pausable()))
+    assert(first.code == 0)
+    ro ran = run_with(["render", "/m/pausable.alula.json", "--language", "en"], one_in_host("/m/pausable.alula.json", first.out))
+    if ran.code != 0 { panic(ran.err) }
+    assert(ran.out.contains("- File: libs/pause.en.alula.md"))
+    assert(ran.out.contains("- Hash: ${definitions_hash(twin_text())}"))
+}
