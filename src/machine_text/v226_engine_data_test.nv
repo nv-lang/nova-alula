@@ -1,0 +1,100 @@
+// v226_engine_data_test.nv - task 238 (Alula 2.26, stream 2 part B: the data of the engine, design 5): `## Данные` of 2.26 is `имя | тип | начальное [| не убывает]` without
+// the column `пишет`; the counter of a party is named by the column `счётчик` of `## Стороны` and declared by the loader (no row in `## Данные`, none in the tree); a row,
+// "При приёме" or an acting function does not write it; `к_отправке` is written by the rows. A file of 2.25 is read as before.
+module alula.machine_text
+
+import std.text
+import alula.machine.{language_registry}
+
+fn data226_old() -> str => `| имя | тип | начальное | не убывает | пишет |
+|---|---|---|---|---|
+| число_ходов | число>=0 | 0 | да | действия |
+| остановка | "" \| "a" \| "b" | "" | — | действия |
+| попытка_вратаря | число>=0 | 0 | да | механика |
+`
+
+fn data226_new() -> str => `| имя | тип | начальное | не убывает |
+|---|---|---|---|
+| число_ходов | число>=0 | 0 | да |
+| остановка | "" \| "a" \| "b" | "" | — |
+`
+
+// The small machine of 2.26 with the data of 2.26: no column `пишет`, no row for the counter `попытка_вратаря` of the gate.
+fn dd226() -> str => tiny226_text().replace(data226_old(), data226_new())
+
+fn dd226_with(old str, new str) -> str => dd226().replace(old, new)
+
+fn checked226(text str) -> TranslateReport => translate_checked(text, language_registry())
+
+fn checked_says226(text str, needle str) -> bool {
+    for e in checked226(text).errors {
+        if e.message.contains(needle) { return true }
+    }
+    false
+}
+
+// ---- the data of 2.26 ----------------------------------------------------------------------------------------------------------------------
+
+test "v226 the data of 2.26 are name, type, initial, does not decrease: no column writes" {
+    assert(first226(dd226()) == "ok")
+    assert(!json226(dd226()).contains("\"writes\""))
+}
+
+test "v226 the column does not decrease may be left out" {
+    ro three = `| имя | тип | начальное |
+|---|---|---|
+| число_ходов | число>=0 | 0 |
+| остановка | "" \| "a" \| "b" | "" |
+`
+    assert(first226(dd226_with(data226_new(), three)) == "ok")
+}
+
+test "v226 the column writes is an error with the hint: the writes are not marked since 2.26" {
+    ro text = dd226_with(data226_new(), `| имя | тип | начальное | не убывает | пишет |
+|---|---|---|---|---|
+| число_ходов | число>=0 | 0 | да | действия |
+| остановка | "" \| "a" \| "b" | "" | — | действия |
+`)
+    assert(says226(text, "с 2.26 столбца `пишет` нет"))
+}
+
+// ---- the counter of a party ------------------------------------------------------------------------------------------------------------------
+
+test "v226 the counter of a party is named by the column counter: the tree has no row of the data for it" {
+    assert(first226(dd226()) == "ok")
+    ro j = json226(dd226())
+    assert(j.contains("\"counter\":\"gatekeeper_attempt\""))
+    assert(!j.contains("{\"name\":\"gatekeeper_attempt\""))
+}
+
+test "v226 a row of the data for the counter of a party is an error: the loader declares it" {
+    ro text = dd226_with(data226_new(), "${data226_new()}| попытка_вратаря | число>=0 | 0 | да |\n")
+    assert(says226(text, "заводит загрузчик"))
+}
+
+test "v226 the counter is read by a condition of a row" {
+    ro text = dd226_with("| сигнал(разрешить) |  |", "| сигнал(разрешить) | попытка_вратаря < 3 |")
+    assert(first226(text) == "ok")
+    assert(!checked_says226(text, "the engine only"))
+}
+
+test "v226 a row writes the counter of a party: an error of the check" {
+    ro text = dd226_with("| сигнал(отказать) |  | остановка = \"a\" |", "| сигнал(отказать) |  | остановка = \"a\"<br>попытка_вратаря += 1 |")
+    assert(first226(text) == "ok")
+    assert(checked_says226(text, "gatekeeper_attempt is written by the engine only"))
+}
+
+test "v226 to_send is written by the actions of a row" {
+    ro data = "${data226_new()}| к_отправке | []строка | [] | — |\n"
+    ro text = dd226_with(data226_new(), data).replace("| сигнал(отказать) |  | остановка = \"a\" |", "| сигнал(отказать) |  | остановка = \"a\"<br>к_отправке = [] |")
+    assert(first226(text) == "ok")
+    assert(!checked_says226(text, "the engine only"))
+}
+
+// ---- the seam of 2.25 ------------------------------------------------------------------------------------------------------------------------
+
+test "v226 seam: a file of 2.25 keeps the column writes and the row of the counter" {
+    ro text = tiny226_text().replace("- format: 2.26", "- format: 2.25")
+    assert(!says226(text, "с 2.26 столбца `пишет` нет"))
+    assert(!says226(text, "заводит загрузчик"))
+}

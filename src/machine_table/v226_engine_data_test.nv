@@ -1,0 +1,176 @@
+// v226_engine_data_test.nv - task 238 (Alula 2.26, stream 2 part B: the data of the engine, design 5): the loader declares the counter of a party (`int>=0`, 0, does not
+// decrease, written by the engine), the tree of 2.26 names no row for it; the rows and the acting functions do not write a datum of the engine. A tree of 2.25 is read as before.
+module alula.machine_table
+
+import std.text
+import alula.examples.{sample_registry}
+import alula.machine.{Registry, language_registry, register, Primitive, ParamSpec, NothingType, Acting, Lit, Int, spec_text}
+
+fn up226() -> str => `,{"name":"u_attempt","type":"int>=0","initial":{"expr":${jl("0")}},"monotonic":true,"writes":"mechanics"}`
+
+fn as226(text str) -> str => text.replace("{\"format\":\"machine/2\",", "{\"format\":\"machine/2\",\"alula_version\":\"2.26\",")
+
+// The small machine as a tree of 2.26: the counter `u_attempt` of the party has no row in the data.
+fn tiny226_tree() -> str => as226(tiny().replace(up226(), ""))
+
+fn tiny226_rows(rows str) -> str => as226(tiny_with("", "", rows, tiny_ends_rows()).replace(up226(), ""))
+
+fn datum_at(def MachineDef, name str) -> int {
+    mut i = 0
+    for d in def.data {
+        if d.name == name { return i }
+        i += 1
+    }
+    -1
+}
+
+// The registry of the tests: the language and two acting functions with no parameters and no result, `grab` writes the counter `u_attempt`, `keep` writes the datum `n`.
+fn reg226(writes str) -> Registry {
+    mut reg = language_registry()
+    ro p = Primitive { name: "grab", params: []ParamSpec.new(), result: NothingType, class: Acting, reads: []str.new(), writes: [writes] }
+    match register(reg, p) {
+        Ok(u) => ()
+        Err(x) => panic("the registry of the test is wrong: ${x.message}")
+    }
+    reg
+}
+
+fn issues226(text str, reg Registry) -> []str {
+    mut out = []str.new()
+    match load_machine(text, reg) {
+        Ok(def) => ()
+        Err(list) => {
+            for e in list { out.push(issue_text(e)) }
+        }
+    }
+    out
+}
+
+fn says226(text str, reg Registry, needle str) -> bool {
+    for line in issues226(text, reg) {
+        if line.contains(needle) { return true }
+    }
+    false
+}
+
+// A row of the gate that calls the acting function `grab` and goes on.
+fn grab_rows() -> str {
+    ro call = `{"do":"call","primitive":"grab","args":[]}`
+    ro go = `{"n":1,"event":{"kind":"signal","name":"go"},"actions":[${call}],"to":"Decide"}`
+    ro halt = `{"n":2,"event":{"kind":"signal","name":"halt"},"actions":[${jassign("stop", jl(jstr("a")))}],"to":"Stopped"}`
+    "${go},${halt}"
+}
+
+fn with_grab(text str) -> str => text.replace("\"parties\":", "\"primitives\":[{\"name\":\"grab\",\"params\":[],\"class\":\"acting\"}],\"parties\":")
+
+// ---- the counter of a party ------------------------------------------------------------------------------------------------------------------
+
+test "v226 the loader declares the counter of a party: int>=0, 0, does not decrease, written by the engine" {
+    ro def = decoded(tiny226_tree())
+    ro at = datum_at(def, "u_attempt")
+    assert(at >= 0)
+    ro d = def.data[at]
+    assert(spec_text(d.spec) == "int>=0")
+    assert(d.monotonic.on)
+    match d.writes {
+        MechanicsWrite => ()
+        _ => assert(false)
+    }
+    match d.initial {
+        InitialExpr(e) => match e {
+            Lit(v) => match v {
+                Int(n) => assert(n == 0)
+                _ => assert(false)
+            }
+            _ => assert(false)
+        }
+        _ => assert(false)
+    }
+}
+
+test "v226 the tree with the counter declared by the loader passes the check" {
+    ro all = issues_of(tiny226_tree())
+    assert(all.len() == 0)
+}
+
+test "v226 the counter of a set is declared by the loader as a path of the field, with no initial value" {
+    ro items = `{"name":"items","type":"{text: Item}","initial":{"expr":{"op":"dict","entries":[]}}}`
+    ro rec = `{"records":[{"name":"Item","fields":[{"name":"attempt","type":"int>=0"}]}]}`
+    ro text = tiny226_tree().replace("\"data\":[", "\"types\":${rec},\"data\":[${items},").replace("\"counter\":\"u_attempt\"", "\"counter\":\"items[*].attempt\"")
+    ro def = decoded(text)
+    ro at = datum_at(def, "items[*].attempt")
+    assert(at >= 0)
+    ro d = def.data[at]
+    assert(d.monotonic.on)
+    match d.writes {
+        MechanicsWrite => ()
+        _ => assert(false)
+    }
+    match d.initial {
+        NoInitial => ()
+        _ => assert(false)
+    }
+    assert(datum_at(def, "u_attempt") < 0)
+}
+
+test "v226 a row of the data of the tree for the counter is refused: the loader declares it" {
+    match parse_machine(as226(tiny())) {
+        Ok(def) => assert(false)
+        Err(e) => {
+            ro t = issue_text(e)
+            assert(t.contains("u_attempt"))
+            assert(t.contains("loader"))
+        }
+    }
+}
+
+test "v226 a row writes the counter of a party: an error, only the engine writes it" {
+    ro w = jassign("u_attempt", jl("1"))
+    ro go = `{"n":1,"event":{"kind":"signal","name":"go"},"actions":[${w}],"to":"Decide"}`
+    ro halt = `{"n":2,"event":{"kind":"signal","name":"halt"},"actions":[${jassign("stop", jl(jstr("a")))}],"to":"Stopped"}`
+    assert(says226(tiny226_rows("${go},${halt}"), sample_registry(), "u_attempt is written by the engine only"))
+}
+
+test "v226 a common event writes the counter of a party: an error" {
+    ro w = jassign("u_attempt", jl("2"))
+    ro common = `"common_events":[{"n":1,"event":{"kind":"signal","name":"halt"},"actions":[${w}],"to":"Stopped"}],`
+    ro text = tiny226_tree().replace("\"initial\":\"Wait\",", "\"initial\":\"Wait\",${common}")
+    assert(says226(text, sample_registry(), "u_attempt is written by the engine only"))
+}
+
+// ---- the acting functions --------------------------------------------------------------------------------------------------------------------
+
+test "v226 an acting function that writes a datum of the engine: an error at its call" {
+    ro text = with_grab(tiny226_rows(grab_rows()))
+    assert(says226(text, reg226("u_attempt"), "grab writes u_attempt"))
+    assert(says226(text, reg226("u_attempt"), "only the engine writes"))
+}
+
+test "v226 an acting function that writes a datum of the machine is allowed" {
+    ro text = with_grab(tiny226_rows(grab_rows()))
+    assert(!says226(text, reg226("n"), "only the engine writes"))
+}
+
+// ---- the seam of 2.25 ------------------------------------------------------------------------------------------------------------------------
+
+test "v226 seam: a tree of 2.25 names the counter in its data, the loader declares nothing" {
+    ro def = decoded(tiny())
+    mut count = 0
+    for d in def.data {
+        if d.name == "u_attempt" { count += 1 }
+    }
+    assert(count == 1)
+    assert(says(tiny().replace(up226(), ""), "the datum u_attempt is not declared"))
+}
+
+test "v226 seam: in a tree of 2.25 a row that writes the counter has the former message" {
+    ro w = jassign("u_attempt", jl("1"))
+    ro go = `{"n":1,"event":{"kind":"signal","name":"go"},"actions":[${w}],"to":"Decide"}`
+    ro halt = `{"n":2,"event":{"kind":"signal","name":"halt"},"actions":[${jassign("stop", jl(jstr("a")))}],"to":"Stopped"}`
+    assert(says(tiny_with("", "", "${go},${halt}", tiny_ends_rows()), "the datum u_attempt is written by mechanics, not by rows"))
+}
+
+test "v226 seam: in a tree of 2.25 an acting function may name a datum of the engine in its writes, as before" {
+    ro text = with_grab(tiny_with("", "", grab_rows(), tiny_ends_rows()))
+    assert(!says226(text, reg226("u_attempt"), "only the engine writes"))
+}
