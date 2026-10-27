@@ -5,8 +5,8 @@
 - format: 2.26
 - language: en
 
-The fragment `Pause` (spec 9): a human stops the machine in the middle of the work of the agent, the open request is cancelled and the machine waits in `Pause`; `continue` enters the state it was stopped
-in again, with a new request; `halt` ends the machine with the code `pause_halt`. The fragment brings the state `Pause`, the common events and the party `enhanced`; the table writes only its own work. The tests: `pause-*`.
+The library `Pause` (spec 9, `libs/pause.en.alula.md`): a human stops the machine in the middle of the work of the agent, the open request is cancelled and the machine waits in `Pause`; `continue` enters the state it was stopped
+in again, with a new request; `halt` ends the machine with its own reason `Pause.reason` (`PauseReason.Halted`, the text of the refusal `pause_halt`). The library brings the state `Pause`, the common events and the party `enhanced`; the table writes only its own work. The tests: `pause-*`.
 
 ## Data
 

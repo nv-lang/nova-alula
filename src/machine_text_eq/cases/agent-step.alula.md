@@ -112,7 +112,7 @@ format: 2.25
 | решение_разрешения | ?("allow" \| "deny") | пусто | — | действия |
 | начато | ?число | пусто | — | действия |
 | использование | ?Использование | пусто | — | действия |
-| остановка | "" \| "no_result" \| "model_refused" \| "connection_lost" \| "form_not_fixed" \| "timeout" \| "max_tokens" \| "cost_limit" \| "max_turn_requests" \| "stopped_by_agent" \| "pause_halt" \| "cancel_request" | "" | — | действия и фрагмент |
+| остановка | "" \| "no_result" \| "model_refused" \| "connection_lost" \| "form_not_fixed" \| "timeout" \| "max_tokens" \| "cost_limit" \| "max_turn_requests" \| "stopped_by_agent" \| "pause_halt" \| "cancel_request" | "" | — | действия |
 | попытка_агента | число>=0 | 0 | да | механика |
 | попытка_вратаря | число>=0 | 0 | да | механика |
 

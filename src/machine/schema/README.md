@@ -141,7 +141,7 @@ file says `map[K, V]`/`словарь[K, V]`), `full {K: V}`, `(T1, T2)`, or the
 | | `type` | type | yes | |
 | | `initial` | `{expr: E}` or `{from_input: "field"}` | no | the column "initial": an expression or `input.<field>`; absent for a path |
 | | `monotonic` | `true` or `{bound: E}` | no | "non_decreasing": `yes` → `true`, `yes, <= expr` → `{"bound": E}`; `—` → absent |
-| | `writes` | `rows` \| `mechanics` \| `rows_and_mechanics` \| `fragment` \| `rows_and_fragment` | no (default `rows`) | the column "writes" |
+| | `writes` | `rows` \| `mechanics` \| `rows_and_mechanics` | no (default `rows`) | the column "writes" |
 
 ### `party`, `signal_def`
 

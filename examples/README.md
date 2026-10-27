@@ -15,7 +15,7 @@ one primitive (`new_id`) and 35 journal codes; the host of the examples adds the
 | Machine | File | What it shows | Tests (`tests/`) |
 |---|---|---|---|
 | `Calc` | `calc.alula.json` | operations, forks, every kind of action, a definition, a parameter of the project | `calc-*` 4 |
-| `Gate` | `gate.alula.json` | an agent turn, the fragment "Pause", a stop and a halt of a human | `gate-*` 5 |
+| `Gate` | `gate.alula.json` | an agent turn, the library "Pause" written out, a stop and a halt of a human | `gate-*` 5 |
 | `Lenses` | `lenses.alula.json` | a set of parties | `lenses-*` 3 |
 | `Variants` | `variants.alula.json` | answers by the forms of an enumeration, a retry, a term | `variants-*` 5 |
 | `actions` | `actions.alula.json` | the actions of the rows, the primitive `close_agent_turn` of the class `acting` | the tests of `machine_run` |
@@ -25,7 +25,7 @@ one primitive (`new_id`) and 35 journal codes; the host of the examples adds the
 | `Retry` | `retry.alula.md` | `same, rerun` of an agent and of a gate against `same` | `retry-*` 4 |
 | `Verdict` | `verdict.alula.md` | an enumeration with fields: the forms `Accepted { score }`, `Rejected { reason }`, `Unsure` | `verdict-*` 3 |
 | `Router` | `router.alula.md` | the exhaustion of a fork by the type and the row `else` with `fork_no_match` | `router-*` 4 |
-| `Pausable` | `pausable.alula.md` | the fragment "Pause": stop, continue, halt | `pause-*` 3 |
+| `Pausable` | `pausable.alula.md` | the library "Pause": stop, continue, halt | `pause-*` 3 |
 | `Keeper` | `keeper.alula.md` | a gate (`human or agent by setting`) with two signals | `keeper-*` 3 |
 | `Batch` | `batch.alula.md` | a set of nested calls to the machine `callee`, the limit 2 | `batch-*` 3 |
 

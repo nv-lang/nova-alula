@@ -81,13 +81,13 @@ test "wt the former product layer is in the layer of 2.25" {
 
 test "wt all rows loaded" {
     // the table of 2.26 and the layer of 2.25 (the seam of task 195, with the former product layer since task 197)
-    assert(words_rows().len() == 217 + 31)
+    assert(words_rows().len() == 217 + 29)
 }
 
 test "wt the layer of 2.25 holds only the words that 2.26 removed" {
     mut layer = []TxWord.new()
     words_read(keywords_225_text(), layer)
-    assert(layer.len() == 31)
+    assert(layer.len() == 29)
     ro method = method_rows()
     for r in layer {
         for m in method {
@@ -308,7 +308,7 @@ test "wt every key listed" {
     for k in line_keys() { assert(has_row(rows, "key", k)) }
     for k in header_keys() { assert(has_row(rows, "header", k)) }
     for k in section_keys() { assert(has_row(rows, "section", k)) }
-    for k in ["rows", "mechanics", "rows_and_mechanics", "fragment", "rows_and_fragment", "party", "executor", "yes", "nothing", "requests_from_to_send", "without_return_to_send", "stop_transport_turn"] {
+    for k in ["rows", "mechanics", "rows_and_mechanics", "party", "executor", "yes", "nothing", "requests_from_to_send", "without_return_to_send", "stop_transport_turn"] {
         assert(has_row(rows, "enum_value", k))
     }
     for k in ["column"] { assert(kind_count(rows, k) > 0) }

@@ -538,9 +538,9 @@ fn decl_input_row(r TxEntry, mut cx TxCx) -> Result[TxInField, TranslateError] {
 
 // ---- the data -----------------------------------------------------------------------------------------------------------------------------
 
-// The cell `пишет`: `действия`, `механика`, `действия и механика`, `фрагмент`, `действия и фрагмент` (English `rows`, `mechanics`, `rows and mechanics`, `fragment`, `rows and fragment`); the Russian words of 2.22 (`строки`, …) are refused with the new word (AL-122).
+// The cell `пишет` of 2.25: `действия`, `механика`, `действия и механика` (English `rows`, `mechanics`, `rows and mechanics`; the words of the built-in library of 2.25 are gone in 0.9.1); the Russian words of 2.22 (`строки`, …) are refused with the new word (AL-122).
 fn data_writes(cell TxCell, line int, w TxWords) -> Result[str, TranslateError] {
-    ro keys = ["rows", "mechanics", "rows_and_mechanics", "fragment", "rows_and_fragment"]
+    ro keys = ["rows", "mechanics", "rows_and_mechanics"]
     match kw_key(w, "enum_value", cell.text) {
         Some(k) => {
             if keys.contains(k) { return Ok(k) }

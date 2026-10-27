@@ -109,7 +109,7 @@ The Alula language is bilingual: a file `*.alula.md` is written either in Russia
 2. otherwise, if the glossary (below) names the whole name, — the English name of the glossary (`число_повторов` → `retry_count`, `ПОВТОР` → `Retry`, `Токены` → `TokenUsage`);
 3. otherwise — the transliteration of the name by the table below with the case rule (`оставить правку` → `ostavit_pravku`); each word is transliterated separately, a Latin word stays (`запрос_Agent` → `ZaprosAgent` for a type-like name).
 
-**The section `## Names`** (Russian `## Имена`) is **the only way** to set a JSON name other than the automatic one. The table `| name | json_name |` (Russian `| имя | JSON-имя |`): the first column is a name declared in this file (in any language, a Latin one included), the second a Latin JSON name `[A-Za-z_][A-Za-z0-9_]*`. A row sets the JSON name of every declaration with this name in the file; if one name is declared in several places and only some need the JSON name, the first column is a **qualified name**: the path of declared names through dots from the top-level namespace — `Type.field`, `Type.Form`, `Type.Form.field`, `Type.Element`, `party.signal`, `party.signal.field`; a row with a qualified name is stronger than a row with a plain one. A name without a row gets the automatic JSON name. The table lists **only** the names whose automatic name is wrong. Check errors (section 10): a row that changes nothing (its JSON name equals the name the declaration gets without it) — “redundant row”; a row for a name or path that is not among the declarations of this file that leave the machine (an internal name, a readable name, a typo) — “name not declared”; a name repeated in the first column; a non-Latin JSON name; equal JSON names in one namespace (below). An automatic name that did not come out Latin (a sign outside the transliteration table) is an error too: such a name needs a row. **There are no parentheses after names in declarations** (`### ОТКРЫТИЕ — операция`, `| расход | ?РасходТранспорта | …`, `тип Утверждение { … }`): there is one way to write it; parentheses `name (X)` of versions 2.9–2.15 are a check error. The section is written by a machine file and a library — after `## Types` (in a library without `## Types` — after `## Requires`); each file for its own declarations: an included file defines its JSON names itself. No rows — no section. Not written in `## Names`: a field path `name[*].field` (it is made of declared names); keywords and readable names, including the contract data and the data of the “Pause” library (`stop_reason`, `to_send`, `open_requests`, `previous`, `call_request_id`) and the binding `reason`, — their JSON name is the `en` word of the word table; **internal names** that do not leave the machine — constants, parameters (their external name is `project.<key>`), functions and their parameters, party names (their external name is `id`), event bindings and `let`, lambda parameters, the variable of `for` — enter the tree as written. There are no other ways to set a JSON name.
+**The section `## Names`** (Russian `## Имена`) is **the only way** to set a JSON name other than the automatic one. The table `| name | json_name |` (Russian `| имя | JSON-имя |`): the first column is a name declared in this file (in any language, a Latin one included), the second a Latin JSON name `[A-Za-z_][A-Za-z0-9_]*`. A row sets the JSON name of every declaration with this name in the file; if one name is declared in several places and only some need the JSON name, the first column is a **qualified name**: the path of declared names through dots from the top-level namespace — `Type.field`, `Type.Form`, `Type.Form.field`, `Type.Element`, `party.signal`, `party.signal.field`; a row with a qualified name is stronger than a row with a plain one. A name without a row gets the automatic JSON name. The table lists **only** the names whose automatic name is wrong. Check errors (section 10): a row that changes nothing (its JSON name equals the name the declaration gets without it) — “redundant row”; a row for a name or path that is not among the declarations of this file that leave the machine (an internal name, a readable name, a typo) — “name not declared”; a name repeated in the first column; a non-Latin JSON name; equal JSON names in one namespace (below). An automatic name that did not come out Latin (a sign outside the transliteration table) is an error too: such a name needs a row. **There are no parentheses after names in declarations** (`### ОТКРЫТИЕ — операция`, `| расход | ?РасходТранспорта | …`, `тип Утверждение { … }`): there is one way to write it; parentheses `name (X)` of versions 2.9–2.15 are a check error. The section is written by a machine file and a library — after `## Types` (in a library without `## Types` — after `## Requires`); each file for its own declarations: an included file defines its JSON names itself. No rows — no section. Not written in `## Names`: a field path `name[*].field` (it is made of declared names); keywords and readable names, including the contract data and the data of the “Pause” library (`reason`, `to_send`, `open_requests`, `previous`, `call_request_id`) and the binding `reason`, — their JSON name is the `en` word of the word table; **internal names** that do not leave the machine — constants, parameters (their external name is `project.<key>`), functions and their parameters, party names (their external name is `id`), event bindings and `let`, lambda parameters, the variable of `for` — enter the tree as written. There are no other ways to set a JSON name.
 
 Example (the “Meeting” sample, Russian form; `Вопрос` is a form of both `ИтогПравки` and `КонтекстРоли`, so the name is qualified; `расход` is from the “Agent step” sample: a plain row sets the name of the datum and of the field of five forms).
 
@@ -283,12 +283,12 @@ Example (pilots; the bounds are as in the pilots).
 | retry_count | int>=0 | 0 | yes, <= RETRIES |
 | turn_count | int>=0 | 0 | yes |
 | turn_before_retry | ?("first" \| "retry" \| "continue" \| "fix" \| "permission") | none | — |
-| stop_reason | "" \| "no_result" \| "max_tokens" \| "pause_halt" \| "cancel_request" | "" | — |
+| stop_reason | "" \| "no_result" \| "max_tokens" | "" | — |
 | number | int>=1 | 1 | yes |
 | lenses | map[str, Lens] | input.lens_order.dict(l => l, l => Lens { id: l, lost: 0, probes: 0, attempt: 0 }) | — |
 | witness_answers | map[int>=0, []WitnessAnswer] | [] | — |
 ```
-(The types `turn`, `turn_before_retry`, `stop_reason` are literal sets. The first six rows are “Agent step”, the rest are “Meeting”; `agent_request` is built by a constructor from the input fields (section 1); `open_requests` is declared by the library `contract`, its row is not written in the machine table. In `stop_reason` a part of the set is shown; the full set of the pilot is twelve values. `turn_count` has no `<=` bound: with a turn limit below 1 the code gives 1. `number` is `int>=1`: in the code `Cycle.new()` and `MachineData.new()` give 1, it changes only by `+= 1` (the invariant “does not decrease”); `number - 1` is `int`, 3.2. The row `lenses` changes `lost` and `probes`, `attempt` is a party counter (section 1) written only by the engine: the record `lenses[k] = { ...l, field: expr }` that does not name `attempt` is a copy, not a write into it.)
+(The types `turn`, `turn_before_retry`, `stop_reason` are literal sets. The first six rows are “Agent step”, the rest are “Meeting”; `agent_request` is built by a constructor from the input fields (section 1); `open_requests` is declared by the library `contract`, its row is not written in the machine table. In `stop_reason` a part of the set is shown; the full set of the pilot is ten values. `turn_count` has no `<=` bound: with a turn limit below 1 the code gives 1. `number` is `int>=1`: in the code `Cycle.new()` and `MachineData.new()` give 1, it changes only by `+= 1` (the invariant “does not decrease”); `number - 1` is `int`, 3.2. The row `lenses` changes `lost` and `probes`, `attempt` is a party counter (section 1) written only by the engine: the record `lenses[k] = { ...l, field: expr }` that does not name `attempt` is a copy, not a write into it.)
 
 ### Lifetime of data
 
@@ -698,7 +698,7 @@ The “On entry” of an end is work with the outside world and the journal: `le
 | end | when | response |
 ```
 
-- `when` is the entry condition: `true`, `stop_reason == "…"`, `stop_reason in […]`; the rows of one end are mutually exclusive and cover the set over which they branch (except `Except`); an uncovered value is a table check error.
+- `when` is the entry condition: `true`, `stop_reason == "…"`, `stop_reason in […]`, for the reasons of a library — `Pause.reason == PauseReason.Halted`; the rows of one end are mutually exclusive and cover the set over which they branch (except `Except`); an uncovered value is a table check error.
 - `response` is `Response(<a value of the result type>)` or `Refusal(<FailCode code>, <text>)`: these are response functions of the format with positional arguments, not forms with fields, so they keep their parentheses; the envelope of the response (request, party, trace, step) is assembled by the engine; the refusal code is taken from the constructor, there is no separate column.
 - In the “response” are available data, `transition_note` (the fields `code`, `params`; the value is always there: ERROR is entered by `machine_error` or by an engine machine error, and both ways write a record, 3.3) and catalog functions; the text of the whole record is `record_text(transition_note)`.
 
@@ -731,8 +731,8 @@ Example (the “Agent step” pilot). In the code `Time.now()` is read inside a 
 | Halted | stop_reason == "no_result" | Refusal(FailCode.NoResult, stop_reason) |
 | Halted | stop_reason == "model_refused" | Refusal(FailCode.ModelRefused, stop_reason) |
 | Halted | stop_reason == "cost_limit" | Refusal(FailCode.MaxTokens, stop_reason) |
-| Halted | stop_reason == "pause_halt" | Refusal(FailCode.StoppedByHuman, stop_reason) |
-| Halted | stop_reason == "cancel_request" | Refusal(FailCode.Cancelled, stop_reason) |
+| Halted | Pause.reason == PauseReason.Halted | Refusal(FailCode.StoppedByHuman, text(Pause.reason)) |
+| Halted | Pause.reason == PauseReason.Cancelled | Refusal(FailCode.Cancelled, text(Pause.reason)) |
 ```
 
 Example (the “Meeting” pilot). `journal_findings`, `journal_decision` and `journal_machine_data` of the code are ordinary journal rows (the codes `unclosed_finding`, `meeting_decision`, `open_finding`, `machine_data`, [state-machine-journal.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/state-machine-journal.md), section 2, subsection “Events of the table format”); severity is a value of the enumeration `Severity` (`"critical"`, `"significant"`, `"desirable"`), yes/no is `yes_no_word` (a function: `if b then { "yes" } else { "no" }`).
@@ -768,7 +768,7 @@ Example (the “Meeting” pilot). `journal_findings`, `journal_decision` and `j
 | Errored | true | Refusal(FailCode.NoResult, record_text(transition_note)) |
 ```
 
-(Not all rows of Halted are shown in the “Output” table: “Agent step” has 11 of them ([archive/state-machine-agent-step-states.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/state-machine-agent-step-states.md), “end → response”; the example shows five), “Meeting” has 10, by the number of values of `stop_reason` without `""`. For “Meeting” four rows `stop_reason == "Witness_halt_meeting"` … `"AuthorQuestion_halt_meeting"` lead to `Refusal(FailCode.StoppedByHuman, stop_reason)`, the values are computed by FailedRequest, section 3.2.)
+(Not all rows of Halted are shown in the “Output” table: “Agent step” has 11 of them (including two by the reasons of the library “Pause”; [archive/state-machine-agent-step-states.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/state-machine-agent-step-states.md), “end → response”; the example shows five), “Meeting” has 10, by the number of values of `stop_reason` without `""`. For “Meeting” four rows `stop_reason == "Witness_halt_meeting"` … `"AuthorQuestion_halt_meeting"` lead to `Refusal(FailCode.StoppedByHuman, stop_reason)`, the values are computed by FailedRequest, section 3.2.)
 
 ## 5. Actions
 
@@ -971,9 +971,9 @@ A library (rule 36) is an included file of the format `library`; the former “f
 
 **Parameters** — a table `name | type | comment`. The type is an ordinary type (section 2); a closed set of words is written right in the type: `"mechanics" \| "without_return_to_send"`. There are no special kinds of parameters, a parameter is a value of an ordinary type: a party signal is a parameter of type `str` (a parameter name in the signal position of an event, `signal(halt_signal)`, is checked against the column `signals` of the party), a list of names of nested machines is `[]str`, a list of words is a literal set; a note for the reader is a `//` comment, not a parameter. Parameters are local constants of the library: in its text they are read by name (`halt_signal`), without `<…>`, and cannot be changed. An include names the value of every parameter; an omitted parameter, an extra parameter and a value of a wrong type are a check error.
 
-**Requires** — what the library takes from the head machine: a table `name | type`, the rows are data and parties of the machine. The type of the library's reads and writes is checked when the library is compiled (against these types, without a machine); the existence of the name and the type in the machine — at the include; a mismatch is an error with a clear text (“library Pause requires the datum `stop_reason` of type …; the machine has none” or “… the machine has type …”). The type in a row is the required one: the datum of the machine must accept all values that the library writes into it; in a literal set a library parameter of type `str` is allowed, its value enters the set. The values of `stop_reason` that the library names must also be in the rows of `## Exit` (section 10).
+**Requires** — what the library takes from the head machine: a table `name | type`, the rows are the data and parties of the machine that the library reads or writes. The type in a row is the type of a datum of the machine; it is checked for compatibility when the library is compiled (against these types, without a machine) and at the include; the existence of the name and the type in the machine — at the include; a mismatch is an error with a clear text (“library X requires the datum `name` of type …; the machine has none” or “… the machine has type …”). A library does not write into the data of the machine for the sake of its own values: it has its own data and enumerations for that, and the machine reads them with the instance prefix (so “Pause” keeps its own datum `reason` of type `PauseReason`, the machine reads `Pause.reason`). There are no names of parameters inside a type in `Requires`. Every reason of the enumeration of a library that the machine gets through the end `Halted` must be named in the rows of `## Output` (section 10).
 
-**Visibility.** The functions, types and constants of a library are visible in the machine without a prefix; a coincidence with a local name or with a name from another library is a check error. Data and states carry the instance prefix: `Pause.previous`, `To: Pause.Pause`. The default instance name is the name of the library (`# Library: <Name>`); `- Name:` in the include sets another. In the text of the library itself its data and states are written without a prefix. A library with states and common events is included once.
+**Visibility.** The functions, types and constants of a library are visible in the machine without a prefix (`PauseReason.Halted`, `FailCode.NoResult`); a coincidence with a local name or with a name from another library is a check error; functions, types and constants do not use the parameters and the data of the library (they are the same for any instance; the needed value is passed as an argument) — otherwise an error when the library is compiled. Data and states carry the instance prefix: `Pause.previous`, `Pause.reason`, `To: Pause.Pause`. The default instance name is the name of the library (`# Library: <Name>`); `- Name:` in the include sets another. In the text of the library itself its data, types and states are written without a prefix. A library with states and common events is included once.
 
 **The include.** In `## Includes` — a `###` subheading per library (the name is the name of the library), key lines and a table of parameter values:
 
@@ -982,7 +982,7 @@ A library (rule 36) is an included file of the format `library`; the former “f
 
 ### Pause
 - File: libs/pause.alula.md
-- Hash: 9f67255229c9
+- Hash: d254e6297f61
 - Name: Pause2             // optional
 
 | parameter | value |
@@ -991,6 +991,7 @@ A library (rule 36) is an included file of the format `library`; the former “f
 ```
 
 - **File.** A path relative to the machine file; if not found there — searched in the folder of the `--lib` option or of the project setting. Only the library `contract` (7a) is built into the language: it is included implicitly, neither `File` nor `Hash` is written for it.
+- **The English twin.** A library in Russian has a twin in English beside it: the name with `.en` before `.alula.md` (`libs/pause.alula.md` ↔ `libs/pause.en.alula.md`). A translation of a machine into another language (`alula convert --language en`) translates all its libraries too: it writes the twins beside, and in the translated machine it puts the path and the hash of the twin; if a library is not available for translation, it is an error with the list.
 - **Hash** — the first 12 signs of the SHA-256 of the file content in UTF-8 after normalization: a leading BOM is dropped (a file with and without a BOM give one hash); line breaks are LF (CRLF and a lone CR are replaced by LF); trailing spaces and tabs are removed from every line; at the end of the file there is exactly one LF (empty lines at the end are removed, a missing LF is added); the 12 signs of the hash are hexadecimal, in lowercase. The normalization is unambiguous: a file without a final LF and a file with it give one hash. There is no library version in the include — the hash replaces it; a mismatch of the hash is a check error, not a warning.
 - **The table of values** names all parameters of the library; a value is an expression of the type of the parameter, a literal included.
 - The states, events and data of a library enter the machine and are not repeated in its sections: in `## Includes` there are **only** subheadings with keys and tables (prose is a check error); in `## States` writing the heading of a library state (`### Pause — appeal`) is forbidden — a repeat of a state that the library brought is an error (“declared twice”). There is no reference section with an expansion of a library: what it brings (parameters, requirements, data, events, states) is described by its file; in the section `## States` of a machine a paragraph-reference (prose, 4.1) stands if needed.
@@ -1003,12 +1004,11 @@ Includes of the pilots. “Agent step” has one library, “Meeting” two (the
 
 ### Pause
 - File: libs/pause.alula.md
-- Hash: 9f67255229c9
+- Hash: d254e6297f61
 
 | parameter | value |
 |---|---|
 | halt_signal | "halt" |
-| halt_code | "pause_halt" |
 | nested | [] |
 | request_cancel | "stop_transport_turn" |
 | reentry | "nothing" |
@@ -1020,12 +1020,11 @@ Includes of the pilots. “Agent step” has one library, “Meeting” two (the
 
 ### Pause
 - File: libs/pause.alula.md
-- Hash: 9f67255229c9
+- Hash: d254e6297f61
 
 | parameter | value |
 |---|---|
 | halt_signal | "halt meeting" |
-| halt_code | "pause_halt_meeting" |
 | nested | ["agent_step"] |
 | request_cancel | "without_return_to_send" |
 | reentry | "requests_from_to_send" |
@@ -1037,7 +1036,7 @@ Includes of the pilots. “Agent step” has one library, “Meeting” two (the
 
 An example of a library of functions (“Meeting”: the arithmetic of a cycle is common to the meeting and the cycle check). The hash is the SHA-256 of the given file (12 signs): of the text of the block from the header line `# Library: cycle_arithmetic` to the closing fence after the normalization (above); it differs from the hash of the Russian sample because this file is in the English form and contains the line `- language: en`. The hash is the value of version 2.26.
 
-```
+````
 # Library: cycle_arithmetic
 
 - library: cycle_arithmetic
@@ -1046,9 +1045,11 @@ An example of a library of functions (“Meeting”: the arithmetic of a cycle i
 
 ## Functions
 
+```
 fn ceiling_reached(pass_number int>=1, origin int>=1, limit int>=0) -> bool =>
   (pass_number - 1) - origin + 1 >= limit
 ```
+````
 
 **Closed sets of words of the parameters of “Pause”.** A value outside the set named by the type of the parameter is a check error. The effect is named formally and applied where indicated. “COMMON N” and “PAUSE N” are the N-th row of the table of common events and of the table of the state PAUSE in order (in order).
 
@@ -1060,9 +1061,9 @@ fn ceiling_reached(pass_number int>=1, origin int>=1, limit int>=0) -> bool =>
 | `reentry` | `"nothing"` | re-entry into the saved state — only by rule 12 (a new request if there is no accepted one for it) | `To: previous` (PAUSE 1, 3) |
 | `reentry` | `"requests_from_to_send"` | after re-entry into the appeal of a set, the requests go to the parties listed in `to_send` | the same |
 
-The definition of the “Pause” library in the format. Composed from the expansion in the “Meeting” pilot and the text of [archive/state-machine-pause-states.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/state-machine-pause-states.md); the file itself in the format was not checked by a pilot, its comparison with the text of rules 23, 24, 35 is by rows. There is no library file in Alula (`*.alula.md` with the header `# Library: Pause`): the definition below is a sample, the include is not resolved by the methodology scripts (see the [changelog](alula-changelog.en.md), “Open items”). Features of the definition: `halt_signal` and `halt_code` are parameters, read by name; the events from a parent are `signal(…)`; the values of `stop_reason` are `halt_code`; `pass(nested, …)`; COMMON 6 is `machine_error`; in the “Request” of PAUSE `require(previous)` (the field is visible only to the party, the rows of PAUSE read the datum `previous`, 4.2); COMMON 5 is `cancel_open` without an exception, as the code and the library text; returning the parties of a set to `to_send` in COMMON 5 is rule 18, for any value of `request_cancel`; `call_request_id` and `open_requests` are engine data of the library `contract` (7a), `human_words` is not entered into the table (section 2).
+The definition of the “Pause” library in the format. Composed from the expansion in the “Meeting” pilot and the text of [archive/state-machine-pause-states.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/state-machine-pause-states.md); the file itself in the format was not checked by a pilot, its comparison with the text of rules 23, 24, 35 is by rows. There is no library file in Alula (`*.alula.md` with the header `# Library: Pause`): the definition below is a sample, the include is not resolved by the methodology scripts (see the [changelog](alula-changelog.en.md), “Open items”). Features of the definition: `halt_signal` is a parameter, read by name; the events from a parent are `signal(…)`; the reasons of the stop are its own enumeration `PauseReason` and its own datum `reason` (the library does not write into the data of the machine, the machine reads `Pause.reason`); `pass(nested, …)`; COMMON 6 is `machine_error`; in the “Request” of PAUSE `require(previous)` (the field is visible only to the party, the rows of PAUSE read the datum `previous`, 4.2); COMMON 5 is `cancel_open` without an exception, as the code and the library text; returning the parties of a set to `to_send` in COMMON 5 is rule 18, for any value of `request_cancel`; `call_request_id` and `open_requests` are engine data of the library `contract` (7a), `human_words` is not entered into the table (section 2).
 
-```
+````
 # Library: Pause
 
 - library: pause
@@ -1070,48 +1071,66 @@ The definition of the “Pause” library in the format. Composed from the expan
 - language: en
 
 ## Parameters
+
 | name | type | comment |
-| halt_signal | str | party signal of the party “enhanced” by which the machine stops |
-| halt_code | str | a value of the machine's set `stop_reason` |
-| nested | []str | names of the machines to which the chain signals go (rule 35, item 8) |
-| request_cancel | "mechanics" \| "without_return_to_send" \| "stop_transport_turn" | the effects — the table above |
-| reentry | "nothing" \| "requests_from_to_send" | the effects — the table above |
+|---|---|---|
+| halt_signal | str | the party signal of the party "enhanced" by which the machine stops |
+| nested | []str | the names of the machines to which the signals of the chain go (rule 35, item 8) |
+| request_cancel | "mechanics" \| "without_return_to_send" \| "stop_transport_turn" | the effects: the table of section 9 of the specification |
+| reentry | "nothing" \| "requests_from_to_send" | the effects: the table of section 9 of the specification |
 
 ## Requires
+
 | name | type |
-| stop_reason | "cancel_request" \| halt_code |
+|---|---|
 | enhanced | party enhanced with the signals continue { human_word str, author str, source str } and halt_signal |
 | Halted | end |
 | Errored | end |
 
-## Data
-| name | type | initial |
-| previous | ?State | none |
+## Types
 
-## Common events     // parsed before the state rows (rule 23)
+```
+type PauseReason enum
+  | Halted = "pause_halt"
+  | Cancelled = "cancel_request"
+```
+
+## Data
+
+| name | type | initial |
+|---|---|---|
+| previous | ?State | none |
+| reason | ?PauseReason | none |
+
+## Common events     // parsed before the rows of the states (rule 23)
+
 | Event | Condition | Actions | To |
+|---|---|---|---|
 | signal(human_stop { human_word, author, source }) | not end(state) and state != Pause | journal("human_stop", author: author, source: source, event: event.id)<br>previous = state<br>pass(nested, stop)<br>cancel_open(except: nested) | Pause |
 | signal(parent_stop { id }) | not end(state) and state != Pause and id == call_request_id | journal("pause_by_parent_stop", request: id, event: event.id)<br>previous = state<br>pass(nested, stop)<br>cancel_open(except: nested) | Pause |
 | signal(cancel_request { id }) | id != call_request_id | journal("cancel_discarded_foreign_request", request: id, event: event.id) | same |
 | signal(cancel_request { id }) | id == call_request_id and end(state) | journal("cancel_discarded_already_replied", request: id, event: event.id) | same |
-| signal(cancel_request { id }) | id == call_request_id and not end(state) | journal("request_cancelled", request: id, event: event.id)<br>stop_reason = "cancel_request"<br>pass(nested, cancel)<br>cancel_open | Halted |
-| signal(cancel_request { id }) | else | machine_error("cancel_parse_no_match") | |
+| signal(cancel_request { id }) | id == call_request_id and not end(state) | journal("request_cancelled", request: id, event: event.id)<br>reason = PauseReason.Cancelled<br>pass(nested, cancel)<br>cancel_open | Halted |
+| signal(cancel_request { id }) | else | machine_error("cancel_parse_no_match") |  |
 
 ## States
+
 ### Pause — appeal
 - Party: enhanced
 - Request:
 
 | request_field | expression |
+|---|---|
 | previous | require(previous) |
-| call_request_id | |
+| call_request_id |  |
 
 | Event | Condition | Actions | To |
-| signal(continue { author, source }) | | journal("human_continue", previous: text(require(previous)), author: author, source: source, event: event.id)<br>pass(nested, continue) | previous |
-| signal(halt_signal) | | stop_reason = halt_code<br>pass(nested, halt) | Halted |
+|---|---|---|---|
+| signal(continue { author, source }) |  | journal("human_continue", previous: text(require(previous)), author: author, source: source, event: event.id)<br>pass(nested, continue) | previous |
+| signal(halt_signal) |  | reason = PauseReason.Halted<br>pass(nested, halt) | Halted |
 | signal(parent_continue { id }) | id == call_request_id | journal("parent_continue", previous: text(require(previous)), request: id, event: event.id)<br>pass(nested, continue) | previous |
-| signal(parent_halt { id }) | id == call_request_id | stop_reason = halt_code<br>pass(nested, halt) | Halted |
-```
+| signal(parent_halt { id }) | id == call_request_id | reason = PauseReason.Halted<br>pass(nested, halt) | Halted |
+````
 
 - The signals “continue” and “halt” (and those from a parent) outside Pause are superfluous signals: the engine drops them with a journal entry (rule 17).
 - `To: previous` leads by re-entry into the saved state (rule 12; the parameter `reentry`); `previous` is not written in this (rules 13, 24).
@@ -1123,7 +1142,7 @@ The definition of the “Pause” library in the format. Composed from the expan
 
 The word table and the language: the `ru` and `en` words of the table [alula-keywords.tsv](alula-keywords.tsv) are unique within a kind; the `language` line ∈ {`ru`, `en`}; the header language matches the declared one; a keyword not of the file language is an error with the line number of the first foreign word (1a); the script [tools/check-alula-keywords.py](../tools/check-alula-keywords.py) checks the table (the kinds of words, including `operator`), compares the sample machines with it and checks in them the operator signs (ASCII only), the JSON names (the automatic name; the section `## Names` — a redundant row, a name not declared, a repeat, a non-Latin JSON name; a collision in a namespace; a mixed word; parentheses after a name) and the glossary hash; [tools/check-alula-samples.py](../tools/check-alula-samples.py) compares the JSON names of the declarations of the two “Agent step” samples.
 
-The extension of [check-tables.py](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/check-tables.py): names of fields, types and states; a name read by a row exists and is allowed (in the “Request” — the names named by its table); the reads of a state are derived (from the expressions of the rows, the “Request”, the “On accept”, the “On entry” and the `reads` lists of external functions, for ERROR — `all_data`) and shown in the report, they need not be declared; a write only into declared data (including the `writes` of acting functions), a write from a table into engine data (the party attempt counters, `open_requests`, `call_request_id`) is an error; a line `Reads:` is an error with the hint (“since 2.26 the reads are derived”); the bounds `int>=n`, `non_decreasing` and `<=`; reachability of states; completeness of forks: the `else` row is not required, an uncovered fork leads to ERROR with `fork_no_match` (4.1); after a proven exhaustion (an enumeration without fields at its forms, a literal set — all values named) a written `else` is a warning; exhaustion of the “Output” taking `Except` into account; the values of `To`; appeal events ⊆ machine events; party signals: the signal of an event of an appeal row ∈ the list of signals of the appeal's party, every signal of a party is used (a signal with no row in the current state is not accepted by a row and is discarded, rules 14, 17, 19); `failure(reason in …)` ⊆ `FailCode` from the library `contract`; the class of an external function (by its declaration) is allowed in the call position; literal sets (the inclusion of the computed set, a value outside the set is an error, `match` over a set is exhausted, 3.2); a literal of the type `id` is of UUID format; `new_id()` only in `let` of the “On entry” of an operation, and the binding is written by the row of the operation (section 7); an event field binding does not coincide with data (together with the data of libraries, after substitution); for an appeal without a `Request` line the rows, “On accept” and “Idle term” read no data; a full map; the types `T`/`?T`; the journal: code ↔ the methodology template table or the product table, a product code does not repeat a methodology code (section 5), parameter names ↔ template (`fork`), the values are `str`; enumeration values are `[a-z][a-z0-9_]*`; JSON names (1a): the final JSON name (a `## Names` row, otherwise the automatic one — glossary, transliteration) is Latin; a `## Names` row that changes nothing is the error “redundant row”; a row for a name that is not among the declarations of the file (internal, readable, a typo) is an error; a name repeated in `## Names`; a non-Latin JSON name of a row; parentheses after a name in a declaration are an error (parentheses are removed); the JSON names of one namespace are distinct (the namespaces — 1a: states together with library states; data; input fields; types; the fields of one record or form; the forms of one enumeration with fields; the elements of one enumeration; the signals of one party; the fields of one signal; machine signals; external functions; parameters, constants and setting names), different namespaces do not interfere, journal codes are in no namespace; a word of a name that mixes Cyrillic and Latin is an error; the hash of the normative part of the glossary equals the hash the format names (`glossary hash`, 1a), otherwise the error “the glossary changed without a format change”; the reference script [tools/check-alula-keywords.py](../tools/check-alula-keywords.py) checks the namespaces it sees in the declarations (states together with the state of the “Pause” library, data together with the JSON names of the contract and library data — `previous`, `call_request_id`, `open_requests`, `stop_reason`, `to_send`, `human_words`, — input fields, types, fields, forms, elements, signals and their fields, external functions, setting names), and does not check constants and parameters (namespace 10) and the machine signals of the library — that is a check of the product's translator; the `stop_reason` values of a library ∈ the machine's set and in the “Output”; no engine and envelope data in the reads of conditions (rule 31); `Initial state` is named; party identifiers are Latin and distinct; the JSON names of states are Latin and distinct; `Idle term` reads only the names of `Request`; an empty cell “expression” of `Request` — the field name is readable by the “Request” expressions (a datum, a constant, a parameter, a readable name), otherwise an error; an explicit expression equal to the field name is a warning (4.2); `parse` is a volatile external function with the single parameter of the type `result` and a result of the named type, `response: Form` — only for an enumeration; `Edits`: the function is a volatile external function without parameters, the result `bool`, the datum is written in the “On accept” of the state; a write by the path `name[*].field` is compared with the mark `non_decreasing` by the template `[*]`, a write from a row into a party counter field is an error; “Parties”: the column `counter` is named for every party except a party of the kind `human` with free input (`—`; `—` at a party of another kind is an error), the datum is made by the loader (`int>=0`, `non_decreasing: yes`), a row for it in `## Data` is an error (the name is declared twice); an appeal to a party without a counter has no `Request`, `set`, `Idle term`, `Edits`, `Form returns` and no events `response`, `failure` — the constructs of gates and requests; `result` is named for every party, the form of the event `response` belongs to the `result` type of the party (the result of `parse`), the signal of the event `signal` of a party belongs to its column “signals”; `open_requests` is declared once; a `failure` outside the state's list is brought to `NoResult` (4.3); `require_non_empty`: the argument is a set with `""`; the codes of the journal of the table format are in the template table (the subsection “Events of the table format” of the journal file).
+The extension of [check-tables.py](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/check-tables.py): names of fields, types and states; a name read by a row exists and is allowed (in the “Request” — the names named by its table); the reads of a state are derived (from the expressions of the rows, the “Request”, the “On accept”, the “On entry” and the `reads` lists of external functions, for ERROR — `all_data`) and shown in the report, they need not be declared; a write only into declared data (including the `writes` of acting functions), a write from a table into engine data (the party attempt counters, `open_requests`, `call_request_id`) is an error; a line `Reads:` is an error with the hint (“since 2.26 the reads are derived”); the bounds `int>=n`, `non_decreasing` and `<=`; reachability of states; completeness of forks: the `else` row is not required, an uncovered fork leads to ERROR with `fork_no_match` (4.1); after a proven exhaustion (an enumeration without fields at its forms, a literal set — all values named) a written `else` is a warning; exhaustion of the “Output” taking `Except` into account; the values of `To`; appeal events ⊆ machine events; party signals: the signal of an event of an appeal row ∈ the list of signals of the appeal's party, every signal of a party is used (a signal with no row in the current state is not accepted by a row and is discarded, rules 14, 17, 19); `failure(reason in …)` ⊆ `FailCode` from the library `contract`; the class of an external function (by its declaration) is allowed in the call position; literal sets (the inclusion of the computed set, a value outside the set is an error, `match` over a set is exhausted, 3.2); a literal of the type `id` is of UUID format; `new_id()` only in `let` of the “On entry” of an operation, and the binding is written by the row of the operation (section 7); an event field binding does not coincide with data (together with the data of libraries, after substitution); for an appeal without a `Request` line the rows, “On accept” and “Idle term” read no data; a full map; the types `T`/`?T`; the journal: code ↔ the methodology template table or the product table, a product code does not repeat a methodology code (section 5), parameter names ↔ template (`fork`), the values are `str`; enumeration values are `[a-z][a-z0-9_]*`; JSON names (1a): the final JSON name (a `## Names` row, otherwise the automatic one — glossary, transliteration) is Latin; a `## Names` row that changes nothing is the error “redundant row”; a row for a name that is not among the declarations of the file (internal, readable, a typo) is an error; a name repeated in `## Names`; a non-Latin JSON name of a row; parentheses after a name in a declaration are an error (parentheses are removed); the JSON names of one namespace are distinct (the namespaces — 1a: states together with library states; data; input fields; types; the fields of one record or form; the forms of one enumeration with fields; the elements of one enumeration; the signals of one party; the fields of one signal; machine signals; external functions; parameters, constants and setting names), different namespaces do not interfere, journal codes are in no namespace; a word of a name that mixes Cyrillic and Latin is an error; the hash of the normative part of the glossary equals the hash the format names (`glossary hash`, 1a), otherwise the error “the glossary changed without a format change”; the reference script [tools/check-alula-keywords.py](../tools/check-alula-keywords.py) checks the namespaces it sees in the declarations (states together with the state of the “Pause” library, data together with the JSON names of the contract and library data — `previous`, `call_request_id`, `open_requests`, `reason`, `to_send`, `human_words`, — input fields, types, fields, forms, elements, signals and their fields, external functions, setting names), and does not check constants and parameters (namespace 10) and the machine signals of the library — that is a check of the product's translator; the reasons of the library `Pause` are covered by the rows of `## Output`; no engine and envelope data in the reads of conditions (rule 31); `Initial state` is named; party identifiers are Latin and distinct; the JSON names of states are Latin and distinct; `Idle term` reads only the names of `Request`; an empty cell “expression” of `Request` — the field name is readable by the “Request” expressions (a datum, a constant, a parameter, a readable name), otherwise an error; an explicit expression equal to the field name is a warning (4.2); `parse` is a volatile external function with the single parameter of the type `result` and a result of the named type, `response: Form` — only for an enumeration; `Edits`: the function is a volatile external function without parameters, the result `bool`, the datum is written in the “On accept” of the state; a write by the path `name[*].field` is compared with the mark `non_decreasing` by the template `[*]`, a write from a row into a party counter field is an error; “Parties”: the column `counter` is named for every party except a party of the kind `human` with free input (`—`; `—` at a party of another kind is an error), the datum is made by the loader (`int>=0`, `non_decreasing: yes`), a row for it in `## Data` is an error (the name is declared twice); an appeal to a party without a counter has no `Request`, `set`, `Idle term`, `Edits`, `Form returns` and no events `response`, `failure` — the constructs of gates and requests; `result` is named for every party, the form of the event `response` belongs to the `result` type of the party (the result of `parse`), the signal of the event `signal` of a party belongs to its column “signals”; `open_requests` is declared once; a `failure` outside the state's list is brought to `NoResult` (4.3); `require_non_empty`: the argument is a set with `""`; the codes of the journal of the table format are in the template table (the subsection “Events of the table format” of the journal file).
 
 - **Formatting**: a state key line (4.1) without the marker `- ` is an error; a warning — a table standing right next to a list item or to another table (without an empty line) also warns. Prose: a line that begins with a word from the list of keys (4.1) and a colon without the marker `- ` or with a typo in it (`-Party:`, `– Edits:`) is an error, otherwise the typo would remain a silent comment. The other prose causes no checks. A paragraph: a text line pressed against a table, a heading or a list without an empty line is a warning. A declaration (`type`, `fn`) outside a code block is a warning. The file extension is checked only by this script.
 - **The call namespace** (1a, namespace 11): a name of a function or an external function (as written, the English name by 1a, for an external function the JSON name) that coincides with a word of a catalog function in either language or with `range` is an error; the name `новый_ид`/`new_id` (the standard external function, also a word of the kind `catalog`) is not compared with the catalog words; an author function named as an external function is an error.

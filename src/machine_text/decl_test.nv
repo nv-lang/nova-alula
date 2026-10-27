@@ -167,16 +167,16 @@ test "dc data initial" {
 }
 
 test "dc data writes" {
-    ro all_pairs = [["действия", "rows"], ["механика", "mechanics"], ["действия и механика", "rows_and_mechanics"], ["фрагмент", "fragment"], ["действия и фрагмент", "rows_and_fragment"]]
+    ro all_pairs = [["действия", "rows"], ["механика", "mechanics"], ["действия и механика", "rows_and_mechanics"]]
     for pair in all_pairs {
         ro text = jsn("${data_head()}| число_ходов | число>=0 | 0 | — | ${pair[0]} |\n")
         assert(text.contains("\"writes\":\"${pair[1]}\""))
     }
 }
 
-// AL-122: the words of the column `пишет` of 2.22 (`строки`, `строки и механика`, `строки и фрагмент`) are refused with the new word, there is no transition period
+// AL-122: the words of the column `пишет` of 2.22 (`строки`, `строки и механика`) are refused with the new word, there is no transition period
 test "dc data writes the former words" {
-    for pair in [["строки", "действия"], ["строки и механика", "действия и механика"], ["строки и фрагмент", "действия и фрагмент"]] {
+    for pair in [["строки", "действия"], ["строки и механика", "действия и механика"]] {
         assert(says("${data_head()}| число_ходов | число>=0 | 0 | — | ${pair[0]} |\n", "`${pair[0]}` в формате 2.22 не бывает (AL-122): пишется `${pair[1]}`; переходного периода нет"))
     }
 }
@@ -195,7 +195,7 @@ test "dc data dict literal" {
 
 test "dc data readable name" {
     // a readable name of the contract is the word `en` of the table of words and needs no brackets
-    ro text = jsn("${data_head()}| остановка | \"\" \\| \"a\" | \"\" | — | действия |\n| предыдущее | ?Состояние | пусто | — | фрагмент |\n")
+    ro text = jsn("${data_head()}| остановка | \"\" \\| \"a\" | \"\" | — | действия |\n| предыдущее | ?Состояние | пусто | — | действия |\n")
     assert(text.contains("{\"name\":\"stop_reason\""))
     assert(text.contains("{\"name\":\"previous\""))
 }

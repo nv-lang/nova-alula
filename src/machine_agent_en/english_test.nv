@@ -114,7 +114,7 @@ test "ae foreign first line" {
 }
 
 test "ae expansion removed" {
-    // the section of the expansion of a fragment is gone (AL-44): the sample has none, a section added at the end is named as removed with nothing else said
+    // the former section of the expansion is gone (AL-44): the sample has none, a section added at the end is named as removed with nothing else said
     ro sample = en_sample()
     ro junk = report_of("${sample}\n## Fragment expansion \"Pause\"\n\n@@@ {{{ \"\n| a |\n")
     assert(junk.errors.len() == 1)
@@ -123,8 +123,8 @@ test "ae expansion removed" {
     assert(renamed.errors.len() == 1)
 }
 
-test "ae fragment words" {
-    // the fragment is read in the language of the machine: the parameters are named in English
+test "ae library words" {
+    // the library is read in the language of the machine: the parameters are named in English
     ro sample = en_sample()
     ro russian_param = sample.replace("halt_signal: halt", "слово_остановки: halt")
     assert(report_of(russian_param).errors.len() > 0)

@@ -4,7 +4,7 @@ module alula.machine_text_fmt
 
 import std.text
 
-// What the sample of the former format put at the end of the file: headings, a table, prose with the signs of a code, a state of the fragment with its key lines.
+// What the sample of the former format put at the end of the file: headings, a table, prose with the signs of a code, a state of the library with its key lines.
 fn expansion() -> str => `## Раскрытие фрагмента «Пауза»
 
 Справка читателю; разбор раздел пропускает. Знаки «${bt()}» и «« »» допустимы.
@@ -83,7 +83,7 @@ test "ex code in it" {
 
 test "ex heading words" {
     assert(removed_lines("${base_text()}\n## Раскрытие фрагмента\n\nБез имени.\n").len() == 1)
-    ro other = "${base_text()}\n## Раскрытие\n\nЭто не справка о фрагменте.\n"
+    ro other = "${base_text()}\n## Раскрытие\n\nЭто не справка о библиотеке.\n"
     assert(errors_say(other, "неизвестный раздел `Раскрытие`"))
     assert(removed_lines(other).len() == 0)
     ro low = "${base_text()}\n## раскрытие фрагмента «Пауза»\n\nМалая буква.\n"

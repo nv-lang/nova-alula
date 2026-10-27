@@ -1,5 +1,5 @@
 // news_test.nv - task 113: what the versions 2.9, 2.10 and 2.11 of Alula add to the reading: the heading of a state with the optional JSON name, `Вход: нет`/`Input: none`, a paragraph pressed
-// against a table, a declaration outside a block of code, the expansion section of a fragment named after an included fragment, the files of definitions in both languages with their hashes.
+// against a table, a declaration outside a block of code, the former expansion section named after an included library, the files of definitions in both languages with their hashes.
 module alula.machine_text_lang
 
 import std.text
@@ -102,7 +102,7 @@ test "nw declaration en" {
 }
 
 test "nw expansion name" {
-    // the section of the expansion of a fragment is gone (AL-44): one error at the heading, in either language
+    // the former section of the expansion is gone (AL-44): one error at the heading, in either language
     ro ru = translate_report("${v211_ru()}\n## Раскрытие фрагмента «Пауза»\n\nтекст\n")
     assert(ru.errors.len() == 1)
     assert(ru.errors[0].message.contains("убран"))

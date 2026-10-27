@@ -1,7 +1,7 @@
 // v2261_test.nv - task 241 (package 0.9.1, Alula 2.26, section 9 of the specification): the library does not write into the data of the machine. «Пауза» brings its own
 // enumeration `ПричинаПаузы` and its own datum `причина` (the machine reads `Пауза.причина`), it has no parameter `код_остановки` and no row `остановка` in `## Требует`; the
 // functions, the types and the constants of a library use no parameter and no datum of the library; two copies of one library share the functions and keep their data apart by the
-// prefix of the instance; the built-in fragment of 2.25 is gone (a connection is only `- Файл:`); the findings of 0.9.0: the word of a free input in an appeal to another party,
+// prefix of the instance; the built-in Pause of 2.25 is gone (a connection is only `- Файл:`); the findings of 0.9.0: the word of a free input in an appeal to another party,
 // the signals of the protocol brought only by a row of a library that reads them, a row of `## Имена` that renames a signal of the protocol, the part written by the generator.
 module alula.machine_text
 
@@ -293,9 +293,9 @@ test "v2261 a parameter of the library in a type of the requirements is an error
     assert(says2261(r, "предел"))
 }
 
-// ---- the fragment of 2.25 is gone ---------------------------------------------------------------------------------------------------------------------
+// ---- the built-in Pause of 2.25 is gone ---------------------------------------------------------------------------------------------------------------------
 
-test "v2261 the call of the fragment Pause in a file of 2.25 is an error: a library is connected by its file only" {
+test "v2261 the old call of Pause in a file of 2.25 is an error: a library is connected by its file only" {
     ro text = m2261().replace("format: 2.26", "format: 2.25").replace("### Пауза\n- Файл: libs/pause.alula.md\n", "Пауза(сигнал_остановки: остановить, код_остановки: \"pause_halt\", вложенные: [], отмена_запросов: механика, вход_заново: ничего, право_записи: \"x\")\n")
     ro r = r2261(text)
     assert(first2261(r) != "ok")

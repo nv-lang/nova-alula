@@ -8,7 +8,9 @@
 #     (3) спецификация: alula-spec.md и alula-spec.en.md — CRLF, по 70 строк ограждений; блок «Пауза» раздела 9 по нормализованному тексту — те же хеши;
 #         ALULA_SPEC_SOURCE=<папка> (необязательно) — файлы спецификации равны файлам Методики побайтно;
 #     (4) встроенного фрагмента нет: нет src/machine_text/fragments/, нет embed_str фрагмента, pause_param_keys, pause_arg_names, pause_behavior_words;
-#         слова fragment/фрагмент — только в журнале изменений и в истории (spec/alula-changelog*.md, docs/history.md, scripts/accept-1*/accept-2[0-3]*);
+#         слова fragment/фрагмент — только в журнале изменений и в истории (spec/alula-changelog*.md, docs/history.md, scripts/accept-1*/accept-2[0-3]*), в текстах Методики
+#         (spec/alula-spec*.md, spec/samples/) и их охраняемых копиях 2.25 (src/machine_agent/cases/), в скрипте миграции 2.25 и в именах отвергаемых старых форм
+#         (заголовок «Раскрытие фрагмента» 2.13, AL-44; ключ дерева `fragments`);
 #     (5) скрипт миграции: examples 2.25 (вершина 35c2107) переносятся на новую Паузу без мест, `alula test` — все;
 #     (6) наборы машин: копия набора методики (ALULA_METHODOLOGY_MACHINES, 508 тестов) переносится скриптом, все деревья — 2.26, `alula test` — все;
 #         набор продукта (ALULA_PRODUCT_MACHINES, 81 тест) — то же;
@@ -127,7 +129,7 @@ echo "== фрагмент"
 [ -d src/machine_text/fragments ] && red "src/machine_text/fragments/ есть"
 grep -rnE 'embed_str\("fragments/|pause_param_keys|pause_arg_names|pause_behavior_words|behavior_words_' src >"$tmp/frag-code.out" && { red "код встроенной Паузы: $(wc -l <"$tmp/frag-code.out") строк"; head -5 "$tmp/frag-code.out"; }
 grep -rniE 'fragment|фрагмент' . --exclude-dir=.git --exclude-dir=target --exclude-dir=__pycache__ \
-  | grep -vE '^\./spec/alula-changelog(\.en)?\.md:|^\./docs/history\.md:|^\./scripts/accept-(1[0-9][0-9]|2[0-3][0-9])[^/]*:|^\./scripts/accept-(1[0-9][0-9]|2[0-3][0-9])/|^\./scripts/accept-241\.sh:' >"$tmp/frag-words.out"
+  | grep -vE '^\./spec/alula-changelog(\.en)?\.md:|^\./docs/history\.md:|^\./scripts/accept-(1[0-9][0-9]|2[0-3][0-9])[^/]*:|^\./scripts/accept-(1[0-9][0-9]|2[0-3][0-9])/|^\./scripts/accept-241\.sh:'   | grep -vE '^\./spec/alula-spec(\.en)?\.md:|^\./spec/samples/|^\./src/machine_agent/cases/|^\./tools/migrate-alula-226\.py:'   | grep -viE 'Раскрытие фрагмента|раскрытие фрагмента|Fragment expansion|fragments' >"$tmp/frag-words.out"
 [ -s "$tmp/frag-words.out" ] && { red "слова fragment/фрагмент вне журнала изменений: $(wc -l <"$tmp/frag-words.out") строк"; head -8 "$tmp/frag-words.out" | cut -c1-200; }
 
 # ---- (5) скрипт миграции на образцах 2.25 ---------------------------------------------------------------------------------------------------------
