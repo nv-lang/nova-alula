@@ -297,7 +297,7 @@ test "v217 the table of words has the group kind_param" {
     assert(count_kind17("kind_param") == 5)
 }
 
-test "v217 the kinds of the parameters of a fragment" {
+test "v217 the kinds of the parameters of a library" {
     ro w = words_load("ru")
     for key in ["signal", "str", "[]machine", "behavior", "note"] {
         assert(kw_has(w, "kind_param", kw(w, "kind_param", key)))
@@ -341,11 +341,7 @@ test "v217 the table of words has 17 groups" {
     for r in words_rows() {
         if !kinds.contains(r.kind) { kinds.push(r.kind) }
     }
-    mut methodology = 0
-    for k in kinds {
-        if k != "fragment" && k != "fragment_param" { methodology += 1 }
-    }
-    assert(methodology == 17)
+    assert(kinds.len() == 17)
 }
 
 test "v217 the table of the methodology has 217 words" {

@@ -106,7 +106,7 @@ fn kind_plain(kind str, result str, setting str) -> TxKind => { kind, result, se
 // The name of the nested machine in the registry of the caller: the registry of the host (kind `machine` of `names_host.tsv`), else a Latin name as it is.
 fn nested_name(mut cx TxCx, t TxTok) -> str => nested_name_text(cx, t, t.text)
 
-// The same for a name given as a text (a list of the machines in the parameter of a fragment) at the place of a token.
+// The same for a name given as a text (a list of the machines in a parameter of a library) at the place of a token.
 fn nested_name_text(mut cx TxCx, at TxTok, name str) -> str {
     match names_get(cx.names, "machine", name) {
         Some(en) => return en
@@ -325,7 +325,7 @@ fn decl_parties(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxPartyRow {
             i += 1
         }
     }
-    // a party is also called by its id (the identifier of the party is its external name, spec section 1): the text of a fragment says `enhanced`
+    // a party is also called by its id (the identifier of the party is its external name, spec section 1): the text of a library says `enhanced`
     mut aliases = []TxPair.new()
     for row in out {
         ro id = party_id_of(row)

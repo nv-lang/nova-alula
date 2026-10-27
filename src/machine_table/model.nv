@@ -122,10 +122,6 @@ export type ParamDef { name str, spec TypeSpec, default_value Expr, project_key 
 /// IncludeDef: a line `definitions: <name> version <N> hash <hex12>` (format section 8); the tree carries a copy of what it brings.
 export type IncludeDef { name str, version str, hash str, file str }
 
-/// FragmentArg, FragmentUse: the connection of a fragment as the tree carries it (the key `fragments`, 1b (m)): the name of the fragment and the value of each of its arguments (an expression of the tree).
-export type FragmentArg { name str, value Expr }
-export type FragmentUse { name str, args []FragmentArg }
-
 /// MonotonicDef: "does not decrease" and the optional bound `<= expr` (zero or one).
 export type MonotonicDef { on bool, bound []Expr }
 
@@ -163,7 +159,7 @@ export type MachineDef {
     name str, version str, alula_version str, types TypeDefs,
     constants []ConstDef, params []ParamDef, input InputDef, data []DataDef,
     parties []PartyDef, request_limit []Expr, signals []SignalDef,
-    definitions []DefFn, includes []IncludeDef, fragments []FragmentUse,
+    definitions []DefFn, includes []IncludeDef,
     initial str, error_end str, common []TableRow, states []StateDef,
     result_spec []TypeSpec, end_rows []EndRow, primitives []PrimDecl
 }

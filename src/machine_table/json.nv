@@ -231,20 +231,8 @@ fn j_fields_or_empty(o JsonObject, key str, defs TypeDefs, path str) -> Result[[
 /// The keys of the root object of a machine.
 export fn top_keys() -> []str => [
     "format", "alula_version", "machine", "version", "title", "types", "constants", "params", "input", "data", "parties", "request_limit", "signals",
-    "definitions", "includes", "fragments", "initial", "error_end", "common_events", "states", "ends", "primitives"
+    "definitions", "includes", "initial", "error_end", "common_events", "states", "ends", "primitives"
 ]
-
-/// The fragments that a machine may connect (the keys of the table of words, kind `fragment`) and the keys of the arguments of the connection of each (format section 9, 1b (m), the key `fragments` of the product).
-export fn fragment_names() -> []str => ["Pause"]
-
-export fn pause_arg_names() -> []str => ["halt_signal", "halt_code", "nested", "cancel_requests", "reenter", "write_right"]
-
-/// The words of the arguments `cancel_requests` and `reenter` of the fragment Pause (the behavior parameters of section 9).
-export fn pause_behavior_words(arg str) -> []str {
-    if arg == "cancel_requests" { return ["mechanics", "without_return_to_send", "stop_transport_turn"] }
-    if arg == "reenter" { return ["nothing", "requests_from_to_send"] }
-    []str.new()
-}
 
 /// The keys of a state.
 export fn state_keys() -> []str => [
@@ -609,57 +597,6 @@ fn dec_includes(root JsonObject) -> Result[[]IncludeDef, LoadError] {
         out.push(IncludeDef {
             name: j_need_str(o, "name", p)?, version, hash: j_need_str(o, "hash", p)?, file
         })
-        i += 1
-    }
-    Ok(out)
-}
-
-// The words of a list with a comma between them (a list of the words of a message; no `join`, so the file needs no `import std.text`).
-fn word_list(items []str) -> str {
-    mut out = ""
-    mut first = true
-    for w in items {
-        out = if first { w } else { "${out}, ${w}" }
-        first = false
-    }
-    out
-}
-
-// The connections of the fragments: `fragments: [{ "name", "args": { argument: expression } }]` (the key of the product, 1b (m)): the fragment is in the tree already substituted, the
-// connection says how, so that the generator can write the line of connection back. Every argument is named, the words of the behavior arguments are checked.
-fn dec_fragments(root JsonObject) -> Result[[]FragmentUse, LoadError] {
-    ro items = j_arr_or_empty(root, "fragments", "$")?
-    mut out = []FragmentUse.new()
-    mut seen = []str.new()
-    mut i = 0
-    for item in items {
-        ro p = "$.fragments[${i}]"
-        ro o = j_obj(item, p)?
-        j_only(o, ["name", "args"], p)?
-        ro name = j_need_str(o, "name", p)?
-        if !fragment_names().contains(name) { return Err(le("${p}.name", "the fragment ${name} is not one that the host connects (${word_list(fragment_names())})")) }
-        if seen.contains(name) { return Err(le("${p}.name", "the fragment ${name} is connected twice")) }
-        seen.push(name)
-        ro ao = j_need_obj(o, "args", p)?
-        ro ap = "${p}.args"
-        if j_has(ao, "halt_word") { return Err(le("${ap}.halt_word", "the argument halt_word is the former name of halt_signal (the signal of the party that halts, format 2.13, AL-38; there is no transition period)")) }
-        j_only(ao, pause_arg_names(), ap)?
-        mut args = []FragmentArg.new()
-        for arg in pause_arg_names() {
-            if !j_has(ao, arg) { return Err(le("${ap}.${arg}", "the argument ${arg} of the fragment ${name} is missing")) }
-            ro value = j_expr(ao, arg, ap)?
-            ro words = pause_behavior_words(arg)
-            if words.len() > 0 {
-                match value {
-                    Lit(Text(w)) => {
-                        if !words.contains(w) { return Err(le("${ap}.${arg}", "the argument ${arg} is one of ${word_list(words)}")) }
-                    }
-                    _ => return Err(le("${ap}.${arg}", "the argument ${arg} is one of ${word_list(words)}"))
-                }
-            }
-            args.push(FragmentArg { name: arg, value })
-        }
-        out.push(FragmentUse { name, args })
         i += 1
     }
     Ok(out)
@@ -1201,6 +1138,9 @@ fn dec_machine(root JsonObject) -> Result[MachineDef, LoadError] {
         if key == FORMER_VERSION_KEY {
             return Err(le("$.${FORMER_VERSION_KEY}", "the key ${FORMER_VERSION_KEY} is the former name of alula_version (the language is called Alula since the format 2.14; there is no transition period)"))
         }
+        if key == "fragments" {
+            return Err(le("$.fragments", "the key fragments is gone since alula 0.9.1: a library is connected by its file (includes, format section 9; there is no transition period)"))
+        }
     }
     j_only(root, top_keys(), "$")?
     ro format = j_need_str(root, "format", "$")?
@@ -1222,7 +1162,6 @@ fn dec_machine(root JsonObject) -> Result[MachineDef, LoadError] {
     ro signals = dec_signals_or_empty(root, "signals", types, "$")?
     ro definitions = dec_definitions(root, types)?
     ro includes = dec_includes(root)?
-    ro fragments = dec_fragments(root)?
     ro initial = j_need_str(root, "initial", "$")?
     ro error_end = j_str_or(root, "error_end", "", "$")?
     ro common = dec_rows(root, "common_events", "$")?
@@ -1231,7 +1170,7 @@ fn dec_machine(root JsonObject) -> Result[MachineDef, LoadError] {
     ro primitives = dec_primitives(root)?
     Ok(MachineDef {
         name, version, alula_version: language_version, types, constants, params, input, data, parties, request_limit, signals,
-        definitions, includes, fragments, initial, error_end, common, states,
+        definitions, includes, initial, error_end, common, states,
         result_spec: [ends.spec], end_rows: ends.rows, primitives
     })
 }

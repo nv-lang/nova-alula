@@ -14,7 +14,7 @@ type TxPair { ru str, en str }
 
 /// TxEnv: the names that the file itself introduces, collected before the sections are translated: states (the Latin name is in the heading), the data,
 /// the constants and the parameters (`globals`), the definitions, the declared types and their cases, the fields of the records, of the forms of enumerations and of the signals (`fields`), the external functions (`prims`; `tails`: those with a named tail, AL-129; `in_defs_file`: the file is a file of definitions, where an external function is refused),
-/// the parties, the signals of the parties (`psignals`), the parts of an answer and the signals of the machine, the nested machines that a fragment is given empty (`empty_lists`) or not empty (`nested_lists`: the name of the parameter and the Latin names of the
+/// the parties, the signals of the parties (`psignals`), the parts of an answer and the signals of the machine, the nested machines that a parameter is given empty (`empty_lists`) or not empty (`nested_lists`: the name of the parameter and the Latin names of the
 /// machines, joined by a comma). Since 2.13 (AL-46) a name gets its JSON name from the brackets of its declaration, never from a dictionary.
 /// 2.26 (task 197): `instances` are the names of the instances of the connected libraries (their data and states are `Экземпляр.имя` in the machine), `cur_party` is the party of the appeal whose rows are read,
 /// `party_parts` the type of the parts of a party (the column `части`: the name of the party and the name of the type as written).
@@ -363,7 +363,7 @@ fn tr_binder(mut cx TxCx, t TxTok) -> str {
         Some(en) => return en
         None => ()
     }
-    // a field of a signal of the call protocol that the fragment Pause binds (`автор`, `источник`): the name of the registry, so that the fragment of either language gives one tree
+    // a field of a signal of the call protocol that the library Pause binds (`автор`, `источник`): the name of the registry, so that the library of either language gives one tree
     match names_get(cx.names, "signal_field", t.text) {
         Some(en) => en
         None => t.text
@@ -1383,7 +1383,7 @@ fn ex_brace(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
     ex_block(p, cx, sc)
 }
 
-/// A literal with insertions (AL-80): `"a${x}b"` is `concat("a", text(x), "b")`; a single insertion `"${x}"` is `text(x)`; empty fragments are dropped. The code of an insertion is lexed again and read as an expression.
+/// A literal with insertions (AL-80): `"a${x}b"` is `concat("a", text(x), "b")`; a single insertion `"${x}"` is `text(x)`; empty pieces are dropped. The code of an insertion is lexed again and read as an expression.
 fn ex_interp(mut p TxP, mut cx TxCx, sc TxScope, t TxTok) -> Result[TxJ, TranslateError] {
     ro made = lx_parts(t.text)
     if made.bad >= 0 { return Err(tx_err(t.line, t.col + 1 + tx_cols(t.text, 0, made.bad), "syntax", made.why)) }
@@ -1477,7 +1477,7 @@ fn case_owners(cx TxCx, name str) -> []str {
 }
 
 /// A bare name of an element of an enumeration or of a form without fields (AL-88, AL-104; D478 of Nova): it is looked up among the enumerations declared in the machine, in the files of functions and in the
-/// fragments, whatever the place expects; the type of the name is the type that declares it. A name that two types declare is an error that asks for the qualification `Тип.Эл`.
+/// libraries, whatever the place expects; the type of the name is the type that declares it. A name that two types declare is an error that asks for the qualification `Тип.Эл`.
 fn bare_case(mut cx TxCx, t TxTok) -> Option[TxJ] {
     ro owners = case_owners(cx, t.text)
     if owners.len() == 0 { return None }

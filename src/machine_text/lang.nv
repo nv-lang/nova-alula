@@ -40,7 +40,7 @@ fn header_line(line str) -> TxHeaderLine {
     TxHeaderLine { key: s[at..colon].trim_ascii(), value: s[colon + 1..].trim_ascii(), col: at_col + 1 }
 }
 
-// The language of the word of the header of the first line (`Машина`, `Machine`, `Определения`, `Definitions`, `Фрагмент`, `Fragment`): "ru", "en", or "" when the line is none of them.
+// The language of the word of the header of the first line (`Машина`, `Machine`, `Определения`, `Definitions`): "ru", "en", or "" when the line is none of them.
 fn header_title_lang(first_line str) -> str {
     ro text = first_line.strip_suffix("\r") ?? first_line
     if !text.starts_with("# ") { return "" }
@@ -55,7 +55,7 @@ fn header_title_lang(first_line str) -> str {
     ""
 }
 
-/// The language and the version of a file by its header: the first line `# Машина: …` / `# Machine: …` (also `Определения`/`Definitions`, `Фрагмент`/`Fragment`) and the list lines before the first
+/// The language and the version of a file by its header: the first line `# Машина: …` / `# Machine: …` (also `Определения`/`Definitions`) and the list lines before the first
 /// section. A header in the language that the line `language` does not declare is an error (the language is not guessed), a value other than `ru`, `en` is an error.
 fn detect_language(lines []str) -> TxLangInfo {
     mut errors = []TranslateError.new()

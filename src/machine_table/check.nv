@@ -841,7 +841,7 @@ fn check_event_for(mut cx Checker, ev EventPat, party_ix int, path str, mut used
     check_bind_shadow(cx, ev, path)
     match ev {
         SignalEv { name, binds } => {
-            // a signal of the party of the appeal (AL-38), else a signal of the machine (a common event, the protocol of a fragment)
+            // a signal of the party of the appeal (AL-38), else a signal of the machine (a common event, the call protocol of a library)
             if party_ix >= 0 {
                 ro party = def.parties[party_ix]
                 ro at = signal_decl(party.signals, name)
@@ -1006,7 +1006,7 @@ fn check_targets_of_row(mut cx Checker, r TableRow, path str, may_stay bool) -> 
         }
         ToPrevious => {
             ro at = find_data(def, "previous")
-            if at < 0 { cx_issue(cx, "${path}.to", "@previous needs the datum previous (the fragment Pause brings it)") }
+            if at < 0 { cx_issue(cx, "${path}.to", "@previous needs the datum previous (the library Pause brings it)") }
         }
         ToPrepareReturn => {
             ro at = find_data(def, "preparation_return")
@@ -1152,7 +1152,7 @@ export fn with_derived_reads(def MachineDef, registry Registry) -> MachineDef {
         name: def.name, version: def.version, alula_version: def.alula_version, types: def.types,
         constants: def.constants, params: def.params, input: def.input, data: def.data,
         parties: def.parties, request_limit: def.request_limit, signals: def.signals,
-        definitions: def.definitions, includes: def.includes, fragments: def.fragments,
+        definitions: def.definitions, includes: def.includes,
         initial: def.initial, error_end: def.error_end, common: def.common, states,
         result_spec: def.result_spec, end_rows: def.end_rows, primitives: def.primitives
     }

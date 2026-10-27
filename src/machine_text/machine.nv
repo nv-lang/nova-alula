@@ -127,33 +127,6 @@ fn errors_quoted(errors_in []TranslateError, lines []str) -> []TranslateError {
     out
 }
 
-// ---- fragments ----------------------------------------------------------------------------------------------------------------------------------
-
-/// TxFragRun: a fragment of a call, read: its entries and sections, and the blocks of its states.
-type TxFragRun { call TxCall, entries []TxEntry, sections []TxSection, blocks []TxBlock, v226 bool }
-
-// The notes made since `from` belong to the fragment: they are put at the line of its call and say so.
-fn cx_remap(mut cx TxCx, from int, call TxCall, places_from int) -> () {
-    mut errors = []TranslateError.new()
-    mut k = 0
-    for e in cx.errors {
-        if k < from {
-            errors.push(e)
-        } else {
-            errors.push(TranslateError { line: call.line, col: call.tok.col, kind: e.kind, message: "в фрагменте ${call.name}: ${e.message}", quote: "" })
-        }
-        k += 1
-    }
-    cx.errors = errors
-    mut places = []TxPlace.new()
-    mut j = 0
-    for pl in cx.places {
-        if j < places_from { places.push(pl) } else { places.push(TxPlace { path: pl.path, line: call.line }) }
-        j += 1
-    }
-    cx.places = places
-}
-
 // ---- the machine ------------------------------------------------------------------------------------------------------------------------------
 
 fn lines_of(text str) -> []str {
@@ -240,12 +213,9 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
         None => ()
     }
 
-    // the fragments: the calls, the texts with the parameters put in; the files of definitions
-    mut runs = []TxFragRun.new()
+    // the files of definitions (2.25) and the libraries (2.26)
     mut signals = []TxJ.new()
     mut included = TxIncluded { types: TxTypes { records: []TxJ.new(), variants: []TxJ.new() }, constants: []TxJ.new(), definitions: []TxJ.new(), includes: []TxJ.new() }
-    mut connected = []str.new()
-    mut accepted_calls = []TxCall.new()
     // the libraries of 2.26 (section 9, task 197): the subheadings of `## Подключения`; the rows of `## Имена` of a library hold until its data are declared
     mut lib_runs = []TxLibRun.new()
     mut lib_signals = []str.new()
@@ -270,32 +240,7 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
         Some(sec) => {
           if !own226 {
             included = defs_includes(entries, sec, registry, cx)
-            for call in calls_read(entries, sec, cx) {
-                connected.push(call.name)
-                match fragment_text(call, cx) {
-                    Some(text) => {
-                        accepted_calls.push(call)
-                        // the text of a fragment is read in the form of its own format line (the seam of 2.26, task 195)
-                        ro frag226 = detect_language(lines_of(text)).version == "2.26"
-                        cx.v226 = frag226
-                        ro fentries = tx_classify_in(lines_of(text), cx.words, false, false).entries
-                        ro before = cx.errors.len()
-                        ro jn_before = cx.jn.decls.len()
-                        ro fsections = sections_of(fentries, cx)
-                        mut fblocks = []TxBlock.new()
-                        match section_of(fsections, "States") {
-                            Some(fsec) => { fblocks = states_register(fentries, fsec, cx) }
-                            None => ()
-                        }
-                        jn_fix_since(cx, jn_before)
-                        cx_remap(cx, before, call, cx.places.len())
-                        cx.v226 = own226
-                        runs.push(TxFragRun { call, entries: fentries, sections: fsections, blocks: fblocks, v226: frag226 })
-                        for sj in protocol_signals_json(cx) { signals.push(sj) }
-                    }
-                    None => ()
-                }
-            }
+            includes_225_check(entries, sec, cx)
           }
         }
         None => ()
@@ -346,21 +291,8 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
         }
         None => ()
     }
-    // the data: the data of the fragments first, then the data of the machine (the order of `все_данные`, format section 5)
+    // the data: the data of the libraries first, then the data of the machine (the order of `все_данные`, format section 5)
     mut data = []TxJ.new()
-    for run in runs {
-        match section_of(run.sections, "Data") {
-            Some(fsec) => {
-                ro before = cx.errors.len()
-                ro places_from = cx.places.len()
-                cx.v226 = run.v226
-                for d in decl_data(run.entries, fsec, cx) { data.push(d) }
-                cx.v226 = own226
-                cx_remap(cx, before, run.call, places_from)
-            }
-            None => ()
-        }
-    }
     mut lib_data = TxLibData { data: []TxJ.new(), names: []TxLibNames.new() }
     if own226 {
         lib_data = libs_data(lib_runs, cx)
@@ -433,19 +365,6 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
     // the states and the rows that lead between them
     mut initial = ""
     mut common = []TxJ.new()
-    for run in runs {
-        match section_of(run.sections, "Common events") {
-            Some(fsec) => {
-                ro before = cx.errors.len()
-                ro places_from = cx.places.len()
-                cx.v226 = run.v226
-                for r in common_events_at(run.entries, fsec, cx, common.len()) { common.push(r) }
-                cx.v226 = own226
-                cx_remap(cx, before, run.call, places_from)
-            }
-            None => ()
-        }
-    }
     mut lib_common = TxLibRows { rows: []TxJ.new(), counts: []int.new() }
     if own226 {
         lib_common = libs_common(lib_runs, cx)
@@ -469,16 +388,6 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
         }
         None => ()
     }
-    for run in runs {
-        for blk in run.blocks {
-            ro before = cx.errors.len()
-            ro places_from = cx.places.len()
-            cx.v226 = run.v226
-            states.push(state_translate(run.entries, blk, states.len(), cx))
-            cx.v226 = own226
-            cx_remap(cx, before, run.call, places_from)
-        }
-    }
     mut lib_states = TxLibStates { states: []TxJ.new(), names: []TxLibNames.new() }
     if own226 {
         lib_states = libs_states(lib_runs, states.len(), cx)
@@ -489,7 +398,7 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
         Some(sec) => { ends = decl_ends(entries, sec, cx) }
         None => note(cx, struct_error(1, 1, "нет раздела `## ${kw(cx.words, "section", if cx.v226 { "Output" } else { "Ends" })}`"))
     }
-    // the section of the expansion of a fragment is removed in 2.13 (AL-44)
+    // the section of the expansion of 2.12 is removed in 2.13 (AL-44)
     for x in classified.expansions { cx.errors.push(expansion_error(x.line, x.name)) }
 
     // the JSON
@@ -527,15 +436,6 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
     if definitions.len() > 0 { root.push(kv("definitions", TxArr(definitions))) }
     if included.includes.len() > 0 { root.push(kv("includes", TxArr(included.includes))) }
     if own226 && lib_runs.len() > 0 { root.push(kv("includes", TxArr(libs_includes_json(lib_runs, lib_decls, lib_data, lib_common, lib_states, lib_signals, cx)))) }
-    // the connections of the fragments with every argument (1b (m)): the fragment is in the tree substituted, the connection lets the generator write the line back
-    mut fragments = []TxJ.new()
-    for call in accepted_calls {
-        match fragment_use_json(call, cx) {
-            Some(j) => fragments.push(j)
-            None => ()
-        }
-    }
-    if fragments.len() > 0 { root.push(kv("fragments", TxArr(fragments))) }
     root.push(kv("initial", js(initial)))
     if error_end != "" { root.push(kv("error_end", js(error_end))) }
     if common.len() > 0 { root.push(kv("common_events", TxArr(common))) }
@@ -572,11 +472,6 @@ fn warnings_all(first []TranslateError, second []TranslateError) -> []TranslateE
     out
 }
 
-fn connected_hint(connected []str) -> str {
-    if connected.len() == 0 { return " (фрагменты не подключены)" }
-    " (подключён: ${connected.join(", ")})"
-}
-
 /// The first line of the section `## Состояния`: `Начальное состояние: ИМЯ`.
 fn initial_state(entries []TxEntry, sec TxSection, mut cx TxCx) -> str {
     mut i = sec.first
@@ -610,7 +505,7 @@ fn initial_state(entries []TxEntry, sec TxSection, mut cx TxCx) -> str {
     ""
 }
 
-/// The section `## Общие события`: the rows of signals that are tried before the rows of a state. `already` rows are before them (the fragments').
+/// The section `## Общие события`: the rows of signals that are tried before the rows of a state. `already` rows are before them (the libraries').
 fn common_events_at(entries []TxEntry, sec TxSection, mut cx TxCx, already int) -> []TxJ {
     mut out = []TxJ.new()
     mut i = sec.first

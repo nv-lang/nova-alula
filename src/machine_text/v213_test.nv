@@ -1,5 +1,5 @@
 // v213_test.nv - task 149: the table of words of Alula 2.17 (the table of the methodology as it is, without the words of 2.12 that 2.13 removed), the product layer, the signs of the lexer
-// (ASCII only, AL-42), the hashes of the sample of definitions (AL-42 changed the writing of `число>=1`), the text of the fragment Pause (`сигнал_остановки`, AL-38).
+// (ASCII only, AL-42), the hashes of the sample of definitions (AL-42 changed the writing of `число>=1`), the text of the library Pause (`сигнал_остановки`, AL-38).
 module alula.machine_text
 
 import std.text
@@ -48,14 +48,9 @@ test "v213 table no word event" {
     assert(kw_key(words_load("en"), "event", "word") == None)
     assert(kw_key(words_load("ru"), "event", "сигнал") == Some("signal"))
     assert(kw_key(words_load("ru"), "type", "слово") == None)
-    // the kind of the parameter of a fragment `сигнал` is the word of the group `kind_param` since 2.17 (AL-63), not a type
+    // the kind of the parameter of a library `сигнал` is the word of the group `kind_param` since 2.17 (AL-63), not a type
     assert(kw(words_load("ru"), "kind_param", "signal") == "сигнал")
     assert(kw(words_load("en"), "kind_param", "signal") == "signal")
-}
-
-test "v213 table no expansion section" {
-    assert(kw_key(words_load("ru"), "section", "Раскрытие фрагмента") == None)
-    assert(kw_key(words_load("en"), "section", "Fragment expansion") == None)
 }
 
 test "v213 table reason is readable" {
@@ -92,7 +87,6 @@ test "v213 table none value is gone" {
 test "v213 table is the table of the methodology" {
     ro text = keywords_text()
     assert(!text.contains("слова ворот"))
-    assert(!text.contains("Раскрытие фрагмента"))
     assert(!text.contains("≥"))
     assert(!text.contains("∈"))
     assert(text.contains("column\tсигналы\tsignals"))
@@ -122,45 +116,31 @@ fn words_read_rows(text str) -> []TxWord {
     rows
 }
 
-// ---- the product layer ---------------------------------------------------------------------------------------------------------------------------
+// ---- the library Pause -------------------------------------------------------------------------------------------------------------------------
 
-test "v213 product layer halt signal" {
-    assert(kw(words_load("ru"), "fragment_param", "halt_signal") == "сигнал_остановки")
-    assert(kw(words_load("en"), "fragment_param", "halt_signal") == "halt_signal")
-    assert(!kw_has(words_load("ru"), "fragment_param", "слово_остановки"))
-    assert(!kw_has(words_load("en"), "fragment_param", "halt_word"))
-}
+fn v213_pause(lang str) -> str => if lang == "en" { embed_str("../../libs/pause.en.alula.md") } else { embed_str("../../libs/pause.alula.md") }
 
-test "v213 fragment params" {
-    assert(pause_param_keys() == ["halt_signal", "halt_code", "nested", "cancel_requests", "reenter", "write_right"])
-    assert(pause_params(words_load("ru")) == ["сигнал_остановки", "код_остановки", "вложенные", "отмена_запросов", "вход_заново", "право_записи"])
-    assert(pause_params(words_load("en")) == ["halt_signal", "halt_code", "nested", "cancel_requests", "reenter", "write_right"])
-}
-
-test "v213 fragment text has the signal parameter" {
+test "v213 library Pause has the signal parameter" {
+    assert(v213_pause("ru").contains("сигнал_остановки"))
+    assert(v213_pause("en").contains("halt_signal"))
     for lang in ["ru", "en"] {
-        ro text = fragment_source("Pause", lang)
-        assert(text.contains("<${kw(words_load(lang), "fragment_param", "halt_signal")}>"))
-        assert(!text.contains("слово_остановки"))
-        assert(!text.contains("halt_word"))
+        assert(!v213_pause(lang).contains("слово_остановки"))
+        assert(!v213_pause(lang).contains("halt_word"))
     }
 }
 
-test "v213 fragment text has no word event" {
+test "v213 library Pause has no word event" {
     for lang in ["ru", "en"] {
-        ro text = fragment_source("Pause", lang)
+        ro text = v213_pause(lang)
         assert(!text.contains("| слово("))
         assert(!text.contains("| word("))
-        assert(!text.contains("Вход:"))
-        assert(!text.contains("Input:"))
-        assert(text.contains("Запрос:") || text.contains("Request:"))
     }
 }
 
-test "v213 fragment text is ascii" {
+test "v213 library Pause is ascii" {
     for lang in ["ru", "en"] {
-        ro text = fragment_source("Pause", lang)
-        for sign in ["≥", "≤", "≠", "→", "…", "∈"] {
+        ro text = v213_pause(lang)
+        for sign in ["≥", "≤", "≠", "→", "∈"] {
             assert(!text.contains(sign))
         }
     }

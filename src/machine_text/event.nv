@@ -47,7 +47,7 @@ fn ev_one_name(mut p TxP, mut cx TxCx, pairs []TxPair, what str) -> Result[TxTok
     Ok(t)
 }
 
-// The JSON name of a signal or a part named in a row: declared in the machine (the table of the parties, the section of the signals), the signals of the protocol of the fragment, a Latin name as it is.
+// The JSON name of a signal or a part named in a row: declared in the machine (the table of the parties, the section of the signals), the signals of the call protocol, a Latin name as it is.
 fn ev_phrase_json(mut cx TxCx, t TxTok, ru str, known []TxPair, also []TxPair, what str) -> str {
     match pair_get(known, ru) {
         Some(en) => return en
@@ -166,7 +166,7 @@ fn ev_failure(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxEvent, TranslateEr
 }
 
 // `сигнал(сигнал(поле, …))`, `часть(имя(поле, …))`; `head` is the key of the event word: `signal`, `part`. A signal is a signal of a party (the column of the table of the parties) or a signal of the machine
-// (a common event, the protocol of a fragment): both are the event `signal` of the tree (AL-38).
+// (a common event, the call protocol): both are the event `signal` of the tree (AL-38).
 fn ev_named(mut p TxP, mut cx TxCx, sc TxScope, head str) -> Result[TxEvent, TranslateError] {
     p_expect(p, "(")?
     ro first = p_tok(p)
