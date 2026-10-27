@@ -1,7 +1,7 @@
 #!/bin/sh
 # Зачем: одна команда-критерий задачи 241 «Алула 0.9.1: библиотека не пишет в данные машины» (пакет alula 0.9.1, язык 2.26).
 # Проверяет: (1) `alula version` печатает `alula 0.9.1 (Alula 2.26, machine/2)`, nova.toml — 0.9.1;
-#     (2) библиотека «Пауза»: libs/pause.alula.md и libs/pause.en.alula.md — блоки Методики (хеши f39b92ae91f6 и d254e6297f61), своё перечисление
+#     (2) библиотека «Пауза»: libs/pause.alula.md и libs/pause.en.alula.md — блоки Методики (хеши e7d85aa43589 и d254e6297f61), своё перечисление
 #         ПричинаПаузы/PauseReason и своё данное причина/reason, нет параметра код_остановки/halt_code и строки остановка/stop_reason в `## Требует`;
 #         копии в examples/libs/ и spec/samples/libs/ равны libs/; ни один образец пакета не называет код_остановки/halt_code; хеш каждого подключения
 #         в образцах равен хешу файла рядом; `tools/migrate-alula-226.py --dry-run` на образцах — «файлов 0, мест 0»;
@@ -72,7 +72,7 @@ bad = 0
 def no(why):
     global bad; bad += 1; print(why)
 ru = open('libs/pause.alula.md', encoding='utf-8').read(); en = open('libs/pause.en.alula.md', encoding='utf-8').read()
-if m.lib_hash(ru) != 'f39b92ae91f6': no('libs/pause.alula.md: хеш %s, Методика ждёт f39b92ae91f6' % m.lib_hash(ru))
+if m.lib_hash(ru) != 'e7d85aa43589': no('libs/pause.alula.md: хеш %s, Методика ждёт e7d85aa43589' % m.lib_hash(ru))
 if m.lib_hash(en) != 'd254e6297f61': no('libs/pause.en.alula.md: хеш %s, Методика ждёт d254e6297f61' % m.lib_hash(en))
 for want in ['тип ПричинаПаузы перечисление', '| причина | ?ПричинаПаузы | пусто |']:
     if want not in ru: no('libs/pause.alula.md: нет «%s»' % want)
@@ -106,7 +106,7 @@ echo "== спецификация"
 import importlib.util, os, re, sys
 spec = importlib.util.spec_from_file_location('m', 'tools/migrate-alula-226.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 bad = 0
-want = {'spec/alula-spec.md': ('# Библиотека: Пауза', 'f39b92ae91f6'), 'spec/alula-spec.en.md': ('# Library: Pause', 'd254e6297f61')}
+want = {'spec/alula-spec.md': ('# Библиотека: Пауза', 'e7d85aa43589'), 'spec/alula-spec.en.md': ('# Library: Pause', 'd254e6297f61')}
 for f, (head, h) in want.items():
     raw = open(f, 'rb').read()
     if raw.count(b'\n') != raw.count(b'\r\n'): print('%s: не CRLF' % f); bad += 1
@@ -199,7 +199,7 @@ fi
 echo "== стражи дерева"
 sh scripts/guards/run-all.sh >"$tmp/guards.out" 2>&1 || { red "scripts/guards/run-all.sh"; tail -8 "$tmp/guards.out"; }
 
-summary="alula 0.9.1 (Alula 2.26, machine/2); $ex_line; methodology $set_methodology; product $set_product; $test_line; Пауза f39b92ae91f6/d254e6297f61; фрагмента нет"
+summary="alula 0.9.1 (Alula 2.26, machine/2); $ex_line; methodology $set_methodology; product $set_product; $test_line; Пауза e7d85aa43589/d254e6297f61; фрагмента нет"
 if [ "$fails" -eq 0 ]; then
   echo "ПРИНЯТО 241: $summary"
   exit 0
