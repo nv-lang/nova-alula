@@ -9,11 +9,13 @@ module alula.machine_text
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
 import alula.machine.{NamedText}
+import alula.machine_table.{StateReads}
 
 /// TranslateReport: what a translation gave. `json` is the machine (complete when `errors` is empty, else what could be translated); `errors` are all the
 /// notes of the translator, by place; `rows_total` is the number of the rows of the tables (and definitions) that were read, `rows_noted` the number of those
-/// that carry a note (an error or "not supported").
-export type TranslateReport { json str, errors []TranslateError, warnings []TranslateError, rows_total int, rows_noted int, places []TxPlace, names []JsonName }
+/// that carry a note (an error or "not supported"). `reads` are the reads of the states that the check derives for a machine of 2.26 (AL-138: they are shown in the report of the
+/// check, `translate_checked`); empty without the checks and before 2.26.
+export type TranslateReport { json str, errors []TranslateError, warnings []TranslateError, rows_total int, rows_noted int, places []TxPlace, names []JsonName, reads []StateReads }
 
 /// The context of a translation of a file in the language `lang` (`ru` or `en`).
 fn cx_new_in(lang str) -> TxCx {
@@ -446,7 +448,7 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
     for e in el_errors(elaborated) { cx.errors.push(e) }
     jn_finish(cx)
     ro sorted = errors_sorted(cx.errors)
-    ro report = TranslateReport { json: tx_text(elaborated.json), errors: errors_quoted(sorted, lines), warnings: errors_quoted(errors_sorted(warnings_all(classified.warnings, cx.warnings)), lines), rows_total: cx.rows_total, rows_noted: cx.rows_noted, places: cx.places, names: jn_report(cx) }
+    ro report = TranslateReport { json: tx_text(elaborated.json), errors: errors_quoted(sorted, lines), warnings: errors_quoted(errors_sorted(warnings_all(classified.warnings, cx.warnings)), lines), rows_total: cx.rows_total, rows_noted: cx.rows_noted, places: cx.places, names: jn_report(cx), reads: []StateReads.new() }
     TxFull { report, tree: elaborated.json }
 }
 

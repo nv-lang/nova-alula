@@ -165,3 +165,23 @@ test "v226 reads the summary shows the derived reads of the states" {
     assert(s.contains("Errored (end): 0 rows, 1 actions; reads all the data"))
     assert(s.contains("Finished (end): 0 rows, 0 actions; reads turn_count"))
 }
+
+// The reads of the state `name` in the report, joined by commas; `all` for the end ERROR.
+fn rd_report_reads(report TranslateReport, name str) -> str {
+    for r in report.reads {
+        if r.state == name { return if r.all { "all" } else { r.names.join(",") } }
+    }
+    "no state ${name}"
+}
+
+test "v226 reads the report of the checked translation names the derived reads of every state" {
+    ro rep = rd_checked(rd_text())
+    assert(rep.reads.len() == 6)
+    assert(rd_report_reads(rep, "Wait") == "turn_count")
+    assert(rd_report_reads(rep, "Count") == "turn_count,flag")
+    assert(rd_report_reads(rep, "Errored") == "all")
+}
+
+test "v226 reads the translation without the checks has no reads in the report" {
+    assert(translate_report(rd_text()).reads.len() == 0)
+}

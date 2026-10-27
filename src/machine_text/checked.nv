@@ -4,7 +4,7 @@ module alula.machine_text
 
 import std.text
 import alula.machine.{Registry, NamedText}
-import alula.machine_table.{load_machine, machine_warnings, issue_text, LoadError, MachineDef, reads_derived}
+import alula.machine_table.{load_machine, machine_warnings, issue_text, LoadError, MachineDef, StateReads, reads_derived, derived_reads}
 
 // Does `prefix` name the place `path` or a place above it (the next sign after it is `.`, `[` or the end)?
 fn path_under(path str, prefix str) -> bool {
@@ -37,7 +37,7 @@ fn report_with_issues(report TranslateReport, issues []LoadError, lines []str) -
     for e in report.errors { errors.push(e) }
     for issue in issues { errors.push(issue_error(report.places, issue, lines)) }
     ro sorted = errors_sorted(errors)
-    TranslateReport { json: report.json, errors: errors_quoted(sorted, lines), warnings: report.warnings, rows_total: report.rows_total, rows_noted: report.rows_noted, places: report.places, names: report.names }
+    TranslateReport { json: report.json, errors: errors_quoted(sorted, lines), warnings: report.warnings, rows_total: report.rows_total, rows_noted: report.rows_noted, places: report.places, names: report.names, reads: report.reads }
 }
 
 // The warnings of the checks of the table (they are no issues) put at the lines of their places: an `иначе` that can not be reached (AL-57).
@@ -49,7 +49,7 @@ fn report_with_warnings(report TranslateReport, warns []LoadError, lines []str) 
         all.push(TranslateError { line, col: 1, kind: "warning", message: "${w.path}: ${w.message}", quote: "" })
     }
     ro sorted = errors_sorted(all)
-    TranslateReport { json: report.json, errors: report.errors, warnings: errors_quoted(sorted, lines), rows_total: report.rows_total, rows_noted: report.rows_noted, places: report.places, names: report.names }
+    TranslateReport { json: report.json, errors: report.errors, warnings: errors_quoted(sorted, lines), rows_total: report.rows_total, rows_noted: report.rows_noted, places: report.places, names: report.names, reads: report.reads }
 }
 
 /// The translation with the checks of the table against the registry of the primitives of the host. A machine whose JSON the decoder or the checks refuse has the
@@ -63,15 +63,16 @@ export fn translate_checked_with(file_text str, registry Registry, files []Named
     ro lines = lines_of(file_text)
     match load_machine(report.json, registry) {
         Ok(def) => {
-            ro shown = if reads_derived(def) { report_with_tree(report, tree_with_reads(full.tree, def)) } else { report }
+            ro shown = if reads_derived(def) { report_with_tree(report, tree_with_reads(full.tree, def), derived_reads(def, registry)) } else { report }
             report_with_warnings(shown, machine_warnings(def, registry), lines)
         }
         Err(issues) => report_with_issues(report, issues, lines)
     }
 }
 
-fn report_with_tree(report TranslateReport, tree TxJ) -> TranslateReport {
-    TranslateReport { json: tx_text(tree), errors: report.errors, warnings: report.warnings, rows_total: report.rows_total, rows_noted: report.rows_noted, places: report.places, names: report.names }
+// The report with the tree that carries the derived reads and with the reads themselves (AL-138).
+fn report_with_tree(report TranslateReport, tree TxJ, reads []StateReads) -> TranslateReport {
+    TranslateReport { json: tx_text(tree), errors: report.errors, warnings: report.warnings, rows_total: report.rows_total, rows_noted: report.rows_noted, places: report.places, names: report.names, reads }
 }
 
 // The tree with the reads of the loaded machine in its states (the order of the states of the tree is that of the machine): `reads` (or `reads_all` of the end ERROR) right after
