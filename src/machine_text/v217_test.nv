@@ -53,7 +53,8 @@ test "v217 the format 2.25 pins the hash 35c571ccda17 and no other format has a 
 }
 
 test "v217 every format that is read has a pinned hash that is the hash of its dictionary" {
-    assert(format_versions().len() == 1)
+    // 2.26 and, on the seam of task 195, 2.25: one dictionary
+    assert(format_versions().len() == 2)
     for v in format_versions() {
         assert(glossary_pinned_hash(v) == glossary_hash_text(glossary_table_text()))
     }
@@ -347,10 +348,10 @@ test "v217 the table of words has 17 groups" {
     assert(methodology == 17)
 }
 
-test "v217 the table of the methodology has 219 words" {
+test "v217 the table of the methodology has 217 words" {
     mut n = 0
     for line in keywords_text().split("\n") {
         if line != "" && !line.starts_with("kind\t") { n += 1 }
     }
-    assert(n == 219)
+    assert(n == 217)
 }

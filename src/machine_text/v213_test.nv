@@ -15,8 +15,8 @@ fn v213_lines(text str) -> int {
 // ---- the table of words ----------------------------------------------------------------------------------------------------------------------
 
 test "v213 table has the rows of the methodology" {
-    // the header and 217 rows (the table of the methodology at the state of 2.17, with the classes `volatile` and `acting` of AL-116 instead of three)
-    assert(v213_lines(keywords_text()) == 220)
+    // the header and 217 rows (the table of the methodology of 2.26: the words that 2.26 removed are the layer of 2.25, task 195)
+    assert(v213_lines(keywords_text()) == 218)
 }
 
 test "v213 table signals column" {
@@ -97,7 +97,8 @@ test "v213 table is the table of the methodology" {
     assert(!text.contains("∈"))
     assert(text.contains("column\tсигналы\tsignals"))
     assert(text.contains("key\tЗапрос\tRequest"))
-    assert(text.contains("key\tЧитает\tReads"))
+    assert(!text.contains("key\tЧитает\tReads"))
+    assert(text.contains("section\tВыход\tOutput"))
     assert(text.contains("readable\tпричина\treason"))
 }
 
@@ -112,7 +113,7 @@ test "v213 table words are unique in a kind" {
         seen.push(a)
         seen_en.push(b)
     }
-    assert(seen.len() == 219)
+    assert(seen.len() == 217)
 }
 
 fn words_read_rows(text str) -> []TxWord {
