@@ -68,7 +68,7 @@ FENCE
 
 | Действия | Куда |
 |---|---|
-| число_ходов += прочитать() | РЕШИТЬ |
+| число_ходов = число_ходов + прочитать() | РЕШИТЬ |
 
 ### РЕШИТЬ — развилка
 
@@ -128,7 +128,7 @@ test "v226 reads no issue of rule 11 comes from the checks of a file of 2.26" {
 test "v226 reads the tree of the checked translation carries the derived reads" {
     ro j = rd_checked(rd_text()).json
     assert(j.contains("{\"name\":\"Decide\",\"kind\":\"fork\",\"reads\":[\"turn_count\"]"))
-    assert(j.contains("{\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[]"))
+    assert(j.contains("{\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[\"turn_count\"]"))
     assert(j.contains("{\"name\":\"Stopped\",\"kind\":\"end\",\"reads\":[\"stop_reason\"]"))
 }
 
@@ -157,4 +157,11 @@ test "v226 reads the checked tree loads again as it is" {
         Ok(def) => assert(true)
         Err(list) => assert(false)
     }
+}
+
+test "v226 reads the summary shows the derived reads of the states" {
+    ro s = render_summary(rd_checked(rd_text()).json)
+    assert(s.contains("Count (operation): 1 rows, 1 actions; reads turn_count, flag"))
+    assert(s.contains("Errored (end): 0 rows, 1 actions; reads all the data"))
+    assert(s.contains("Finished (end): 0 rows, 0 actions; reads turn_count"))
 }

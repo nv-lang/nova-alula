@@ -175,7 +175,12 @@ fn party_json(row TxPartyRow, parts []TxPartItem) -> TxJ {
 export fn translate_report(file_text str) -> TranslateReport => translate_report_with(file_text, defs_files())
 
 /// The same with the registry of the files of definitions of the caller (the name, the text).
-export fn translate_report_with(file_text str, registry []NamedText) -> TranslateReport {
+export fn translate_report_with(file_text str, registry []NamedText) -> TranslateReport => translate_full(file_text, registry).report
+
+/// TxFull: the report of a translation and its JSON tree (the checked translation writes the derived reads into the tree, AL-138).
+type TxFull { report TranslateReport, tree TxJ }
+
+fn translate_full(file_text str, registry []NamedText) -> TxFull {
     ro lines = lines_of(file_text)
     ro info = detect_language(lines)
     ro classified = tx_classify_in(lines, words_load(info.lang), info.strict, info.strict)
@@ -441,7 +446,8 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
     for e in el_errors(elaborated) { cx.errors.push(e) }
     jn_finish(cx)
     ro sorted = errors_sorted(cx.errors)
-    TranslateReport { json: tx_text(elaborated.json), errors: errors_quoted(sorted, lines), warnings: errors_quoted(errors_sorted(warnings_all(classified.warnings, cx.warnings)), lines), rows_total: cx.rows_total, rows_noted: cx.rows_noted, places: cx.places, names: jn_report(cx) }
+    ro report = TranslateReport { json: tx_text(elaborated.json), errors: errors_quoted(sorted, lines), warnings: errors_quoted(errors_sorted(warnings_all(classified.warnings, cx.warnings)), lines), rows_total: cx.rows_total, rows_noted: cx.rows_noted, places: cx.places, names: jn_report(cx) }
+    TxFull { report, tree: elaborated.json }
 }
 
 // The keys of a file of 2.26 that are items of a list (format 4.1, AL-137): the marker `- ` is obligatory, a key without it is an error (the reading "the marker is optional" of 2.5 is gone);

@@ -56,8 +56,8 @@ fn rd_reads(text str, registry Registry, name str) -> str {
     }
 }
 
-// The end ERROR of 2.26: no reads written, it journals all the data.
-fn rd_errored() -> str => `,{"name":"Errored","kind":"end","entry":[{"do":"journal_all"}]}`
+// The end ERROR of 2.26: no reads written, it journals all the data and reads the name `all_data`.
+fn rd_errored() -> str => `,{"name":"Errored","kind":"end","entry":[{"do":"journal_all"},{"do":"journal_value","value":${jn("all_data")}}]}`
 
 fn rd_with_error_end() -> str {
     ro row = `,{"state":"Errored","n":1,"when":${jl("true")},"answer":{"kind":"refusal","code":${jfc("NoResult")},"text":${jl(jstr("defect"))}}}`
@@ -120,7 +120,7 @@ test "v226 reads the end ERROR reads all the data without a written line" {
 }
 
 test "v226 reads all_data outside the end ERROR is still not allowed" {
-    ro text = rd_tiny().replace("{\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[]}", "{\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[],\"entry\":[{\"do\":\"journal_all\"}]}")
+    ro text = rd_tiny().replace("{\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[]}", "{\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[],\"entry\":[{\"do\":\"journal_value\",\"value\":${jn("all_data")}}]}")
     assert(rd_says(text, sample_registry(), "all_data is read by a state whose Input is all the data"))
 }
 

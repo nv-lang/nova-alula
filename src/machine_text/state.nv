@@ -698,9 +698,10 @@ fn state_translate(entries []TxEntry, blk TxBlock, index int, mut cx TxCx) -> Tx
         if accept.len() > 0 { pairs.push(kv("accept", TxArr(accept))) }
         pairs.push(kv("rows", TxArr(rows)))
     } else {
+        // a state of 2.26 has no written reads: the check derives them and writes them into the tree (AL-138, `translate_checked`)
         if reads_all {
             pairs.push(kv("reads_all", TxBool(true)))
-        } else {
+        } else if !cx.v226 {
             pairs.push(kv("reads", jstrs(reads_names)))
         }
         if entry_actions.len() > 0 { pairs.push(kv("entry", TxArr(entry_actions))) }
