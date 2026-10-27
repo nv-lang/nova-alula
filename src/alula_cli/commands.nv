@@ -29,7 +29,8 @@ fn alula_text(text str) -> str => text.replace("\r\n", "\n")
 /// Is the file the compiled JSON? The name says so (`*.alula.json`, or any `*.json`); every other file is a text of Alula.
 export fn is_json_file(file str) -> bool => file.ends_with(".json")
 
-/// The paths of the libraries that a file of 2.26 connects (its lines `- Файл:`); the program reads them (cli.nv: the module of the translator is not imported there, ORACLE-WORKAROUND(32)).
+/// The paths of the libraries that a file of 2.26 connects (its lines `- Файл:`); the program reads them.
+// ORACLE-WORKAROUND(32): cli.nv calls this function and does not import the module of the translator, whose `.join` would then resolve to `Path.join`; import it there when item 32 is fixed
 export fn wanted_libraries(text str) -> []str => library_paths(alula_text(text))
 
 // `libs`: the files of the libraries that the machine connects (2.26, section 9), by the paths of its lines `- Файл:`.

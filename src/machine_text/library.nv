@@ -68,7 +68,8 @@ fn lib_old_message(shown str) -> str {
     message
 }
 
-// The texts with the separator between them (a loop, not `.join`: the program builds this unit with `std.fs`, whose `Path.join` takes the name, ORACLE-WORKAROUND(32)).
+// The texts with the separator between them.
+// ORACLE-WORKAROUND(32): a loop, not `.join`: the program builds this unit with `std.fs`, whose `Path.join` takes the name; use `.join` when item 32 is fixed
 fn lib_join(items []str, sep str) -> str {
     mut out = ""
     mut first = true
