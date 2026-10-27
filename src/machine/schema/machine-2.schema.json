@@ -35,10 +35,9 @@
     "signals": { "type": "array", "items": { "$ref": "#/$defs/signal_def" }, "description": "signals outside the contract: signals from outside that belong to no party (stop, cancel)" },
     "definitions": { "type": "array", "items": { "$ref": "#/$defs/definition" } },
     "includes": { "type": "array", "items": { "$ref": "#/$defs/include" } },
-    "fragments": { "type": "array", "items": { "$ref": "#/$defs/fragment_use" }, "description": "the connections of the fragments (the key of the product, format 1b (m)): the fragment is in the tree substituted, the connection lets the generator write the line of connection with every argument" },
     "initial": { "type": "string" },
     "error_end": { "type": "string", "description": "the end ERROR: a state of the kind end; the machine goes there on a machine error" },
-    "common_events": { "type": "array", "items": { "$ref": "#/$defs/row" }, "description": "the common events (the fragment Pause, expanded): rows of signals that are tried before the rows of the state" },
+    "common_events": { "type": "array", "items": { "$ref": "#/$defs/row" }, "description": "the common events (of the machine and of its libraries): rows of signals that are tried before the rows of the state" },
     "states": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/state" } },
     "ends": {
       "type": "object", "additionalProperties": false, "required": ["result", "rows"],
@@ -181,23 +180,6 @@
         "params": { "type": "array", "items": { "$ref": "#/$defs/field" } },
         "result": { "$ref": "#/$defs/type" },
         "body": { "$ref": "#/$defs/expr" }
-      }
-    },
-    "fragment_use": {
-      "type": "object", "additionalProperties": false, "required": ["name", "args"],
-      "properties": {
-        "name": { "enum": ["Pause"] },
-        "args": {
-          "type": "object", "additionalProperties": false, "required": ["halt_signal", "halt_code", "nested", "cancel_requests", "reenter", "write_right"],
-          "properties": {
-            "halt_signal": { "$ref": "#/$defs/expr", "description": "the signal of the enhanced party that halts (a literal: the name of the signal in the tree)" },
-            "halt_code": { "$ref": "#/$defs/expr", "description": "the value of the datum of the stop that the halt writes (a text literal)" },
-            "nested": { "$ref": "#/$defs/expr", "description": "the nested machines that the signals go to: a list of text literals with the names of the registry" },
-            "cancel_requests": { "$ref": "#/$defs/expr", "description": "a literal: mechanics, without_return_to_send, stop_transport_turn" },
-            "reenter": { "$ref": "#/$defs/expr", "description": "a literal: nothing, requests_from_to_send" },
-            "write_right": { "$ref": "#/$defs/expr", "description": "a note in a text literal" }
-          }
-        }
       }
     },
     "include": {

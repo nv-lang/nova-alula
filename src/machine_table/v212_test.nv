@@ -1,4 +1,4 @@
-// v212_test.nv - Alula 2.12 on the side of the tree and of the checks (task 125): the version of the language, the key `fragments`, the journal tables of the methodology and of the product
+// v212_test.nv - Alula 2.12 on the side of the tree and of the checks (task 125): the version of the language, the key `fragments` refused, the journal tables of the methodology and of the product
 // (AL-31), the parse of a role (AL-33; one function per role since 2.24, AL-131). Every check is red on the broken tree and green on the good one.
 module alula.machine_table
 
@@ -44,8 +44,6 @@ fn journal_says(text str, needle str) -> bool {
     false
 }
 
-fn with_fragments(call_args str) -> str => tiny().replace("\"initial\":\"Wait\"", "\"fragments\":[{\"name\":\"Pause\",\"args\":{${call_args}}}],\"initial\":\"Wait\"")
-
 // ---- the version of the language ---------------------------------------------------------------------------------------------------------
 
 test "v212 version accepted" {
@@ -88,42 +86,15 @@ test "v212 machines are 2.25" {
     }
 }
 
-// ---- the key `fragments` (1b (м), AL-32) -----------------------------------------------------------------------------------------------------
+// ---- the key `fragments` is gone (0.9.1, task 241): a library is connected by its file ---------------------------------------------------------------
 
-fn pause_args() -> str => `"halt_signal":{"op":"lit","value":"halt"},"halt_code":{"op":"lit","value":"pause_halt"},"nested":{"op":"list","items":[]},"cancel_requests":{"op":"lit","value":"mechanics"},"reenter":{"op":"lit","value":"nothing"},"write_right":{"op":"lit","value":"x"}`
-
-test "v212 fragments key in the schema" {
+test "v212 the key fragments is refused" {
     ro schema = text_of_file(schema_files(), "machine-2.schema.json")
-    assert(schema.contains("\"fragments\""))
-    assert(top_keys().contains("fragments"))
-}
-
-test "v212 fragments accepted" {
-    assert(ok_text(with_fragments(pause_args())))
-}
-
-test "v212 fragments args missing" {
-    assert(says(with_fragments(pause_args().replace(`,"write_right":{"op":"lit","value":"x"}`, "")), "write_right"))
-    assert(says(with_fragments(pause_args().replace(`"write_right"`, `"extra"`)), "extra"))
-}
-
-test "v212 fragments name unknown" {
-    assert(says(with_fragments(pause_args()).replace("\"name\":\"Pause\"", "\"name\":\"Rest\""), "fragment"))
-}
-
-test "v212 fragments args not an object" {
-    assert(!ok_text(tiny().replace("\"initial\":\"Wait\"", "\"fragments\":[{\"name\":\"Pause\",\"args\":[]}],\"initial\":\"Wait\"")))
-}
-
-test "v212 fragments twice" {
-    ro once = "{\"name\":\"Pause\",\"args\":{${pause_args()}}}"
-    ro twice = tiny().replace("\"initial\":\"Wait\"", "\"fragments\":[${once},${once}],\"initial\":\"Wait\"")
-    assert(says(twice, "twice"))
-}
-
-test "v212 fragments behavior word" {
-    assert(says(with_fragments(pause_args().replace(`"value":"mechanics"`, `"value":"sometimes"`)), "cancel_requests"))
-    assert(says(with_fragments(pause_args().replace(`"value":"nothing"`, `"value":"always"`)), "reenter"))
+    assert(!schema.contains("\"fragments\""))
+    assert(!top_keys().contains("fragments"))
+    ro old = tiny().replace("\"initial\":\"Wait\"", "\"fragments\":[{\"name\":\"Pause\",\"args\":{}}],\"initial\":\"Wait\"")
+    assert(!ok_text(old))
+    assert(says(old, "a library is connected by its file"))
 }
 
 // ---- the journal tables (AL-31) ----------------------------------------------------------------------------------------------------------

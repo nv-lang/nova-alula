@@ -1,5 +1,5 @@
 // v213_test.nv - Alula 2.13 on the side of the tree and of the checks (task 149): the signals of a party (AL-38: the key `signals` of a party, the event `signal`, no `words` and no event `word`), the key
-// `values` of an enum (AL-41), the argument `halt_signal` of the fragment Pause (AL-38), the names that stay as they are written (AL-46: a constant, a parameter, a definition, a party may be Cyrillic;
+// `values` of an enum (AL-41), the names that stay as they are written (AL-46: a constant, a parameter, a definition, a party may be Cyrillic;
 // a datum, a state, a type may not). Every check is red on the old tree and green on the new one.
 module alula.machine_table
 
@@ -9,10 +9,6 @@ import alula.examples.{machine_files, test_files}
 
 // The tiny machine of the support file, in the tree of 2.13: the words of the party are its signals.
 fn tiny13() -> str => tiny().replace("\"words\":[{\"name\":\"go\"},{\"name\":\"halt\"}]", "\"signals\":[{\"name\":\"go\"},{\"name\":\"halt\"}]").replace("{\"kind\":\"word\",\"word\":\"go\"}", "{\"kind\":\"signal\",\"name\":\"go\"}").replace("{\"kind\":\"word\",\"word\":\"halt\"}", "{\"kind\":\"signal\",\"name\":\"halt\"}")
-
-fn pause_args13() -> str => `"halt_signal":{"op":"lit","value":"halt"},"halt_code":{"op":"lit","value":"pause_halt"},"nested":{"op":"list","items":[]},"cancel_requests":{"op":"lit","value":"mechanics"},"reenter":{"op":"lit","value":"nothing"},"write_right":{"op":"lit","value":"x"}`
-
-fn with_fragments13(call_args str) -> str => tiny13().replace("\"initial\":\"Wait\"", "\"fragments\":[{\"name\":\"Pause\",\"args\":{${call_args}}}],\"initial\":\"Wait\"")
 
 // ---- AL-38: the signals of a party --------------------------------------------------------------------------------------------------------------
 
@@ -105,23 +101,9 @@ test "v213 enum value of an unknown case" {
     assert(says(tiny_enum("values").replace("[\"Two\",\"two\"]", "[\"Three\",\"two\"]"), "Three"))
 }
 
-// ---- AL-38: the fragment Pause takes a signal ---------------------------------------------------------------------------------------------------------
-
-test "v213 fragments halt signal accepted" {
-    assert(ok_text(with_fragments13(pause_args13())))
-    assert(pause_arg_names()[0] == "halt_signal")
-}
-
-test "v213 fragments halt word refused" {
-    ro text = with_fragments13(pause_args13().replace("\"halt_signal\"", "\"halt_word\""))
-    assert(!ok_text(text))
-    assert(says(text, "halt_signal"))
-}
-
 test "v213 schema knows the signals" {
     ro schema = text_of_file(schema_files(), "machine-2.schema.json")
     assert(schema.contains("\"signals\""))
-    assert(schema.contains("\"halt_signal\""))
     assert(!schema.contains("\"halt_word\""))
     assert(!schema.contains("\"words\""))
     assert(schema.contains("\"values\""))
