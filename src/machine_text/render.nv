@@ -312,10 +312,17 @@ fn rn_sec_parties(mut cx RnCx, root RJ) -> []str {
         }
         // a party with no counter is a party of a free input: `—` (spec 1, AL-52)
         ro counter = if rj_gstr(p, "counter") == "" { "—" } else { rn_datum_name(cx, rj_gstr(p, "counter")) }
-        rows.push(RnRow { cells: [party_word, rj_gstr(p, "id"), kind, profile, rn_signals_cell(cx, p), counter] })
+        if rn_parts_column(cx, root) {
+            // 2.26 (section 7а): the column `части` names the type of the parts of the party (its `progress`, one record)
+            ro progress = rj_garr(p, "progress")
+            ro parts = if progress.len() == 0 { "—" } else { rj_gstr(progress[0], "name") }
+            rows.push(RnRow { cells: [party_word, rj_gstr(p, "id"), kind, profile, rn_signals_cell(cx, p), parts, counter] })
+        } else {
+            rows.push(RnRow { cells: [party_word, rj_gstr(p, "id"), kind, profile, rn_signals_cell(cx, p), counter] })
+        }
     }
     mut out = []str.new()
-    if rows.len() > 0 { out = rn_table(rn_cols(cx, ["name", "id", "kind", "profile", "signals", "counter"]), rows) }
+    if rows.len() > 0 { out = rn_table(rn_cols(cx, if rn_parts_column(cx, root) { ["name", "id", "kind", "profile", "signals", "parts", "counter"] } else { ["name", "id", "kind", "profile", "signals", "counter"] }), rows) }
     match rj_get(root, "request_limit") {
         Some(e) => {
             if out.len() > 0 { out.push("") }
@@ -327,8 +334,19 @@ fn rn_sec_parties(mut cx RnCx, root RJ) -> []str {
     out
 }
 
+// Does a tree of 2.26 write the column `части` (a party has parts)?
+fn rn_parts_column(cx RnCx, root RJ) -> bool {
+    if !cx.v226 { return false }
+    for p in rj_garr(root, "parties") {
+        if rj_garr(p, "progress").len() > 0 { return true }
+    }
+    false
+}
+
 fn rn_extra_sections(mut cx RnCx, root RJ) -> []str {
     mut out = []str.new()
+    // 2.26 has no sections of the signals and of the parts (section 7а): the signals of the machine come with a library, the parts are the column `части`
+    if cx.v226 { return out }
     ro signals = rj_garr(root, "signals")
     if signals.len() > 0 {
         mut rows = []RnRow.new()
@@ -403,6 +421,8 @@ fn rn_sec_definitions(mut cx RnCx, root RJ, dropped []str) -> []str {
 }
 
 fn rn_sec_includes(mut cx RnCx, root RJ, copy_includes bool) -> []str {
+    // 2.26: a subheading per library (1b (м), section 9)
+    if cx.v226 { return rn_library_lines(cx, root, copy_includes) }
     // the lines of connection of the fragments come first, one line each, with every argument (1b (m), 2.12, AL-32)
     mut lines = rn_fragment_lines(cx, root)
     if copy_includes && lines.len() == 0 { return ["—"] }

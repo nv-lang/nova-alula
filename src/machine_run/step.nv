@@ -404,7 +404,12 @@ fn hit_of(pat EventPat, ev EventVal) -> Hit {
         TimeoutEv => Hit { yes: ev.kind == EvTimeout, binds: []Binding.new() }
         ProgressEv { name, binds } => {
             if ev.kind != EvProgress || ev.name != name { return no_hit() }
-            Hit { yes: true, binds: binds_of(binds, ev.fields) }
+            mut got = binds_of(binds, ev.fields)
+            // `часть(имя)` (2.26, section 7а): the bind of the empty field takes the whole part, the record of its type
+            for b in binds {
+                if b.field == "" { got.push(Binding { name: b.name, value: make_record(name, ev.fields) }) }
+            }
+            Hit { yes: true, binds: got }
         }
         SignalEv { name, binds } => {
             if ev.kind != EvInput || ev.name != name { return no_hit() }

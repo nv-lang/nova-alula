@@ -177,7 +177,23 @@ fn party_kind(cell TxCell, line int, mut cx TxCx) -> Result[TxKind, TranslateErr
     Ok(kind_plain(kind, result, setting))
 }
 
-fn party_row(r TxEntry, mut cx TxCx) -> Result[TxPartyRow, TranslateError] {
+// The column `части` of 2.26 (section 7а): `—` or the name of the type of the parts that the party sends before its answer (a record of the machine or of a library).
+fn party_parts(cell TxCell, line int, mut cx TxCx, party str) -> Result[str, TranslateError] {
+    if cell.text == "—" || cell.text == "" { return Ok("") }
+    mut p = cell_p(cell, line)?
+    ro n = p_tok(p)
+    if n.kind != TK_NAME { return Err(p_fail(p, "в столбце `${kw(cx.words, "column", "parts")}` — имя типа части")) }
+    p_adv(p)
+    p_end(p)?
+    ro en = tr_type_name(cx, n)
+    pair_add(cx.env.party_parts, party, n.text)
+    Ok(en)
+}
+
+fn party_row(r TxEntry, mut cx TxCx) -> Result[TxPartyRow, TranslateError] => party_row_in(r, cx, false)
+
+/// A row of `## Стороны`; `with_parts`: the table of 2.26 has the column `части` after `сигналы` (the type of the parts, the pair `parts_type` of the row for the tree).
+fn party_row_in(r TxEntry, mut cx TxCx, with_parts bool) -> Result[TxPartyRow, TranslateError] {
     ro n = cell_name(r.cells[0], r.line)?
     ro id = if r.cells[1].text == "—" { "" } else { r.cells[1].text }
     ro k = party_kind(r.cells[2], r.line, cx)?
@@ -191,13 +207,16 @@ fn party_row(r TxEntry, mut cx TxCx) -> Result[TxPartyRow, TranslateError] {
         has_profile = true
     }
     ro signals = party_signals(r.cells[4], r.line, cx, n.text)?
+    mut parts_type = ""
+    if with_parts { parts_type = party_parts(r.cells[5], r.line, cx, n.text)? }
+    ro counter_cell = if with_parts { r.cells[6] } else { r.cells[5] }
     mut counter = ""
-    if r.cells[5].text == "—" || r.cells[5].text == "" {
+    if counter_cell.text == "—" || counter_cell.text == "" {
         if k.kind != "human" {
-            return Err(tx_err(r.line, r.cells[5].col, "structure", "у стороны вида `${k.kind}` счётчик обязателен: `—` (нет значения, свободный ввод, AL-52) допустим только у стороны вида `${kw(cx.words, "kind_party", "human")}`"))
+            return Err(tx_err(r.line, counter_cell.col, "structure", "у стороны вида `${k.kind}` счётчик обязателен: `—` (нет значения, свободный ввод, AL-52) допустим только у стороны вида `${kw(cx.words, "kind_party", "human")}`"))
         }
     } else {
-        counter = party_counter(r.cells[5], r.line, cx)?
+        counter = party_counter(counter_cell, r.line, cx)?
     }
     mut pairs = [kv("name", js(en)), kv("id", js(id)), kv("kind", js(k.kind))]
     if k.nested != "" { pairs.push(kv("nested", js(k.nested))) }
@@ -212,10 +231,15 @@ fn party_row(r TxEntry, mut cx TxCx) -> Result[TxPartyRow, TranslateError] {
     if k.setting != "" { pairs.push(kv("setting", js(k.setting))) }
     if counter != "" { pairs.push(kv("counter", js(counter))) }
     if signals.len() > 0 { pairs.push(kv("signals", TxArr(signals))) }
+    // the type of the parts: the machine puts the record of the type as the `progress` of the party (machine.nv, `party_json`)
+    if parts_type != "" { pairs.push(kv("parts_type", js(parts_type))) }
     Ok(TxPartyRow { ru: n.text, en, pairs })
 }
 
 fn party_columns() -> []str => ["name", "id", "kind", "profile", "signals", "counter"]
+
+// The columns of `## Стороны` of 2.26 with the column `части` (section 7а: what the party sends before its answer, by the pattern of `сигналы`).
+fn party_columns_parts() -> []str => ["name", "id", "kind", "profile", "signals", "parts", "counter"]
 
 fn limit_expression(line TxKv, mut cx TxCx) -> Result[TxJ, TranslateError] {
     mut p = lex_segs(line.segs)?
@@ -253,11 +277,13 @@ fn decl_parties(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxPartyRow {
     while i < sec.last {
         ro e = entries[i]
         if e.kind == EN_ROW {
-            ro t = tab_read(entries, i, sec.last, party_columns(), cx)
+            // a file of 2.26 may have the column `части` after `сигналы` (section 7а)
+            ro with_parts = cx.v226 && e.cells.len() == party_columns_parts().len()
+            ro t = tab_read(entries, i, sec.last, if with_parts { party_columns_parts() } else { party_columns() }, cx)
             for r in t.rows {
                 cx.rows_total += 1
                 ro before = cx.errors.len()
-                match party_row(r, cx) {
+                match party_row_in(r, cx, with_parts) {
                     Ok(row) => {
                         out.push(row)
                         cx_place(cx, "$.parties[${out.len() - 1}]", r.line)

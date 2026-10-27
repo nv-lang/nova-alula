@@ -127,7 +127,10 @@ fn section_keys() -> []str => [
 fn section_words(w TxWords) -> str => kw_all(w, "section", section_keys()).join(", ")
 
 /// The sections of the file after the first heading, in order. A heading of another name, or a repeated one, is an error. A word of the other language is the error of the language.
-fn sections_of(entries []TxEntry, mut cx TxCx) -> []TxSection {
+fn sections_of(entries []TxEntry, mut cx TxCx) -> []TxSection => sections_in(entries, cx, section_keys())
+
+/// The same with the keys of the sections that the file may have (`lib_section_keys` for a library, section 9).
+fn sections_in(entries []TxEntry, mut cx TxCx, keys []str) -> []TxSection {
     mut out = []TxSection.new()
     mut i = 0
     while i < entries.len() {
@@ -151,13 +154,22 @@ fn sections_of(entries []TxEntry, mut cx TxCx) -> []TxSection {
             } else if key == "Ends" && cx.v226 {
                 note(cx, struct_error(entries[i].line, 4, "с 2.26 раздел называется `## ${kw(cx.words, "section", "Output")}`: `- ${kw(cx.words, "key", "Result")}: <тип>` и таблица `${kw(cx.words, "column", "end")} | ${kw(cx.words, "column", "when")} | ${kw(cx.words, "column", "response")}` (AL-137); переходного периода нет"))
             }
-            if key == "" || !section_keys().contains(key) {
+            // 2.26 (section 7а): the parts of an answer are the column `части` of the party, the signals of a party its column `сигналы`, the signals of the machine come with a library
+            if cx.v226 && (key == "Signals" || key == "Response parts") {
+                note(cx, struct_error(entries[i].line, 4, "раздела `${title}` с 2.26 нет: сигналы стороны — столбец `${kw(cx.words, "column", "signals")}`, тип частей ответа — столбец `${kw(cx.words, "column", "parts")}` в `## ${kw(cx.words, "section", "Parties")}`, события `${kw(cx.words, "event", "part")}` и `${kw(cx.words, "event", "timeout")}` — библиотеки `контракт` (раздел 7а); переходного периода нет"))
+                key = "-"
+            }
+            if key == "-" {
+                ()
+            } else if key != "" && !keys.contains(key) && section_misplaced(key, keys, cx.words) != "" {
+                note(cx, struct_error(entries[i].line, 4, section_misplaced(key, keys, cx.words)))
+            } else if key == "" || !keys.contains(key) {
                 match kw_foreign(cx.words, "section", title) {
                     Some(k) => note(cx, foreign_error(cx.words, entries[i].line, 4, title, "section", k))
                     None => {
                         match former_find(cx.words.lang, "section", title) {
                             Some(f) => note(cx, struct_error(entries[i].line, 4, former_message(f)))
-                            None => note(cx, struct_error(entries[i].line, 4, "неизвестный раздел `${title}`: бывают ${section_words(cx.words)}"))
+                            None => note(cx, struct_error(entries[i].line, 4, "неизвестный раздел `${title}`: бывают ${kw_all(cx.words, "section", keys).join(", ")}"))
                         }
                     }
                 }

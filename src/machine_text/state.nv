@@ -387,6 +387,8 @@ fn line_party(kvl TxKv, mut cx TxCx, sc TxScope) -> Result[[]TxKV, TranslateErro
     if n.kind != TK_NAME { return Err(p_fail(p, "ожидается имя стороны")) }
     p_adv(p)
     mut pairs = []TxKV.new()
+    // the party of the appeal: the event `часть` of 2.26 takes the type of its parts (the column `части`)
+    cx.env.cur_party = n.text
     match pair_get(cx.env.parties, n.text) {
         Some(en) => pairs.push(kv("party", js(en)))
         None => {
@@ -531,6 +533,7 @@ fn line_entry(kvl TxKv, mut cx TxCx, sc TxScope) -> Result[TxActList, TranslateE
 fn state_translate(entries []TxEntry, blk TxBlock, index int, mut cx TxCx) -> TxJ {
     ro path = "$.states[${index}]"
     cx_place(cx, path, blk.line)
+    cx.env.cur_party = ""
     mut pairs = [kv("name", js(blk.latin)), kv("kind", js(blk.kind))]
     mut party_pairs = []TxKV.new()
     mut silence = TxNull

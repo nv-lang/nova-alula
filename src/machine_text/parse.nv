@@ -16,17 +16,19 @@ type TxPair { ru str, en str }
 /// the constants and the parameters (`globals`), the definitions, the declared types and their cases, the fields of the records, of the forms of enumerations and of the signals (`fields`), the external functions (`prims`; `tails`: those with a named tail, AL-129; `in_defs_file`: the file is a file of definitions, where an external function is refused),
 /// the parties, the signals of the parties (`psignals`), the parts of an answer and the signals of the machine, the nested machines that a fragment is given empty (`empty_lists`) or not empty (`nested_lists`: the name of the parameter and the Latin names of the
 /// machines, joined by a comma). Since 2.13 (AL-46) a name gets its JSON name from the brackets of its declaration, never from a dictionary.
+/// 2.26 (task 197): `instances` are the names of the instances of the connected libraries (their data and states are `Экземпляр.имя` in the machine), `cur_party` is the party of the appeal whose rows are read,
+/// `party_parts` the type of the parts of a party (the column `части`: the name of the party and the name of the type as written).
 type TxEnv {
     states []TxPair, globals []TxPair, defs []TxPair, types []TxPair, cases []TxPair, prims []TxPair, tails []TxPair, in_defs_file bool,
     parties []TxPair, psignals []TxPair, parts []TxPair, signals []TxPair, input_fields []TxPair, fields []TxPair, empty_lists []str,
-    nested_lists []TxPair, owner str, opath []str, case_types []TxPair
+    nested_lists []TxPair, owner str, opath []str, case_types []TxPair, instances []str, cur_party str, party_parts []TxPair
 }
 
 fn env_new() -> TxEnv {
     TxEnv {
         states: []TxPair.new(), globals: []TxPair.new(), defs: []TxPair.new(), types: []TxPair.new(), cases: []TxPair.new(), prims: []TxPair.new(), tails: []TxPair.new(), in_defs_file: false,
         parties: []TxPair.new(), psignals: []TxPair.new(), parts: []TxPair.new(), signals: []TxPair.new(), input_fields: []TxPair.new(), fields: []TxPair.new(), empty_lists: []str.new(),
-        nested_lists: []TxPair.new(), owner: "", opath: []str.new(), case_types: []TxPair.new()
+        nested_lists: []TxPair.new(), owner: "", opath: []str.new(), case_types: []TxPair.new(), instances: []str.new(), cur_party: "", party_parts: []TxPair.new()
     }
 }
 
@@ -1126,6 +1128,13 @@ fn ex_primary(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError]
     if p_is_kw(p, words, "expr", "let") { return Err(p_fail(p, "`${kw(words, "expr", "let")}` стоит в начале блока `{ ${kw(words, "expr", "let")} имя = выр; выр }` (AL-75)")) }
     if is_keyword(words, w) { return Err(p_fail(p, "ожидается выражение")) }
     p_adv(p)
+    // a datum or a state of a library is named with the prefix of its instance (2.26, section 9): `Пауза.предыдущее`, `Пауза.ПАУЗА`
+    if cx.env.instances.contains(w) && sc_get(sc, w) == None && p_is(p, ".") && p_ahead(p, 1).kind == TK_NAME {
+        p_adv(p)
+        ro inner = p_tok(p)
+        p_adv(p)
+        return Ok(ex_instance_name(cx, t, inner))
+    }
     if p_is(p, "(") { return ex_call(p, cx, sc, t) }
     if is_bare_use(p, cx, w) && bare_clash(cx, sc, t) { return Ok(ex_name(cx, sc, t)) }
     // a name that looks like a type is a type, unless a binding or a state of the machine has it (an English state `Pause` looks like a type, a Russian `ПАУЗА` does not)
@@ -1138,6 +1147,21 @@ fn ex_primary(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError]
         }
     }
     Ok(ex_name(cx, sc, t))
+}
+
+/// A datum or a state of the instance of a library, `Экземпляр.имя` (2.26, section 9): the datum is a name of the tree, the state a literal of its JSON name.
+fn ex_instance_name(mut cx TxCx, inst TxTok, t TxTok) -> TxJ {
+    ro key = "${inst.text}.${t.text}"
+    match pair_get(cx.env.globals, key) {
+        Some(en) => return x_name(en)
+        None => ()
+    }
+    match pair_get(cx.env.states, key) {
+        Some(latin) => return x_lit(js(latin))
+        None => ()
+    }
+    cx_error(cx, t, "name", "у экземпляра библиотеки `${inst.text}` нет данного или состояния `${t.text}`")
+    x_name(t.text)
 }
 
 /// A bare name: a binding, a datum, a constant, a parameter, a readable name of the executor, a state.

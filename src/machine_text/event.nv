@@ -70,14 +70,18 @@ fn ev_parse(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxEvent, TranslateErro
     ro w = t.text
     ro words = cx.words
     if t_is_kw(t, words, "event", "immediate") { return Ok(TxEvent { json: ev_json("now", []), scope: sc }) }
-    if t_is_kw(t, words, "event", "deadline") { return Ok(TxEvent { json: ev_json("timeout", []), scope: sc }) }
+    // `срок`: the word of the table of 2.26 (the key `timeout`) and of the product layer of 2.25 (the key `deadline`, the English `deadline`)
+    if t_is_kw(t, words, "event", "deadline") || t_is_kw(t, words, "event", "timeout") { return Ok(TxEvent { json: ev_json("timeout", []), scope: sc }) }
     if t_is_kw(t, words, "event", "response") { return ev_answer(p, cx, sc) }
     if t_is_kw(t, words, "event", "failure") { return ev_failure(p, cx, sc) }
     if t.text == "слово" || t.text == "word" {
         return Err(tx_err(t.line, t.col, "syntax", "событие `${t.text}(…)` в формате 2.22 не бывает: сигнал стороны пишется `${kw(words, "event", "signal")}(…)` (Я-38), сигнал, объявленный в столбце `${kw(words, "column", "signals")}` стороны; переходного периода нет"))
     }
     if t_is_kw(t, words, "event", "signal") { return ev_named(p, cx, sc, "signal") }
-    if t_is_kw(t, words, "event", "part") { return ev_named(p, cx, sc, "part") }
+    if t_is_kw(t, words, "event", "part") {
+        if cx.v226 { return ev_part226(p, cx, sc, t) }
+        return ev_named(p, cx, sc, "part")
+    }
     match foreign_find(cx, t, ["event"]) {
         Some(e) => return Err(e)
         None => ()
@@ -166,6 +170,14 @@ fn ev_failure(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxEvent, TranslateEr
 fn ev_named(mut p TxP, mut cx TxCx, sc TxScope, head str) -> Result[TxEvent, TranslateError] {
     p_expect(p, "(")?
     ro first = p_tok(p)
+    // a parameter of a library that names a signal (2.26, section 9) is put in as its value, the text of the signal: `сигнал("остановить")`
+    if cx.v226 && head == "signal" && first.kind == TK_STR {
+        p_adv(p)
+        ro en_text = ev_phrase_json(cx, first, first.text, cx.env.psignals, cx.env.signals, "сигнал")
+        ro binds_text = ev_binds(p, cx, sc, first.text)?
+        p_expect(p, ")")?
+        return Ok(TxEvent { json: ev_with_binds("signal", "name", en_text, binds_text), scope: binds_text.scope })
+    }
     ro phrase = ev_phrase(p)?
     mut en = ""
     mut kind_word = "signal"
@@ -178,6 +190,37 @@ fn ev_named(mut p TxP, mut cx TxCx, sc TxScope, head str) -> Result[TxEvent, Tra
     ro binds = ev_binds(p, cx, sc, phrase)?
     p_expect(p, ")")?
     Ok(TxEvent { json: ev_with_binds(kind_word, "name", en, binds), scope: binds.scope })
+}
+
+// The event `часть` of 2.26 (section 7а, the library `контракт`): `часть`, `часть(имя)`, `часть { поле, поле: имя }`. The type of the part is the type of the column `части` of the party of the
+// appeal; the event of the tree is `progress` named by the JSON name of that type, `часть(имя)` binds the whole part (`bind` is the name).
+fn ev_part226(mut p TxP, mut cx TxCx, sc TxScope, t TxTok) -> Result[TxEvent, TranslateError] {
+    ro party = cx.env.cur_party
+    mut type_ru = ""
+    match pair_get(cx.env.party_parts, party) {
+        Some(x) => { type_ru = x }
+        None => ()
+    }
+    if type_ru == "" {
+        ro why = if party == "" { "у строки нет стороны обращения" } else { "у стороны `${party}` столбец `${kw(cx.words, "column", "parts")}` пуст" }
+        cx_error(cx, t, "check", "событие `${t.text}` — кусок ответа стороны, тип которого назван столбцом `${kw(cx.words, "column", "parts")}` в `## ${kw(cx.words, "section", "Parties")}`: ${why}; часть вне столбца `${kw(cx.words, "column", "parts")}` — ошибка (раздел 7а)")
+    }
+    ro type_en = match pair_get(cx.env.types, type_ru) {
+        Some(x) => x
+        None => type_ru
+    }
+    if p_eat(p, "(") {
+        ro n = p_tok(p)
+        if n.kind != TK_NAME || !t_is(p_ahead(p, 1), ")") {
+            return Err(p_fail(p, "с 2.26 часть пишется `${t.text}`, `${t.text}(имя)` или `${t.text} { поле, поле: имя }`: тип части назван столбцом `${kw(cx.words, "column", "parts")}` стороны, имени части в скобках нет (раздел 7а)"))
+        }
+        p_adv(p)
+        p_adv(p)
+        ro en = tr_binder(cx, n)
+        return Ok(TxEvent { json: ev_json("progress", [kv("name", js(type_en)), kv("bind", js(en))]), scope: sc_with(sc, n.text, en) })
+    }
+    ro binds = ev_binds(p, cx, sc, type_ru)?
+    Ok(TxEvent { json: ev_with_binds("progress", "name", type_en, binds), scope: binds.scope })
 }
 
 // ---- the condition and the "Where" ---------------------------------------------------------------------------------------------------
@@ -212,11 +255,26 @@ fn where_parse(mut p TxP, mut cx TxCx) -> Result[TxWhere, TranslateError] {
             to = "@same"
         } else {
             p_adv(p)
-            match pair_get(cx.env.states, t.text) {
-                Some(latin) => { to = latin }
-                None => {
-                    cx_error(cx, t, "name", "состояния `${t.text}` нет в этой машине${state_hint(cx, t.text)}")
-                    to = t.text
+            // a state of a library: `Пауза.ПАУЗА`, the prefix of the instance (2.26, section 9)
+            if cx.env.instances.contains(t.text) && p_is(p, ".") && p_ahead(p, 1).kind == TK_NAME {
+                p_adv(p)
+                ro inner = p_tok(p)
+                p_adv(p)
+                ro key = "${t.text}.${inner.text}"
+                match pair_get(cx.env.states, key) {
+                    Some(latin) => { to = latin }
+                    None => {
+                        cx_error(cx, inner, "name", "у экземпляра библиотеки `${t.text}` нет состояния `${inner.text}`")
+                        to = inner.text
+                    }
+                }
+            } else {
+                match pair_get(cx.env.states, t.text) {
+                    Some(latin) => { to = latin }
+                    None => {
+                        cx_error(cx, t, "name", "состояния `${t.text}` нет в этой машине${state_hint(cx, t.text)}")
+                        to = t.text
+                    }
                 }
             }
         }

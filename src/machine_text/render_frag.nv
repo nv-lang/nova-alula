@@ -47,6 +47,97 @@ fn rn_without_fragments(root RJ) -> RJ {
     }
 }
 
+/// The tree of 2.26 without what its libraries brought (the lists `brings` of the nodes of `includes`: data, states, common events, signals; section 9, 1b (м)) and without the data of the engine of the
+/// library `контракт` (section 7а: `engine: true`), which no file declares. `copy_includes`: the types, the constants and the functions stay (they are written as the machine's own).
+fn rn_without_libraries(root RJ, copy_includes bool) -> RJ {
+    mut data_names = []str.new()
+    mut state_names = []str.new()
+    mut signal_names = []str.new()
+    mut common = 0
+    for inc in rj_garr(root, "includes") {
+        match rj_get(inc, "brings") {
+            Some(b) => {
+                for n in rj_garr(b, "data") { data_names.push(rj_str(n)) }
+                for n in rj_garr(b, "states") { state_names.push(rj_str(n)) }
+                for n in rj_garr(b, "signals") { signal_names.push(rj_str(n)) }
+                ro count = rj_gscalar(b, "common_events")
+                match count.to_int() {
+                    Ok(k) => { common += k }
+                    Err(e) => ()
+                }
+            }
+            None => ()
+        }
+    }
+    match root {
+        ROb(pairs) => {
+            mut out = []RKV.new()
+            for q in pairs {
+                if q.key == "data" {
+                    mut kept = []RJ.new()
+                    for d in rn_filter_named(rj_items(q.value), data_names) {
+                        if !rj_has(d, "engine") { kept.push(d) }
+                    }
+                    out.push(RKV { key: q.key, value: RArr(kept) })
+                } else if q.key == "states" {
+                    out.push(RKV { key: q.key, value: RArr(rn_filter_named(rj_items(q.value), state_names)) })
+                } else if q.key == "signals" {
+                    out.push(RKV { key: q.key, value: RArr(rn_filter_named(rj_items(q.value), signal_names)) })
+                } else if q.key == "common_events" {
+                    mut rest = []RJ.new()
+                    mut at = 0
+                    for item in rj_items(q.value) {
+                        if at >= common { rest.push(item) }
+                        at += 1
+                    }
+                    out.push(RKV { key: q.key, value: RArr(rest) })
+                } else {
+                    out.push(q)
+                }
+            }
+            ROb(out)
+        }
+        _ => RNull
+    }
+}
+
+/// The section `## Подключения` of 2.26 (1b (м)): per library the subheading `### Имя`, `- Файл:`, `- Хеш:`, `- Имя:` when the instance has another name, and the table of the values of the parameters
+/// in the order of `## Параметры` of the library. `copy_includes` writes no connection (the types, the constants and the functions are written as the machine's own; the library of states can not be).
+fn rn_library_lines(mut cx RnCx, root RJ, copy_includes bool) -> []str {
+    mut out = []str.new()
+    for inc in rj_garr(root, "includes") {
+        if !rj_has(inc, "file") { continue }
+        if copy_includes && !rj_has(inc, "args") && !rn_brings_state(inc) { continue }
+        if out.len() > 0 { out.push("") }
+        out.push("### ${rj_gstr(inc, "heading")}")
+        out.push("- ${rn_kw(cx, "key", "File")}: ${rj_gstr(inc, "file")}")
+        out.push("- ${rn_kw(cx, "key", "Hash")}: ${rj_gstr(inc, "hash")}")
+        if rj_gstr(inc, "instance") != "" { out.push("- ${rn_kw(cx, "key", "Name")}: ${rj_gstr(inc, "instance")}") }
+        ro args = rj_garr(inc, "args")
+        if args.len() > 0 {
+            mut rows = []RnRow.new()
+            for a in args {
+                ro value = match rj_get(a, "value") {
+                    Some(v) => rn_expr(cx, v, []str.new())
+                    None => ""
+                }
+                rows.push(RnRow { cells: [rj_gstr(a, "name"), value] })
+            }
+            out.push("")
+            rn_add(out, rn_table(rn_cols(cx, ["parameter", "value"]), rows))
+        }
+    }
+    out
+}
+
+// Does a library bring data or states (it can not be written as the machine's own)?
+fn rn_brings_state(inc RJ) -> bool {
+    match rj_get(inc, "brings") {
+        Some(b) => rj_garr(b, "data").len() > 0 || rj_garr(b, "states").len() > 0
+        None => false
+    }
+}
+
 fn rn_filter_named(items []RJ, names []str) -> []RJ {
     mut out = []RJ.new()
     for item in items {

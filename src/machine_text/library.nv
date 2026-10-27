@@ -1,0 +1,1117 @@
+// library.nv - the libraries of Alula 2.26 (format section 9, task 197): a machine connects a library by a subheading `### Имя` of the section `## Подключения` with the key lines
+// `- Файл:` (the path from the folder of the machine, then the folder `--lib`), `- Хеш:` (12 letters of SHA-256 after the normalization of section 9, as the files of definitions had),
+// `- Имя:` (another name of the instance) and the table `| параметр | значение |`. The file of a library: `# Библиотека: <Имя>`, `- library:`, `- format: 2.26`, `- language:` and the sections
+// `## Параметры`, `## Требует`, `## Типы`, `## Имена`, `## Константы`, `## Данные`, `## Функции`, `## Общие события`, `## Состояния` (all optional).
+//
+// A parameter is a local constant of the library: its value is put in the text of the library where the name stands (outside the strings and the section `## Параметры`), before the text is read.
+// The functions, the types and the constants of a library are seen in the machine without a prefix; its data and states with the prefix of the instance (`Пауза.предыдущее`, `Пауза.ПАУЗА`):
+// the environment holds them under `Экземпляр.имя`, and while the text of the library is read, under the bare name too (`lib_enter`, `lib_leave`). The tree carries the library put in
+// (its data, common events, states, types, constants, functions) and the node of the connection in `includes` (`lib_include_json`). The errors in the text of a library are put at the line of
+// its connection with the place in the file.
+module alula.machine_text
+
+// ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
+import std.text
+import alula.machine.{NamedText}
+import alula.machine_table.{fail_code_names}
+
+/// TxLibArg: a row of the table of the values of the parameters of a connection: the name of the parameter, the text of the value and its place.
+type TxLibArg { name str, text str, line int, col int }
+
+/// TxLibUse: a connection `### Имя`: the subheading, the name of the instance (`- Имя:`, else the subheading), the file, the hash, the place of the subheading and the values.
+type TxLibUse { heading str, instance str, named bool, file str, hash str, line int, col int, args []TxLibArg }
+
+/// TxLibParam: a parameter of a library (`## Параметры`, `имя | тип | комментарий`): the name, the type as written and as the tree writes it.
+type TxLibParam { name str, type_text str, type_json str }
+
+/// TxLibReq: a row of `## Требует` (`имя | тип`) with the parameters put in: what the library takes from the machine.
+type TxLibReq { name str, type_text str, line int }
+
+/// TxLibRun: a library read for a connection: the connection, the name `- library:`, the title `# Библиотека:`, the entries and the sections of the text with the parameters put in, the blocks of
+/// its states, the parameters, the requirements.
+type TxLibRun { use TxLibUse, library str, title str, entries []TxEntry, sections []TxSection, blocks []TxBlock, params []TxLibParam, reqs []TxLibReq }
+
+/// The keys of the sections of a library (section 9), the English words of the table of words.
+fn lib_section_keys() -> []str => ["Parameters", "Requires", "Types", "Names", "Constants", "Data", "Functions", "Common events", "States"]
+
+/// The message about a section that stands where it may not: the sections of a library in a machine, the sections of the contract, the external functions and the connections in a library.
+fn section_misplaced(key str, keys []str, w TxWords) -> str {
+    ro title = kw(w, "section", key)
+    if key == "Engine data" || key == "Party events" {
+        ro message = "раздел `${title}` бывает только в библиотеке `контракт`: она вшита в язык и подключается неявно (раздел 7а)"
+        return message
+    }
+    if keys.contains("Requires") {
+        if key == "External functions" {
+            ro message = "в библиотеке раздела `${title}` нет: библиотека не объявляет и не вызывает внешних функций (раздел 9)"
+            return message
+        }
+        if key == "Includes" {
+            ro message = "в библиотеке раздела `${title}` нет: библиотека других библиотек не подключает (раздел 9)"
+            return message
+        }
+        if key == "Parties" || key == "Input" || key == "Ends" || key == "Output" {
+            ro message = "в библиотеке раздела `${title}` нет: стороны и данные головной машины библиотека называет в `## ${kw(w, "section", "Requires")}` (раздел 9)"
+            return message
+        }
+    } else if key == "Requires" {
+        ro message = "раздел `${title}` бывает только в файле библиотеки (раздел 9)"
+        return message
+    }
+    ""
+}
+
+// ---- the old forms ---------------------------------------------------------------------------------------------------------------------------------
+
+fn lib_old_message(shown str) -> str {
+    ro message = "`${shown}` — старая запись подключения: с 2.26 — подзаголовок `### Имя` в `## Подключения` со строками `- Файл:`, `- Хеш:` (и `- Имя:`) и таблицей `| параметр | значение |` (раздел 9); переходного периода нет"
+    message
+}
+
+fn lib_cut(text str) -> str {
+    if text.chars().count() <= 40 { return text }
+    mut out = []str.new()
+    mut k = 0
+    for c in text.chars() {
+        if k < 40 { out.push("${c}") }
+        k += 1
+    }
+    "${out.join("")}…"
+}
+
+// ---- the connections -------------------------------------------------------------------------------------------------------------------------------
+
+/// TxLibKey: a key line of a connection: the key (`File`, `Name`, `Hash`; empty for another line) and the value without a comment.
+type TxLibKey { key str, value str }
+
+fn lib_key_line(text str, w TxWords) -> TxLibKey {
+    mut t = text
+    if t.starts_with("- ") { t = t[2..].trim_ascii() }
+    ro colon = t.find(":") ?? -1
+    if colon <= 0 { return TxLibKey { key: "", value: "" } }
+    ro head = t[..colon].trim_ascii()
+    mut value = t[colon + 1..]
+    ro comment = value.find("//") ?? -1
+    if comment >= 0 { value = value[..comment] }
+    match kw_key(w, "key", head) {
+        Some(k) => {
+            if k == "File" || k == "Name" || k == "Hash" { return TxLibKey { key: k, value: value.trim_ascii() } }
+        }
+        None => ()
+    }
+    TxLibKey { key: "", value: "" }
+}
+
+fn lib_use_new(heading str, line int) -> TxLibUse => { heading, instance: heading, named: false, file: "", hash: "", line, col: 5, args: []TxLibArg.new() }
+
+fn lib_only(e TxEntry) -> TranslateError => tx_err(e.line, e.indent + 1, "structure", "в разделе `Подключения` только подзаголовки `### Имя` библиотек со строками `- Файл:`, `- Хеш:`, `- Имя:` и таблицей `| параметр | значение |` (раздел 9); проза сюда не пишется")
+
+/// The connections of the section `## Подключения` of a file of 2.26: one subheading `###` per library. An old line of connection (`функции: …`, `Пауза(…)`) is the error with the hint.
+fn lib_uses_read(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxLibUse {
+    mut out = []TxLibUse.new()
+    mut have = false
+    mut cur = lib_use_new("", 0)
+    mut i = sec.first
+    while i < sec.last {
+        ro e = entries[i]
+        if e.kind == EN_HEAD && e.level == 3 {
+            if have { out.push(cur) }
+            cur = lib_use_new(e.text.trim_ascii(), e.line)
+            have = true
+            i += 1
+        } else if e.kind == EN_TEXT {
+            if e.text.starts_with("//") || e.indent > 0 {
+                // a comment line; the continuation of an old call has its error at the call
+                i += 1
+            } else if kv_colon(e) >= 0 && e.key == "functions" {
+                note(cx, tx_err(e.line, 1, "structure", lib_old_message(lib_cut(e.text))))
+                i += kv_read(entries, i).taken
+            } else if is_call_start(e.text) {
+                note(cx, tx_err(e.line, 1, "structure", lib_old_message(lib_cut(e.text))))
+                i += 1
+            } else {
+                ro kl = lib_key_line(e.text, cx.words)
+                if kl.key != "" && have {
+                    if kl.key == "File" {
+                        cur.file = kl.value
+                    } else if kl.key == "Hash" {
+                        cur.hash = kl.value
+                    } else {
+                        cur.instance = kl.value
+                        cur.named = true
+                    }
+                } else if e.text != "—" || cx.v226 {
+                    note(cx, lib_only(e))
+                }
+                i += 1
+            }
+        } else if e.kind == EN_ROW {
+            if !have {
+                note(cx, lib_only(e))
+            } else if e.cells.len() == 2 && header_norm(e.cells[0].text) == header_norm(kw(cx.words, "column", "parameter")) && header_norm(e.cells[1].text) == header_norm(kw(cx.words, "column", "value")) {
+                // the header of the table of the values
+                ()
+            } else if e.cells.len() != 2 {
+                note(cx, struct_error(e.line, 1, "в таблице значений подключения два столбца: ${kw(cx.words, "column", "parameter")} | ${kw(cx.words, "column", "value")}"))
+            } else {
+                cur.args.push(TxLibArg { name: e.cells[0].text.trim_ascii(), text: e.cells[1].text.trim_ascii(), line: e.line, col: e.cells[1].col })
+            }
+            i += 1
+        } else {
+            note(cx, lib_only(e))
+            i += 1
+        }
+    }
+    if have { out.push(cur) }
+    out
+}
+
+/// The file of a connection in the registry of the caller: the path as written, else the same name of a file at the end of a path (the folder `--lib` of the program gives the files by the path as written).
+fn lib_find(file str, registry []NamedText) -> Option[NamedText] {
+    for f in registry {
+        if f.name == file { return Some(f) }
+    }
+    ro wanted = file.replace("\\", "/")
+    for f in registry {
+        ro have = f.name.replace("\\", "/")
+        if have == wanted || have.ends_with("/${wanted}") { return Some(f) }
+    }
+    None
+}
+
+// ---- the file of a library -------------------------------------------------------------------------------------------------------------------------
+
+/// TxLibHead: the header of a library: the title, the Latin name, the version of the format.
+type TxLibHead { title str, library str, format str }
+
+fn lib_header(lines []str, mut cx TxCx) -> TxLibHead {
+    mut title = ""
+    mut library = ""
+    mut format = ""
+    ro head_word = "${kw(cx.words, "header", "Library")}:"
+    mut no = 0
+    mut seen_head = false
+    for raw in lines {
+        no += 1
+        ro line = raw.strip_suffix("\r") ?? raw
+        if !seen_head {
+            if line.trim_ascii() == "" { continue }
+            seen_head = true
+            if !line.starts_with("# ${head_word}") {
+                note(cx, struct_error(no, 1, "файл библиотеки начинается со строки `# ${head_word} <Имя>` (раздел 9)"))
+            } else {
+                title = line["# ${head_word}".byte_len()..].trim_ascii()
+            }
+            continue
+        }
+        if line.starts_with("## ") { break }
+        ro h = header_line(line)
+        if h.key == "library" {
+            library = h.value
+            if !is_identifier_latin(library) { note(cx, struct_error(no, h.col, "имя библиотеки в строке `library` — латинский идентификатор, найдено `${library}`")) }
+        } else if h.key == "format" {
+            format = h.value
+        } else if h.key == "language" {
+            ()
+        } else if h.key != "" {
+            note(cx, struct_error(no, 1, "в шапке библиотеки бывают строки library, format, language"))
+        }
+    }
+    if library == "" { note(cx, struct_error(1, 1, "в шапке библиотеки нет строки `- library: <латинское_имя>`")) }
+    if format != "2.26" {
+        ro shown = if format == "" { "не указан" } else { format }
+        note(cx, struct_error(1, 1, "формат библиотеки ${shown}: библиотека пишется в формате 2.26 (строка `- format: 2.26`)"))
+    }
+    TxLibHead { title, library, format }
+}
+
+// The section of the entries whose heading is the word of the key (the first pass: the parameters are read before they are put in).
+fn lib_section_raw(entries []TxEntry, w TxWords, key str) -> Option[TxSection] {
+    mut i = 0
+    while i < entries.len() {
+        if entries[i].kind == EN_HEAD && entries[i].level == 2 && entries[i].text == kw(w, "section", key) {
+            mut last = i + 1
+            while last < entries.len() && !(entries[last].kind == EN_HEAD && entries[last].level <= 2) { last += 1 }
+            return Some(TxSection { name: key, title: entries[i].text, line: entries[i].line, first: i + 1, last })
+        }
+        i += 1
+    }
+    None
+}
+
+/// The parameters of a library (`## Параметры`: `имя | тип | комментарий`).
+fn lib_params_read(entries []TxEntry, mut cx TxCx) -> []TxLibParam {
+    mut out = []TxLibParam.new()
+    match lib_section_raw(entries, cx.words, "Parameters") {
+        Some(sec) => {
+            for r in section_table(entries, sec, ["name", "type", "comment"], cx) {
+                ro name = r.cells[0].text.trim_ascii()
+                ro type_text = r.cells[1].text.trim_ascii()
+                mut type_json = ""
+                match lib_type_json(type_text, r.line, r.cells[1].col, cx) {
+                    Ok(t) => { type_json = t }
+                    Err(err) => note(cx, err)
+                }
+                for q in out {
+                    if q.name == name { note(cx, struct_error(r.line, 1, "параметр `${name}` повторён")) }
+                }
+                out.push(TxLibParam { name, type_text, type_json })
+            }
+        }
+        None => ()
+    }
+    out
+}
+
+// A type written in a cell, as the tree writes it.
+fn lib_type_json(text str, line int, col int, mut cx TxCx) -> Result[str, TranslateError] {
+    mut p = lex_segs([TxSeg { text, line, col, code: false }])?
+    ro t = ty_parse(p, cx)?
+    p_end(p)?
+    Ok(t)
+}
+
+// The values of a set of literals of a type of the tree (`"a" | "b"`), each with its quotes.
+fn lib_set_values(type_json str) -> []str {
+    mut out = []str.new()
+    for part in type_json.split("|") {
+        ro v = part.trim_ascii()
+        if v != "" { out.push(v) }
+    }
+    out
+}
+
+fn lib_is_text(v str) -> bool => v.byte_len() >= 2 && v.starts_with("\"") && v.ends_with("\"")
+
+// What is wrong with a value for the type of a parameter (empty when it fits): the literal of a text, a value of a set, a list, a number, a truth value; another type takes any expression.
+fn lib_value_wrong(type_json str, text str, w TxWords) -> str {
+    ro v = text.trim_ascii()
+    if type_json == "text" {
+        if !lib_is_text(v) {
+            ro why = "значение — текст в кавычках"
+            return why
+        }
+        return ""
+    }
+    if type_json.starts_with("\"") {
+        ro values = lib_set_values(type_json)
+        if !values.contains(v) {
+            ro why = "значение ${v} вне набора ${values.join(" | ")}"
+            return why
+        }
+        return ""
+    }
+    if type_json.starts_with("[]") {
+        if !(v.starts_with("[") && v.ends_with("]")) {
+            ro why = "значение — список в квадратных скобках"
+            return why
+        }
+        if type_json == "[]text" {
+            ro inner = v[1..v.byte_len() - 1].trim_ascii()
+            if inner != "" {
+                for item in inner.split(",") {
+                    if !lib_is_text(item.trim_ascii()) {
+                        ro why = "элементы списка — тексты в кавычках"
+                        return why
+                    }
+                }
+            }
+        }
+        return ""
+    }
+    if type_json == "int" || type_json.starts_with("int>=") {
+        mut digits = v
+        if digits.starts_with("-") { digits = digits[1..] }
+        mut ok = digits != ""
+        for c in digits.chars() {
+            if c < '0' || c > '9' { ok = false }
+        }
+        if !ok {
+            ro why = "значение — целое число"
+            return why
+        }
+        return ""
+    }
+    if type_json == "bool" {
+        if v != kw(w, "expr", "true") && v != kw(w, "expr", "false") {
+            ro why = "значение — ${kw(w, "expr", "true")} или ${kw(w, "expr", "false")}"
+            return why
+        }
+    }
+    ""
+}
+
+/// The values of a connection against the parameters: every parameter named once, no other, each of its type.
+fn lib_args_check(u TxLibUse, title str, params []TxLibParam, mut cx TxCx) -> () {
+    for q in params {
+        mut seen = 0
+        for a in u.args {
+            if a.name == q.name { seen += 1 }
+        }
+        if seen == 0 { note(cx, tx_err(u.line, u.col, "structure", "в подключении `${u.heading}` не назван параметр `${q.name}` (таблица значений называет все параметры библиотеки, раздел 9)")) }
+        if seen > 1 { note(cx, tx_err(u.line, u.col, "structure", "в подключении `${u.heading}` параметр `${q.name}` назван дважды")) }
+    }
+    for a in u.args {
+        mut found = false
+        for q in params {
+            if q.name == a.name {
+                found = true
+                if q.type_json != "" {
+                    ro wrong = lib_value_wrong(q.type_json, a.text, cx.words)
+                    if wrong != "" { note(cx, tx_err(a.line, a.col, "type", "параметр `${a.name}` библиотеки `${title}` типа `${q.type_text}`: ${wrong}")) }
+                }
+            }
+        }
+        if !found { note(cx, tx_err(a.line, 1, "structure", "у библиотеки `${title}` нет параметра `${a.name}`")) }
+    }
+}
+
+// ---- putting the parameters in ----------------------------------------------------------------------------------------------------------------------
+
+// One line with the names of the parameters replaced by their values; the strings are left as they are.
+fn lib_subst_line(line str, names []str, values []str) -> str {
+    mut out = []str.new()
+    mut word = []str.new()
+    mut in_str = false
+    mut esc = false
+    for c in line.chars() {
+        if in_str {
+            out.push("${c}")
+            if esc {
+                esc = false
+            } else if c == '\\' {
+                esc = true
+            } else if c == '"' {
+                in_str = false
+            }
+            continue
+        }
+        if tx_is_name_char(c) {
+            word.push("${c}")
+            continue
+        }
+        if word.len() > 0 {
+            out.push(lib_subst_word(word.join(""), names, values))
+            word = []str.new()
+        }
+        if c == '"' { in_str = true }
+        out.push("${c}")
+    }
+    if word.len() > 0 { out.push(lib_subst_word(word.join(""), names, values)) }
+    out.join("")
+}
+
+fn lib_subst_word(w str, names []str, values []str) -> str {
+    mut k = 0
+    while k < names.len() {
+        if names[k] == w { return values[k] }
+        k += 1
+    }
+    w
+}
+
+/// The text of a library with the values of the parameters put in: everywhere but the header and the section `## Параметры`.
+fn lib_substitute(text str, args []TxLibArg, params []TxLibParam, w TxWords) -> str {
+    mut names = []str.new()
+    mut values = []str.new()
+    for q in params {
+        for a in args {
+            if a.name == q.name {
+                names.push(q.name)
+                values.push(a.text)
+            }
+        }
+    }
+    if names.len() == 0 { return text }
+    mut out = []str.new()
+    mut in_body = false
+    mut in_params = false
+    for raw in text.split("\n") {
+        if raw.starts_with("## ") {
+            in_body = true
+            in_params = lx_cut_comment(raw[3..]).trim_ascii() == kw(w, "section", "Parameters")
+            out.push(raw)
+        } else if in_body && !in_params {
+            out.push(lib_subst_line(raw, names, values))
+        } else {
+            out.push(raw)
+        }
+    }
+    out.join("\n")
+}
+
+// ---- reading a library -----------------------------------------------------------------------------------------------------------------------------
+
+/// A library read for its connection: the hash, the header, the parameters and their values, the text with the values put in, the sections, the requirements. The errors are noted at the lines of
+/// the file of the library (the caller puts them at the connection).
+fn lib_load(u TxLibUse, file NamedText, mut cx TxCx) -> TxLibRun {
+    ro actual = definitions_hash(file.text)
+    if actual != u.hash { note(cx, tx_err(u.line, u.col, "check", "хеш библиотеки `${u.file}` — ${actual}, а в подключении ${u.hash}: несовпадение хеша — ошибка проверки (раздел 9)")) }
+    ro raw_lines = lines_of(file.text)
+    ro info = detect_language(raw_lines)
+    if info.lang != cx.words.lang { note(cx, tx_err(u.line, u.col, "language", "библиотека `${u.file}` написана на языке ${info.lang}, а машина — на ${cx.words.lang}: ключевые слова файла пишутся на одном языке")) }
+    ro head = lib_header(raw_lines, cx)
+    ro first = tx_classify_in(raw_lines, cx.words, true, true).entries
+    ro params = lib_params_read(first, cx)
+    lib_args_check(u, head.title, params, cx)
+    ro text = lib_substitute(file.text, u.args, params, cx.words)
+    ro classified = tx_classify_in(lines_of(text), cx.words, true, true)
+    for e in classified.errors { cx.errors.push(e) }
+    ro entries = classified.entries
+    ro sections = sections_in(entries, cx, lib_section_keys())
+    mut reqs = []TxLibReq.new()
+    match section_of(sections, "Requires") {
+        Some(sec) => {
+            for r in section_table(entries, sec, ["name", "type"], cx) {
+                reqs.push(TxLibReq { name: r.cells[0].text.trim_ascii(), type_text: r.cells[1].text.trim_ascii(), line: r.line })
+            }
+        }
+        None => ()
+    }
+    TxLibRun { use: u, library: head.library, title: head.title, entries, sections, blocks: []TxBlock.new(), params, reqs }
+}
+
+// The notes made since `from` belong to the library: they are put at the line of its connection, with the place in its file.
+fn lib_remap(mut cx TxCx, from int, u TxLibUse, places_from int) -> () {
+    mut errors = []TranslateError.new()
+    mut k = 0
+    for e in cx.errors {
+        if k < from || e.line == u.line {
+            errors.push(e)
+        } else {
+            errors.push(TranslateError { line: u.line, col: u.col, kind: e.kind, message: "в библиотеке ${u.heading} (${u.file}:${e.line}): ${e.message}", quote: "" })
+        }
+        k += 1
+    }
+    cx.errors = errors
+    mut places = []TxPlace.new()
+    mut j = 0
+    for pl in cx.places {
+        if j < places_from { places.push(pl) } else { places.push(TxPlace { path: pl.path, line: u.line }) }
+        j += 1
+    }
+    cx.places = places
+}
+
+// ---- the scope of a library --------------------------------------------------------------------------------------------------------------------------
+
+/// TxLibScope: the names of the machine saved while the text of a library is read, and where the names that the library declares begin.
+type TxLibScope { globals []TxPair, states []TxPair, in_defs bool, v226 bool, base_globals int, base_states int }
+
+fn pairs_copy(pairs_in []TxPair) -> []TxPair {
+    mut out = []TxPair.new()
+    for q in pairs_in { out.push(q) }
+    out
+}
+
+// The names of an instance without its prefix (`Пауза.предыдущее` -> `предыдущее`).
+fn lib_aliases(pairs_in []TxPair, inst str) -> []TxPair {
+    ro prefix = "${inst}."
+    mut out = []TxPair.new()
+    for q in pairs_in {
+        if q.ru.starts_with(prefix) { out.push(TxPair { ru: q.ru[prefix.byte_len()..], en: q.en }) }
+    }
+    out
+}
+
+/// The text of the library of the instance is read: its data and states are seen by their bare names (first), the external functions are refused (section 9), the forms of 2.26 are read.
+fn lib_enter(mut cx TxCx, inst str) -> TxLibScope {
+    ro saved_g = pairs_copy(cx.env.globals)
+    ro saved_s = pairs_copy(cx.env.states)
+    mut g = lib_aliases(saved_g, inst)
+    for q in saved_g { g.push(q) }
+    mut s = lib_aliases(saved_s, inst)
+    for q in saved_s { s.push(q) }
+    ro scope = TxLibScope { globals: saved_g, states: saved_s, in_defs: cx.env.in_defs_file, v226: cx.v226, base_globals: g.len(), base_states: s.len() }
+    cx.env.globals = g
+    cx.env.states = s
+    cx.env.in_defs_file = true
+    cx.v226 = true
+    scope
+}
+
+/// The machine again: what the library declared (data, states) is kept under the prefix of the instance.
+fn lib_leave(mut cx TxCx, scope TxLibScope, inst str) -> () {
+    mut g = pairs_copy(scope.globals)
+    mut k = 0
+    for q in cx.env.globals {
+        if k >= scope.base_globals { g.push(TxPair { ru: "${inst}.${q.ru}", en: q.en }) }
+        k += 1
+    }
+    mut s = pairs_copy(scope.states)
+    mut j = 0
+    for q in cx.env.states {
+        if j >= scope.base_states { s.push(TxPair { ru: "${inst}.${q.ru}", en: q.en }) }
+        j += 1
+    }
+    cx.env.globals = g
+    cx.env.states = s
+    cx.env.in_defs_file = scope.in_defs
+    cx.v226 = scope.v226
+}
+
+// ---- the libraries of a machine ----------------------------------------------------------------------------------------------------------------------
+
+fn lib_is_hex12(s str) -> bool {
+    if s.byte_len() != 12 { return false }
+    for c in s.chars() {
+        if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) { return false }
+    }
+    true
+}
+
+fn lib_has(run TxLibRun, key str) -> bool {
+    match section_of(run.sections, key) {
+        Some(s) => true
+        None => false
+    }
+}
+
+/// The libraries of the section `## Подключения` of a file of 2.26: each read, its states registered under the prefix of its instance. `jn_from` is where the declarations of the library begin.
+fn libs_open(entries []TxEntry, sec TxSection, registry []NamedText, mut cx TxCx) -> []TxLibRun {
+    mut runs = []TxLibRun.new()
+    mut libraries = []str.new()
+    for u in lib_uses_read(entries, sec, cx) {
+        if u.file == "" {
+            note(cx, tx_err(u.line, u.col, "structure", "у подключения `${u.heading}` нет строки `- ${kw(cx.words, "key", "File")}: <путь>` (раздел 9)"))
+            continue
+        }
+        if !lib_is_hex12(u.hash) {
+            note(cx, tx_err(u.line, u.col, "structure", "у подключения `${u.heading}` строка `- ${kw(cx.words, "key", "Hash")}:` — 12 шестнадцатеричных знаков SHA-256 (строчные), найдено `${u.hash}`"))
+            continue
+        }
+        match lib_find(u.file, registry) {
+            None => note(cx, tx_err(u.line, u.col, "name", "библиотека `${u.file}` не найдена: путь — относительно файла машины, затем папка `--lib` или настройки проекта (раздел 9)"))
+            Some(file) => {
+                ro before = cx.errors.len()
+                ro places_from = cx.places.len()
+                ro jn_before = cx.jn.decls.len()
+                mut run = lib_load(u, file, cx)
+                if run.title != "" && u.heading != run.title { note(cx, tx_err(u.line, u.col, "name", "подзаголовок подключения — имя библиотеки: `### ${run.title}`, а написано `### ${u.heading}` (другое имя экземпляра задаёт `- ${kw(cx.words, "key", "Name")}:`)")) }
+                ro inst = u.instance
+                if cx.env.instances.contains(inst) { note(cx, tx_err(u.line, u.col, "name", "экземпляр `${inst}` подключён дважды: другое имя задаёт `- ${kw(cx.words, "key", "Name")}:`")) }
+                if (lib_has(run, "States") || lib_has(run, "Common events")) && libraries.contains(run.library) {
+                    note(cx, tx_err(u.line, u.col, "structure", "библиотека `${run.title}` с состояниями и общими событиями подключается один раз (раздел 9)"))
+                }
+                libraries.push(run.library)
+                cx.env.instances.push(inst)
+                match section_of(run.sections, "Names") {
+                    Some(nsec) => { jn_rows_read(run.entries, nsec, cx) }
+                    None => ()
+                }
+                match section_of(run.sections, "States") {
+                    Some(ssec) => {
+                        ro scope = lib_enter(cx, inst)
+                        run.blocks = states_register(run.entries, ssec, cx)
+                        lib_leave(cx, scope, inst)
+                    }
+                    None => ()
+                }
+                jn_fix_since(cx, jn_before)
+                lib_remap(cx, before, u, places_from)
+                runs.push(run)
+            }
+        }
+    }
+    runs
+}
+
+/// TxLibNames: the JSON names that one library brings (a list per library).
+type TxLibNames { items []str }
+
+/// TxLibDecls: what the libraries bring that is seen without a prefix: the types, the constants and the functions, and their JSON names per library (for the node of the connection).
+type TxLibDecls { types TxTypes, constants []TxJ, definitions []TxJ, names []TxLibNames }
+
+fn tj_name(j TxJ) -> str {
+    match j {
+        TxObj(pairs) => {
+            for q in pairs {
+                if q.key == "name" {
+                    match q.value {
+                        TxStr(s) => return s
+                        _ => ()
+                    }
+                }
+            }
+        }
+        _ => ()
+    }
+    ""
+}
+
+fn tj_str_of(j TxJ, key str) -> str {
+    match j {
+        TxObj(pairs) => {
+            for q in pairs {
+                if q.key == key {
+                    match q.value {
+                        TxStr(s) => return s
+                        _ => ()
+                    }
+                }
+            }
+        }
+        _ => ()
+    }
+    ""
+}
+
+/// The types, the constants and the functions of the libraries, in the order of the connections (before those of the machine: a function of the machine with the name of one of them is repeated).
+fn libs_decls(runs []TxLibRun, mut cx TxCx) -> TxLibDecls {
+    mut records = []TxJ.new()
+    mut variants = []TxJ.new()
+    mut constants = []TxJ.new()
+    mut definitions = []TxJ.new()
+    mut names = []TxLibNames.new()
+    for run in runs {
+        ro before = cx.errors.len()
+        ro places_from = cx.places.len()
+        ro jn_before = cx.jn.decls.len()
+        ro was_v226 = cx.v226
+        ro was_defs = cx.env.in_defs_file
+        cx.v226 = true
+        cx.env.in_defs_file = true
+        mut own = []str.new()
+        match section_of(run.sections, "Types") {
+            Some(sec) => {
+                lib_types_contract(run.entries, sec, cx)
+                ro t = decl_types(run.entries, sec, cx)
+                for r in t.records {
+                    records.push(r)
+                    own.push("type:${tj_name(r)}")
+                }
+                for v in t.variants {
+                    variants.push(v)
+                    own.push("type:${tj_name(v)}")
+                }
+            }
+            None => ()
+        }
+        match section_of(run.sections, "Constants") {
+            Some(sec) => {
+                for c in decl_constants(run.entries, sec, cx) {
+                    constants.push(c)
+                    own.push("constant:${tj_name(c)}")
+                }
+            }
+            None => ()
+        }
+        match section_of(run.sections, "Functions") {
+            Some(sec) => {
+                defs_register(run.entries, sec, cx)
+                for d in decl_definitions(run.entries, sec, cx) {
+                    definitions.push(d)
+                    own.push("definition:${tj_name(d)}")
+                }
+            }
+            None => ()
+        }
+        cx.v226 = was_v226
+        cx.env.in_defs_file = was_defs
+        jn_fix_since(cx, jn_before)
+        lib_remap(cx, before, run.use, places_from)
+        names.push(TxLibNames { items: own })
+    }
+    TxLibDecls { types: TxTypes { records, variants }, constants, definitions, names }
+}
+
+/// The data of a library (`имя | тип | начальное [| не убывает]`, no column `пишет`: the rows of the library write them); the JSON of the tree as the data of the machine.
+fn lib_data_rows(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
+    mut out = []TxJ.new()
+    mut i = sec.first
+    while i < sec.last {
+        ro e = entries[i]
+        if e.kind == EN_ROW {
+            ro four = e.cells.len() == 4
+            ro t = tab_read(entries, i, sec.last, if four { ["name", "type", "initial", "non_decreasing"] } else { ["name", "type", "initial"] }, cx)
+            for r in t.rows {
+                cx.rows_total += 1
+                ro before = cx.errors.len()
+                match lib_data_row(r, four, cx) {
+                    Ok(j) => {
+                        out.push(j)
+                        cx_place(cx, "$.data", r.line)
+                    }
+                    Err(err) => note(cx, err)
+                }
+                if cx.errors.len() > before { cx.rows_noted += 1 }
+            }
+            i = tab_end(entries, i, sec.last, cx.words)
+        } else {
+            note(cx, struct_error(e.line, e.indent + 1, "лишняя строка в разделе `${sec.title}`"))
+            i += 1
+        }
+    }
+    out
+}
+
+fn lib_data_row(r TxEntry, four bool, mut cx TxCx) -> Result[TxJ, TranslateError] {
+    contract_data_refused(r, cx)
+    ro name = data_name(r.cells[0], r.line, cx)?
+    ro type_text = cell_type(r.cells[1], r.line, cx)?
+    ro initial = data_initial(r.cells[2], r.line, cx)?
+    mut pairs = [kv("name", js(name.en)), kv("type", js(type_text))]
+    match initial {
+        Some(j) => pairs.push(kv("initial", j))
+        None => ()
+    }
+    if four {
+        match data_monotonic(r.cells[3], r.line, cx)? {
+            Some(j) => pairs.push(kv("monotonic", j))
+            None => ()
+        }
+    }
+    pairs.push(kv("writes", js("fragment")))
+    if !name.is_path {
+        if pair_has(cx.env.globals, name.ru) { return Err(tx_err(r.line, r.cells[0].col, "name", "имя `${name.ru}` уже объявлено")) }
+        pair_add(cx.env.globals, name.ru, name.en)
+    }
+    Ok(jobj(pairs))
+}
+
+/// TxLibData: the data of the libraries and their JSON names per library.
+type TxLibData { data []TxJ, names []TxLibNames }
+
+fn libs_data(runs []TxLibRun, mut cx TxCx) -> TxLibData {
+    mut data = []TxJ.new()
+    mut names = []TxLibNames.new()
+    for run in runs {
+        mut own = []str.new()
+        match section_of(run.sections, "Data") {
+            Some(sec) => {
+                ro before = cx.errors.len()
+                ro places_from = cx.places.len()
+                ro jn_before = cx.jn.decls.len()
+                ro scope = lib_enter(cx, run.use.instance)
+                for d in lib_data_rows(run.entries, sec, cx) {
+                    data.push(d)
+                    own.push(tj_name(d))
+                }
+                lib_leave(cx, scope, run.use.instance)
+                jn_fix_since(cx, jn_before)
+                lib_remap(cx, before, run.use, places_from)
+            }
+            None => ()
+        }
+        names.push(TxLibNames { items: own })
+    }
+    TxLibData { data, names }
+}
+
+/// The common events of the libraries (they are tried first, before those of the machine) and their number per library.
+type TxLibRows { rows []TxJ, counts []int }
+
+fn libs_common(runs []TxLibRun, mut cx TxCx) -> TxLibRows {
+    mut rows = []TxJ.new()
+    mut counts = []int.new()
+    for run in runs {
+        mut n = 0
+        match section_of(run.sections, "Common events") {
+            Some(sec) => {
+                ro before = cx.errors.len()
+                ro places_from = cx.places.len()
+                ro scope = lib_enter(cx, run.use.instance)
+                for r in common_events_at(run.entries, sec, cx, rows.len()) {
+                    rows.push(r)
+                    n += 1
+                }
+                lib_leave(cx, scope, run.use.instance)
+                lib_remap(cx, before, run.use, places_from)
+            }
+            None => ()
+        }
+        counts.push(n)
+    }
+    TxLibRows { rows, counts }
+}
+
+/// The states of the libraries, after the states of the machine (`at` of them), and their JSON names per library.
+type TxLibStates { states []TxJ, names []TxLibNames }
+
+fn libs_states(runs []TxLibRun, at int, mut cx TxCx) -> TxLibStates {
+    mut states = []TxJ.new()
+    mut names = []TxLibNames.new()
+    for run in runs {
+        mut own = []str.new()
+        if run.blocks.len() > 0 {
+            ro before = cx.errors.len()
+            ro places_from = cx.places.len()
+            ro scope = lib_enter(cx, run.use.instance)
+            for blk in run.blocks {
+                states.push(state_translate(run.entries, blk, at + states.len(), cx))
+                own.push(blk.latin)
+            }
+            lib_leave(cx, scope, run.use.instance)
+            lib_remap(cx, before, run.use, places_from)
+        }
+        names.push(TxLibNames { items: own })
+    }
+    TxLibStates { states, names }
+}
+
+/// Do the libraries bring the signals of the protocol of a call (a library with common events or states reads `стоп`, `отмена` and the signals from the parent, section 9)?
+fn libs_need_protocol(runs []TxLibRun) -> bool {
+    for run in runs {
+        if lib_has(run, "Common events") || lib_has(run, "States") { return true }
+    }
+    false
+}
+
+// ---- the requirements ----------------------------------------------------------------------------------------------------------------------------------
+
+// The literals of a text in quotes (`"a" | "b"` -> `"a"`, `"b"`), each with its quotes.
+fn lib_quoted(text str) -> []str {
+    mut out = []str.new()
+    mut cur = []str.new()
+    mut in_str = false
+    for c in text.chars() {
+        if in_str {
+            cur.push("${c}")
+            if c == '"' {
+                out.push(cur.join(""))
+                cur = []str.new()
+                in_str = false
+            }
+        } else if c == '"' {
+            in_str = true
+            cur.push("\"")
+        }
+    }
+    out
+}
+
+/// The requirements of the libraries against the machine (section 9): a datum with a type that takes every value the library writes, a party (with the signals that the library names), an end.
+fn libs_requires(runs []TxLibRun, blocks []TxBlock, data []TxJ, mut cx TxCx) -> () {
+    for run in runs {
+        ro u = run.use
+        for req in run.reqs {
+            ro end_word = kw(cx.words, "kind_state", "end")
+            ro party_word = kw(cx.words, "action", "party")
+            if req.type_text == end_word {
+                // the end is named by its name in the machine, or the machine names it by the JSON name of the name of the library (a file written by the generator: `Halted` for `ОСТАНОВЛЕНО`)
+                mut latin = jn_peek(cx, req.name, "состояния", [req.name])
+                ro known = pair_get(cx.env.states, req.name)
+                match known {
+                    Some(x) => { latin = x }
+                    None => ()
+                }
+                mut found = false
+                for blk in blocks {
+                    if (blk.ru == req.name || blk.latin == latin) && blk.kind == "end" { found = true }
+                }
+                if found && known == None { pair_add(cx.env.states, req.name, latin) }
+                if !found { note(cx, tx_err(u.line, u.col, "check", "библиотека `${run.title}` требует конец `${req.name}`; в машине его нет (раздел 9)")) }
+            } else if req.type_text.starts_with("${party_word} ") {
+                if !pair_has(cx.env.parties, req.name) {
+                    note(cx, tx_err(u.line, u.col, "check", "библиотека `${run.title}` требует сторону `${req.name}`; в машине её нет (раздел 9)"))
+                } else {
+                    for sig in lib_quoted(req.type_text) {
+                        ro bare = sig[1..sig.byte_len() - 1]
+                        if !pair_has(cx.env.psignals, bare) { note(cx, tx_err(u.line, u.col, "check", "библиотека `${run.title}` требует у стороны `${req.name}` сигнал `${bare}`; в столбце `${kw(cx.words, "column", "signals")}` его нет (раздел 9)")) }
+                    }
+                }
+            } else {
+                // a datum is named by its name, or by the JSON name of the name of the library (a file written by the generator)
+                mut by_json = ""
+                if pair_get(cx.env.globals, req.name) == None {
+                    ro auto = jn_peek(cx, req.name, "данного", [req.name])
+                    for d in data {
+                        if tj_name(d) == auto { by_json = auto }
+                    }
+                    if by_json != "" { pair_add(cx.env.globals, req.name, by_json) }
+                }
+                match pair_get(cx.env.globals, req.name) {
+                    None => note(cx, tx_err(u.line, u.col, "check", "библиотека `${run.title}` требует данное `${req.name}` с типом `${req.type_text}`; в машине его нет (раздел 9)"))
+                    Some(en) => {
+                        mut have = ""
+                        for d in data {
+                            if tj_name(d) == en { have = tj_str_of(d, "type") }
+                        }
+                        match lib_type_json(req.type_text, u.line, u.col, cx) {
+                            Ok(want) => {
+                                if have != "" && !lib_type_takes(have, want) {
+                                    note(cx, tx_err(u.line, u.col, "check", "библиотека `${run.title}` требует данное `${req.name}` с типом `${want}`; в машине тип `${have}` (раздел 9)"))
+                                }
+                            }
+                            Err(err) => note(cx, tx_err(u.line, u.col, err.kind, "в библиотеке ${run.title}: ${err.message}"))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Does the type of the machine take every value of the required type? A set of literals is taken by a text or by a set that holds every literal; any other type by the same type.
+fn lib_type_takes(have str, want str) -> bool {
+    if have == want { return true }
+    if want.starts_with("\"") {
+        if have == "text" { return true }
+        if !have.starts_with("\"") { return false }
+        ro mine = lib_set_values(have)
+        for v in lib_set_values(want) {
+            if !mine.contains(v) { return false }
+        }
+        return true
+    }
+    false
+}
+
+// ---- the node of the connection in the tree ---------------------------------------------------------------------------------------------------------
+
+// The value of a parameter as an expression of the tree: a text that names a signal of a party is the JSON name of the signal (the generator writes the signals by their JSON names, 1б (ж)).
+fn lib_arg_json(text str, cx TxCx) -> TxJ {
+    ro v = text.trim_ascii()
+    if lib_is_text(v) {
+        match pair_get(cx.env.psignals, v[1..v.byte_len() - 1]) {
+            Some(en) => return x_lit(js(en))
+            None => ()
+        }
+    }
+    lib_value_json(text, cx.words.lang)
+}
+
+// The value of a parameter as an expression of the tree.
+fn lib_value_json(text str, lang str) -> TxJ {
+    // an empty list has no type of its own for the reading of an expression alone
+    if text.trim_ascii() == "[]" { return x_list([]TxJ.new()) }
+    match translate_expression_in(text, []str.new(), lang) {
+        Ok(j) => TxRaw(j)
+        Err(e) => x_lit(js(text))
+    }
+}
+
+/// The node of a connection (`includes`): `name` — the Latin name of the library (`- library:`), `hash`, `file`, `heading` — the subheading, `instance` — the name of `- Имя:` when it is written,
+/// `args` — the values of the parameters in the order of `## Параметры` (the name as written, the value as an expression of the tree), `brings` — the JSON names of what the library put in the tree
+/// (the generator leaves them out of the sections of the machine, 1b (м)). There is no version: the hash stands for it (section 9).
+fn lib_include_json(run TxLibRun, brings []TxKV, cx TxCx) -> TxJ {
+    mut pairs = [kv("name", js(run.library)), kv("hash", js(run.use.hash)), kv("file", js(run.use.file)), kv("heading", js(run.use.heading))]
+    if run.use.named { pairs.push(kv("instance", js(run.use.instance))) }
+    if run.params.len() > 0 {
+        mut args = []TxJ.new()
+        for q in run.params {
+            for a in run.use.args {
+                if a.name == q.name { args.push(jobj([kv("name", js(q.name)), kv("value", lib_arg_json(a.text, cx))])) }
+            }
+        }
+        pairs.push(kv("args", TxArr(args)))
+    }
+    if brings.len() > 0 { pairs.push(kv("brings", TxObj(brings))) }
+    jobj(pairs)
+}
+
+// The names of a kind (`type:`, `constant:`, `definition:`) of the list of a library.
+fn lib_names_of(names []str, kind str) -> []str {
+    mut out = []str.new()
+    ro prefix = "${kind}:"
+    for n in names {
+        if n.starts_with(prefix) { out.push(n[prefix.byte_len()..]) }
+    }
+    out
+}
+
+/// The nodes of the connections of the libraries with what each brings.
+fn libs_includes_json(runs []TxLibRun, decls TxLibDecls, data TxLibData, common TxLibRows, states TxLibStates, signals []str, cx TxCx) -> []TxJ {
+    mut out = []TxJ.new()
+    mut k = 0
+    mut signals_given = false
+    for run in runs {
+        mut brings = []TxKV.new()
+        ro own = decls.names[k].items
+        if lib_names_of(own, "type").len() > 0 { brings.push(kv("types", jstrs(lib_names_of(own, "type")))) }
+        if lib_names_of(own, "constant").len() > 0 { brings.push(kv("constants", jstrs(lib_names_of(own, "constant")))) }
+        if lib_names_of(own, "definition").len() > 0 { brings.push(kv("definitions", jstrs(lib_names_of(own, "definition")))) }
+        if data.names[k].items.len() > 0 { brings.push(kv("data", jstrs(data.names[k].items))) }
+        if common.counts[k] > 0 { brings.push(kv("common_events", jint(common.counts[k]))) }
+        if states.names[k].items.len() > 0 { brings.push(kv("states", jstrs(states.names[k].items))) }
+        if !signals_given && signals.len() > 0 && (lib_has(run, "Common events") || lib_has(run, "States")) {
+            brings.push(kv("signals", jstrs(signals)))
+            signals_given = true
+        }
+        out.push(lib_include_json(run, brings, cx))
+        k += 1
+    }
+    out
+}
+
+/// The library `контракт` connected without a line (section 7а): the type of the failure codes and its ten codes, the data of the engine are names of the machine (read by name, written by the engine).
+fn contract_register(mut cx TxCx) -> () {
+    ro type_word = kw(cx.words, "type", "FailCode")
+    if !pair_has(cx.env.types, type_word) { pair_add(cx.env.types, type_word, "FailCode") }
+    for code in fail_code_names() {
+        ro word = kw(cx.words, "enum_value", code)
+        if !pair_has(cx.env.cases, word) { pair_add(cx.env.cases, word, code) }
+        pair_add(cx.env.case_types, word, "FailCode")
+    }
+    for en in contract_data_names() {
+        ro word = kw(cx.words, "readable", en)
+        if !pair_has(cx.env.globals, word) { pair_add(cx.env.globals, word, en) }
+    }
+}
+
+// ---- the contract (section 7а) ----------------------------------------------------------------------------------------------------------------------
+
+/// The data of the engine of the library `контракт`: the JSON name, the type and the initial value of the tree. The machine reads them by name; only the engine writes them.
+fn contract_data_names() -> []str => ["call_request_id", "open_requests"]
+
+fn contract_datum_json(en str) -> TxJ {
+    if en == "open_requests" { return jobj([kv("name", js(en)), kv("type", js("[]text")), kv("initial", jobj([kv("expr", x_list([]TxJ.new()))])), kv("engine", TxBool(true))]) }
+    jobj([kv("name", js(en)), kv("type", js("text")), kv("initial", jobj([kv("expr", x_lit(js("")))])), kv("engine", TxBool(true))])
+}
+
+/// A row of `## Данные` (of the machine or of a library) that declares a datum of the engine of the contract is an error: the contract declares it (section 7а).
+fn contract_data_refused(r TxEntry, mut cx TxCx) -> () {
+    if r.cells.len() == 0 { return }
+    ro name = r.cells[0].text.trim_ascii()
+    mut en = name
+    match readable_json(cx.words, name) {
+        Some(k) => { en = k }
+        None => ()
+    }
+    if contract_data_names().contains(en) {
+        note(cx, tx_err(r.line, r.cells[0].col, "name", "данное `${name}` объявлено в библиотеке `контракт` (раздел 7а, «Данные движка»): её пишет только движок, в `## Данные` она не повторяется, читается по имени"))
+    }
+}
+
+/// The rows of `## Данные` of a file of 2.26 against the data of the engine of the contract.
+fn contract_data_check(entries []TxEntry, sec TxSection, mut cx TxCx) -> () {
+    mut i = sec.first
+    mut header = true
+    while i < sec.last {
+        ro e = entries[i]
+        if e.kind == EN_ROW {
+            if header { header = false } else { contract_data_refused(e, cx) }
+        } else {
+            header = true
+        }
+        i += 1
+    }
+}
+
+/// A declaration of the type of the failure codes in a file of 2.26: the name is taken by the library `контракт` (section 7а).
+fn lib_types_contract(entries []TxEntry, sec TxSection, mut cx TxCx) -> () {
+    ro type_word = kw(cx.words, "decl", "type")
+    ro fail_word = kw(cx.words, "type", "FailCode")
+    mut i = sec.first
+    while i < sec.last {
+        ro e = entries[i]
+        if e.kind == EN_TEXT {
+            ro t = e.text.trim_ascii()
+            if t.starts_with("${type_word} ${fail_word}") {
+                ro rest = t["${type_word} ${fail_word}".byte_len()..]
+                if rest == "" || rest.starts_with(" ") || rest.starts_with("{") {
+                    note(cx, tx_err(e.line, e.indent + 1, "name", "тип `${fail_word}` объявлен в библиотеке `контракт` (вшита в язык, подключается неявно, раздел 7а): объявлять его не нужно, имя занято; свои коды продукт добавляет своей библиотекой"))
+                }
+            }
+        }
+        i += 1
+    }
+}
+
+/// The data of the engine that the tree of a machine of 2.26 holds: those that the machine or its libraries read (by name; `открытые_запросы` also by `передать` and `отменить_открытые`).
+fn contract_data_used(text str) -> []TxJ {
+    mut out = []TxJ.new()
+    if text.contains("\"op\":\"name\",\"name\":\"call_request_id\"") { out.push(contract_datum_json("call_request_id")) }
+    if text.contains("\"op\":\"name\",\"name\":\"open_requests\"") || text.contains("\"do\":\"pass\"") || text.contains("\"do\":\"cancel_open\"") { out.push(contract_datum_json("open_requests")) }
+    out
+}

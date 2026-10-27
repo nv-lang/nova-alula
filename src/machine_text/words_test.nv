@@ -1,4 +1,4 @@
-// words_test.nv - task 113: the table of words as data (`alula-keywords.tsv`, the copy of `spec/alula-keywords.tsv`, `keywords_product.tsv` of the product), the reading of a word by its kind and its key in the
+// words_test.nv - task 113: the table of words as data (`alula-keywords.tsv`, the copy of `spec/alula-keywords.tsv`, the layer of 2.25 `keywords_225.tsv`), the reading of a word by its kind and its key in the
 // language of the file, the language of a file (`- language: ru|en`), the names of an English file. Every word that the code asks for is in the table; the code of the translator has no
 // Cyrillic word of the structure (only the messages of the errors and the letters of the alphabet).
 module alula.machine_text
@@ -14,9 +14,9 @@ fn method_rows() -> []TxWord {
     rows
 }
 
-fn product_rows() -> []TxWord {
+fn layer225_rows() -> []TxWord {
     mut rows = []TxWord.new()
-    words_read(keywords_product_text(), rows)
+    words_read(keywords_225_text(), rows)
     rows
 }
 
@@ -63,40 +63,32 @@ test "wt table unique" {
     }
 }
 
-test "wt product layer" {
-    ro rows = product_rows()
-    assert(rows.len() == 14)
+test "wt the former product layer is in the layer of 2.25" {
+    // task 197 (2.26, section 7а): the layer `keywords_product.tsv` is gone; what 2.26 has not of it is read for the files of 2.25 only, the words `часть`, `срок`, `сторона` are in the table
+    ro rows = layer225_rows()
     ro method = method_rows()
     for r in rows {
-        assert(all_kinds().contains(r.kind) || r.kind == "fragment" || r.kind == "fragment_param")
-        // the events `срок`, `часть` and the key `сторона` of `отменить_открытые` are words of the table since 2.26 (AL-141); the product layer keeps them until stream 3 (the library `контракт`)
-        if moved_226(r) { continue }
-        for m in method {
-            if m.kind == r.kind {
-                assert(m.ru != r.ru)
-                assert(m.en != r.en)
-            }
-        }
+        assert(all_kinds().contains(r.kind) || r.kind == "kind_param" || r.kind == "fragment" || r.kind == "fragment_param")
     }
     assert(has_row(rows, "section", "Signals"))
     assert(has_row(rows, "section", "Response parts"))
     assert(has_row(rows, "event", "deadline"))
-    assert(has_row(rows, "event", "part"))
+    assert(!has_row(rows, "event", "part"))
     assert(kind_count(rows, "fragment_param") == 6)
+    assert(has_row(method, "event", "part"))
+    assert(has_row(method, "event", "timeout"))
+    assert(has_row(method, "action", "party"))
 }
 
-// A row of the product layer that the table of 2.26 took over (AL-141).
-fn moved_226(r TxWord) -> bool => (r.kind == "event" && (r.ru == "срок" || r.ru == "часть")) || (r.kind == "action" && r.ru == "сторона")
-
 test "wt all rows loaded" {
-    // the table of 2.26, the layer of 2.25 (the seam of task 195) and the product layer
-    assert(words_rows().len() == 217 + 28 + 14)
+    // the table of 2.26 and the layer of 2.25 (the seam of task 195, with the former product layer since task 197)
+    assert(words_rows().len() == 217 + 40)
 }
 
 test "wt the layer of 2.25 holds only the words that 2.26 removed" {
     mut layer = []TxWord.new()
     words_read(keywords_225_text(), layer)
-    assert(layer.len() == 28)
+    assert(layer.len() == 40)
     ro method = method_rows()
     for r in layer {
         for m in method {
@@ -232,6 +224,7 @@ fn source_files() -> []NamedText2 => [
     NamedText2 { name: "elab.nv", text: embed_str("elab.nv") },
     NamedText2 { name: "lexer.nv", text: embed_str("lexer.nv") },
     NamedText2 { name: "elab.nv", text: embed_str("elab.nv") },
+    NamedText2 { name: "library.nv", text: embed_str("library.nv") },
     NamedText2 { name: "machine.nv", text: embed_str("machine.nv") },
     NamedText2 { name: "names.nv", text: embed_str("names.nv") },
     NamedText2 { name: "parse.nv", text: embed_str("parse.nv") },

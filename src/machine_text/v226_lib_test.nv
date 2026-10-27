@@ -54,6 +54,7 @@ fn pause_lib_text() -> str => `# Библиотека: Пауза
 | имя | тип | начальное |
 |---|---|---|
 | предыдущее | ?Состояние | пусто |
+| счёт_пауз | число>=0 | 0 |
 
 ## Общие события
 
@@ -155,7 +156,7 @@ INCLUDES
 
 | поле запроса | выражение |
 |---|---|
-| вопрос | "q" |
+| исчерпан |  |
 
 | Событие | Условие | Действия | Куда |
 |---|---|---|---|
@@ -297,14 +298,14 @@ test "v226 lib the state of the library without the prefix is not a name of the 
 }
 
 test "v226 lib the datum of the library is read with the prefix of the instance" {
-    ro r = rl(lib_with("| ответ |  | исчерпан = потолок_исчерпан(1, 1, 0) | КОНЕЦ |", "| ответ | есть(Пауза.предыдущее) | исчерпан = потолок_исчерпан(1, 1, 0) | КОНЕЦ |"))
+    ro r = rl(lib_with("| ответ |  | исчерпан = потолок_исчерпан(1, 1, 0) | КОНЕЦ |", "| ответ | есть(Пауза.предыдущее) и Пауза.счёт_пауз > 0 | исчерпан = потолок_исчерпан(1, 1, 0) | КОНЕЦ |"))
     assert(first_lib(r) == "ok")
     assert(r.json.contains("\"name\":\"previous\"}"))
 }
 
 test "v226 lib the datum of the library without the prefix is not a name of the machine" {
-    ro r = rl(lib_with("| ответ |  | исчерпан = потолок_исчерпан(1, 1, 0) | КОНЕЦ |", "| ответ | есть(предыдущее) | исчерпан = потолок_исчерпан(1, 1, 0) | КОНЕЦ |"))
-    assert(says_lib(r, "предыдущее"))
+    ro r = rl(lib_with("| ответ |  | исчерпан = потолок_исчерпан(1, 1, 0) | КОНЕЦ |", "| ответ | счёт_пауз > 0 | исчерпан = потолок_исчерпан(1, 1, 0) | КОНЕЦ |"))
+    assert(says_lib(r, "счёт_пауз"))
 }
 
 test "v226 lib the line Name sets another name of the instance" {
@@ -491,7 +492,8 @@ test "v226 lib the generator writes the connection by the subheading and the cir
     assert(text.contains("### Пауза"))
     assert(text.contains("- Файл: libs/pause.alula.md"))
     assert(text.contains("- Хеш: ${definitions_hash(pause_lib_text())}"))
-    assert(text.contains("| сигнал_остановки | \"остановить\" |"))
+    // the signal of the party is written by its JSON name, as the generator writes the signals of the party (1б (ж))
+    assert(text.contains("| сигнал_остановки | \"halt\" |"))
     assert(!text.contains("### ПАУЗА"))
     ro again = rl(text)
     assert(first_lib(again) == "ok")

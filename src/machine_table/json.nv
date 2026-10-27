@@ -596,9 +596,12 @@ fn dec_includes(root JsonObject) -> Result[[]IncludeDef, LoadError] {
     for item in items {
         ro p = "$.includes[${i}]"
         ro o = j_obj(item, p)?
-        j_only(o, ["name", "version", "hash"], p)?
+        // a library of 2.26 (section 9, task 197): no version (the hash stands for it), the file, the subheading, the name of the instance, the values of the parameters, what it brought
+        j_only(o, ["name", "version", "hash", "file", "heading", "instance", "args", "brings"], p)?
+        ro file = j_str_or(o, "file", "", p)?
+        ro version = if file == "" { j_need_str(o, "version", p)? } else { j_str_or(o, "version", "", p)? }
         out.push(IncludeDef {
-            name: j_need_str(o, "name", p)?, version: j_need_str(o, "version", p)?, hash: j_need_str(o, "hash", p)?
+            name: j_need_str(o, "name", p)?, version, hash: j_need_str(o, "hash", p)?, file
         })
         i += 1
     }
@@ -716,12 +719,14 @@ fn dec_data(root JsonObject, defs TypeDefs) -> Result[[]DataDef, LoadError] {
     for item in items {
         ro p = "$.data[${i}]"
         ro o = j_obj(item, p)?
-        j_only(o, ["name", "type", "initial", "monotonic", "writes"], p)?
+        j_only(o, ["name", "type", "initial", "monotonic", "writes", "engine"], p)?
         ro name = j_need_str(o, "name", p)?
         ro spec = j_type(o, "type", defs, p)?
         ro initial = dec_initial(o, p)?
         ro monotonic = dec_monotonic(o, p)?
-        ro writes = write_kind_of(j_str_or(o, "writes", "rows", p)?, "${p}.writes")?
+        // a datum of the engine of the library `контракт` (2.26, section 7а) is written by the engine only: `engine: true` stands for `writes: mechanics`
+        ro engine = j_bool_or(o, "engine", false, p)?
+        ro writes = if engine { MechanicsWrite } else { write_kind_of(j_str_or(o, "writes", "rows", p)?, "${p}.writes")? }
         out.push(DataDef { name, spec, initial, monotonic, writes })
         i += 1
     }
@@ -842,6 +847,13 @@ fn dec_event(v JsonValue, path str) -> Result[EventPat, LoadError] {
         }
         "progress" => {
             j_only(o, ["kind", "name", "bind"], path)?
+            // `часть(имя)` of 2.26 binds the whole part: `bind` is the name, the bind of the empty field (section 7а)
+            if j_has(o, "bind") {
+                match j_str(j_need(o, "bind", path)?, "${path}.bind") {
+                    Ok(whole) => return Ok(ProgressEv { name: j_need_str(o, "name", path)?, binds: [Bind { field: "", name: whole }] })
+                    Err(e) => ()
+                }
+            }
             Ok(ProgressEv { name: j_need_str(o, "name", path)?, binds: dec_binds(o, "bind", path)? })
         }
         "word" => Err(le("${path}.kind", "the event kind word is the former name of signal: a signal of a party is the event signal (format 2.13, AL-38; there is no transition period)"))

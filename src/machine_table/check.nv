@@ -804,7 +804,8 @@ fn variant_case_fields(types TypeDefs, variant str, case_name str) -> int {
 fn check_binds(mut cx Checker, binds []Bind, fields []FieldDef, path str) -> () {
     mut used = []str.new()
     for b in binds {
-        mut known = false
+        // the bind of the empty field is the whole value (`часть(имя)` of 2.26)
+        mut known = b.field == ""
         for f in fields {
             if f.name == b.field { known = true }
         }
@@ -1947,9 +1948,10 @@ fn check_includes(mut cx Checker) -> () {
     for inc in cx.def.includes {
         ro p = "$.includes[${i}]"
         if !is_registry_name(inc.name) { cx_issue(cx, "${p}.name", "the name of a definitions file is a name of the registry (letters, digits, underscore; not a path)") }
-        if seen.contains(inc.name) { cx_issue(cx, "${p}.name", "the file ${inc.name} is included twice") }
+        // a library of 2.26 (it has the file) may be connected twice under two names of instance, and it has no version (section 9)
+        if inc.file == "" && seen.contains(inc.name) { cx_issue(cx, "${p}.name", "the file ${inc.name} is included twice") }
         seen.push(inc.name)
-        if inc.version == "" { cx_issue(cx, "${p}.version", "the version is missing") }
+        if inc.version == "" && inc.file == "" { cx_issue(cx, "${p}.version", "the version is missing") }
         if !is_hex12(inc.hash) { cx_issue(cx, "${p}.hash", "the hash is the first 12 hex digits (lower case) of SHA-256") }
         i += 1
     }

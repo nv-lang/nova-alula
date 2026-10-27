@@ -370,6 +370,13 @@ fn ac_nested_list(mut p TxP, mut cx TxCx) -> Result[[]str, TranslateError] {
     if p_eat(p, "[") {
         while !p_is(p, "]") {
             ro item = p_tok(p)
+            // 2.26: the parameter `вложенные` of a library is a list of texts, `["шаг_агента"]` (section 9), put in as written
+            if item.kind == TK_STR && cx.v226 {
+                p_adv(p)
+                out.push(nested_name_text(cx, item, item.text))
+                if p_eat(p, ",") { continue }
+                break
+            }
             if item.kind != TK_NAME { return Err(p_fail(p, "в списке ожидаются имена вложенных машин")) }
             p_adv(p)
             out.push(nested_name(cx, item))

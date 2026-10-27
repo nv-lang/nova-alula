@@ -160,9 +160,39 @@ fn lines_of(text str) -> []str {
     out
 }
 
-fn party_json(row TxPartyRow, parts []TxPartItem) -> TxJ {
+fn party_json(row TxPartyRow, parts []TxPartItem) -> TxJ => party_json_in(row, parts, []TxJ.new())
+
+/// The party of the tree; the column `части` of 2.26 (the pair `parts_type` of the row) gives the `progress` of the party: the record of the type, its JSON name and its fields (section 7а).
+fn party_json_in(row TxPartyRow, parts []TxPartItem, records []TxJ) -> TxJ {
     mut pairs = []TxKV.new()
-    for q in row.pairs { pairs.push(q) }
+    mut parts_type = ""
+    for q in row.pairs {
+        if q.key == "parts_type" {
+            match q.value {
+                TxStr(x) => { parts_type = x }
+                _ => ()
+            }
+        } else {
+            pairs.push(q)
+        }
+    }
+    if parts_type != "" {
+        mut item = jobj([kv("name", js(parts_type))])
+        for r in records {
+            if tj_name(r) == parts_type {
+                match r {
+                    TxObj(rp) => {
+                        for q in rp {
+                            if q.key == "fields" { item = jobj([kv("name", js(parts_type)), kv("fields", q.value)]) }
+                        }
+                    }
+                    _ => ()
+                }
+            }
+        }
+        pairs.push(kv("progress", TxArr([item])))
+        return jobj(pairs)
+    }
     mut progress = []TxJ.new()
     for part in parts {
         if part.party_ru == row.ru { progress.push(part.item) }
@@ -185,7 +215,11 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
     ro own226 = cx.v226
     for e in info.errors { cx.errors.push(e) }
     for e in classified.errors { cx.errors.push(e) }
-    if own226 { key_lines_226(entries, cx) }
+    if own226 {
+        key_lines_226(entries, cx)
+        // the library `контракт` is connected without a line (section 7а)
+        contract_register(cx)
+    }
     ro header = header_read(entries, cx)
     ro sections = sections_of(entries, cx)
     // the dictionary of the names is pinned by the hash of its normative part: the format and the hash change together (AL-62)
@@ -205,8 +239,29 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
     mut included = TxIncluded { types: TxTypes { records: []TxJ.new(), variants: []TxJ.new() }, constants: []TxJ.new(), definitions: []TxJ.new(), includes: []TxJ.new() }
     mut connected = []str.new()
     mut accepted_calls = []TxCall.new()
+    // the libraries of 2.26 (section 9, task 197): the subheadings of `## Подключения`; the rows of `## Имена` of a library hold until its data are declared
+    mut lib_runs = []TxLibRun.new()
+    mut lib_signals = []str.new()
+    ro jn_rows_machine = cx.jn.rows.len()
+    mut lib_decls = TxLibDecls { types: TxTypes { records: []TxJ.new(), variants: []TxJ.new() }, constants: []TxJ.new(), definitions: []TxJ.new(), names: []TxLibNames.new() }
+    if own226 {
+        match section_of(sections, "Includes") {
+            Some(sec) => {
+                lib_runs = libs_open(entries, sec, registry, cx)
+                if libs_need_protocol(lib_runs) {
+                    for sj in protocol_signals_json(cx) {
+                        signals.push(sj)
+                        lib_signals.push(tj_name(sj))
+                    }
+                }
+                lib_decls = libs_decls(lib_runs, cx)
+            }
+            None => ()
+        }
+    }
     match section_of(sections, "Includes") {
         Some(sec) => {
+          if !own226 {
             included = defs_includes(entries, sec, registry, cx)
             for call in calls_read(entries, sec, cx) {
                 connected.push(call.name)
@@ -234,6 +289,7 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
                     None => ()
                 }
             }
+          }
         }
         None => ()
     }
@@ -251,7 +307,10 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
 
     mut types = TxTypes { records: []TxJ.new(), variants: []TxJ.new() }
     match section_of(sections, "Types") {
-        Some(sec) => { types = decl_types(entries, sec, cx) }
+        Some(sec) => {
+            if own226 { lib_types_contract(entries, sec, cx) }
+            types = decl_types(entries, sec, cx)
+        }
         None => ()
     }
     // the external functions are declared after the types (a signature names them) and before the parties, the data and the rows that call them (a profile, a parse and a check of `Правит` name them too)
@@ -295,8 +354,22 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
             None => ()
         }
     }
+    mut lib_data = TxLibData { data: []TxJ.new(), names: []TxLibNames.new() }
+    if own226 {
+        lib_data = libs_data(lib_runs, cx)
+        for d in lib_data.data { data.push(d) }
+        // the rows of `## Имена` of the libraries named the declarations of the libraries; the check of the rows of the machine sees its own
+        mut kept_rows = []TxJnRow.new()
+        mut row_at = 0
+        for jn_row in cx.jn.rows {
+            if row_at < jn_rows_machine { kept_rows.push(jn_row) }
+            row_at += 1
+        }
+        cx.jn.rows = kept_rows
+    }
     match section_of(sections, "Data") {
         Some(sec) => {
+            if own226 { contract_data_check(entries, sec, cx) }
             for d in decl_data(entries, sec, cx) { data.push(d) }
         }
         None => ()
@@ -310,6 +383,8 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
         }
         None => ()
     }
+    // the requirements of the libraries: the data, the parties, the ends of the machine (section 9)
+    if own226 { libs_requires(lib_runs, blocks, data, cx) }
     match section_of(sections, "Signals") {
         Some(sec) => {
             for sj in decl_signals(entries, sec, cx) { signals.push(sj) }
@@ -327,7 +402,10 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
         None => ()
     }
     // what the included files bring comes before the machine's own
-    if included.includes.len() > 0 {
+    if own226 && lib_runs.len() > 0 {
+        included = TxIncluded { types: lib_decls.types, constants: lib_decls.constants, definitions: lib_decls.definitions, includes: []TxJ.new() }
+    }
+    if included.includes.len() > 0 || (own226 && lib_runs.len() > 0) {
         mut all_records = []TxJ.new()
         for r in included.types.records { all_records.push(r) }
         for r in types.records { all_records.push(r) }
@@ -361,6 +439,11 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
             None => ()
         }
     }
+    mut lib_common = TxLibRows { rows: []TxJ.new(), counts: []int.new() }
+    if own226 {
+        lib_common = libs_common(lib_runs, cx)
+        for r in lib_common.rows { common.push(r) }
+    }
     match section_of(sections, "Common events") {
         Some(sec) => {
             for r in common_events_at(entries, sec, cx, common.len()) { common.push(r) }
@@ -389,6 +472,11 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
             cx_remap(cx, before, run.call, places_from)
         }
     }
+    mut lib_states = TxLibStates { states: []TxJ.new(), names: []TxLibNames.new() }
+    if own226 {
+        lib_states = libs_states(lib_runs, states.len(), cx)
+        for lib_st in lib_states.states { states.push(lib_st) }
+    }
     mut ends = TxEnds { result: "", rows: []TxJ.new() }
     match section_of(sections, "Ends") {
         Some(sec) => { ends = decl_ends(entries, sec, cx) }
@@ -413,14 +501,25 @@ export fn translate_report_with(file_text str, registry []NamedText) -> Translat
         if input.invariants.len() > 0 { ip.push(kv("invariants", TxArr(input.invariants))) }
         root.push(kv("input", TxObj(ip)))
     }
+    if own226 {
+        // the data of the engine of the library `контракт` (section 7а) that the machine and its libraries read come first; the engine writes them (`engine: true`)
+        ro used = contract_data_used("${tx_text(TxArr(states))}${tx_text(TxArr(common))}${tx_text(TxArr(ends.rows))}")
+        if used.len() > 0 {
+            mut all_data = []TxJ.new()
+            for d in used { all_data.push(d) }
+            for d in data { all_data.push(d) }
+            data = all_data
+        }
+    }
     root.push(kv("data", TxArr(data)))
     mut party_list = []TxJ.new()
-    for row in party_rows { party_list.push(party_json(row, parts)) }
+    for row in party_rows { party_list.push(party_json_in(row, parts, types.records)) }
     root.push(kv("parties", TxArr(party_list)))
     if request_limit.len() > 0 { root.push(kv("request_limit", request_limit[0])) }
     if signals.len() > 0 { root.push(kv("signals", TxArr(signals))) }
     if definitions.len() > 0 { root.push(kv("definitions", TxArr(definitions))) }
     if included.includes.len() > 0 { root.push(kv("includes", TxArr(included.includes))) }
+    if own226 && lib_runs.len() > 0 { root.push(kv("includes", TxArr(libs_includes_json(lib_runs, lib_decls, lib_data, lib_common, lib_states, lib_signals, cx)))) }
     // the connections of the fragments with every argument (1b (m)): the fragment is in the tree substituted, the connection lets the generator write the line back
     mut fragments = []TxJ.new()
     for call in accepted_calls {
