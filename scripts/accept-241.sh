@@ -129,7 +129,7 @@ echo "== фрагмент"
 [ -d src/machine_text/fragments ] && red "src/machine_text/fragments/ есть"
 grep -rnE 'embed_str\("fragments/|pause_param_keys|pause_arg_names|pause_behavior_words|behavior_words_' src >"$tmp/frag-code.out" && { red "код встроенной Паузы: $(wc -l <"$tmp/frag-code.out") строк"; head -5 "$tmp/frag-code.out"; }
 grep -rniE 'fragment|фрагмент' . --exclude-dir=.git --exclude-dir=target --exclude-dir=__pycache__ \
-  | grep -vE '^\./spec/alula-changelog(\.en)?\.md:|^\./docs/history\.md:|^\./scripts/accept-(1[0-9][0-9]|2[0-3][0-9])[^/]*:|^\./scripts/accept-(1[0-9][0-9]|2[0-3][0-9])/|^\./scripts/accept-241\.sh:'   | grep -vE '^\./spec/alula-spec(\.en)?\.md:|^\./spec/samples/|^\./src/machine_agent/cases/|^\./tools/migrate-alula-226\.py:'   | grep -viE 'Раскрытие фрагмента|раскрытие фрагмента|Fragment expansion|fragments' >"$tmp/frag-words.out"
+  | grep -vE '^\./spec/alula-changelog(\.en)?\.md:|^\./docs/history\.md:|^\./scripts/accept-(1[0-9][0-9]|2[0-3][0-9])[^/]*:|^\./scripts/accept-(1[0-9][0-9]|2[0-3][0-9])/|^\./scripts/accept-241\.sh:'   | grep -vE '^\./spec/alula-spec(\.en)?\.md:|^\./spec/samples/|^\./src/machine_agent/cases/|^\./src/machine_agent/methodology\.nv:|^\./tools/migrate-alula-226\.py:'   | grep -viE 'Раскрытие фрагмента|раскрытие фрагмента|Fragment expansion|fragments' >"$tmp/frag-words.out"
 [ -s "$tmp/frag-words.out" ] && { red "слова fragment/фрагмент вне журнала изменений: $(wc -l <"$tmp/frag-words.out") строк"; head -8 "$tmp/frag-words.out" | cut -c1-200; }
 
 # ---- (5) скрипт миграции на образцах 2.25 ---------------------------------------------------------------------------------------------------------
@@ -152,6 +152,8 @@ set_check() {
   mkdir -p "$tmp/$1" && cp -r "$2/." "$tmp/$1/"
   $migrate --alula "$alula" "$tmp/$1" >"$tmp/$1.mig" 2>&1; mig_code=$?
   grep -v '^перенесён' "$tmp/$1.mig" | sed "s|$tmp/||" | sed "s/^/  $1: /"
+  # the tests of the copy whose expectations the script moved (the reason of «Пауза» instead of stop_reason, reason=none in all_data): the place of the owner of the set
+  grep '^перенесён: .*\.alula\.test\.json$' "$tmp/$1.mig" | sed 's|.*[/\]||' | sed "s/^/МЕСТО НАБОРА: $1: ожидание перенесено скриптом: /"
   stale=$("$PYTHON" -c "import glob,json,os,sys; print(sum(1 for f in glob.glob(os.path.join(sys.argv[1],'**','*.alula.json'),recursive=True) if json.load(open(f,encoding='utf-8')).get('alula_version')!='2.26'))" "$tmp/$1")
   set -- "$1" "$2" "$3" $(tests_of "$tmp/$1")
   why=""
