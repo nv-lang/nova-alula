@@ -4,7 +4,7 @@ module alula.machine_text
 
 import std.text
 import alula.machine.{Registry, NamedText}
-import alula.machine_table.{load_machine, machine_warnings, issue_text, LoadError}
+import alula.machine_table.{load_machine, machine_warnings, issue_text, LoadError, MachineDef, StateReads, reads_derived, derived_reads}
 
 // Does `prefix` name the place `path` or a place above it (the next sign after it is `.`, `[` or the end)?
 fn path_under(path str, prefix str) -> bool {
@@ -37,7 +37,7 @@ fn report_with_issues(report TranslateReport, issues []LoadError, lines []str) -
     for e in report.errors { errors.push(e) }
     for issue in issues { errors.push(issue_error(report.places, issue, lines)) }
     ro sorted = errors_sorted(errors)
-    TranslateReport { json: report.json, errors: errors_quoted(sorted, lines), warnings: report.warnings, rows_total: report.rows_total, rows_noted: report.rows_noted, places: report.places, names: report.names }
+    TranslateReport { json: report.json, errors: errors_quoted(sorted, lines), warnings: report.warnings, rows_total: report.rows_total, rows_noted: report.rows_noted, places: report.places, names: report.names, reads: report.reads }
 }
 
 // The warnings of the checks of the table (they are no issues) put at the lines of their places: an `иначе` that can not be reached (AL-57).
@@ -49,19 +49,83 @@ fn report_with_warnings(report TranslateReport, warns []LoadError, lines []str) 
         all.push(TranslateError { line, col: 1, kind: "warning", message: "${w.path}: ${w.message}", quote: "" })
     }
     ro sorted = errors_sorted(all)
-    TranslateReport { json: report.json, errors: report.errors, warnings: errors_quoted(sorted, lines), rows_total: report.rows_total, rows_noted: report.rows_noted, places: report.places, names: report.names }
+    TranslateReport { json: report.json, errors: report.errors, warnings: errors_quoted(sorted, lines), rows_total: report.rows_total, rows_noted: report.rows_noted, places: report.places, names: report.names, reads: report.reads }
 }
 
 /// The translation with the checks of the table against the registry of the primitives of the host. A machine whose JSON the decoder or the checks refuse has the
 /// issues among the errors, each with the line of its row.
 export fn translate_checked(file_text str, registry Registry) -> TranslateReport => translate_checked_with(file_text, registry, defs_files())
 
-/// The same with the registry of the files of definitions of the caller.
+/// The same with the registry of the files of definitions of the caller. The tree of a machine of 2.26 carries the reads of the states that the check derives (AL-138).
 export fn translate_checked_with(file_text str, registry Registry, files []NamedText) -> TranslateReport {
-    ro report = translate_report_with(file_text, files)
+    ro full = translate_full(file_text, files)
+    ro report = full.report
     ro lines = lines_of(file_text)
     match load_machine(report.json, registry) {
-        Ok(def) => report_with_warnings(report, machine_warnings(def, registry), lines)
+        Ok(def) => {
+            ro shown = if reads_derived(def) { report_with_tree(report, tree_with_reads(full.tree, def), derived_reads(def, registry)) } else { report }
+            report_with_warnings(shown, machine_warnings(def, registry), lines)
+        }
         Err(issues) => report_with_issues(report, issues, lines)
+    }
+}
+
+// The report with the tree that carries the derived reads and with the reads themselves (AL-138).
+fn report_with_tree(report TranslateReport, tree TxJ, reads []StateReads) -> TranslateReport {
+    TranslateReport { json: tx_text(tree), errors: report.errors, warnings: report.warnings, rows_total: report.rows_total, rows_noted: report.rows_noted, places: report.places, names: report.names, reads }
+}
+
+// The tree with the reads of the loaded machine in its states (the order of the states of the tree is that of the machine): `reads` (or `reads_all` of the end ERROR) right after
+// `kind`, the reads written by the translation are dropped.
+fn tree_with_reads(tree TxJ, def MachineDef) -> TxJ {
+    match tree {
+        TxObj(pairs) => {
+            mut out = []TxKV.new()
+            for p in pairs {
+                if p.key == "states" {
+                    out.push(kv("states", states_with_reads(p.value, def)))
+                } else {
+                    out.push(p)
+                }
+            }
+            TxObj(out)
+        }
+        _ => tree
+    }
+}
+
+fn states_with_reads(states TxJ, def MachineDef) -> TxJ {
+    match states {
+        TxArr(items) => {
+            mut out = []TxJ.new()
+            mut i = 0
+            for item in items {
+                if i < def.states.len() {
+                    out.push(state_with_reads(item, def.states[i].reads, def.states[i].reads_all))
+                } else {
+                    out.push(item)
+                }
+                i += 1
+            }
+            TxArr(out)
+        }
+        _ => states
+    }
+}
+
+fn state_with_reads(state TxJ, reads []str, all bool) -> TxJ {
+    match state {
+        TxObj(pairs) => {
+            mut out = []TxKV.new()
+            for p in pairs {
+                if p.key == "reads" || p.key == "reads_all" { continue }
+                out.push(p)
+                if p.key == "kind" {
+                    if all { out.push(kv("reads_all", TxBool(true))) } else { out.push(kv("reads", jstrs(reads))) }
+                }
+            }
+            TxObj(out)
+        }
+        _ => state
     }
 }

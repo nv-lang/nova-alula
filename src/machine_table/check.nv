@@ -2,7 +2,7 @@
 //
 // What is checked: the names (unique, the right shape, no shadowing), the structure of every kind of a state, the events against the
 // signals and the progress of the parties, the targets ("Where"), the reads against the "Input" of the state (rule 11 of the
-// specification), the writes against the data of the machine and their `writes` mark, the class of every primitive in the place of its call,
+// specification; in a tree of 2.26 the reads are derived and only the name is checked, AL-138), the writes against the data of the machine and their `writes` mark, the class of every primitive in the place of its call,
 // the reachability of the states, the exhaustiveness of the "Ends", the definitions (no recursion), the journal codes, the bounds and the
 // includes. `check_machine` returns every issue it finds, each with its place in the JSON, in a fixed order; an empty list is a table that
 // the interpreter takes.
@@ -1057,6 +1057,13 @@ fn state_input_names(def MachineDef, st StateDef) -> []str {
 // The names a state reads with what the parse of its party reads (the column `reads` of the function of the parse, AL-131): the hidden reads of the function join the Input of the state (rule 11).
 fn state_names_with_parse(cx Checker, st StateDef) -> []str {
     mut out = state_input_names(cx.def, st)
+    for r in parse_reads(cx, st) { push_unique(out, r) }
+    out
+}
+
+// What the parse of the party of an appeal reads (the list `reads` of its function in the registry of the host, AL-131).
+fn parse_reads(cx Checker, st StateDef) -> []str {
+    mut out = []str.new()
     if st.kind != AppealKind { return out }
     ro pi = find_party(cx.def, st.party)
     if pi < 0 { return out }
@@ -1069,6 +1076,86 @@ fn state_names_with_parse(cx Checker, st StateDef) -> []str {
         }
     }
     out
+}
+
+// The names of the Request of an appeal of 2.26: the fields, what their expressions read, the set of the party and what the parse reads. The idle term reads these names only
+// (format 4.2): the reads derived from the rows do not widen them.
+fn request_names(cx Checker, st StateDef) -> []str {
+    mut out = []str.new()
+    for f in st.inputs {
+        push_unique(out, f.field)
+        free_names(f.value, []str.new(), out)
+    }
+    for e in st.set { free_names(e, []str.new(), out) }
+    for r in parse_reads(cx, st) { push_unique(out, r) }
+    out
+}
+
+// ---- the reads derived by the check (format 2.26, AL-138) ----------------------------------------------------------------------------------
+
+/// StateReads: the reads of a state that the check derives (format 2.26, AL-138): the data named by the expressions of its rows, its Request, On accept, On entry and its rows of
+/// the table "Output", and the hidden reads (the list `reads` in the registry of the host) of the external functions it calls and of the parse of its party, in the order of the data;
+/// `all` is the end ERROR, which reads all the data.
+export type StateReads { state str, names []str, all bool }
+
+/// Does the check derive the reads of the states of the tree (the version 2.26: there is no line `Читает:`, AL-138)? Before 2.26 the reads are written and checked by rule 11.
+export fn reads_derived(def MachineDef) -> bool => def.alula_version == "2.26"
+
+/// The reads of every state of the machine in the order of the states, derived from its expressions and from the registry of the host (format 2.26, AL-138). A path of a dict
+/// (`имя[*].поле`) is no datum of its own: the state reads the dict.
+export fn derived_reads(def MachineDef, registry Registry) -> []StateReads {
+    mut cx = Checker { def, registry, issues: []LoadError.new(), sites: []Site.new() }
+    collect_sites(cx)
+    ro roots = data_roots(def)
+    mut out = []StateReads.new()
+    mut i = 0
+    for st in def.states {
+        if st.kind == EndKind && st.name == def.error_end {
+            out.push(StateReads { state: st.name, names: roots, all: true })
+        } else {
+            mut found = []str.new()
+            for s in cx.sites {
+                if s.state != i { continue }
+                free_names(s.expr, s.bound, found)
+                for h in primitive_reads(cx, s.expr) { push_unique(found, h) }
+            }
+            for h in parse_reads(cx, st) { push_unique(found, h) }
+            mut names = []str.new()
+            for r in roots {
+                if found.contains(r) { names.push(r) }
+            }
+            out.push(StateReads { state: st.name, names, all: false })
+        }
+        i += 1
+    }
+    out
+}
+
+/// The machine with the derived reads in its states (a tree of 2.26, AL-138): the reads written in the tree are replaced, the end ERROR reads all the data. A tree of an earlier
+/// version keeps its written reads.
+export fn with_derived_reads(def MachineDef, registry Registry) -> MachineDef {
+    ro derive = reads_derived(def)
+    ro derived = if derive { derived_reads(def, registry) } else { []StateReads.new() }
+    mut states = []StateDef.new()
+    mut i = 0
+    for st in def.states {
+        ro all = if derive { derived[i].all } else { st.reads_all }
+        ro reads = if !derive { st.reads } else if all { []str.new() } else { derived[i].names }
+        states.push(StateDef {
+            name: st.name, kind: st.kind, reads, reads_all: all,
+            party: st.party, set: st.set, silence: st.silence, edits: st.edits, edit_check: st.edit_check, form_returns: st.form_returns,
+            inputs: st.inputs, accept: st.accept, entry: st.entry, rows: st.rows, except_field: st.except_field, except_values: st.except_values
+        })
+        i += 1
+    }
+    MachineDef {
+        name: def.name, version: def.version, alula_version: def.alula_version, types: def.types,
+        constants: def.constants, params: def.params, input: def.input, data: def.data,
+        parties: def.parties, request_limit: def.request_limit, signals: def.signals,
+        definitions: def.definitions, includes: def.includes, fragments: def.fragments,
+        initial: def.initial, error_end: def.error_end, common: def.common, states,
+        result_spec: def.result_spec, end_rows: def.end_rows, primitives: def.primitives
+    }
 }
 
 fn primitive_reads(cx Checker, e Expr) -> []str {
@@ -1103,6 +1190,8 @@ fn fragment_data_names(def MachineDef) -> []str {
 
 fn check_reads(mut cx Checker) -> () {
     ro def = cx.def
+    // a tree of 2.26: the reads of a state are derived (AL-138), the check "reads ⊆ Input" is gone; the name is still checked, and the idle term reads the names of the Request only
+    ro derived = reads_derived(def)
     ro consts = const_names(def)
     ro roots = data_roots(def)
     mut fn_names = []str.new()
@@ -1116,6 +1205,10 @@ fn check_reads(mut cx Checker) -> () {
             if roots.contains(n) {
                 if s.area == area_global() {
                     cx_issue(cx, s.place, "a constant, a definition or an initial value does not read the datum ${n}")
+                } else if derived {
+                    if s.area == area_input() && s.state >= 0 && s.place.ends_with(".silence") && !request_names(cx, def.states[s.state]).contains(n) {
+                        cx_issue(cx, s.place, "the idle term reads ${n}: it reads the names of the Request only (format 4.2)")
+                    }
                 } else if s.area == area_body() && !allowed.contains(n) {
                     cx_issue(cx, s.place, "the datum ${n} is read but is not in the Input of the state (rule 11)")
                 } else if s.area == area_input() && s.state >= 0 && !state_names_with_parse(cx, def.states[s.state]).contains(n) {
@@ -1140,8 +1233,8 @@ fn check_reads(mut cx Checker) -> () {
             if (n == "event" || n == "party") && s.area == area_global() { cx_issue(cx, s.place, "${n} is not defined here") }
             if n == "state" && s.area == area_global() { cx_issue(cx, s.place, "state is not defined here") }
         }
-        // the hidden reads of the primitives named in the registry join the Input
-        if s.area == area_body() && s.state >= 0 {
+        // the hidden reads of the primitives named in the registry join the Input (in 2.26 they are derived into the reads)
+        if s.area == area_body() && s.state >= 0 && !derived {
             for hidden in primitive_reads(cx, s.expr) {
                 if roots.contains(hidden) && !allowed.contains(hidden) {
                     cx_issue(cx, s.place, "the primitive reads ${hidden} which is not in the Input of the state (rule 11)")
@@ -2617,7 +2710,7 @@ export fn machine_warnings(def MachineDef, registry Registry) -> []LoadError {
 
 /// Every issue found in a decoded machine, in a fixed order; the registry gives the classes and the signatures of the primitives.
 export fn check_machine(def MachineDef, registry Registry) -> []LoadError {
-    mut cx = Checker { def, registry, issues: []LoadError.new(), sites: []Site.new() }
+    mut cx = Checker { def: with_derived_reads(def, registry), registry, issues: []LoadError.new(), sites: []Site.new() }
     check_names(cx)
     check_structure(cx)
     check_parties(cx)
@@ -2641,13 +2734,14 @@ export fn check_machine(def MachineDef, registry Registry) -> []LoadError {
 /// The text of one issue: `<path>: <message>`.
 export fn issue_text(e LoadError) -> str => "${e.path}: ${e.message}"
 
-/// The machine from a JSON text: decoded, then checked. The list is empty-free: an `Err` carries at least one issue.
+/// The machine from a JSON text: decoded, then checked. The list is empty-free: an `Err` carries at least one issue. The machine of a tree of 2.26 carries the reads derived by
+/// the check (AL-138).
 export fn load_machine(text str, registry Registry) -> Result[MachineDef, []LoadError] {
     match parse_machine(text) {
         Ok(def) => {
             ro issues = check_machine(def, registry)
             if issues.len() > 0 { return Err(issues) }
-            Ok(def)
+            Ok(with_derived_reads(def, registry))
         }
         Err(e) => Err([e])
     }

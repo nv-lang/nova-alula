@@ -4,7 +4,7 @@ module alula.machine_text
 
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
-import alula.machine_table.{MachineDef, StateDef, Action, parse_machine, state_kind_word, issue_text}
+import alula.machine_table.{MachineDef, StateDef, Action, parse_machine, state_kind_word, issue_text, reads_derived}
 import alula.machine_table.{AssignAct, AddAct, JournalAct, JournalValueAct, JournalAllAct, ForEachAct, LetAct, BindAct, IfAct, CallAct, MachineErrorAct, CancelOpenAct, PassAct}
 
 // The number of the actions of a list, the nested ones counted.
@@ -52,12 +52,20 @@ export fn render_summary(machine_json str) -> str {
             lines.push("initial: ${def.initial}")
             if def.common.len() > 0 { lines.push("common events: ${def.common.len()} rows, ${acts_of_common(def)} actions") }
             for st in def.states {
-                lines.push("  ${st.name} (${state_kind_word(st.kind)}): ${state_rows_count(st)} rows, ${state_actions_count(st)} actions")
+                lines.push("  ${st.name} (${state_kind_word(st.kind)}): ${state_rows_count(st)} rows, ${state_actions_count(st)} actions${reads_shown(def, st)}")
             }
             lines.push("ends: ${def.end_rows.len()} rows")
             lines.join("\n")
         }
     }
+}
+
+// The reads of a state of a tree of 2.26 as the check derived them (AL-138: the reads are derived and shown in the report); a tree of an earlier version shows none.
+fn reads_shown(def MachineDef, st StateDef) -> str {
+    if !reads_derived(def) { return "" }
+    if st.reads_all { return "; reads all the data" }
+    if st.reads.len() == 0 { return "; reads nothing" }
+    "; reads ${st.reads.join(", ")}"
 }
 
 fn acts_of_common(def MachineDef) -> int {

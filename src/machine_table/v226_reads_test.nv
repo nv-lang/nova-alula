@@ -1,0 +1,156 @@
+// v226_reads_test.nv - task 237 (Alula 2.26, stream 2 part A, AL-138): the reads of a state are derived by the check from the expressions of the rows, the Request, On accept and
+// On entry and from the lists `reads` of the external functions of the registry of the host; the end ERROR reads all the data; the check "reads ⊆ declared" (rule 11) is gone,
+// the check "the name exists and is allowed" stays, and the idle term reads the names of the Request only. The reads in the tree are an output of the check.
+module alula.machine_table
+
+import std.text
+import alula.examples.{sample_registry}
+import alula.machine.{Registry, Primitive, ParamSpec, IntType, Volatile}
+
+// The small machine of the support as a tree of 2.26: the states have no reads written.
+fn rd226(text str) -> str => text.replace("{\"format\":\"machine/2\",", "{\"format\":\"machine/2\",\"alula_version\":\"2.26\",").replace("\"reads\":[\"n\"]", "\"reads\":[]").replace("\"reads\":[\"stop\"]", "\"reads\":[]")
+
+fn rd_tiny() -> str => rd226(tiny())
+
+// The registry of the samples with one volatile external function `peek` that reads the datum `stop` without an argument.
+fn rd_registry() -> Registry {
+    ro base = sample_registry()
+    mut prims = []Primitive.new()
+    for p in base.primitives { prims.push(p) }
+    prims.push(Primitive { name: "peek", params: []ParamSpec.new(), result: IntType, class: Volatile, reads: ["stop"], writes: []str.new() })
+    Registry { primitives: prims, journal: base.journal }
+}
+
+fn rd_issues(text str, registry Registry) -> []str {
+    mut out = []str.new()
+    match load_machine(text, registry) {
+        Ok(def) => ()
+        Err(list) => {
+            for e in list { out.push(issue_text(e)) }
+        }
+    }
+    out
+}
+
+fn rd_says(text str, registry Registry, needle str) -> bool {
+    for line in rd_issues(text, registry) {
+        if line.contains(needle) { return true }
+    }
+    false
+}
+
+// The reads of the state `name` of the loaded machine, joined by commas; `all` for a state that reads all the data; the issues when the machine does not load.
+fn rd_reads(text str, registry Registry, name str) -> str {
+    match load_machine(text, registry) {
+        Ok(def) => {
+            ro at = find_state(def, name)
+            if at < 0 { return "no state ${name}" }
+            if def.states[at].reads_all { return "all" }
+            def.states[at].reads.join(",")
+        }
+        Err(list) => {
+            mut lines = []str.new()
+            for e in list { lines.push(issue_text(e)) }
+            "issues: ${lines.join("; ")}"
+        }
+    }
+}
+
+// The end ERROR of 2.26: no reads written, it journals all the data and reads the name `all_data`.
+fn rd_errored() -> str => `,{"name":"Errored","kind":"end","entry":[{"do":"journal_all"},{"do":"journal_value","value":${jn("all_data")}}]}`
+
+fn rd_with_error_end() -> str {
+    ro row = `,{"state":"Errored","n":1,"when":${jl("true")},"answer":{"kind":"refusal","code":${jfc("NoResult")},"text":${jl(jstr("defect"))}}}`
+    rd226(tiny_with("", rd_errored(), tiny_wait_rows(), "${tiny_ends_rows()}${row}")).replace("\"initial\":\"Wait\",", "\"initial\":\"Wait\",\"error_end\":\"Errored\",")
+}
+
+// ---- the reads are derived ---------------------------------------------------------------------------------------------------------------------
+
+test "v226 reads a fork and an end read without written reads: no issue of rule 11" {
+    assert(rd_issues(rd_tiny(), sample_registry()).len() == 0)
+}
+
+test "v226 reads the same tree of 2.25 still checks the written reads" {
+    assert(says(tiny().replace("\"reads\":[\"n\"]", "\"reads\":[]"), "is not in the Input of the state (rule 11)"))
+}
+
+test "v226 reads the reads of a fork and of an end are derived into the tree" {
+    assert(rd_reads(rd_tiny(), sample_registry(), "Decide") == "n")
+    assert(rd_reads(rd_tiny(), sample_registry(), "Finished") == "n")
+    assert(rd_reads(rd_tiny(), sample_registry(), "Stopped") == "stop")
+}
+
+test "v226 reads written reads of a tree of 2.26 are replaced by the derived ones" {
+    ro text = rd_tiny().replace("{\"name\":\"Decide\",\"kind\":\"fork\",\"reads\":[]", "{\"name\":\"Decide\",\"kind\":\"fork\",\"reads\":[\"stop\",\"n\"]")
+    assert(rd_reads(text, sample_registry(), "Decide") == "n")
+}
+
+test "v226 reads an appeal reads its request and its rows" {
+    ro rows = tiny_wait_rows().replace(jassign("stop", jl(jstr("a"))), "${jassign("stop", jl(jstr("a")))},${jassign("n", jb("+", jn("n"), jcall("length", jn("stop"))))}")
+    ro text = rd226(tiny_with("", "", rows, tiny_ends_rows()))
+    assert(rd_reads(text, sample_registry(), "Wait") == "n,stop")
+}
+
+test "v226 reads the order of the derived reads is the order of the data" {
+    ro text = rd_tiny().replace(`"cond":${jb(">=", jn("n"), jl("2"))}`, `"cond":${jb("and", jb("==", jn("stop"), jl(jstr(""))), jb(">=", jn("n"), jl("2")))}`)
+    assert(rd_reads(text, sample_registry(), "Decide") == "n,stop")
+}
+
+test "v226 reads a name bound in the state is no read" {
+    ro rows = tiny_wait_rows().replace(jassign("stop", jl(jstr("a"))), `{"do":"let","name":"x","value":${jl("1")},"body":[${jassign("n", jn("x"))}]}`)
+    ro text = rd226(tiny_with("", "", rows, tiny_ends_rows()))
+    assert(rd_reads(text, sample_registry(), "Wait") == "n")
+}
+
+// ---- trap: the hidden reads of the external functions of the registry ---------------------------------------------------------------------------
+
+test "v226 reads the hidden reads of an external function of the registry join the reads of the state" {
+    ro rows = tiny_wait_rows().replace(jassign("stop", jl(jstr("a"))), jassign("n", jprim("peek", "")))
+    ro text = rd226(tiny_with("", "", rows, tiny_ends_rows())).replace("\"initial\":\"Wait\",", "\"primitives\":[{\"name\":\"peek\",\"result\":\"int\",\"class\":\"volatile\"}],\"initial\":\"Wait\",")
+    assert(rd_issues(text, rd_registry()).len() == 0)
+    assert(rd_reads(text, rd_registry(), "Wait") == "n,stop")
+}
+
+// ---- trap: the end ERROR reads all the data ------------------------------------------------------------------------------------------------------
+
+test "v226 reads the end ERROR reads all the data without a written line" {
+    ro text = rd_with_error_end()
+    assert(rd_issues(text, sample_registry()).len() == 0)
+    assert(rd_reads(text, sample_registry(), "Errored") == "all")
+}
+
+test "v226 reads all_data outside the end ERROR is still not allowed" {
+    ro text = rd_tiny().replace("{\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[]}", "{\"name\":\"Finished\",\"kind\":\"end\",\"reads\":[],\"entry\":[{\"do\":\"journal_value\",\"value\":${jn("all_data")}}]}")
+    assert(rd_says(text, sample_registry(), "all_data is read by a state whose Input is all the data"))
+}
+
+// ---- trap: the sets [*] ----------------------------------------------------------------------------------------------------------------------------
+
+test "v226 reads a path of a dict is no read of its own: the state reads the root" {
+    ro types = "\"types\":{\"records\":[{\"name\":\"Tally\",\"fields\":[{\"name\":\"k\",\"type\":\"int>=0\"}]}]},"
+    ro extra = `,{"name":"tally","type":"{text: Tally}","initial":{"expr":{"op":"dict","entries":[]}}},{"name":"tally[*].k","type":"int>=0","monotonic":true}`
+    ro cond = `"cond":${jb(">=", jcall("length", jn("tally")), jl("2"))}`
+    ro text = rd226(tiny_with(extra, "", tiny_wait_rows(), tiny_ends_rows())).replace("\"data\":", "${types}\"data\":").replace(`"cond":${jb(">=", jn("n"), jl("2"))}`, cond)
+    assert(rd_reads(text, sample_registry(), "Decide") == "tally")
+}
+
+// ---- trap: the common events of a fragment ---------------------------------------------------------------------------------------------------------
+
+test "v226 reads a common event reads a datum of the machine with no issue of rule 11" {
+    ro row = `{"n":1,"event":{"kind":"signal","name":"halt"},"cond":${jb(">=", jn("n"), jl("1"))},"to":"Stopped"}`
+    ro text = rd_tiny().replace("\"initial\":\"Wait\",", "\"initial\":\"Wait\",\"common_events\":[${row}],")
+    assert(!rd_says(text, sample_registry(), "rule 11"))
+}
+
+// ---- trap: the idle term reads the names of the Request only -------------------------------------------------------------------------------------
+
+test "v226 reads the idle term reads a name of the Request" {
+    ro text = rd_tiny().replace("\"party\":\"user\",\"inputs\"", "\"party\":\"user\",\"silence\":${jb("*", jn("n"), jl("60"))},\"inputs\"")
+    assert(rd_issues(text, sample_registry()).len() == 0)
+}
+
+test "v226 reads the idle term does not read a datum that only the rows read" {
+    ro rows = tiny_wait_rows().replace(jassign("stop", jl(jstr("a"))), "${jassign("stop", jl(jstr("a")))},${jassign("n", jcall("length", jn("stop")))}")
+    ro text = rd226(tiny_with("", "", rows, tiny_ends_rows())).replace("\"party\":\"user\",\"inputs\"", "\"party\":\"user\",\"silence\":${jcall("length", jn("stop"))},\"inputs\"")
+    assert(rd_says(text, sample_registry(), "the idle term reads stop: it reads the names of the Request only"))
+}
