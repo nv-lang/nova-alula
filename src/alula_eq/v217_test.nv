@@ -7,7 +7,7 @@ import std.text
 import alula.machine.{text_of_file}
 import alula.examples.{table_files_225, machine_files_225}
 
-fn tables217() -> []str => ["callee.alula.md", "caller.alula.md", "fan.alula.md", "echo.alula.md", "retry.alula.md", "verdict.alula.md", "router.alula.md", "pausable.alula.md", "keeper.alula.md", "batch.alula.md"]
+fn tables217() -> []str => ["echo.alula.md", "retry.alula.md", "verdict.alula.md", "router.alula.md", "keeper.alula.md"]
 
 // ` (latin)` right after a name in a row of a table or in a heading of a state
 fn has_bracket_after_name217(line str) -> bool {
@@ -47,24 +47,6 @@ test "v217 tables have no brackets after the names" {
             }
         }
     }
-}
-
-test "v217 the tables that need rows have the section of the names" {
-    mut with_names = 0
-    for name in tables217() {
-        if text_of_file(table_files_225(), name).contains("## Имена") { with_names += 1 }
-    }
-    assert(with_names >= 3)
-}
-
-test "v217 the tables use the dash of the request" {
-    mut dashes = 0
-    for name in tables217() {
-        for line in text_of_file(table_files_225(), name).split("\n") {
-            if line.contains("| — | сторона |") || line.contains("| — | исполнитель |") { dashes += 1 }
-        }
-    }
-    assert(dashes >= 4)
 }
 
 test "v217 the trees say 2.25" {

@@ -306,7 +306,7 @@ fn rn_sec_states(mut cx RnCx, root RJ) -> []str {
     out
 }
 
-/// The common events (the rows of the signals that are tried before the rows of a state, and the rows of an included fragment): a section of their own, only when there are some.
+/// The common events (the rows of the signals that are tried before the rows of a state, and the rows of a connected library): a section of their own, only when there are some.
 fn rn_sec_common(mut cx RnCx, root RJ) -> []str {
     ro rows = rj_garr(root, "common_events")
     mut out = []str.new()
@@ -536,8 +536,8 @@ fn rn_machine(machine_json str, language str, copy_includes bool, registry Regis
             cx.libs = libs
             cx.twins = twins
             ro dropped = rn_dropped(cx, root, copy_includes)
-            // what the fragments bring is written by the line of connection, not as the machine's own (1b (m), 2.12, AL-32)
-            ro shown = if cx.v226 { rn_without_libraries(root, copy_includes) } else if rj_garr(root, "fragments").len() == 0 { root } else { rn_without_fragments(root) }
+            // what the libraries bring is written by the connection, not as the machine's own (1b (м), section 9)
+            ro shown = if cx.v226 { rn_without_libraries(root, copy_includes) } else { root }
             ro version = if rj_gstr(shown, "alula_version") == "" { "2.25" } else { rj_gstr(shown, "alula_version") }
             mut out = []str.new()
             out.push("# ${rn_kw(cx, "header", "Machine")}: ${rj_gstr(shown, "machine")}")

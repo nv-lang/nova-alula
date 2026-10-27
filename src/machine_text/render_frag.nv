@@ -1,51 +1,7 @@
-// render_frag.nv - the reverse generator and the fragments (format 1b (m), 2.12, AL-32): a tree that carries the key `fragments` has the fragment substituted (its data, its common events, its state,
-// its signals are in the ordinary keys), and the file written for it holds the LINE OF CONNECTION with every argument and none of what the fragment brings: a repeat would be "объявлено дважды" (P-2),
-// and without the line the arguments of the kind of behavior (`отмена_запросов`, `вход_заново`) would be lost, since text put in does not say them. A tree with no `fragments` (hand-written) is written as before.
+// render_frag.nv - the reverse generator and the libraries (format 1b (м), section 9): a tree of 2.26 that connects a library has what the library brings in the ordinary keys (its data,
+// its common events, its states, its signals, listed by the node of `includes`), and the file written for it holds the CONNECTION (`### Имя`, `- Файл:`, `- Хеш:`, the table of the values) and
+// none of what the library brings: a repeat would be "объявлено дважды" (P-2).
 module alula.machine_text
-
-import std.text
-
-/// The tree without what its fragments bring: the data by name, the common events by place (the fragments' go first), the states and the signals by name. The caller asks only when there are fragments.
-fn rn_without_fragments(root RJ) -> RJ {
-    ro frags = rj_garr(root, "fragments")
-    mut data_names = []str.new()
-    mut state_names = []str.new()
-    mut signal_names = []str.new()
-    mut common = 0
-    for f in frags {
-        ro shape = fragment_shape(rj_gstr(f, "name"))
-        for n in shape.data { data_names.push(n) }
-        for n in shape.states { state_names.push(n) }
-        for n in shape.signals { signal_names.push(n) }
-        common += shape.common
-    }
-    match root {
-        ROb(pairs) => {
-            mut out = []RKV.new()
-            for q in pairs {
-                if q.key == "data" {
-                    out.push(RKV { key: q.key, value: RArr(rn_filter_named(rj_items(q.value), data_names)) })
-                } else if q.key == "states" {
-                    out.push(RKV { key: q.key, value: RArr(rn_filter_named(rj_items(q.value), state_names)) })
-                } else if q.key == "signals" {
-                    out.push(RKV { key: q.key, value: RArr(rn_filter_named(rj_items(q.value), signal_names)) })
-                } else if q.key == "common_events" {
-                    mut rest = []RJ.new()
-                    mut at = 0
-                    for item in rj_items(q.value) {
-                        if at >= common { rest.push(item) }
-                        at += 1
-                    }
-                    out.push(RKV { key: q.key, value: RArr(rest) })
-                } else {
-                    out.push(q)
-                }
-            }
-            ROb(out)
-        }
-        _ => RNull
-    }
-}
 
 /// The tree of 2.26 without what its libraries brought (the lists `brings` of the nodes of `includes`: data, states, common events, signals; section 9, 1b (м)) and without the data of the engine of the
 /// library `контракт` (section 7а: `engine: true`), which no file declares. `copy_includes`: the types, the constants and the functions stay (they are written as the machine's own).
@@ -307,48 +263,4 @@ fn rn_filter_named(items []RJ, names []str) -> []RJ {
         if !names.contains(rj_gstr(item, "name")) { out.push(item) }
     }
     out
-}
-
-// The value of an argument under its key.
-fn rn_arg(args RJ, key str) -> RJ {
-    match rj_get(args, key) {
-        Some(x) => x
-        None => RNull
-    }
-}
-
-// The text of a literal string argument.
-fn rn_arg_lit(args RJ, key str) -> str {
-    ro v = rn_arg(args, key)
-    match rj_get(v, "value") {
-        Some(x) => rj_str(x)
-        None => ""
-    }
-}
-
-/// The lines of connection of the fragments of a tree, each on one line, the arguments in the order of the table `## Параметры` of the fragment.
-fn rn_fragment_lines(mut cx RnCx, root RJ) -> []str {
-    mut lines = []str.new()
-    for f in rj_garr(root, "fragments") {
-        ro key = rj_gstr(f, "name")
-        ro args = match rj_get(f, "args") {
-            Some(a) => a
-            None => RNull
-        }
-        mut parts = []str.new()
-        for pk in pause_param_keys() {
-            ro name = rn_kw(cx, "fragment_param", pk)
-            if pk == "halt_signal" {
-                parts.push("${name}: ${rn_arg_lit(args, pk)}")
-            } else if pk == "nested" {
-                parts.push("${name}: ${rn_nested_list(cx, rn_arg(args, pk), []str.new())}")
-            } else if pk == "cancel_requests" || pk == "reenter" {
-                parts.push("${name}: ${rn_kw(cx, "enum_value", rn_arg_lit(args, pk))}")
-            } else {
-                parts.push("${name}: ${rn_quote(rn_arg_lit(args, pk))}")
-            }
-        }
-        lines.push("${rn_kw(cx, "fragment", key)}(${parts.join(", ")})")
-    }
-    lines
 }

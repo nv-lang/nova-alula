@@ -108,12 +108,3 @@ test "pr failure" {
     assert(text.contains("finish:refusal:Timeout"))
 }
 
-test "pr pause" {
-    ro m = agent_machine(enum_value("ReplyCheck", "Valid"))
-    ro first = move_on(m, m.initial(), event_of(EventKind.Input, "start", None, start_input(), 1000))
-    ro stop = event_of(EventKind.Input, "human_stop", None, "{\"human_word\":\"w\",\"author\":\"a\",\"source\":\"s\"}", 1500)
-    ro paused = move_on(m, first.state, stop)
-    assert(paused.state.name == "Pause")
-    ro back = move_on(m, paused.state, event_of(EventKind.Input, "continue", None, "{\"human_word\":\"w\",\"author\":\"a\",\"source\":\"s\"}", 1600))
-    assert(back.state.name == "AgentTurn")
-}

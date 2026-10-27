@@ -209,19 +209,19 @@ test "v25 table format" {
     assert(says(former, "table_format"))
 }
 
-// ---- the common events of a fragment (format section 9) and the built-in record JournalEvent --------------------------------------------------------
+// ---- the common events of the substituted Pause (format section 9) and the built-in record JournalEvent --------------------------------------------------------
 
 fn gate_text() -> str => text_of_file(machine_files_225(), "gate.alula.json")
 
-test "v25 fragment reads" {
+test "v25 the substituted Pause reads" {
     assert(ok_text(gate_text()))
     ro rows_datum = gate_text().replace("\"left\": { \"op\": \"name\", \"name\": \"state\" }, \"right\": { \"op\": \"lit\", \"value\": \"Pause\" }", "\"left\": { \"op\": \"name\", \"name\": \"turns\" }, \"right\": { \"op\": \"lit\", \"value\": 0 }")
     assert(says(rows_datum, "the datum turns is read but is not in the Input of the state (rule 11)"))
-    ro fragment_datum = gate_text().replace("\"left\": { \"op\": \"name\", \"name\": \"state\" }, \"right\": { \"op\": \"lit\", \"value\": \"Pause\" }", "\"left\": { \"op\": \"name\", \"name\": \"agent_attempt\" }, \"right\": { \"op\": \"lit\", \"value\": 0 }")
-    assert(ok_text(fragment_datum))
+    ro pause_datum = gate_text().replace("\"left\": { \"op\": \"name\", \"name\": \"state\" }, \"right\": { \"op\": \"lit\", \"value\": \"Pause\" }", "\"left\": { \"op\": \"name\", \"name\": \"agent_attempt\" }, \"right\": { \"op\": \"lit\", \"value\": 0 }")
+    assert(ok_text(pause_datum))
 }
 
-test "v25 fragment writes" {
+test "v25 the substituted Pause writes" {
     ro to_rows = gate_text().replace("\"do\": \"assign\", \"target\": \"previous\"", "\"do\": \"assign\", \"target\": \"turns\"")
     assert(ok_text(to_rows))
     ro to_mechanics = gate_text().replace("\"do\": \"assign\", \"target\": \"previous\"", "\"do\": \"assign\", \"target\": \"agent_attempt\"")

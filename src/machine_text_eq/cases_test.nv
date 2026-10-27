@@ -1,5 +1,5 @@
 // cases_test.nv - the cases of the task: the pilot "Agent step" brought to format 2.5, the examples of the format, the
-// definitions of the meeting with the file of the cycle arithmetic (the hash of the format), the fragment "Pause".
+// definitions of the meeting with the file of the cycle arithmetic (the hash of the format).
 module alula.machine_text_eq
 
 import std.text
@@ -56,17 +56,16 @@ test "cs pilot" {
     if report.errors.len() > 0 { panic(lines_of_errors(report, "agent-step.alula.md")) }
     assert(report.errors.len() == 0)
     assert(report.rows_noted == 0)
-    assert(report.rows_total == 119)
+    assert(report.rows_total == 102)
     assert(report.json.contains("\"request_limit\":{\"op\":\"lit\",\"value\":1}"))
 }
 
 test "cs pilot summary" {
     ro report = translate_checked(case_text("agent-step.alula.md"), sample_registry())
     ro text = render_summary(report.json)
-    assert(text.starts_with("machine agent_step (version pilot-2.5): 14 states, 47 rows, "))
+    assert(text.starts_with("machine agent_step (version pilot-2.5): 13 states, 37 rows, "))
     assert(text.contains("  AgentTurn (appeal): 9 rows, 18 actions"))
-    assert(text.contains("  Pause (appeal): 4 rows, 4 actions"))
-    assert(text.contains("common events: 6 rows, 12 actions"))
+    assert(!text.contains("  Pause (appeal)"))
     assert(text.contains("ends: 13 rows"))
 }
 
@@ -75,15 +74,6 @@ test "cs pilot twice" {
     ro b = translate_report(case_text("agent-step.alula.md"))
     assert(a.json == b.json)
     assert(a.rows_total == b.rows_total)
-}
-
-test "cs pilot pause" {
-    ro report = translate_checked(case_text("agent-step.alula.md"), sample_registry())
-    assert(report.json.contains("\"name\":\"human_stop\",\"fields\":[{\"name\":\"human_word\",\"type\":\"text\"}"))
-    assert(report.json.contains("\"to\":\"@previous\""))
-    assert(report.json.contains("{\"name\":\"previous\",\"type\":\"?State\""))
-    assert(report.json.contains("{\"do\":\"cancel_open\"}"))
-    assert(report.json.contains("\"value\":\"pause_halt\""))
 }
 
 // ---- the examples of the format -----------------------------------------------------------------------------------------------

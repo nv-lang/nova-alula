@@ -248,11 +248,11 @@ fn tx_is_separator(cells []TxCell) -> bool {
     true
 }
 
-/// TxExpansion: a section `## Раскрытие фрагмента «Имя»` (format 2.9, AL-17): the line of its heading and the name that the heading holds.
+/// TxExpansion: a section of the expansion of 2.12 (format 2.9, AL-17): the line of its heading and the name that the heading holds.
 type TxExpansion { line int, name str }
 
 /// TxClassified: the entries of a file; the warnings of the reading (P-1, AL-12, AL-13: a line of a paragraph that starts with the word of a key, a line pressed against a table, a declaration
-/// outside a block of code); the errors of the language of the file (a key line of the other language); the sections of the expansion of a fragment.
+/// outside a block of code); the errors of the language of the file (a key line of the other language); the sections of the expansion of 2.12.
 type TxClassified { entries []TxEntry, warnings []TranslateError, errors []TranslateError, expansions []TxExpansion }
 
 // ---- the key lines ---------------------------------------------------------------------------------------------------------------
@@ -261,7 +261,7 @@ type TxClassified { entries []TxEntry, warnings []TranslateError, errors []Trans
 fn line_keys() -> []str => ["Initial state", "Party", "Idle term", "Edits", "Form returns", "Request", "Reads", "On accept", "On entry", "Except", "Result", "Request limit", "Invariant", "functions"]
 
 /// The keys of the header of a file.
-fn header_keys() -> []str => ["machine", "machine_version", "format", "functions_version", "fragment", "language"]
+fn header_keys() -> []str => ["machine", "machine_version", "format", "functions_version", "language"]
 
 /// TxKvHit: the key of a line `Ключ: значение` (empty when the line is not one) and the BYTE offset of its colon.
 type TxKvHit { key str, colon int }
@@ -405,17 +405,17 @@ fn cls_flush(mut st TxClsState, touching bool, what str, w TxWords) -> () {
     st.forced = false
 }
 
-// The heading of the section of the expansion of a fragment (`Раскрытие фрагмента «Имя»`, `Fragment expansion "Name"`): the section of 2.12 that 2.13 removed (AL-44).
+// The heading of the section of the expansion of 2.12 (the old heading of the language, kept to name the section as removed): the section that 2.13 removed (AL-44).
 fn is_expansion_heading(head_text str) -> bool => head_text.starts_with("Раскрытие фрагмента") || head_text.starts_with("Fragment expansion")
 
-/// The error about such a section: it is removed, what a fragment brings is described by its file.
+/// The error about such a section: it is removed, there is no transition period.
 fn expansion_error(line int, title str) -> TranslateError {
-    tx_err(line, 4, "structure", "раздел «${title}» в формате 2.22 убран (Я-44): что приносит фрагмент, описывает его файл; переходного периода нет")
+    tx_err(line, 4, "structure", "раздел «${title}» в формате 2.22 убран (Я-44): что приносит подключение, описывает файл библиотеки; переходного периода нет")
 }
 
 /// The entries of the lines of a file, in order, the warnings and the errors of the language. `lines` are the lines without the line feed (a carriage return at the end is cut here).
 /// Format 2.7 (P-1, P-2): a paragraph (a line after an empty line, outside the tables, the blocks of code and the key lines, with the lines that follow it up to an empty line) is a comment and
-/// gives no entry; the section `## Раскрытие фрагмента …` gives no entry but its heading. `strict` is format 2.9 and later (AL-12): a paragraph pressed against a table, a heading or a list
+/// gives no entry; the section of the expansion of 2.12 gives no entry but its heading. `strict` is format 2.9 and later (AL-12): a paragraph pressed against a table, a heading or a list
 /// item is no paragraph. `decl_comment` (a machine of format 2.9 and later, AL-13): a declaration outside a block of code is a comment with a warning.
 fn tx_classify_in(lines []str, w TxWords, strict bool, decl_comment bool) -> TxClassified {
     mut st = TxClsState { out: []TxEntry.new(), warnings: []TranslateError.new(), para: []TxParaLine.new(), forced: false }

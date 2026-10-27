@@ -68,13 +68,12 @@ test "wt the former product layer is in the layer of 2.25" {
     ro rows = layer225_rows()
     ro method = method_rows()
     for r in rows {
-        assert(all_kinds().contains(r.kind) || r.kind == "kind_param" || r.kind == "fragment" || r.kind == "fragment_param")
+        assert(all_kinds().contains(r.kind) || r.kind == "kind_param")
     }
     assert(has_row(rows, "section", "Signals"))
     assert(has_row(rows, "section", "Response parts"))
     assert(has_row(rows, "event", "deadline"))
     assert(!has_row(rows, "event", "part"))
-    assert(kind_count(rows, "fragment_param") == 6)
     assert(has_row(method, "event", "part"))
     assert(has_row(method, "event", "timeout"))
     assert(has_row(method, "action", "party"))
@@ -82,13 +81,13 @@ test "wt the former product layer is in the layer of 2.25" {
 
 test "wt all rows loaded" {
     // the table of 2.26 and the layer of 2.25 (the seam of task 195, with the former product layer since task 197)
-    assert(words_rows().len() == 217 + 40)
+    assert(words_rows().len() == 217 + 31)
 }
 
 test "wt the layer of 2.25 holds only the words that 2.26 removed" {
     mut layer = []TxWord.new()
     words_read(keywords_225_text(), layer)
-    assert(layer.len() == 40)
+    assert(layer.len() == 31)
     ro method = method_rows()
     for r in layer {
         for m in method {
@@ -119,8 +118,6 @@ test "wt kw ru" {
     assert(kw(w, "kind_party", "human or agent by setting") == "human или agent по настройке")
     assert(kw(w, "destination", "same") == "то же")
     assert(kw(w, "destination", "rerun") == "запуск заново")
-    assert(kw(w, "fragment", "Pause") == "Пауза")
-    assert(kw(w, "fragment_param", "halt_signal") == "сигнал_остановки")
     assert(kw(w, "column", "№") == "№")
     assert(kw(w, "header", "machine") == "machine")
 }
@@ -132,7 +129,6 @@ test "wt kw en" {
     assert(kw(w, "expr", "if") == "if")
     assert(kw(w, "action", "for each") == "for each")
     assert(kw(w, "type", "bool") == "bool")
-    assert(kw(w, "fragment", "Pause") == "Pause")
     assert(kw(w, "nothing", "x") == "x")
 }
 
@@ -293,7 +289,7 @@ test "wt asked words exist" {
             ro lits = line_literals(line)
             mut i = 0
             while i + 1 < lits.len() {
-                if all_kinds().contains(lits[i]) || lits[i] == "fragment" || lits[i] == "fragment_param" {
+                if all_kinds().contains(lits[i]) {
                     // `"kind", "key"`: the pair is looked up; a list `"kind", [...]` is read by kw_all below
                     if has_row(rows, lits[i], lits[i + 1]) {
                         asked += 1
@@ -312,7 +308,6 @@ test "wt every key listed" {
     for k in line_keys() { assert(has_row(rows, "key", k)) }
     for k in header_keys() { assert(has_row(rows, "header", k)) }
     for k in section_keys() { assert(has_row(rows, "section", k)) }
-    for k in pause_param_keys() { assert(has_row(rows, "fragment_param", k)) }
     for k in ["rows", "mechanics", "rows_and_mechanics", "fragment", "rows_and_fragment", "party", "executor", "yes", "nothing", "requests_from_to_send", "without_return_to_send", "stop_transport_turn"] {
         assert(has_row(rows, "enum_value", k))
     }
@@ -327,7 +322,7 @@ test "wt every key listed" {
 // A line may hold a Cyrillic literal when the literal is (a piece of) the message of an error, or a letter of the alphabet.
 fn allowed_marks() -> []str => [
     "why:", "ro message_", "ro form_what =", "ro form_space =", "fn former_message(", "p_fail(", "tx_err(", "struct_error(", "cx_error(", "cx_unsupported(", "unsupported(", "note(", "cls_flush(", "foreign_error(", "Err(", "message:",
-    "jn_peek(", "jn_declare(", "jn_declare_fixed(", "jn_declare_internal(", "decl_name(", "decl_exported(", "fn is_expansion_heading(", "cell_decl_json(", "decl_json(", "decl_json_text(", "ev_phrase_json(", "cell_phrase(", "cell_fields(", "\"слова ворот\"", "t.text == \"слово\"", "\"слово_остановки\"", "t.text == \"нет\"", "не объявлено в этой машине", "\"знак `",  "\"ключ `", "decl_fields(", "decl_internal(", "decl_field(", "tr_word(", "tr_word_f(", "decl_name_phrase(", "decl_name_phrase_in(", "ro message =", "ro why =", "ro shown =", "возможно", "конец текста", "строку", "фрагменты не подключены", "подключён:",
+    "jn_peek(", "jn_declare(", "jn_declare_fixed(", "jn_declare_internal(", "decl_name(", "decl_exported(", "fn is_expansion_heading(", "cell_decl_json(", "decl_json(", "decl_json_text(", "ev_phrase_json(", "cell_phrase(", "cell_fields(", "\"слова ворот\"", "t.text == \"слово\"", "\"слово_остановки\"", "t.text == \"нет\"", "не объявлено в этой машине", "\"знак `",  "\"ключ `", "decl_fields(", "decl_internal(", "decl_field(", "tr_word(", "tr_word_f(", "decl_name_phrase(", "decl_name_phrase_in(", "ro message =", "ro why =", "ro shown =", "возможно", "конец текста", "строку",
     "английский", "русский", "найдено", "\"а=a\"", "\"ф=f\""
 ]
 
@@ -391,8 +386,6 @@ test "wt lang declared" {
     assert(ru.errors.len() == 0)
     ro defs = detect_language(lines_in("# Functions: d\n\n- functions_version: 1\n- format: 2.25\n- language: en\n"))
     assert(defs.lang == "en" && defs.errors.len() == 0)
-    ro frag = detect_language(lines_in("# Fragment: Pause\n\n- fragment: Pause\n- format: 2.25\n- language: en\n"))
-    assert(frag.lang == "en" && frag.errors.len() == 0)
 }
 
 test "wt lang english undeclared" {

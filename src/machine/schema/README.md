@@ -28,7 +28,7 @@ Who is the authority for what:
 |---|---|---|
 | tree format | `machine/2` | the root key `format` of the tree (a constant; it does not change with the language version, spec AL-19) |
 | test format | `test/0` | the root key `format` of a test (does not change with the language version, spec AL-50) |
-| language version | **2.25** | `- format: 2.25` in the header of a machine file, a functions file and a fragment file; the root key `alula_version` of the tree (the schema accepts only `"2.25"`); the recommended `- machine_version: alula-2.25` (spec 1), which becomes the root key `version` |
+| language version | **2.25** | `- format: 2.25` in the header of a machine file, a functions file and a library file; the root key `alula_version` of the tree (the schema accepts only `"2.25"`); the recommended `- machine_version: alula-2.25` (spec 1), which becomes the root key `version` |
 | package `alula` | `0.8.1` | `alula version` prints `alula 0.8.1 (Alula 2.25, machine/2)` |
 | glossary of automatic names | hash **`35c571ccda17`** (the dictionary of the version 13, 1270 pairs) | pinned by the format (spec AL-62); the translator recomputes it from its copy of the normative part of the glossary |
 | word table | `spec/alula-keywords.tsv` of 2.25 (17 kinds) | the words of both file languages; the tree does not hold them |
@@ -108,10 +108,9 @@ file says `map[K, V]`/`словарь[K, V]`), `full {K: V}`, `(T1, T2)`, or the
 | `signals` | `[]signal_def` | no | machine signals outside the contract (stop, cancel) — a product key, see "Answered and open points" |
 | `definitions` | `[]definition` | no | `## Functions` (the key keeps its name, spec AL-83: "the JSON keys of the tree do not change") |
 | `includes` | `[]include` | no | the lines `functions: <name> version <N> hash <hex12>` of `## Includes` |
-| `fragments` | `[]fragment_use` | no | the include lines of fragments (a product key, spec 1b (м)); the fragment itself is substituted into the tree |
 | `initial` | string | yes | `Initial state: NAME` (the JSON name of the state) |
 | `error_end` | string | no | the end entered on a machine error: the end whose JSON name is `Errored` (Russian `ОШИБКА`) — a rule of the package |
-| `common_events` | `[]row` | no | `## Common events` of a substituted fragment (tried before the rows of a state) |
+| `common_events` | `[]row` | no | `## Common events` of the machine and of its libraries (tried before the rows of a state) |
 | `states` | `[]state` (min 1) | yes | `## States` |
 | `ends` | object `{result, rows}` | yes | `## Ends`: `result` (req.) the type of `- Result:`; `rows` (req.) `[]end_row` |
 | `primitives` | `[]external_function` | no | `## External functions` (AL-123): one record `{name, params: [{name, type, tail?}], result?, class}` for each external function the machine declares; the standard `new_id` is the language's and is not here. The record is checked against the registry of the host at the load |
@@ -164,7 +163,7 @@ file says `map[K, V]`/`словарь[K, V]`), `full {K: V}`, `(T1, T2)`, or the
 `signal_def` (`$defs/signal_def`): `name` (req., the JSON name of the signal), `fields` (`[]field`) — the
 declaration `s` or `s { field T, … }`.
 
-### `definition`, `include`, `fragment_use`
+### `definition`, `include`
 
 | Node | Key | Type | Req. | Meaning |
 |---|---|---|---|---|
@@ -173,8 +172,6 @@ declaration `s` or `s { field T, … }`.
 | | `result` | type | yes | `-> Type` |
 | | `body` | E | yes | `=> expr`, or a block body `{ let …; expr }` as nested `let` nodes |
 | include | `name`, `version`, `hash` | string, string, `^[0-9a-f]{12}$` | yes | `functions: <name> version <N> hash <hex12>`; the tree also carries a copy of the types, constants and functions of the file |
-| fragment_use | `name` | `"Pause"` | yes | the include line of the fragment "Pause" |
-| | `args` | object | yes | `halt_signal`, `halt_code`, `nested`, `cancel_requests`, `reenter`, `write_right` — each an E (literals) |
 
 ### `state`
 
@@ -233,7 +230,7 @@ declaration `s` or `s { field T, … }`.
 | `call` | **`primitive`**, `args` `[]E`, `named` `[{name, value}]` | `name(args);` as an action (a call of an external function; `named`: the pairs of the named tail, AL-129) |
 | `machine_error` | **`code`**, `params` | `machine_error(code, name: e)` |
 | `cancel_open` | `party`, `except` `[]E` | `cancel_open`, `cancel_open(except: nested)`; `party` is a product key |
-| `pass` | **`nested`** (E), **`signal`** | `pass(nested, signal)` (fragment only) |
+| `pass` | **`nested`** (E), **`signal`** | `pass(nested, signal)` |
 
 ### `end_row`
 
@@ -530,7 +527,7 @@ the package; what only the methodology can decide is marked **open**. The number
 | 3 | Is `type` always filled at a bare element name? | The `variant` node and the `case` pattern of `match` always carry `type`; `answer_variant` has the key `variant` only (the type is the result type of the party). The translator finds the type of a bare name by the declared types, with no expected type (AL-88, AL-104): a name that two types have, and a name that is also a datum, a constant, a parameter or a binding, is an error that asks for `Type.El` | solved (AL-104) |
 | 4 | `alula_version` or `table_format`? | The package keeps `alula_version` (the schema, the decoder, `alula version`, the tests of the product); the specification says so since AL-108: the key is optional, its value is `"2.22"`, another version is an error that names it, there is no `table_format` | solved (AL-108) |
 | 5 | The sections `## Сигналы`, `## Части ответа`, the events `срок` (`timeout`), `часть` (`progress`), the key `party` of `cancel_open`, the end `Errored`, `*.alula.txt` | Product extensions of the package, kept in `keywords_product.tsv` (the words) and not in `spec/alula-keywords.tsv`; the tree keys `signals`, `progress`, the event kinds `timeout`, `progress`, `cancel_open.party`, `error_end` are marked so in the schema | **open** (the methodology may take them into the table of words or leave them to the product) |
-| 6 | The names `cancel_requests`, `reenter` of the fragment "Pause" against `request_cancel`, `reentry` of the specification | A deliberate tree name of the package (`keywords_product.tsv`, `fragment_param`); the machines and the tests of the product use them | **open** |
+| 6 | The names `cancel_requests`, `reenter` of the built-in Pause of 2.25 against `request_cancel`, `reentry` of the specification | The built-in Pause and its tree key are gone since 0.9.1 (task 241): the library Pause names its own parameters | **closed** |
 | 7 | `event.party` of a test is a name, so a test of a Russian file does not fit an English one | The runner accepts the name **or the id** of the party (`ScEvent.party`); a test that names the id fits both files | solved |
 | 8 | The prefix `проект.` of the test `params` | The prefix is one in both languages (`PROJECT_PREFIX`); the English file writes `project.<key>` in the column, the tree holds `project_key` = `<key>` | solved for the package; **open** for the methodology whether an English test has its own prefix |
 | 9 | `title` or the Latin name? | `title` is the text after `# Машина:`/`# Machine:` (the whole line), `machine` is the Latin name of the line `- machine:`; the specification 1b (а) says otherwise | **open** (a correction of the text for the methodology) |

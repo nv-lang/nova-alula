@@ -1,4 +1,4 @@
-// journal.nv - the codes of the journal that a machine may write (format sections 5 and 10, 2.12, AL-31): the table of the language (`journal_language.md`, 35 codes: the format itself, the fragment "Pause", the
+// journal.nv - the codes of the journal that a machine may write (format sections 5 and 10, 2.12, AL-31): the table of the language (`journal_language.md`, 35 codes: the format itself, the library "Pause", the
 // engine and the executor; spec section 7a, AL-113) and the table of the host, a file of the form `Machine | Code | Russian template | Parameters` that the host registers (`journal.md` beside its machines). The
 // check takes the union of the two tables. The language holds no table of a host: the codes of the methodology and of the product are data of their owners.
 module alula.machine
@@ -52,7 +52,7 @@ export fn parse_journal(text str) -> []JournalCode {
     out
 }
 
-/// The table of the language: the 35 codes that the format, the fragment "Pause", the engine and the executor write (`journal_language.md`).
+/// The table of the language: the 35 codes that the format, the library "Pause", the engine and the executor write (`journal_language.md`).
 export fn language_journal() -> []JournalCode => parse_journal(embed_str("journal_language.md"))
 
 /// The union of the table of the language and the table of a host: the codes that a machine of the host may write.
@@ -85,7 +85,7 @@ fn is_code_word(code str) -> bool {
 }
 
 /// The faults of the table of a host against the table of the language: a code that is not lower case latin with underscores, a code that repeats a code of the language (even with the same template: a code that the
-/// format, the fragment "Pause", the engine or the executor writes is not redefined), a code twice in the table.
+/// format, the library "Pause", the engine or the executor writes is not redefined), a code twice in the table.
 export fn journal_table_issues(language []JournalCode, host []JournalCode) -> []str {
     mut out = []str.new()
     mut seen = []str.new()

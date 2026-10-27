@@ -396,7 +396,7 @@ fn jn_declare(mut cx TxCx, t TxTok, name str, what str, space str, path []str) -
     pick.json
 }
 
-/// A name of the contract with a JSON name that no row may change (`остановка` -> `stop_reason`, a signal of the protocol of a fragment): recorded for the distinctness of the space.
+/// A name of the contract with a JSON name that no row may change (`остановка` -> `stop_reason`, a signal of the call protocol): recorded for the distinctness of the space.
 fn jn_declare_fixed(mut cx TxCx, line int, col int, name str, what str, space str, path []str, json str) -> () {
     cx.jn.decls.push(TxJnDecl { line, col, where: what, space, name, path, json, auto: json, row: -1, without: json, fixed: true })
 }
@@ -408,7 +408,7 @@ fn jn_declare_internal(mut cx TxCx, t TxTok, what str) -> () {
 
 fn jn_path_text(path []str) -> str => path.join(".")
 
-/// The declarations made since the index `from` belong to the contract (a connected fragment): no row names them and the report does not list them, but their JSON names are in their spaces.
+/// The declarations made since the index `from` belong to the contract (a connected library): no row names them and the report does not list them, but their JSON names are in their spaces.
 fn jn_fix_since(mut cx TxCx, from int) -> () {
     mut out = []TxJnDecl.new()
     mut k = 0

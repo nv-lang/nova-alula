@@ -364,7 +364,7 @@ fn names_list_json(names []str) -> TxJ {
     x_list(items)
 }
 
-// A list of nested machines: `[a, b]` (the names of the registry) or the name of a parameter of a fragment (`вложенные`) that was given a list. An empty list gives no name.
+// A list of nested machines: `[a, b]` (the names of the registry) or the name of a parameter (`вложенные`) that was given a list. An empty list gives no name.
 fn ac_nested_list(mut p TxP, mut cx TxCx) -> Result[[]str, TranslateError] {
     mut out = []str.new()
     if p_eat(p, "[") {
@@ -400,7 +400,7 @@ fn ac_nested_list(mut p TxP, mut cx TxCx) -> Result[[]str, TranslateError] {
             None => ()
         }
     }
-    Err(p_fail(p, "ожидается список вложенных машин в скобках или параметр фрагмента"))
+    Err(p_fail(p, "ожидается список вложенных машин в скобках или параметр со списком"))
 }
 
 // `передать(вложенные, сигнал)`: the signal `stop`, `continue`, `halt` or `cancel` to the nested machines of the list; a pass to nobody is nothing.

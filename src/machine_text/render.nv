@@ -444,15 +444,9 @@ fn rn_sec_definitions(mut cx RnCx, root RJ, dropped []str) -> []str {
 fn rn_sec_includes(mut cx RnCx, root RJ, copy_includes bool) -> []str {
     // 2.26: a subheading per library (1b (м), section 9)
     if cx.v226 { return rn_library_lines(cx, root, copy_includes) }
-    // the lines of connection of the fragments come first, one line each, with every argument (1b (m), 2.12, AL-32)
-    mut lines = rn_fragment_lines(cx, root)
-    if copy_includes && lines.len() == 0 { return ["—"] }
-    if copy_includes {
-        mut only = ["```"]
-        rn_add(only, lines)
-        only.push("```")
-        return only
-    }
+    // a copy of the included files writes no connection (2.25: the lines of the files of definitions only)
+    if copy_includes { return ["—"] }
+    mut lines = []str.new()
     for inc in rj_garr(root, "includes") {
         lines.push("${rn_kw(cx, "key", "functions")}: ${rj_gstr(inc, "name")} ${rn_kw(cx, "key", "version")} ${rj_gstr(inc, "version")} ${rn_kw(cx, "key", "hash")} ${rj_gstr(inc, "hash")}")
     }
