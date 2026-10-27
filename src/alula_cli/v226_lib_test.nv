@@ -1,0 +1,94 @@
+// v226_lib_test.nv - task 197 (Alula 2.26, stream 3): the program reads the files of the libraries that a machine connects (section 9): the path of `- Файл:` from the folder of the machine, then from
+// the folder `--lib`; a library that is not found is the error of the translation; `alula test` does not take a file of a library for a machine of the folder.
+module alula.alula_cli
+
+import std.text
+import alula.machine.{NamedText}
+import alula.machine_text.{definitions_hash}
+
+fn lib_cycle_text() -> str => `# Библиотека: арифметика_цикла
+
+- library: cycle_arithmetic
+- format: 2.26
+
+## Функции
+
+~~~
+функция потолок_исчерпан(номер число>=1, отсчёт число>=1, предел число>=0) -> булево =>
+  (номер - 1) - отсчёт + 1 >= предел
+~~~
+`.replace("~~~", "```")
+
+fn lib_calc_text() -> str => `# Машина: Calc
+
+- machine: Calc
+- machine_version: 1
+- format: 2.26
+
+## Имена
+
+| имя | JSON-имя |
+|---|---|
+| СЧЁТ | Count |
+| КОНЕЦ | Finished |
+
+## Данные
+
+| имя | тип | начальное | не убывает | пишет |
+|---|---|---|---|---|
+| исчерпан | булево | ложь | — | действия |
+
+## Подключения
+
+### арифметика_цикла
+- Файл: libs/cycle.alula.md
+- Хеш: HASH
+
+## Состояния
+
+Начальное состояние: СЧЁТ
+
+### СЧЁТ — операция
+
+| Действия | Куда |
+|---|---|
+| исчерпан = потолок_исчерпан(1, 1, 0) | КОНЕЦ |
+
+### КОНЕЦ — конец
+
+## Выход
+
+- Результат: булево
+
+| конец | когда | ответ |
+|---|---|---|
+| КОНЕЦ | истина | Ответ(исчерпан) |
+`.replace("HASH", definitions_hash(lib_cycle_text()))
+
+test "lib226 the library beside the machine is read by the path of its line File" {
+    ro ran = run_with(["compile", "/work/calc.alula.md", "--no-check"], [file("/work/calc.alula.md", lib_calc_text()), file("/work/libs/cycle.alula.md", lib_cycle_text())])
+    assert(ran.err == "")
+    assert(ran.code == 0)
+    assert(ran.out.contains("\"includes\":[{\"name\":\"cycle_arithmetic\",\"hash\":\"${definitions_hash(lib_cycle_text())}\",\"file\":\"libs/cycle.alula.md\""))
+}
+
+test "lib226 the library is looked for in the folder of the option lib" {
+    ro ran = run_with(["compile", "/work/calc.alula.md", "--no-check", "--lib", "/shared"], [file("/work/calc.alula.md", lib_calc_text()), file("/shared/libs/cycle.alula.md", lib_cycle_text())])
+    assert(ran.err == "")
+    assert(ran.code == 0)
+}
+
+test "lib226 a library that is not found is an error of the file" {
+    ro ran = run_with(["compile", "/work/calc.alula.md", "--no-check"], [file("/work/calc.alula.md", lib_calc_text())])
+    assert(ran.code == 1)
+    assert(ran.err.contains("libs/cycle.alula.md"))
+}
+
+test "lib226 the option lib needs a folder and is not an option of render" {
+    assert(run_with(["compile", "/work/calc.alula.md", "--lib"], [file("/work/calc.alula.md", lib_calc_text())]).code == 2)
+    assert(run_with(["render", "/work/calc.alula.json", "--lib", "/shared"], [file("/work/calc.alula.json", "{}")]).code == 2)
+}
+
+test "lib226 the help of compile names the option lib" {
+    assert(run0(["compile", "--help"]).out.contains("--lib <folder>"))
+}

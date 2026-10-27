@@ -68,6 +68,17 @@ fn lib_old_message(shown str) -> str {
     message
 }
 
+// The texts with the separator between them (a loop, not `.join`: the program builds this unit with `std.fs`, whose `Path.join` takes the name, ORACLE-WORKAROUND(32)).
+fn lib_join(items []str, sep str) -> str {
+    mut out = ""
+    mut first = true
+    for x in items {
+        out = if first { x } else { "${out}${sep}${x}" }
+        first = false
+    }
+    out
+}
+
 fn lib_cut(text str) -> str {
     if text.chars().count() <= 40 { return text }
     mut out = []str.new()
@@ -76,7 +87,7 @@ fn lib_cut(text str) -> str {
         if k < 40 { out.push("${c}") }
         k += 1
     }
-    "${out.join("")}…"
+    "${lib_join(out, "")}…"
 }
 
 // ---- the connections -------------------------------------------------------------------------------------------------------------------------------
@@ -296,7 +307,7 @@ fn lib_value_wrong(type_json str, text str, w TxWords) -> str {
     if type_json.starts_with("\"") {
         ro values = lib_set_values(type_json)
         if !values.contains(v) {
-            ro why = "значение ${v} вне набора ${values.join(" | ")}"
+            ro why = "значение ${v} вне набора ${lib_join(values, " | ")}"
             return why
         }
         return ""
@@ -391,14 +402,14 @@ fn lib_subst_line(line str, names []str, values []str) -> str {
             continue
         }
         if word.len() > 0 {
-            out.push(lib_subst_word(word.join(""), names, values))
+            out.push(lib_subst_word(lib_join(word, ""), names, values))
             word = []str.new()
         }
         if c == '"' { in_str = true }
         out.push("${c}")
     }
-    if word.len() > 0 { out.push(lib_subst_word(word.join(""), names, values)) }
-    out.join("")
+    if word.len() > 0 { out.push(lib_subst_word(lib_join(word, ""), names, values)) }
+    lib_join(out, "")
 }
 
 fn lib_subst_word(w str, names []str, values []str) -> str {
@@ -437,7 +448,7 @@ fn lib_substitute(text str, args []TxLibArg, params []TxLibParam, w TxWords) -> 
             out.push(raw)
         }
     }
-    out.join("\n")
+    lib_join(out, "\n")
 }
 
 // ---- reading a library -----------------------------------------------------------------------------------------------------------------------------
@@ -868,7 +879,7 @@ fn lib_quoted(text str) -> []str {
         if in_str {
             cur.push("${c}")
             if c == '"' {
-                out.push(cur.join(""))
+                out.push(lib_join(cur, ""))
                 cur = []str.new()
                 in_str = false
             }
@@ -1113,5 +1124,48 @@ fn contract_data_used(text str) -> []TxJ {
     mut out = []TxJ.new()
     if text.contains("\"op\":\"name\",\"name\":\"call_request_id\"") { out.push(contract_datum_json("call_request_id")) }
     if text.contains("\"op\":\"name\",\"name\":\"open_requests\"") || text.contains("\"do\":\"pass\"") || text.contains("\"do\":\"cancel_open\"") { out.push(contract_datum_json("open_requests")) }
+    out
+}
+
+// ---- the files of the libraries for the program ------------------------------------------------------------------------------------------------
+
+/// The paths that a file of 2.26 connects (the values of the lines `- Файл:`, `- File:` under the subheadings of `## Подключения`), in their order; the program reads them beside the machine, then in the folder `--lib`.
+export fn library_paths(file_text str) -> []str {
+    mut out = []str.new()
+    mut in_includes = false
+    for raw in file_text.split("\n") {
+        ro line = (raw.strip_suffix("\r") ?? raw).trim_ascii()
+        if line.starts_with("## ") {
+            ro title = lx_cut_comment(line[3..]).trim_ascii()
+            in_includes = title == kw(words_load("ru"), "section", "Includes") || title == kw(words_load("en"), "section", "Includes")
+            continue
+        }
+        if !in_includes { continue }
+        for lang in ["ru", "en"] {
+            ro kl = lib_key_line(line, words_load(lang))
+            if kl.key == "File" && kl.value != "" && !out.contains(kl.value) { out.push(kl.value) }
+        }
+    }
+    out
+}
+
+/// Is the text a file of a library (its first line `# Библиотека:` or `# Library:`)? `alula test` does not read such a file as a machine of the folder.
+export fn is_library_text(file_text str) -> bool {
+    for raw in file_text.split("\n") {
+        ro line = (raw.strip_suffix("\r") ?? raw).trim_ascii()
+        if line == "" { continue }
+        for lang in ["ru", "en"] {
+            if line.starts_with("# ${kw(words_load(lang), "header", "Library")}:") { return true }
+        }
+        return false
+    }
+    false
+}
+
+/// The files that a translation may connect: the libraries of the caller (by their paths) and the files of definitions that come with the translator (2.25).
+export fn library_registry(libs []NamedText) -> []NamedText {
+    mut out = []NamedText.new()
+    for f in libs { out.push(f) }
+    for f in defs_files() { out.push(f) }
     out
 }

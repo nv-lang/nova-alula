@@ -5,11 +5,12 @@ import std.text
 
 /// Args: what the words after the name of the command say. `error` is empty when they are right; `help` is the flag `--help` or `-h`.
 export type Args {
-    files []str, output str, has_output bool, force bool, lenient bool, no_check bool, verbose bool, language str, has_language bool, registry_file str, has_registry bool, journal_file str, has_journal bool, help bool, error str
+    files []str, output str, has_output bool, force bool, lenient bool, no_check bool, verbose bool, language str, has_language bool, registry_file str, has_registry bool, journal_file str, has_journal bool, help bool, error str,
+    lib str, has_lib bool
 }
 
 fn args_empty() -> Args {
-    Args { files: []str.new(), output: "", has_output: false, force: false, lenient: false, no_check: false, verbose: false, language: "", has_language: false, registry_file: "", has_registry: false, journal_file: "", has_journal: false, help: false, error: "" }
+    Args { files: []str.new(), output: "", has_output: false, force: false, lenient: false, no_check: false, verbose: false, language: "", has_language: false, registry_file: "", has_registry: false, journal_file: "", has_journal: false, help: false, error: "", lib: "", has_lib: false }
 }
 
 /// The names of the commands.
@@ -17,13 +18,13 @@ export fn command_names() -> []str => ["compile", "render", "convert", "check", 
 
 /// The options that a command takes (`-o` and `--output` are one option, `-v` and `--verbose` too); the others are "unknown option".
 fn options_of(command str) -> []str {
-    if command == "compile" { return ["-o", "--force", "--lenient", "--no-check", "--registry", "--journal"] }
+    if command == "compile" { return ["-o", "--force", "--lenient", "--no-check", "--registry", "--journal", "--lib"] }
     if command == "render" { return ["-o", "--force", "--lenient", "--language", "--registry", "--journal"] }
-    if command == "convert" { return ["-o", "--force", "--lenient", "--no-check", "--language", "--registry", "--journal"] }
-    if command == "check" { return ["--no-check", "--registry", "--journal"] }
-    if command == "summary" { return ["--no-check", "--registry", "--journal"] }
-    if command == "run" { return ["--registry", "--journal"] }
-    if command == "test" { return ["-v", "--registry", "--journal"] }
+    if command == "convert" { return ["-o", "--force", "--lenient", "--no-check", "--language", "--registry", "--journal", "--lib"] }
+    if command == "check" { return ["--no-check", "--registry", "--journal", "--lib"] }
+    if command == "summary" { return ["--no-check", "--registry", "--journal", "--lib"] }
+    if command == "run" { return ["--registry", "--journal", "--lib"] }
+    if command == "test" { return ["-v", "--registry", "--journal", "--lib"] }
     []str.new()
 }
 
@@ -80,6 +81,20 @@ export fn parse_args(command str, words []str) -> Args {
                 i += 1
             } else {
                 a.error = first_error(a.error, "${name} needs a file")
+            }
+        } else if name == "--lib" {
+            // the folder of the libraries (2.26, section 9): a file of `- Файл:` that is not beside the machine is looked for there
+            if !allowed.contains("--lib") {
+                a.error = first_error(a.error, "unknown option `${w}`")
+            } else if w.contains("=") {
+                a.lib = w[(w.find("=") ?? 0) + 1..]
+                a.has_lib = true
+            } else if i + 1 < words.len() && !is_option(words[i + 1]) {
+                a.lib = words[i + 1]
+                a.has_lib = true
+                i += 1
+            } else {
+                a.error = first_error(a.error, "--lib needs a folder")
             }
         } else if (name == "-v" || name == "--verbose") && allowed.contains("-v") {
             a.verbose = true

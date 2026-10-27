@@ -157,6 +157,36 @@ fn output_error(a Args) Fs -> str {
     ""
 }
 
+// The files of the libraries that a machine of 2.26 connects (section 9): the path of `- Файл:` from the folder of the machine, else from the folder of `--lib`; a file that is not found
+// is not given, and the translation says "не найдена".
+fn library_files(text str, file str, a Args) Fs -> []NamedText {
+    mut out = []NamedText.new()
+    for path in wanted_libraries(text) {
+        ro near = if dir_of(file) == "." { path } else { "${dir_of(file)}/${path}" }
+        match read_file(near) {
+            Some(t) => out.push(NamedText { name: path, text: t })
+            None => {
+                if a.has_lib {
+                    match read_file("${trimmed_dir(a.lib)}/${path}") {
+                        Some(t) => out.push(NamedText { name: path, text: t })
+                        None => ()
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+// The files of the folder of `--lib` for `alula test` (a library is found by the end of its path).
+fn lib_folder_files(a Args) Fs -> []NamedText {
+    if !a.has_lib { return []NamedText.new() }
+    match folder_files(trimmed_dir(a.lib)) {
+        Some(files) => files
+        None => []NamedText.new()
+    }
+}
+
 fn run_file_command(command str, a Args) Fs Io -> int {
     ro file = a.files[0]
     if is_former_name(file) { return usage_error(command, former_name_message(file)) }
@@ -172,11 +202,12 @@ fn run_file_command(command str, a Args) Fs Io -> int {
         Ok(r) => r
         Err(message) => return usage_error(command, message)
     }
-    if command == "compile" { return deliver(compile_command(text, file, a.no_check, a.lenient, registry), command, a) }
+    ro libs = library_files(text, file, a)
+    if command == "compile" { return deliver(compile_command(text, file, a.no_check, a.lenient, registry, libs), command, a) }
     if command == "render" { return deliver(render_command(text, file, language, a.lenient, registry), command, a) }
-    if command == "convert" { return deliver(convert_command(text, file, language, a.no_check, a.lenient, registry), command, a) }
-    if command == "check" { return deliver(check_command(text, file, a.no_check, registry), command, a) }
-    deliver(summary_command(text, file, a.no_check, registry), command, a)
+    if command == "convert" { return deliver(convert_command(text, file, language, a.no_check, a.lenient, registry, libs), command, a) }
+    if command == "check" { return deliver(check_command(text, file, a.no_check, registry, libs), command, a) }
+    deliver(summary_command(text, file, a.no_check, registry, libs), command, a)
 }
 
 fn run_test_command(a Args) Fs Io -> int {
@@ -199,7 +230,7 @@ fn run_test_command(a Args) Fs Io -> int {
         Ok(r) => r
         Err(message) => return usage_error("run", message)
     }
-    deliver(run_command(machine_text, machine_file, test_text, test_file, registry), "run", a)
+    deliver(run_command(machine_text, machine_file, test_text, test_file, registry, library_files(machine_text, machine_file, a)), "run", a)
 }
 
 fn run_folder_command(a Args) Fs Io -> int {
@@ -210,7 +241,7 @@ fn run_folder_command(a Args) Fs Io -> int {
         Some(files) => {
             match host_of("test", a, dir) {
                 Err(message) => usage_error("test", message)
-                Ok(registry) => deliver(test_command(files, dir, a.verbose, registry), "test", a)
+                Ok(registry) => deliver(test_command(files, dir, a.verbose, registry, lib_folder_files(a)), "test", a)
             }
         }
     }

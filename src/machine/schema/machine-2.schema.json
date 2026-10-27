@@ -142,7 +142,8 @@
           ],
           "description": "does not decrease (true), with the bound `<= expr` (an object)"
         },
-        "writes": { "enum": ["rows", "mechanics", "rows_and_mechanics", "fragment", "rows_and_fragment"], "default": "rows" }
+        "writes": { "enum": ["rows", "mechanics", "rows_and_mechanics", "fragment", "rows_and_fragment"], "default": "rows" },
+        "engine": { "const": true, "description": "a datum of the engine of the library `контракт` (2.26, section 7а: `call_request_id`, `open_requests`): only the engine writes it" }
       }
     },
     "signal_def": {
@@ -200,8 +201,22 @@
       }
     },
     "include": {
-      "type": "object", "additionalProperties": false, "required": ["name", "version", "hash"],
-      "properties": { "name": { "type": "string" }, "version": { "type": "string" }, "hash": { "type": "string", "pattern": "^[0-9a-f]{12}$" } }
+      "type": "object", "additionalProperties": false, "required": ["name", "hash"],
+      "description": "a file of definitions of 2.25 (name, version, hash) or a library of 2.26 (section 9: name - the Latin name of `- library:`, hash, file, heading - the subheading, instance - the name of `- Имя:`, args - the values of the parameters, brings - the JSON names of what the library put in the tree; no version)",
+      "properties": {
+        "name": { "type": "string" }, "version": { "type": "string" }, "hash": { "type": "string", "pattern": "^[0-9a-f]{12}$" },
+        "file": { "type": "string" }, "heading": { "type": "string" }, "instance": { "type": "string" },
+        "args": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["name", "value"], "properties": { "name": { "type": "string" }, "value": { "$ref": "#/$defs/expr" } } } },
+        "brings": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "types": { "type": "array", "items": { "type": "string" } }, "constants": { "type": "array", "items": { "type": "string" } }, "definitions": { "type": "array", "items": { "type": "string" } },
+            "data": { "type": "array", "items": { "type": "string" } }, "states": { "type": "array", "items": { "type": "string" } }, "signals": { "type": "array", "items": { "type": "string" } },
+            "common_events": { "type": "integer", "minimum": 0 }
+          }
+        }
+      },
+      "anyOf": [ { "required": ["version"] }, { "required": ["file"] } ]
     },
     "binds": { "type": "object", "additionalProperties": { "type": "string" }, "description": "the fields of the event bound to names: {\"field\": \"name\"}" },
     "event": {
@@ -211,7 +226,7 @@
         { "properties": { "kind": { "const": "answer_variant" }, "variant": { "type": "string" }, "bind": { "$ref": "#/$defs/binds" } }, "required": ["variant"], "additionalProperties": false },
         { "properties": { "kind": { "const": "failure" }, "reasons": { "type": "array", "items": { "type": "string" } }, "bind": { "type": "string" } }, "additionalProperties": false },
         { "properties": { "kind": { "const": "timeout" } }, "additionalProperties": false },
-        { "properties": { "kind": { "const": "progress" }, "name": { "type": "string" }, "bind": { "$ref": "#/$defs/binds" } }, "required": ["name"], "additionalProperties": false },
+        { "properties": { "kind": { "const": "progress" }, "name": { "type": "string" }, "bind": { "oneOf": [ { "$ref": "#/$defs/binds" }, { "type": "string", "description": "`часть(имя)` of 2.26: the whole part" } ] } }, "required": ["name"], "additionalProperties": false },
         { "properties": { "kind": { "const": "signal" }, "name": { "type": "string" }, "bind": { "$ref": "#/$defs/binds" } }, "required": ["name"], "additionalProperties": false },
         { "properties": { "kind": { "const": "now" } }, "additionalProperties": false }
       ]
