@@ -1,0 +1,20 @@
+// v226_fork_test.nv - task 239 (Alula 2.26, stream 4; AL-137, section 4.1 of the specification): the row `иначе` of a fork is not required in 2.26: a fork whose rows are not proved
+// exhaustive by the type passes the checks, the engine leads an uncovered fork to the error with `ошибка_машины("fork_no_match", fork: …)`; the check of AL-57 ("иначе is required unless the
+// type proves the exhaustion") stays for a tree of 2.25 only. The written `иначе` after a proved exhaustion is still a warning.
+module alula.machine_text
+
+import std.text
+
+// The machine of the reads tests without the row `иначе` of its fork: `число_ходов >= 4` alone, the type proves nothing.
+fn fork226_text() -> str => rd_text().replace("| иначе |  | ЖДАТЬ |\n", "")
+
+test "v226 fork a fork without the row else passes the checks of a file of 2.26" {
+    assert(rd_first(rd_checked(fork226_text())) == "ok")
+    for e in rd_checked(fork226_text()).errors { assert(!e.message.contains("AL-57")) }
+}
+
+test "v226 fork the tree of the fork without else has no row else" {
+    ro j = rd_checked(fork226_text()).json
+    assert(j.contains("{\"name\":\"Decide\",\"kind\":\"fork\""))
+    assert(!j.contains("\"else\":true"))
+}
