@@ -77,32 +77,30 @@ test "v217 convert to English and back keeps the tree" {
     assert(!second.out.contains("\"counter\""))
 }
 
-test "v217 version names the format 2.26" {
+test "v217 version names the language 2.27" {
     ro ran = run0(["version"])
-    assert(ran.out.contains("Alula 2.26"))
+    assert(ran.out.contains("Алула 2.27"))
     assert(!ran.out.contains("2.14"))
 }
 
-test "v217 the program is of the version 0.9.1" {
-    assert(PROGRAM_VERSION == "0.9.1")
-    assert(run0(["version"]).out.contains("alula 0.9.1"))
+test "v217 the program is of the version 2.27.0" {
+    assert(PROGRAM_VERSION == "2.27.0")
+    assert(run0(["version"]).out.contains("alula 2.27.0"))
 }
 
-test "v217 a file of 2.23 is not read: the format 2.25 is the only one" {
+test "v217 a file of 2.23 is not read: the old key format is refused with the hint" {
     ro ran = run217(["check", path217()], file217().replace("format: 2.25", "format: 2.23"))
     assert(ran.code == 1)
-    assert(ran.err.contains("формат 2.23: версия не известна"))
-    assert(ran.err.contains("читает формат 2.25"))
+    assert(ran.err.contains("с 2.27 — revision и alula_version"))
 }
 
 test "v217 a file of 2.22 is not read" {
     ro ran = run217(["check", path217()], file217().replace("format: 2.25", "format: 2.22"))
     assert(ran.code == 1)
-    assert(ran.err.contains("версия не известна"))
-    assert(ran.err.contains("читает формат 2.25"))
+    assert(ran.err.contains("с 2.27 — revision и alula_version"))
     ro older = run217(["check", path217()], file217().replace("format: 2.25", "format: 2.14"))
     assert(older.code == 1)
-    assert(older.err.contains("версия не известна"))
+    assert(older.err.contains("с 2.27 — revision и alula_version"))
 }
 
 test "v217 brackets after a name are refused with the new way" {
@@ -127,7 +125,7 @@ test "v217 a fork without else over numbers is refused" {
     assert(ran.err.contains("else"))
 }
 
-test "v217 the tables of the folder say format 2.26" {
+test "v217 the tables of the folder say alula_version 2.27" {
     for f in table_files() {
         assert(f.text.contains("- alula_version: 2.27"))
         assert(!f.text.contains("format: 2.14"))
@@ -138,6 +136,6 @@ test "v217 the tables of the examples compile" {
     for name in example_tables() {
         ro ran = run_with(["compile", "/m/${name}"], one_in_host("/m/${name}", text_of_file(table_files(), name)))
         if ran.code != 0 { panic("compile ${name}: ${ran.err}") }
-        assert(ran.out.contains("\"format\":\"machine/2\"") || ran.out.contains("\"format\": \"machine/2\""))
+        assert(ran.out.contains("\"kind\":\"machine\"") || ran.out.contains("\"kind\": \"machine\""))
     }
 }

@@ -38,14 +38,14 @@ test "v217 a tree of the version 2.23 is refused" {
     ro text = tiny().replace("\"format\":\"machine/2\"", "\"format\":\"machine/2\",\"alula_version\":\"2.23\"")
     assert(!ok_text(text))
     assert(says(text, "got 2.23"))
-    assert(says(text, "must be 2.26"))
+    assert(says(text, "must be 2.27"))
 }
 
 test "v217 a tree of the version 2.22 is refused" {
     ro text = tiny().replace("\"format\":\"machine/2\"", "\"format\":\"machine/2\",\"alula_version\":\"2.22\"")
     assert(!ok_text(text))
     assert(says(text, "got 2.22"))
-    assert(says(text, "must be 2.26"))
+    assert(says(text, "must be 2.27"))
     ro older = tiny().replace("\"format\":\"machine/2\"", "\"format\":\"machine/2\",\"alula_version\":\"2.14\"")
     assert(!ok_text(older))
     assert(says(older, "2.14"))

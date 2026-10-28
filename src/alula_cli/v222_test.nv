@@ -19,12 +19,12 @@ fn file222() -> str {
 test "c222 the version names the program and the language" {
     ro ran = run0(["version"])
     assert(ran.code == 0)
-    assert(ran.out.starts_with("alula 0.9.1"))
-    assert(ran.out.contains("Alula 2.26"))
+    assert(ran.out.starts_with("alula 2.27.0"))
+    assert(ran.out.contains("Алула 2.27"))
 }
 
 test "c222 the version of the program is a constant" {
-    assert(PROGRAM_VERSION == "0.9.1")
+    assert(PROGRAM_VERSION == "2.27.0")
 }
 
 test "c222 the tiny file of the tests is checked" {
@@ -100,7 +100,7 @@ test "c222 a former version of the file is not read" {
     for version in ["2.14", "2.17", "2.21"] {
         ro ran = run222(["check", path222()], tiny_ru().replace("format: 2.25", "format: ${version}"))
         assert(ran.code == 1)
-        assert(ran.err.contains("версия не известна"))
+        assert(ran.err.contains("с 2.27 — revision и alula_version"))
     }
 }
 
