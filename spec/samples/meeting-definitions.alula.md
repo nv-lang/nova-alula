@@ -1,8 +1,8 @@
 # Машина: Совещание
 
 - machine: meeting
-- machine_version: alula-2.24
-- format: 2.26
+- revision: 1
+- alula_version: 2.27
 
 Это **запись машины «Совещание агентов» целиком на Алуле**, версия формата 2.24 ([spec/alula-spec.md](../alula-spec.md); он единственное определение языка записи). Первоисточник — эта запись на Алуле; прежние таблицы лежат в архиве и не обновляются. Прежняя запись — таблицы состояний [archive/task-runner-meeting-states.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/task-runner-meeting-states.md), код автомата [archive/task-runner-meeting-automaton.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/task-runner-meeting-automaton.md) и псевдокод [archive/task-runner-meeting-pseudocode.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/task-runner-meeting-pseudocode.md). Фрагмент «Пауза» — [archive/state-machine-pause-states.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/state-machine-pause-states.md), коды журнала — [state-machine-journal.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/state-machine-journal.md), имена — [state-machine-glossary.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/state-machine-glossary.md). Вложенная машина «Шаг агента» — [spec/samples/agent-step.alula.md](agent-step.alula.md). Справка к записи — что не уложилось в формат, неоднозначности спецификации, соответствие источнику — [spec/samples/meeting-notes.md](meeting-notes.md).
 
@@ -34,7 +34,6 @@
                    пределы ПределыАгента, трасса строка, номер_шага число }
 тип Использование { сессия строка, результат строка, семья строка, модель МодельАгента, токены Токены, стоимость ?вещественное,
                     создано число, обновлено число, занято_контекста ?число, трасса строка, номер_шага число }
-тип ОтветАгента { текст ?строка, артефакт ?строка, использование Использование, начало_запроса ?число }
 
 тип ОтветСвидетеля перечисление
   | Ответил { утверждение Утверждение }
@@ -143,9 +142,9 @@
 
 | имя | идентификатор | вид | профиль | сигналы | счётчик |
 |---|---|---|---|---|---|
-| свидетель | witness | machine шаг_агента(вход ЗапросАгента, итог ОтветАгента); разбор: разобрать_ответ_свидетеля -> []ОтветСвидетеля | профиль_стороны("witness") | — | попытка_свидетеля |
-| автор | author | machine шаг_агента(вход ЗапросАгента, итог ОтветАгента); разбор: разобрать_ответ_автора -> ИтогПравки | профиль_стороны("author") | — | попытка_автора |
-| линза | — | machine шаг_агента(вход ЗапросАгента, итог ОтветАгента); разбор: разобрать_ответ_линзы -> ИтогЛинзы | профиль_стороны(сторона) | — | линзы[*].попытка |
+| свидетель | witness | machine шаг_агента; разбор: разобрать_ответ_свидетеля -> []ОтветСвидетеля | профиль_стороны("witness") | — | попытка_свидетеля |
+| автор | author | machine шаг_агента; разбор: разобрать_ответ_автора -> ИтогПравки | профиль_стороны("author") | — | попытка_автора |
+| линза | — | machine шаг_агента; разбор: разобрать_ответ_линзы -> ИтогЛинзы | профиль_стороны(сторона) | — | линзы[*].попытка |
 | вратарь | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — | повторить, остановить совещание, оставить правку, вернуть копию, остановить, не засчитан, засчитан { находки_В3 []Находка }, ещё заход { решение_человека строка }, остановиться, ответил { ответ_человека строка }, подтвердил { подтверждение строка } | попытка_вратаря |
 | усиленный | enhanced | enhanced(итог ИсходВорот) | — | продолжить { слово_человека строка, автор строка, источник строка }, остановить совещание | попытка_усиленного |
 
@@ -169,11 +168,11 @@
 
 ### арифметика_цикла
 - Файл: libs/cycle_arithmetic.alula.md
-- Хеш: 9d9bbb379b8d
+- Хеш: 27e3a65d6f9a
 
 ### Пауза
 - Файл: libs/pause.alula.md
-- Хеш: e7d85aa43589
+- Хеш: f14004122df2
 
 | параметр | значение |
 |---|---|

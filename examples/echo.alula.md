@@ -1,8 +1,8 @@
 # Machine: Echo
 
 - machine: Echo
-- machine_version: 1
-- format: 2.26
+- revision: 1
+- alula_version: 2.27
 - language: en
 
 A chat in the quiet: the party `user` is a human with a free input (spec AL-51, AL-52: no gate, no request, no counter). Every signal of the user is journaled and counted, the row stays in the

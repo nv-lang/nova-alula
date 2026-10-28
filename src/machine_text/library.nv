@@ -24,15 +24,16 @@ type TxLibUse { heading str, instance str, named bool, file str, hash str, line 
 /// TxLibParam: a parameter of a library (`## Параметры`, `имя | тип | комментарий`): the name, the type as written and as the tree writes it.
 type TxLibParam { name str, type_text str, type_json str }
 
-/// TxLibReq: a row of `## Требует` (`имя | тип`) with the parameters put in: what the library takes from the machine.
-type TxLibReq { name str, type_text str, line int }
+/// TxLibReq: a row of a section of the requirements with the parameters put in: what the library takes from the machine (AL-145, Alula 2.27). `kind` is `datum` (`## Требует данные`,
+/// `имя | тип`), `party` (`## Требует стороны`, `имя | вид | сигналы`: `type_text` is the kind of the party, `signals` the names of its signals) or `end` (`## Требует концы`, `имя`).
+type TxLibReq { kind str, name str, type_text str, signals []str, line int }
 
 /// TxLibRun: a library read for a connection: the connection, the name `- library:`, the title `# Библиотека:`, the entries and the sections of the text with the parameters put in, the blocks of
 /// its states, the parameters, the requirements.
 type TxLibRun { use TxLibUse, library str, title str, entries []TxEntry, sections []TxSection, blocks []TxBlock, params []TxLibParam, reqs []TxLibReq }
 
 /// The keys of the sections of a library (section 9), the English words of the table of words.
-fn lib_section_keys() -> []str => ["Parameters", "Requires", "Types", "Names", "Constants", "Data", "Functions", "Common events", "States"]
+fn lib_section_keys() -> []str => ["Parameters", "Requires data", "Requires parties", "Requires ends", "Requires", "Types", "Names", "Constants", "Data", "Functions", "Common events", "States"]
 
 /// The message about a section that stands where it may not: the sections of a library in a machine, the sections of the contract, the external functions and the connections in a library.
 fn section_misplaced(key str, keys []str, w TxWords) -> str {
@@ -41,7 +42,7 @@ fn section_misplaced(key str, keys []str, w TxWords) -> str {
         ro message = "раздел `${title}` бывает только в библиотеке `контракт`: она вшита в язык и подключается неявно (раздел 7а)"
         return message
     }
-    if keys.contains("Requires") {
+    if keys.contains("Requires data") {
         if key == "External functions" {
             ro message = "в библиотеке раздела `${title}` нет: библиотека не объявляет и не вызывает внешних функций (раздел 9)"
             return message
@@ -51,10 +52,10 @@ fn section_misplaced(key str, keys []str, w TxWords) -> str {
             return message
         }
         if key == "Parties" || key == "Input" || key == "Ends" || key == "Output" {
-            ro message = "в библиотеке раздела `${title}` нет: стороны и данные головной машины библиотека называет в `## ${kw(w, "section", "Requires")}` (раздел 9)"
+            ro message = "в библиотеке раздела `${title}` нет: стороны и данные головной машины библиотека называет в `## ${kw(w, "section", "Requires data")}`, `## ${kw(w, "section", "Requires parties")}`, `## ${kw(w, "section", "Requires ends")}` (раздел 9)"
             return message
         }
-    } else if key == "Requires" {
+    } else if key == "Requires data" || key == "Requires parties" || key == "Requires ends" || key == "Requires" {
         ro message = "раздел `${title}` бывает только в файле библиотеки (раздел 9)"
         return message
     }
@@ -200,6 +201,7 @@ fn lib_header(lines []str, mut cx TxCx) -> TxLibHead {
     mut title = ""
     mut library = ""
     mut format = ""
+    mut old = false
     ro head_word = "${kw(cx.words, "header", "Library")}:"
     mut no = 0
     mut seen_head = false
@@ -221,18 +223,23 @@ fn lib_header(lines []str, mut cx TxCx) -> TxLibHead {
         if h.key == "library" {
             library = h.value
             if !is_identifier_latin(library) { note(cx, struct_error(no, h.col, "имя библиотеки в строке `library` — латинский идентификатор, найдено `${library}`")) }
-        } else if h.key == "format" {
+        } else if h.key == "alula_version" {
             format = h.value
+        } else if h.key == "format" || h.key == "machine_version" {
+            old = true
+            note(cx, struct_error(no, 1, header_old_hint()))
+        } else if h.key == "revision" {
+            note(cx, struct_error(no, 1, "у библиотеки ревизии нет: шапка библиотеки — library, alula_version, language (раздел 9)"))
         } else if h.key == "language" {
             ()
         } else if h.key != "" {
-            note(cx, struct_error(no, 1, "в шапке библиотеки бывают строки library, format, language"))
+            note(cx, struct_error(no, 1, "в шапке библиотеки бывают строки library, alula_version, language"))
         }
     }
     if library == "" { note(cx, struct_error(1, 1, "в шапке библиотеки нет строки `- library: <латинское_имя>`")) }
-    if format != "2.26" {
-        ro shown = if format == "" { "не указан" } else { format }
-        note(cx, struct_error(1, 1, "формат библиотеки ${shown}: библиотека пишется в формате 2.26 (строка `- format: 2.26`)"))
+    if format != "2.27" && !old {
+        ro shown = if format == "" { "не указана" } else { format }
+        note(cx, struct_error(1, 1, "версия языка библиотеки ${shown}: библиотека пишется на Алуле 2.27 (строка `- alula_version: 2.27`)"))
     }
     TxLibHead { title, library, format }
 }
@@ -482,15 +489,67 @@ fn lib_load(u TxLibUse, file NamedText, mut cx TxCx) -> TxLibRun {
     ro entries = classified.entries
     ro sections = sections_in(entries, cx, lib_section_keys())
     mut reqs = []TxLibReq.new()
+    // the single section of 2.26 is refused with the hint (AL-145)
     match section_of(sections, "Requires") {
+        Some(sec) => note(cx, struct_error(sec.line, 1, "с 2.27 три раздела: `## ${kw(cx.words, "section", "Requires data")}` (имя | тип), `## ${kw(cx.words, "section", "Requires parties")}` (имя | вид | сигналы), `## ${kw(cx.words, "section", "Requires ends")}` (имя); переходного периода нет"))
+        None => ()
+    }
+    match section_of(sections, "Requires data") {
         Some(sec) => {
             for r in section_table(entries, sec, ["name", "type"], cx) {
-                reqs.push(TxLibReq { name: r.cells[0].text.trim_ascii(), type_text: r.cells[1].text.trim_ascii(), line: r.line })
+                reqs.push(TxLibReq { kind: "datum", name: r.cells[0].text.trim_ascii(), type_text: r.cells[1].text.trim_ascii(), signals: []str.new(), line: r.line })
+            }
+        }
+        None => ()
+    }
+    match section_of(sections, "Requires parties") {
+        Some(sec) => {
+            for r in section_table(entries, sec, ["name", "kind", "signals"], cx) {
+                reqs.push(TxLibReq { kind: "party", name: r.cells[0].text.trim_ascii(), type_text: r.cells[1].text.trim_ascii(), signals: lib_signal_names(r.cells[2].text), line: r.line })
+            }
+        }
+        None => ()
+    }
+    match section_of(sections, "Requires ends") {
+        Some(sec) => {
+            for r in section_table(entries, sec, ["name"], cx) {
+                reqs.push(TxLibReq { kind: "end", name: r.cells[0].text.trim_ascii(), type_text: "", signals: []str.new(), line: r.line })
             }
         }
         None => ()
     }
     TxLibRun { use: u, library: head.library, title: head.title, entries, sections, blocks: []TxBlock.new(), params, reqs }
+}
+
+// The names of the signals of a cell `сигналы` of `## Требует стороны`: the items between the commas outside the braces, each by its first name (`продолжить { … }` is `продолжить`); a
+// parameter put in is a text in quotes (`"остановить"`), its value is the name. `—` is no signal.
+fn lib_signal_names(cell str) -> []str {
+    mut out = []str.new()
+    ro text = cell.trim_ascii()
+    if text == "—" || text == "" { return out }
+    mut depth = 0
+    mut item = ""
+    mut items = []str.new()
+    for c in text.chars() {
+        ro one = "${c}"
+        if one == "{" { depth += 1 }
+        if one == "}" { depth -= 1 }
+        if one == "," && depth == 0 {
+            items.push(item)
+            item = ""
+        } else {
+            item = "${item}${one}"
+        }
+    }
+    items.push(item)
+    for it in items {
+        mut head = it.trim_ascii()
+        ro brace = head.find("{") ?? -1
+        if brace >= 0 { head = head[..brace].trim_ascii() }
+        if lib_is_text(head) { head = head[1..head.byte_len() - 1] }
+        if head != "" { out.push(head) }
+    }
+    out
 }
 
 // ---- the visibility (section 9, 0.9.1) -----------------------------------------------------------------------------------------------------------
@@ -545,8 +604,8 @@ fn lib_visibility_check(entries []TxEntry, params []TxLibParam, mut cx TxCx) -> 
     mut param_names = []str.new()
     for q in params { param_names.push(q.name) }
     if data.len() == 0 && param_names.len() == 0 { return }
-    // a requirement of a datum names the type of the datum of the machine: no parameter of the library stands in it (section 9, 0.9.1); a party and an end are not types of a datum
-    match lib_section_raw(entries, cx.words, "Requires") {
+    // a requirement of a datum names the type of the datum of the machine: no parameter of the library stands in it (section 9, 0.9.1)
+    match lib_section_raw(entries, cx.words, "Requires data") {
         Some(sec) => {
             mut i = sec.first
             mut header = true
@@ -556,7 +615,7 @@ fn lib_visibility_check(entries []TxEntry, params []TxLibParam, mut cx TxCx) -> 
                     ro t = e.cells[1].text.trim_ascii()
                     if header {
                         header = false
-                    } else if t != kw(cx.words, "kind_state", "end") && !t.starts_with("${kw(cx.words, "action", "party")} ") {
+                    } else {
                         for w in lib_words_of(t) {
                             if param_names.contains(w) { note(cx, tx_err(e.line, e.cells[1].col, "type", "в `## ${sec.title}` тип данного `${e.cells[0].text.trim_ascii()}` называет параметр `${w}` библиотеки: тип в требовании — тип данного машины, имён параметров в нём нет (раздел 9)")) }
                         }
@@ -1109,35 +1168,12 @@ fn lib_names_protocol(entries []TxEntry, sec TxSection, u TxLibUse, mut cx TxCx)
 
 // ---- the requirements ----------------------------------------------------------------------------------------------------------------------------------
 
-// The literals of a text in quotes (`"a" | "b"` -> `"a"`, `"b"`), each with its quotes.
-fn lib_quoted(text str) -> []str {
-    mut out = []str.new()
-    mut cur = []str.new()
-    mut in_str = false
-    for c in text.chars() {
-        if in_str {
-            cur.push("${c}")
-            if c == '"' {
-                out.push(lib_join(cur, ""))
-                cur = []str.new()
-                in_str = false
-            }
-        } else if c == '"' {
-            in_str = true
-            cur.push("\"")
-        }
-    }
-    out
-}
-
 /// The requirements of the libraries against the machine (section 9): a datum with a type that takes every value the library writes, a party (with the signals that the library names), an end.
 fn libs_requires(runs []TxLibRun, blocks []TxBlock, data []TxJ, mut cx TxCx) -> () {
     for run in runs {
         ro u = run.use
         for req in run.reqs {
-            ro end_word = kw(cx.words, "kind_state", "end")
-            ro party_word = kw(cx.words, "action", "party")
-            if req.type_text == end_word {
+            if req.kind == "end" {
                 // the end is named by its name in the machine, or the machine names it by the JSON name of the name of the library (a file written by the generator: `Halted` for `ОСТАНОВЛЕНО`)
                 mut latin = jn_peek(cx, req.name, "состояния", [req.name])
                 ro known = pair_get(cx.env.states, req.name)
@@ -1151,12 +1187,11 @@ fn libs_requires(runs []TxLibRun, blocks []TxBlock, data []TxJ, mut cx TxCx) -> 
                 }
                 if found && known == None { pair_add(cx.env.states, req.name, latin) }
                 if !found { note(cx, tx_err(u.line, u.col, "check", "библиотека `${run.title}` требует конец `${req.name}`; в машине его нет (раздел 9)")) }
-            } else if req.type_text.starts_with("${party_word} ") {
+            } else if req.kind == "party" {
                 if !pair_has(cx.env.parties, req.name) {
                     note(cx, tx_err(u.line, u.col, "check", "библиотека `${run.title}` требует сторону `${req.name}`; в машине её нет (раздел 9)"))
                 } else {
-                    for sig in lib_quoted(req.type_text) {
-                        ro bare = sig[1..sig.byte_len() - 1]
+                    for bare in req.signals {
                         if !pair_has(cx.env.psignals, bare) { note(cx, tx_err(u.line, u.col, "check", "библиотека `${run.title}` требует у стороны `${req.name}` сигнал `${bare}`; в столбце `${kw(cx.words, "column", "signals")}` его нет (раздел 9)")) }
                     }
                 }

@@ -110,7 +110,7 @@ test "pp checked first" {
 }
 
 test "pp test params" {
-    ro text = "{\"format\":\"test/0\",\"machine\":\"Calc\",\"params\":{\"проект.calc.step\":5},\"steps\":[{\"do\":\"feed\",\"event\":{\"kind\":\"start\",\"input\":{\"start\":0,\"label\":\"abc\"}},\"expect\":{\"state\":\"Finish\",\"data\":{\"count\":10}}}]}"
+    ro text = "{\"kind\":\"test\",\"machine\":\"Calc\",\"params\":{\"проект.calc.step\":5},\"steps\":[{\"do\":\"feed\",\"event\":{\"kind\":\"start\",\"input\":{\"start\":0,\"label\":\"abc\"}},\"expect\":{\"state\":\"Finish\",\"data\":{\"count\":10}}}]}"
     ro run = run_text(calc(), text)
     assert(run_ok(run))
     ro plain = text.replace("\"params\":{\"проект.calc.step\":5},", "")
@@ -120,8 +120,8 @@ test "pp test params" {
 }
 
 test "pp test key" {
-    ro bad = "{\"format\":\"test/0\",\"machine\":\"Calc\",\"params\":{\"STEP\":5},\"steps\":[]}"
+    ro bad = "{\"kind\":\"test\",\"machine\":\"Calc\",\"params\":{\"STEP\":5},\"steps\":[]}"
     assert(parse_err(bad).contains("the key of a parameter is проект.<key>"))
-    ro good = "{\"format\":\"test/0\",\"machine\":\"Calc\",\"params\":{\"проект.calc.step\":5},\"steps\":[]}"
+    ro good = "{\"kind\":\"test\",\"machine\":\"Calc\",\"params\":{\"проект.calc.step\":5},\"steps\":[]}"
     assert(parse_err(good) == "ok")
 }

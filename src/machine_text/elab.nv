@@ -626,8 +626,13 @@ fn el_root(root TxJ) -> ElOut {
 fn el_state(ty ElTypes, root TxJ, st TxJ, mut errs []ElErr) -> TxJ {
     ro party = el_str(st, "party")
     mut input_type = ""
+    // 2.27 (AL-146): the fields of the input of the called machine, `{name, type}`
+    mut callee_input = []TxJ.new()
     for p in el_items(root, "parties") {
-        if el_str(p, "name") == party { input_type = el_str(p, "input_type") }
+        if el_str(p, "name") == party {
+            input_type = el_str(p, "input_type")
+            callee_input = el_items(p, "input")
+        }
     }
     match st {
         TxObj(pairs) => {
@@ -638,6 +643,9 @@ fn el_state(ty ElTypes, root TxJ, st TxJ, mut errs []ElErr) -> TxJ {
                     for r in el_items(st, "inputs") {
                         ro field = el_str(r, "field")
                         mut want = if input_type != "" { el_lookup(ty, "${input_type}.${field}") } else { "" }
+                        for f in callee_input {
+                            if el_str(f, "name") == field { want = el_str(f, "type") }
+                        }
                         if want == "" { want = el_lookup(ty, field) }
                         match r {
                             TxObj(rp) => {

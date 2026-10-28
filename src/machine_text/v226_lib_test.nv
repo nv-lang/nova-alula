@@ -14,7 +14,7 @@ fn lib_fenced(text str) -> str => text.replace("~~~", "```")
 fn cycle_lib_text() -> str => lib_fenced(`# Библиотека: арифметика_цикла
 
 - library: cycle_arithmetic
-- format: 2.26
+- alula_version: 2.27
 
 ## Функции
 
@@ -28,7 +28,7 @@ fn cycle_lib_text() -> str => lib_fenced(`# Библиотека: арифмет
 fn pause_lib_text() -> str => `# Библиотека: Пауза
 
 - library: pause
-- format: 2.26
+- alula_version: 2.27
 
 ## Параметры
 
@@ -40,14 +40,24 @@ fn pause_lib_text() -> str => `# Библиотека: Пауза
 | отмена_запросов | "механика" \| "без_возврата_в_к_отправке" \| "прекратить_ход_транспорта" | эффекты — таблица спецификации |
 | вход_заново | "ничего" \| "запросы_из_к_отправке" | эффекты — таблица спецификации |
 
-## Требует
+## Требует данные
 
 | имя | тип |
 |---|---|
 | остановка | "cancel_request" \| "pause_halt" |
-| усиленный | сторона enhanced с сигналами продолжить { слово_человека строка, автор строка, источник строка } и сигнал_остановки |
-| ОСТАНОВЛЕНО | конец |
-| ОШИБКА | конец |
+
+## Требует стороны
+
+| имя | вид | сигналы |
+|---|---|---|
+| усиленный | enhanced | продолжить { слово_человека строка, автор строка, источник строка }, сигнал_остановки |
+
+## Требует концы
+
+| имя |
+|---|
+| ОСТАНОВЛЕНО |
+| ОШИБКА |
 
 ## Данные
 
@@ -117,8 +127,8 @@ fn lib226_text() -> str {
     ro text = `# Машина: Lib
 
 - machine: Lib
-- machine_version: 1
-- format: 2.26
+- revision: 1
+- alula_version: 2.27
 
 ## Имена
 
@@ -328,7 +338,7 @@ test "v226 lib a library declares no external functions" {
     ro bad = lib_fenced(`# Библиотека: арифметика_цикла
 
 - library: cycle_arithmetic
-- format: 2.26
+- alula_version: 2.27
 
 ## Внешние функции
 
@@ -392,8 +402,8 @@ test "v226 contract the term is an event of the party" {
 fn parts226_text() -> str => lib_fenced(`# Машина: Parts
 
 - machine: Parts
-- machine_version: 1
-- format: 2.26
+- revision: 1
+- alula_version: 2.27
 
 ## Типы
 

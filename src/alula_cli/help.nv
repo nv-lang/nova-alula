@@ -2,16 +2,16 @@
 module alula.alula_cli
 
 import std.text
-import alula.machine_table.{alula_versions, MACHINE_FORMAT}
+import alula.machine_table.{alula_versions}
 
 /// The version of the program.
-export const PROGRAM_VERSION = "0.9.1"
+export const PROGRAM_VERSION = "0.10.0"
 
-/// The line of `alula version`: the program, the version of the language it writes (2.26: there is no transition period), the format of the compiled machine.
+/// The line of `alula version`: the program and the version of the language it writes (2.27: there is no transition period); no version of a machine and no schema after a slash (AL-147).
 export fn version_text() -> str {
     ro versions = alula_versions()
-    if versions.len() == 1 { return "alula ${PROGRAM_VERSION} (Alula ${versions[0]}, ${MACHINE_FORMAT})\n" }
-    "alula ${PROGRAM_VERSION} (Alula ${versions[0]} - ${versions[versions.len() - 1]}, ${MACHINE_FORMAT})\n"
+    if versions.len() == 1 { return "alula ${PROGRAM_VERSION} (Alula ${versions[0]})\n" }
+    "alula ${PROGRAM_VERSION} (Alula ${versions[0]} - ${versions[versions.len() - 1]})\n"
 }
 
 /// The help of the program.
@@ -23,9 +23,9 @@ Usage:
 
 Commands:
   alula compile <file.alula.md> [-o <file.alula.json>] [--lenient] [--no-check] [--force]
-      Alula -> the JSON machine/2 (the language of the file is read from its header).
+      Alula -> the JSON tree of the machine (the language of the file is read from its header).
   alula render <file.alula.json> [--language ru|en] [-o <file.alula.md>] [--lenient] [--force] [--lib <folder>]
-      the JSON machine/2 -> a file of Alula in the canonical form (Russian by default).
+      the JSON tree -> a file of Alula in the canonical form (Russian by default).
   alula convert <file.alula.md> --language ru|en [-o <file.alula.md>] [--no-check] [--lenient] [--force] [--lib <folder>]
       a file of Alula in the other language, through the JSON, with the twins of its libraries in that language.
   alula check <file.alula.md|file.alula.json> [--no-check]
@@ -43,8 +43,8 @@ The host: the language names one primitive (new_id) and 35 journal codes; the re
 
 Files:
   *.alula.md            a machine written in Alula (Russian or English; the header says which), or a library (# Библиотека:, 2.26)
-  *.alula.json          the compiled machine (machine/2)
-  *.alula.test.json     a test (test/0)
+  *.alula.json          the compiled machine ("kind": "machine")
+  *.alula.test.json     a test ("kind": "test")
 
 An error is "file:line:column: kind: message" and the quoted line under it (a JSON file has no lines: 1:1).
 Exit codes: 0 success; 1 errors in a file, or a test that differs; 2 a wrong command or arguments (or a file that cannot be read).
@@ -55,7 +55,7 @@ export fn command_help(command str) -> str {
     if command == "compile" {
         return `alula compile <file.alula.md> [-o <file.alula.json>] [--lenient] [--no-check] [--force]
 
-Alula -> the JSON machine/2. The language of the file (ru or en) is read from its header; the extension is not looked at.
+Alula -> the JSON tree of the machine. The language of the file (ru or en) is read from its header; the extension is not looked at.
 The JSON goes to the standard output; with -o it goes to the file (an existing file is not overwritten without --force).
 The errors and the warnings go to the standard error as "file:line:column: kind: message".
 
@@ -71,7 +71,7 @@ The errors and the warnings go to the standard error as "file:line:column: kind:
     if command == "render" {
         return `alula render <file.alula.json> [--language ru|en] [-o <file.alula.md>] [--lenient] [--force] [--lib <folder>]
 
-The JSON machine/2 -> a file of Alula in the canonical form of the specification (section 1b). Russian by default.
+The JSON tree of a machine -> a file of Alula in the canonical form of the specification (section 1b). Russian by default.
 What the file cannot say goes to the standard error and the code is 1.
 A library in the other language is named by its twin in the language of the file (2.26, section 9: libs/pause.alula.md <-> libs/pause.en.alula.md):
 its file and its twin are read beside the machine, else in the folder of --lib; a library without a twin is an error.
@@ -108,7 +108,7 @@ A library without a twin is an error that lists them all (the code 1).
     if command == "check" {
         return `alula check <file.alula.md|file.alula.json> [--no-check]
 
-A file of Alula: the translation, the checks of the table, the warnings. A file *.json: the decoding of machine/2 and the checks of the table.
+A file of Alula: the translation, the checks of the table, the warnings. A file *.json: the decoding of the tree and the checks of the table.
 Prints "ok" and the code 0 when there are no errors; the errors and the warnings go to the standard error.
 
   --no-check            do not check the table against the primitives of the host
@@ -131,7 +131,7 @@ The summary of a machine: the states, the rows, the actions, the data, the parti
     if command == "run" {
         return `alula run <machine.alula.json|machine.alula.md> <name.alula.test.json>
 
-One test (test/0) on a machine. Prints "ok" and the code 0, or the report of the first differences and the code 1.
+One test on a machine. Prints "ok" and the code 0, or the report of the first differences and the code 1.
 The test names its machine; a machine with another name is an error.
 A test file with the name of before 0.8.0 is refused with "old file name, rename to *.alula.test.json" and the code 2.
 

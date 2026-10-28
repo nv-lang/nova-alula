@@ -87,7 +87,7 @@ fn note_lines(notes []str, file str) -> []str {
 
 // ---- compile -----------------------------------------------------------------------------------------------------------------------
 
-/// `alula compile`: Alula -> the JSON `machine/2`. With errors there is no JSON unless `lenient`; the code is 1 either way.
+/// `alula compile`: Alula -> the JSON tree of the machine. With errors there is no JSON unless `lenient`; the code is 1 either way.
 export fn compile_command(text str, file str, no_check bool, lenient bool, registry Registry, libs []NamedText) -> CmdResult {
     ro report = translated(text, no_check, registry, libs)
     mut lines = report_lines(report, file)
@@ -99,7 +99,7 @@ export fn compile_command(text str, file str, no_check bool, lenient bool, regis
 
 // ---- render ------------------------------------------------------------------------------------------------------------------------
 
-/// `alula render`: the JSON `machine/2` -> a file of Alula in the language. What the generator cannot say is a note (code 1); with `lenient` the text is printed all the same.
+/// `alula render`: the JSON tree -> a file of Alula in the language. What the generator cannot say is a note (code 1); with `lenient` the text is printed all the same.
 /// `libs`: the files of the libraries that the tree connects and their twins (2.26, section 9): a library in the other language is named by its twin, a twin that is not there is a note.
 export fn render_command(text str, file str, language str, lenient bool, registry Registry, libs []NamedText) -> CmdResult {
     ro made = render_machine_libs(text, language, false, registry, libs)
@@ -156,7 +156,7 @@ fn json_issue_lines(text str, file str, no_check bool, registry Registry) -> []s
     lines
 }
 
-/// `alula check`: a file of Alula (the translation with the checks of the table) or a JSON `machine/2` (the decoding with the checks).
+/// `alula check`: a file of Alula (the translation with the checks of the table) or a JSON tree (the decoding with the checks).
 export fn check_command(text str, file str, no_check bool, registry Registry, libs []NamedText) -> CmdResult {
     if is_json_file(file) {
         ro problems = json_issue_lines(text, file, no_check, registry)

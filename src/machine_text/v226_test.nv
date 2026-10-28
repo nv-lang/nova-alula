@@ -9,8 +9,8 @@ import std.text
 fn tiny226_text() -> str => `# Машина: Tiny
 
 - machine: Tiny
-- machine_version: 1
-- format: 2.26
+- revision: 1
+- alula_version: 2.27
 
 ## Имена
 
@@ -227,7 +227,7 @@ test "v226 a section of one dash is an error: an empty section is not written" {
 
 test "v226 a file of 2.25 is read in the former form" {
     assert(format_versions().contains("2.25"))
-    assert(format_versions().contains("2.26"))
+    assert(format_versions().contains("2.27"))
     assert(r226(tiny_text()).errors.len() == 0)
     assert(json226(tiny_text()).contains("\"alula_version\":\"2.25\""))
 }
@@ -267,7 +267,7 @@ test "v226 the table of words is the copy of the table of the specification of 2
 test "v226 the generator writes a tree of 2.26 in the form of 2.26 and the circle gives the same tree" {
     ro j = json226(tiny226_text())
     ro text = render(j, "ru")
-    assert(text.contains("- format: 2.26"))
+    assert(text.contains("- alula_version: 2.27"))
     assert(text.contains("## Выход"))
     assert(!text.contains("## Концы"))
     assert(!text.contains("| № |"))

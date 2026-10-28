@@ -10,14 +10,16 @@
      `kind` — из закрытого перечня (header, section, column, kind_state, key, kind_party, event, destination, decl, type,
      expr, action, operator, readable, catalog, enum_value; вида `kind_param` с 2.26 нет — виды параметров заменены типами, AL-140),
      каждый вид представлен; в пределах вида слова `ru` не повторяются и слова `en` не повторяются (в разных видах слово может
-     повторяться); слова 2.26 (AL-137…AL-143, `TABLE_226_ADDED`) стоят в таблице парами, убранные в 2.26 (`TABLE_226_REMOVED`) — нет;
+     повторяться); слова 2.26 (AL-137…AL-143, `TABLE_226_ADDED`) и 2.27 (AL-144, AL-145: `revision`, `alula_version`, `Требует данные`/`Requires data`,
+     `Требует стороны`/`Requires parties`, `Требует концы`/`Requires ends`, `TABLE_227_ADDED`) стоят в таблице парами, убранные в 2.26
+     (`TABLE_226_REMOVED`) и 2.27 (`machine_version`, `format`, единый `Требует`, `TABLE_227_REMOVED`) — нет;
   2. русский образец: структурные слова (имена шапки и ключи шапки, заголовки разделов `##`, строки-ключи `- Ключ:` и `Начальное состояние:`,
      заголовки столбцов таблиц, виды состояний в заголовках `###`) есть в таблице в колонке `ru` своего вида;
      английское структурное слово (есть в колонке `en`, нет в `ru`) в русском образце — ошибка;
   3. английский образец: те же структурные слова по колонке `en` (`Initial state:` вместо `Начальное состояние:`);
      русское структурное слово (есть в колонке `ru`, нет в `en`) в нём — ошибка; строка шапки `- language: en` обязательна
-     (в русском образце допустима `- language: ru` или её отсутствие, иной язык — ошибка); образцы — формата 2.26 (задача 239
-     перенесла их скриптом `tools/migrate-alula-226.py`, слов 2.25 скрипт больше не читает); внешняя функция в разделе
+     (в русском образце допустима `- language: ru` или её отсутствие, иной язык — ошибка); образцы — Алулы 2.27 (задача 244
+     перенесла их скриптом `tools/migrate-alula-227.py` с 2.26; задача 239 — скриптом `tools/migrate-alula-226.py` с 2.25); внешняя функция в разделе
      `## Внешние функции` — без слов `внешняя функция` (AL-142), подключение — подзаголовком `### Имя` (AL-140);
   4. знаки операторов (спецификация, 1а, AL-42): в блоках кода, строках таблиц и строках-ключах нет знаков `≥`, `≤`, `≠`, `→`, `⇒`, `∈`, `‥`
      (только ASCII: `>=`, `<=`, `!=`, `->`, `=>`, `in`, `..`); в прозе знак `→` допустим; прежняя запись (до 2.18, AL-67…AL-69) — ошибка:
@@ -154,7 +156,7 @@ KINDS = ['header', 'section', 'column', 'kind_state', 'key', 'kind_party', 'even
 # события стороны, действие `сторона`, тип `КодСбоя` и его десять кодов; строка таблицы — (вид, ru, en)
 TABLE_226_ADDED = (
     ('header', 'Библиотека', 'Library'), ('header', 'library', 'library'), ('section', 'Выход', 'Output'),
-    ('section', 'Требует', 'Requires'), ('section', 'Данные движка', 'Engine data'), ('section', 'События стороны', 'Party events'),
+    ('section', 'Данные движка', 'Engine data'), ('section', 'События стороны', 'Party events'),
     ('column', 'комментарий', 'comment'), ('column', 'параметр', 'parameter'), ('column', 'части', 'parts'),
     ('key', 'Файл', 'File'), ('key', 'Имя', 'Name'), ('key', 'Хеш', 'Hash'), ('event', 'часть', 'part'), ('event', 'срок', 'timeout'),
     ('action', 'сторона', 'party'), ('type', 'КодСбоя', 'FailCode'),
@@ -163,6 +165,14 @@ TABLE_226_ADDED = (
     ('enum_value', 'НетОтветаВСрок', 'Timeout'), ('enum_value', 'ОстановленоЧеловеком', 'StoppedByHuman'),
     ('enum_value', 'ПотолокЗаходов', 'CeilingReached'), ('enum_value', 'ОтмененоРодителем', 'Cancelled'),
     ('enum_value', 'ПредельТокенов', 'MaxTokens'), ('enum_value', 'ПредельЗапросовХода', 'MaxTurnRequests'))
+# слова, которые внесла версия 2.27 (AL-144, AL-145): ключи шапки `revision` и `alula_version` (вместо `machine_version` и `format`), три раздела
+# требований библиотеки (вместо единого `## Требует`); строка таблицы — (вид, ru, en). AL-146 и AL-147 слов не вносят (вид стороны `machine <имя>`
+# без скобок — прежние слова, ключи JSON `kind` и `revision` — не слова файла)
+TABLE_227_ADDED = (
+    ('header', 'revision', 'revision'), ('header', 'alula_version', 'alula_version'),
+    ('section', 'Требует данные', 'Requires data'), ('section', 'Требует стороны', 'Requires parties'), ('section', 'Требует концы', 'Requires ends'))
+# слова, которые версия 2.27 убрала: ключи шапки `machine_version` и `format`, единый раздел `Требует` (вид, ru)
+TABLE_227_REMOVED = (('header', 'machine_version'), ('header', 'format'), ('section', 'Требует'))
 # слова, которые версия 2.26 убрала: столбцы `№` и `пишет`, строка-ключ `Читает`, событие `сразу`, слово `внешняя`, раздел `Концы`
 # (теперь `Выход`), шапки файла функций и старого подключаемого файла (теперь библиотека); (вид, ru)
 TABLE_226_REMOVED = (
@@ -232,6 +242,12 @@ def check_table(text):
     for kind, ru in TABLE_226_REMOVED:
         if kind in words and ru in words[kind][0]:
             errs.append('%s: слово `%s` (вид `%s`) версия 2.26 убрала (AL-137…AL-143)' % (TABLE, ru, kind))
+    for kind, ru, en in TABLE_227_ADDED:
+        if (kind, ru, en) not in rows:
+            errs.append('%s: нет строки `%s %s %s`: её внесла версия 2.27 (AL-144, AL-145)' % (TABLE, kind, ru, en))
+    for kind, ru in TABLE_227_REMOVED:
+        if kind in words and ru in words[kind][0]:
+            errs.append('%s: слово `%s` (вид `%s`) версия 2.27 убрала (AL-144, AL-145)' % (TABLE, ru, kind))
     words['readable_pairs'] = pairs
     return errs, words
 
@@ -1845,7 +1861,7 @@ MUTATIONS = {
         ('цикл `для каждого` (до 2.22)', '| число_ходов += 1 | ХОД_АГЕНТА |', '| для каждого x из [1] { число_ходов += x } | ХОД_АГЕНТА |'),
         ('цикл `для x в xs` (до 2.22)', '| число_ходов += 1 | ХОД_АГЕНТА |', '| для x в [1] { число_ходов += x } | ХОД_АГЕНТА |'),
         ('начальное состояние', 'Начальное состояние: СТАРТ', 'Начальное состоянье: СТАРТ'),
-        ('ключ шапки', '- machine_version:', '- machine_ver:'),
+        ('ключ шапки', '- revision:', '- revisio:'),
     ],
     'en': [
         ('заголовок раздела', '\n## States\n', '\n## Statuses\n'),
@@ -1942,7 +1958,7 @@ MUTATIONS = {
         ('тип `text` в столбце `result` примитива', 'reply_validation() volatile -> ReplyCheck', 'reply_validation() volatile -> text'),
         ('тип `float` в виде стороны', 'agent(result TurnResult)', 'agent(result float)'),
         ('начальное состояние', 'Initial state: Start', 'Initial stat: Start'),
-        ('ключ шапки', '- machine_version:', '- machine_ver:'),
+        ('ключ шапки', '- revision:', '- revisio:'),
         ('нет строки language', '- language: en\n', ''),
         ('скобки у латинского имени (убраны)', '| retry_count | int>=0 |', '| retry_count (retry_count) | int>=0 |'),
         ('данное с JSON-именем данного из библиотеки «Пауза»', '\n## Constants\n',

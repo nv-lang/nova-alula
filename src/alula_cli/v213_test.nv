@@ -116,7 +116,7 @@ test "v213 a tree with a word event is refused by render" {
 }
 
 test "v213 a test with the step word is refused" {
-    ro old_test = `{"format":"test/0","machine":"Tiny","name":"old","start_at":1000,"steps":[{"do":"feed","event":{"kind":"start"}},{"do":"feed","event":{"kind":"word","name":"go"}}]}`
+    ro old_test = `{"kind":"test","machine":"Tiny","name":"old","start_at":1000,"steps":[{"do":"feed","event":{"kind":"start"}},{"do":"feed","event":{"kind":"word","name":"go"}}]}`
     ro files = [file("/c/tiny.alula.json", tiny_json()), file("/c/tiny.alula.test.json", old_test)]
     ro ran = run_with(["test", "/c"], files)
     assert(ran.code != 0)

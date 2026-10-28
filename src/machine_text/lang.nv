@@ -8,12 +8,12 @@ import std.text
 /// a paragraph pressed against a table is no paragraph, a declaration outside a block of code is a comment) and the errors of the language of the header.
 type TxLangInfo { lang str, version str, strict bool, errors []TranslateError }
 
-/// The versions of the format that this translator reads: 2.26 and, during the move (task 195, the seam until stream 4 migrates the files), 2.25 in its own form (task 125: there is no
-/// transition period for the authors, the word of the owner, 2026-10-20).
-fn format_versions() -> []str => ["2.25", "2.26"]
+/// The versions of the format that this translator reads: 2.27 (the header `alula_version: 2.27`, task 244) and 2.25 in its own form (the header `format: 2.25`: the seam of the texts of
+/// the tests of the package, task 239; task 125: there is no transition period for the authors, the word of the owner, 2026-10-20).
+fn format_versions() -> []str => ["2.25", "2.27"]
 
-/// Is the version one from which the reading is strict (2.9 and later; every version that is read is strict)?
-fn version_strict(version str) -> bool => version == "2.25" || version == "2.26"
+/// Is the version one from which the reading is strict (2.9 and later; every version that is read is strict, and 2.26 that an old key of the header still names: the header refuses the key)?
+fn version_strict(version str) -> bool => version == "2.25" || version == "2.26" || version == "2.27"
 
 // The key and the value of a header line `- key: value` or `key: value`; the key is empty for another line.
 type TxHeaderLine { key str, value str, col int }
@@ -94,6 +94,8 @@ fn detect_language(lines []str) -> TxLangInfo {
             declared_no = no
             declared_col = h.col
         }
+        // the version of the language: `alula_version` since 2.27 (AL-144), the line `format` of the seam of 2.25 (an old line of another version is refused by the header)
+        if h.key == "alula_version" { version = h.value }
         if h.key == "format" && version == "" { version = h.value }
     }
     mut lang = "ru"

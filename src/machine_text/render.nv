@@ -292,9 +292,13 @@ fn rn_party_kind(mut cx RnCx, p RJ, path str) -> str {
     }
     if kind == "machine" {
         ro nested = rj_gstr(p, "nested")
-        ro input = rn_type(cx, rj_gstr(p, "input_type"))
-        ro result = rn_type(cx, rj_gstr(p, "result"))
-        mut text = "${rn_kw(cx, "kind_party", "machine")} ${nested}(${rn_kw(cx, "kind_party", "input")} ${input}, ${rn_kw(cx, "kind_party", "result")} ${result})"
+        mut text = "${rn_kw(cx, "kind_party", "machine")} ${nested}"
+        // 2.27 (AL-146): no brackets and no types, they are those of the called machine; the seam of 2.25 writes them
+        if !cx.v226 {
+            ro input = rn_type(cx, rj_gstr(p, "input_type"))
+            ro result = rn_type(cx, rj_gstr(p, "result"))
+            text = "${text}(${rn_kw(cx, "kind_party", "input")} ${input}, ${rn_kw(cx, "kind_party", "result")} ${result})"
+        }
         match rj_get(p, "parse") {
             Some(pr) => {
                 text = "${text}; ${rn_kw(cx, "kind_party", "parse")}: ${rj_gstr(pr, "primitive")} -> ${rn_type(cx, rj_gstr(pr, "type"))}"

@@ -1,4 +1,4 @@
-// test_file.nv - the tests `test/0` and their runner.
+// test_file.nv - the tests (`"kind": "test"`, AL-147) and their runner.
 //
 // A test is a file of data: events and what they must leave. The runner takes a machine, runs the events on the engine of the product over
 // the in-memory handlers (the same world as the tests of the engine), and compares after every step: the name of the state, the structural
@@ -6,7 +6,7 @@
 // and the outcome. A part that the file does not name is not compared. The difference is a report that says the step, the part, what was expected
 // and what came.
 //
-//   { "format": "test/0", "machine": "ChatSession", "name": "...", "start_at": 1000,
+//   { "kind": "test", "machine": "ChatSession", "name": "...", "start_at": 1000,
 //     "steps": [ { "do": "feed", "event": { "kind": "signal", "name": "user_message", "input": "hello" },
 //                  "expect": { "state": "Awaiting", "journal": [ { "code": "user_message", "params": { "text": "hello" } } ],
 //                              "data": { "user": "hello" }, "queue": [], "open": ["agent-1"], "sent": ["agent-1"], "cancelled": [],
@@ -54,7 +54,7 @@ export type ScAlso { target str, expect ScExpect }
 /// that the step acts on (the parent when empty); `also` are the expectations of the other engines.
 export type ScStep { op str, event ScEvent, ms int, expect ScExpect, host []ScHost, on str, also []ScAlso }
 
-/// Test: the file `test/0`. `params` are the values of parameters of the machine that the project gives, the table of format 2.7 (`"params": {"проект.<ключ>": value}`, P-9).
+/// Test: the file of a test (`"kind": "test"`). `params` are the values of parameters of the machine that the project gives, the table of format 2.7 (`"params": {"проект.<ключ>": value}`, P-9).
 /// `standalone` (task 122) is the key `"standalone": true`: the machine runs alone and the parties of the kind `machine` are played by the steps of the test (an `answer` or a `failure`
 /// event with the id of the request, as for an agent); no nested machine is started and none is looked for in the folder.
 export type Test { name str, machine str, start_at int, steps []ScStep, params []ScHost, standalone bool }
@@ -295,9 +295,11 @@ export fn parse_test(text str) -> Result[Test, LoadError] {
         Err(e) => return Err(sle("$", "not valid JSON"))
     }
     ro o = sj_obj(parsed, "$")?
-    sj_only(o, ["format", "machine", "name", "start_at", "steps", "params", "standalone"], "$")?
-    ro format = sj_need_str(o, "format", "$")?
-    if format != "test/0" { return Err(sle("$.format", "the format must be test/0, got ${format}")) }
+    sj_only(o, ["kind", "format", "machine", "name", "start_at", "steps", "params", "standalone"], "$")?
+    // the root of a test says `"kind": "test"` since 2.27 (AL-147); the former `"format": "test/0"` is refused with the hint
+    if sj_present(o, "format") { return Err(sle("$.format", "с 2.27 — kind и revision: `\"format\": \"test/0\"` is `\"kind\": \"test\"` (there is no transition period)")) }
+    ro kind = sj_need_str(o, "kind", "$")?
+    if kind != "test" { return Err(sle("$.kind", "the kind of the root of a test file is test, got ${kind}")) }
     ro machine = sj_need_str(o, "machine", "$")?
     ro name = sj_str_or(o, "name", "", "$")?
     mut start_at = 1000

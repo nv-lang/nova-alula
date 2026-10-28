@@ -1,8 +1,8 @@
 # Machine: Batch
 
 - machine: Batch
-- machine_version: 1
-- format: 2.26
+- revision: 1
+- alula_version: 2.27
 - language: en
 
 A set of nested calls (spec 4.2, `set:`; the party of the kind `machine`): one request to the machine `callee` for every name of the input `names`, no more than `LIMIT` at once (`Request limit`). The answers
@@ -12,8 +12,6 @@ and the losses are collected in the order they come; the fork `Join` waits for a
 
 ```
 type Job { name str, attempt int>=0 }
-type JobInput { label str, count int>=0, profile str }
-type CallOutput { answer str, score int>=0 }
 ```
 
 ## Constants
@@ -42,7 +40,7 @@ type CallOutput { answer str, score int>=0 }
 
 | name | id | kind | profile | signals | counter |
 |---|---|---|---|---|---|
-| job | — | machine callee(input JobInput, result CallOutput) | "job:" + party | — | jobs[*].attempt |
+| job | — | machine callee | "job:" + party | — | jobs[*].attempt |
 | enhanced | enhanced | enhanced(result GateOutcome) | — | continue { human_word str, author str, source str }, halt | enhanced_attempt |
 
 - Request limit: LIMIT
@@ -51,7 +49,7 @@ type CallOutput { answer str, score int>=0 }
 
 ### Pause
 - File: libs/pause.en.alula.md
-- Hash: d254e6297f61
+- Hash: 5f2b384c7997
 
 | parameter | value |
 |---|---|

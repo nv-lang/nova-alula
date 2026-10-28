@@ -236,13 +236,13 @@ Result: int
 `
 
 // A test for the machine "Tiny": it starts and waits at `Wait`.
-fn tiny_test() -> str => `{"format":"test/0","machine":"Tiny","name":"tiny starts","start_at":1000,"steps":[{"do":"feed","event":{"kind":"start"},"expect":{"state":"Wait"}}]}`
+fn tiny_test() -> str => `{"kind":"test","machine":"Tiny","name":"tiny starts","start_at":1000,"steps":[{"do":"feed","event":{"kind":"start"},"expect":{"state":"Wait"}}]}`
 
 // The same test that expects a wrong state.
-fn tiny_test_wrong() -> str => `{"format":"test/0","machine":"Tiny","name":"tiny wrong","start_at":1000,"steps":[{"do":"feed","event":{"kind":"start"},"expect":{"state":"Decide"}}]}`
+fn tiny_test_wrong() -> str => `{"kind":"test","machine":"Tiny","name":"tiny wrong","start_at":1000,"steps":[{"do":"feed","event":{"kind":"start"},"expect":{"state":"Decide"}}]}`
 
 // A test of another machine.
-fn other_test() -> str => `{"format":"test/0","machine":"Other","name":"other","start_at":1000,"steps":[{"do":"feed","event":{"kind":"start"},"expect":{"state":"Wait"}}]}`
+fn other_test() -> str => `{"kind":"test","machine":"Other","name":"other","start_at":1000,"steps":[{"do":"feed","event":{"kind":"start"},"expect":{"state":"Wait"}}]}`
 
 // The JSON of the small machine, translated and checked by the functions of the translator.
 fn tiny_json() -> str => translate_checked(tiny_ru(), sample_registry()).json

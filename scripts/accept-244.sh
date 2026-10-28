@@ -4,7 +4,7 @@
 #     (2) спецификация: spec/alula-spec*.md и spec/alula-changelog*.md — CRLF, alula-keywords.tsv — копия в src/machine_text/; ALULA_SPEC_SOURCE=<папка> (необязательно) —
 #         тексты равны текстам методики (с точностью до концов строк); метки AL-144…AL-147 в журнале; блок «Пауза» раздела 9 — хеши файлов libs/;
 #     (3) библиотеки: libs/ — файлы методики 2.27 (Пауза ru f14004122df2, en 5f2b384c7997; арифметика_цикла ru 27e3a65d6f9a, en 07c9099132be), копии в examples/libs/ и
-#         spec/samples/libs/ равны libs/; ALULA_LIBS_SOURCE=<папка> (необязательно) — равны файлам методики побайтно;
+#         spec/samples/libs/ (какие там есть; Пауза — обязательно) равны libs/; ALULA_LIBS_SOURCE=<папка> (необязательно) — равны файлам методики побайтно;
 #     (4) tools/check-alula-keywords.py — зелёный (таблица слов и образец синхронизированы);
 #     (5) образцы пакета (examples, spec/samples, libs) — в форме 2.27: шапка `revision`/`alula_version`, ни `machine_version`, ни `format:`, ни единого `## Требует`,
 #         сторона `machine` без скобок; деревья — `"kind": "machine"`, `alula_version` 2.27, `revision`; тесты — `"kind": "test"`;
@@ -83,7 +83,9 @@ for f, h in want.items():
     if m.lib_hash(text) != h: no('libs/%s: хеш %s, методика ждёт %s' % (f, m.lib_hash(text), h))
     if '- alula_version: 2.27' not in text: no('libs/%s: нет строки alula_version: 2.27' % f)
     for copy in ['examples/libs/' + f, 'spec/samples/libs/' + f]:
-        if not os.path.exists(copy) or open(copy, 'rb').read() != open('libs/' + f, 'rb').read(): no('%s не равен libs/%s' % (copy, f))
+        if not os.path.exists(copy):
+            if f.startswith('pause'): no('нет копии %s' % copy)
+        elif open(copy, 'rb').read() != open('libs/' + f, 'rb').read(): no('%s не равен libs/%s' % (copy, f))
     if libs_src and open(os.path.join(libs_src, f), 'rb').read() != open('libs/' + f, 'rb').read(): no('libs/%s не равен файлу методики' % f)
 for f, head, h in [('spec/alula-spec.md', '# Библиотека: Пауза', 'f14004122df2'), ('spec/alula-spec.en.md', '# Library: Pause', '5f2b384c7997')]:
     text = open(f, encoding='utf-8').read().replace('\r\n', '\n')

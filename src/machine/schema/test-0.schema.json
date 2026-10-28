@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/nv-lang/nova-alula/src/machine/schema/test-0.schema.json",
-  "title": "test/0 - events and what they must leave",
+  "title": "a test (\"kind\": \"test\") - events and what they must leave",
   "description": "A test of a machine: the events and, after every step, the expected state, structural journal (the lines the machine wrote), a subset of the data, the queue, the open requests, the requests sent and cancelled, the outcome. A part that is not named is not compared. The runner is src/machine_run/test_file.nv.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["format", "machine", "steps"],
+  "required": ["kind", "machine", "steps"],
   "properties": {
-    "format": { "const": "test/0" },
+    "kind": { "const": "test", "description": "the kind of the root (AL-147; the former \"format\": \"test/0\" is refused with the hint)" },
     "machine": { "type": "string", "description": "the Latin name of the machine the test runs on" },
     "name": { "type": "string" },
     "start_at": { "type": "integer", "default": 1000, "description": "the clock of the in-memory world in milliseconds" },

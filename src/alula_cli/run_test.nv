@@ -56,7 +56,7 @@ test "rn another machine" {
 }
 
 test "rn test not valid" {
-    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/bad.alula.test.json", `{"format":"test/0","machine":"Tiny"}`)]
+    ro files = [file("/work/tiny.alula.json", tiny_json()), file("/work/bad.alula.test.json", `{"kind":"test","machine":"Tiny"}`)]
     ro ran = run_with(["run", "/work/tiny.alula.json", "/work/bad.alula.test.json"], files)
     assert(ran.code == 1)
     assert(ran.err.starts_with("/work/bad.alula.test.json:1:1: test: "))
@@ -241,9 +241,9 @@ test "tt unknown option" {
     assert(ran.err.contains("unknown option `--lenient`"))
 }
 
-fn tiny_test_params() -> str => `{"format":"test/0","machine":"Tiny","name":"tiny params","start_at":1000,"params":{"проект.нет_такого":1},"steps":[{"do":"feed","event":{"kind":"start"},"expect":{"state":"Wait"}}]}`
+fn tiny_test_params() -> str => `{"kind":"test","machine":"Tiny","name":"tiny params","start_at":1000,"params":{"проект.нет_такого":1},"steps":[{"do":"feed","event":{"kind":"start"},"expect":{"state":"Wait"}}]}`
 
-fn tiny_test_host() -> str => `{"format":"test/0","machine":"Tiny","name":"tiny host","start_at":1000,"steps":[{"do":"feed","event":{"kind":"start"},"host":{"x":{"$bogus":1}},"expect":{"state":"Wait"}}]}`
+fn tiny_test_host() -> str => `{"kind":"test","machine":"Tiny","name":"tiny host","start_at":1000,"steps":[{"do":"feed","event":{"kind":"start"},"host":{"x":{"$bogus":1}},"expect":{"state":"Wait"}}]}`
 
 // A test that cannot be run (a parameter that the machine does not have, an answer of the host that is no value) is an error of the file, not a stop of the program.
 test "rn test parameter unknown" {

@@ -23,7 +23,7 @@ fn machine_named(name str) -> AlulaMachine {
 }
 
 // A test of one step (only parsed: the machine named in it is not run).
-fn one_step(step str) -> str => `{"format":"test/0","machine":"Calc","name":"t","start_at":1000,"steps":[${step}]}`
+fn one_step(step str) -> str => `{"kind":"test","machine":"Calc","name":"t","start_at":1000,"steps":[${step}]}`
 
 fn test_of(file str) -> Test {
     match parse_test(text_of_file(test_files(), file)) {
@@ -76,7 +76,7 @@ test "test object input" {
 test "test refused" {
     assert(parse_err("not json").contains("not valid JSON"))
     assert(parse_err("{}").contains("format"))
-    assert(parse_err("{\"format\":\"test/1\"}").contains("test/0"))
+    assert(parse_err("{\"format\":\"test/1\"}").contains("с 2.27 — kind и revision"))
     assert(parse_err(one_step("{\"do\":\"jump\"}")).contains("operation"))
     assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"dance\"}}")).contains("kind of an event"))
     assert(parse_err(one_step("{\"do\":\"feed\",\"zzz\":1}")).contains("zzz"))
@@ -84,7 +84,7 @@ test "test refused" {
     assert(parse_err(one_step("{\"do\":\"feed\"}")).contains("event"))
     assert(parse_err(one_step("{\"do\":\"advance\",\"ms\":-5}")).contains("ms"))
     assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\"}}")).contains("name"))
-    assert(parse_err("{\"format\":\"test/0\",\"machine\":\"M\",\"name\":\"t\",\"steps\":{}}").contains("list"))
+    assert(parse_err("{\"kind\":\"test\",\"machine\":\"M\",\"name\":\"t\",\"steps\":{}}").contains("list"))
     assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"a\"},\"expect\":{\"journal\":[{\"params\":{}}]}}")).contains("code"))
     assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"signal\",\"name\":\"a\"},\"expect\":{\"journal\":[{\"code\":\"x\",\"params\":{\"p\":1}}]}}")).contains("text"))
     assert(parse_err(one_step("{\"do\":\"advance\",\"ms\":5}")) == "ok")
@@ -173,19 +173,19 @@ test "test schema" {
 // ---- the key `standalone` (task 122) ---------------------------------------------------------------------------------------------------------------
 
 test "standalone key true and false" {
-    match parse_test(`{"format":"test/0","machine":"M","standalone":true,"steps":[]}`) {
+    match parse_test(`{"kind":"test","machine":"M","standalone":true,"steps":[]}`) {
         Ok(x) => assert(x.standalone)
         Err(e) => assert(false)
     }
-    match parse_test(`{"format":"test/0","machine":"M","standalone":false,"steps":[]}`) {
+    match parse_test(`{"kind":"test","machine":"M","standalone":false,"steps":[]}`) {
         Ok(x) => assert(!x.standalone)
         Err(e) => assert(false)
     }
 }
 
 test "standalone key is a boolean" {
-    assert(parse_err(`{"format":"test/0","machine":"M","standalone":"yes","steps":[]}`) == "$.standalone: standalone is true or false")
-    assert(parse_err(`{"format":"test/0","machine":"M","standalone":1,"steps":[]}`) == "$.standalone: standalone is true or false")
+    assert(parse_err(`{"kind":"test","machine":"M","standalone":"yes","steps":[]}`) == "$.standalone: standalone is true or false")
+    assert(parse_err(`{"kind":"test","machine":"M","standalone":1,"steps":[]}`) == "$.standalone: standalone is true or false")
 }
 
 test "standalone key in the schema" {

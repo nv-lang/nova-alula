@@ -39,7 +39,7 @@ fn has_row(rows []TxWord, kind str, key str) -> bool {
 
 test "wt table shape" {
     ro rows = method_rows()
-    assert(rows.len() == 217)
+    assert(rows.len() == 219)
     for k in all_kinds() { assert(kind_count(rows, k) > 0) }
     for r in rows {
         assert(all_kinds().contains(r.kind))
@@ -80,14 +80,14 @@ test "wt the former product layer is in the layer of 2.25" {
 }
 
 test "wt all rows loaded" {
-    // the table of 2.26 and the layer of 2.25 (the seam of task 195, with the former product layer since task 197)
-    assert(words_rows().len() == 217 + 29)
+    // the table of 2.27 and the layer of 2.25 (the seam of task 195, with the former product layer since task 197 and the former words of 2.26 since task 244)
+    assert(words_rows().len() == 219 + 32)
 }
 
 test "wt the layer of 2.25 holds only the words that 2.26 removed" {
     mut layer = []TxWord.new()
     words_read(keywords_225_text(), layer)
-    assert(layer.len() == 29)
+    assert(layer.len() == 32)
     ro method = method_rows()
     for r in layer {
         for m in method {
@@ -210,6 +210,7 @@ fn source_files() -> []NamedText2 => [
     NamedText2 { name: "action.nv", text: embed_str("action.nv") },
     NamedText2 { name: "decl.nv", text: embed_str("decl.nv") },
     NamedText2 { name: "defs.nv", text: embed_str("defs.nv") },
+    NamedText2 { name: "callee.nv", text: embed_str("callee.nv") },
     NamedText2 { name: "doc.nv", text: embed_str("doc.nv") },
     NamedText2 { name: "event.nv", text: embed_str("event.nv") },
     NamedText2 { name: "frag.nv", text: embed_str("frag.nv") },
@@ -425,8 +426,8 @@ test "wt lang inside fence" {
 }
 
 test "wt versions" {
-    assert(format_versions() == ["2.25", "2.26"])
-    assert(version_strict("2.25") && version_strict("2.26"))
+    assert(format_versions() == ["2.25", "2.27"])
+    assert(version_strict("2.25") && version_strict("2.27"))
     assert(!version_strict("2.11") && !version_strict("2.10") && !version_strict("2.9") && !version_strict(""))
 }
 

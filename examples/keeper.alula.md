@@ -1,8 +1,8 @@
 # Machine: Keeper
 
 - machine: Keeper
-- machine_version: 1
-- format: 2.26
+- revision: 1
+- alula_version: 2.27
 - language: en
 
 A gate (spec 1, 4.2: the party `human or agent by setting`, the executor decides who answers). The gatekeeper says `allow` or `deny`; the machine counts the signals that allow and ends when it has had `NEEDED` of them, a signal

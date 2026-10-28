@@ -413,6 +413,10 @@ fn rn_dropped(mut cx RnCx, root RJ, copy_includes bool) -> RnDropped {
     mut types = []str.new()
     mut constants = []str.new()
     mut definitions = []str.new()
+    // the types that came with a called machine (AL-146) are not written: the caller declares no copy of them
+    for p in rj_garr(root, "parties") {
+        for n in rj_garr(p, "callee_types") { types.push(rj_str(n)) }
+    }
     if !copy_includes {
         for inc in rj_garr(root, "includes") {
             ro name = rj_gstr(inc, "name")
@@ -518,33 +522,47 @@ fn rn_machine(machine_json str, language str, copy_includes bool, registry Regis
     match rj_parse(machine_json) {
         Err(e) => RenderReport { text: "", notes: ["not a JSON: ${e}"] }
         Ok(root) => {
-            if rj_gstr(root, "format") != "machine/2" {
-                return RenderReport { text: "", notes: ["the tree is not `machine/2`: the key `format` is `${rj_gstr(root, "format")}`"] }
+            // the root of 2.27 says `kind` and `revision` (AL-147); a tree of the seam of 2.25 says `format` and `version`
+            ro seam = !rj_has(root, "kind") && rj_gstr(root, "format") == "machine/2" && (rj_gstr(root, "alula_version") == "" || rj_gstr(root, "alula_version") == "2.25")
+            if !seam {
+                if rj_has(root, "format") || rj_has(root, "version") {
+                    ro message_keys = "с 2.27 — kind и revision: the tree says `format` or `version` (AL-147; there is no transition period)"
+                    return RenderReport { text: "", notes: [message_keys] }
+                }
+                if rj_gstr(root, "kind") != "machine" {
+                    return RenderReport { text: "", notes: ["the tree is not a machine: the key `kind` is `${rj_gstr(root, "kind")}`"] }
+                }
             }
             // the former key of the version (the language was called Alula before 2.14) is refused by name
             if rj_gstr(root, "portolan_version") != "" { // guard-allow(legacy-name): the former key is named here to be refused
                 return RenderReport { text: "", notes: ["the key `portolan_version` is the former name of `alula_version` (the language is called Alula since the format 2.14; there is no transition period)"] } // guard-allow(legacy-name): the message names the former key
             }
             // a tree of another version of the language is not written (no transition period, task 125): the file would say a version that the translator does not read
-            if rj_gstr(root, "alula_version") != "" && !format_versions().contains(rj_gstr(root, "alula_version")) {
-                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 2.25 only is read and written (there is no transition period)"] }
+            if !seam && rj_gstr(root, "alula_version") != "" && rj_gstr(root, "alula_version") != "2.27" {
+                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 2.27 only is read and written (there is no transition period)"] }
             }
             ro former = rn_former_note(root, "$")
             if former != "" { return RenderReport { text: "", notes: [former] } }
             mut cx = rn_cx_in(language, registry)
-            cx.v226 = rj_gstr(root, "alula_version") == "2.26"
+            cx.v226 = !seam
             cx.libs = libs
             cx.twins = twins
             ro dropped = rn_dropped(cx, root, copy_includes)
             // what the libraries bring is written by the connection, not as the machine's own (1b (м), section 9)
             ro shown = if cx.v226 { rn_without_libraries(root, copy_includes) } else { root }
-            ro version = if rj_gstr(shown, "alula_version") == "" { "2.25" } else { rj_gstr(shown, "alula_version") }
             mut out = []str.new()
             out.push("# ${rn_kw(cx, "header", "Machine")}: ${rj_gstr(shown, "machine")}")
             out.push("")
             out.push("- machine: ${rj_gstr(shown, "machine")}")
-            out.push("- machine_version: ${rj_gstr(shown, "version")}")
-            out.push("- format: ${version}")
+            if seam {
+                out.push("- machine_version: ${rj_gstr(shown, "version")}")
+                out.push("- format: 2.25")
+            } else {
+                // the order of the header of 2.27 (1b (а), AL-144): machine, revision, alula_version, language
+                ro revision = rj_gscalar(shown, "revision")
+                out.push("- revision: ${if revision == "" { "1" } else { revision }}")
+                out.push("- alula_version: 2.27")
+            }
             out.push("- language: ${language}")
             out.push("")
             if cx.v226 {

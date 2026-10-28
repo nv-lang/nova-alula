@@ -145,8 +145,11 @@ fn record_field_names(types TypeDefs, spec TypeSpec) -> []str {
 fn nested_request_text(types TypeDefs, party PartyDef, pairs []ReqField) -> str {
     mut o = JsonObject.new()
     mut used = []str.new()
-    if party.input_spec.len() > 0 {
-        for name in record_field_names(types, party.input_spec[0]) {
+    mut order = []str.new()
+    for f in party.input_fields { order.push(f.name) }
+    if party.input_spec.len() > 0 { order = record_field_names(types, party.input_spec[0]) }
+    if order.len() > 0 {
+        for name in order {
             for pair in pairs {
                 if pair.name == name {
                     ro old = o.insert(name, value_to_json(pair.value))

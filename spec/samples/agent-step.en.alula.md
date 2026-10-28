@@ -1,8 +1,8 @@
 # Machine: Agent step
 
 - machine: agent_step
-- machine_version: alula-2.24
-- format: 2.26
+- revision: 1
+- alula_version: 2.27
 - language: en
 
 This is an **illustration**: the "Agent step" machine in full, written in the Alula format, format version 2.24 ([spec/alula-spec.md](../alula-spec.md); it is the only definition of the notation). It is the English-language twin of [spec/samples/agent-step.alula.md](agent-step.alula.md): the same machine, row for row, with the English keywords of the [word table](../alula-keywords.tsv) (spec, section 1a); the JSON tree `machine/2` is the same for both files up to the internal names (constants, parameters, functions, party names, bindings). The file lets a reader open and see a real machine: types, data, parties, functions, all 37 transition rows, the ends with the "end to response" table, the attached "Pause" fragment; what the fragment brings (parameters, common events COMMON 1-6, the Pause state with events PAUSE 1-4) is described in section 9 of the specification.
@@ -209,7 +209,7 @@ Correspondence to the automaton code: the names of the functions are the names o
 
 ### Pause
 - File: libs/pause.en.alula.md
-- Hash: d254e6297f61
+- Hash: 5f2b384c7997
 
 | parameter | value |
 |---|---|

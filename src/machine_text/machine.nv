@@ -19,21 +19,40 @@ export type TranslateReport { json str, errors []TranslateError, warnings []Tran
 
 /// The context of a translation of a file in the language `lang` (`ru` or `en`).
 fn cx_new_in(lang str) -> TxCx {
-    TxCx { errors: []TranslateError.new(), warnings: []TranslateError.new(), names: names_load_for(lang), env: env_new(), jn: jn_new(), rows_total: 0, rows_noted: 0, places: []TxPlace.new(), words: words_load(lang), v226: false }
+    TxCx { errors: []TranslateError.new(), warnings: []TranslateError.new(), names: names_load_for(lang), env: env_new(), jn: jn_new(), rows_total: 0, rows_noted: 0, places: []TxPlace.new(), words: words_load(lang), v226: false, callees: []TxCallee.new() }
 }
 
 fn cx_new() -> TxCx => cx_new_in("ru")
 
 // ---- the header ------------------------------------------------------------------------------------------------------------------------------
 
-/// TxHeader: the title, the Latin name, the version of the machine.
+/// TxHeader: the title, the Latin name, the revision of the machine (`revision`, "1" by default since 2.27; the line `machine_version` of the seam of 2.25), the version of the language.
 type TxHeader { title str, machine str, version str, format str }
+
+/// The hint of the old keys of the header (AL-144).
+fn header_old_hint() -> str {
+    ro message_text = "с 2.27 — revision и alula_version: `machine_version: …` пишется `revision: <целое>`, `format: 2.NN` — `alula_version: 2.27`; переходного периода нет"
+    message_text
+}
+
+/// Is the text an integer (the digits only)?
+fn is_integer_text(s str) -> bool {
+    if s.byte_len() == 0 { return false }
+    for c in s.chars() {
+        if !tx_is_digit(c) { return false }
+    }
+    true
+}
 
 fn header_read(entries []TxEntry, mut cx TxCx) -> TxHeader {
     mut title = ""
     mut machine = ""
     mut version = ""
+    mut revision = ""
+    mut revision_line = 0
     mut format = ""
+    mut alula_version = ""
+    mut old_lines = []int.new()
     mut machine_line = 1
     mut machine_col = 10
     ro head_word = "${kw(cx.words, "header", "Machine")}:"
@@ -52,15 +71,22 @@ fn header_read(entries []TxEntry, mut cx TxCx) -> TxHeader {
                 machine = value
                 machine_line = e.line
                 machine_col = 10 + e.shift
+            } else if line.key == "revision" {
+                revision = value
+                revision_line = e.line
+            } else if line.key == "alula_version" {
+                alula_version = value
             } else if line.key == "machine_version" {
                 version = value
+                old_lines.push(e.line)
             } else if line.key == "format" {
                 format = value
+                old_lines.push(e.line)
             } else if line.key == "language" {
                 // read by the detection of the language, before the translation
                 ()
             } else {
-                note(cx, struct_error(e.line, 1, "в шапке бывают строки machine, machine_version, format, language"))
+                note(cx, struct_error(e.line, 1, "в шапке бывают строки machine, revision, alula_version, language"))
             }
             i += line.taken
         } else {
@@ -73,9 +99,19 @@ fn header_read(entries []TxEntry, mut cx TxCx) -> TxHeader {
     } else if !is_identifier_latin(machine) {
         note(cx, struct_error(machine_line, machine_col, "имя машины — латинский идентификатор, найдено `${machine}`"))
     }
-    if !format_versions().contains(format) {
-        ro shown = if format == "" { "не указан" } else { format }
-        note(cx, struct_error(1, 1, "формат ${shown}: версия не известна переводчику, он читает формат ${format_versions().join(", ")} (строка `format: 2.26`); переходного периода нет"))
+    // the seam of 2.25: the texts of the tests of the package keep `machine_version` and `format: 2.25`; in every other file the old keys are an error with the hint (AL-144)
+    ro seam = alula_version == "" && format == "2.25"
+    if !seam {
+        for no in old_lines { note(cx, struct_error(no, 1, header_old_hint())) }
+        if revision != "" && !is_integer_text(revision) {
+            note(cx, struct_error(revision_line, 1, "ревизия — целое число (ревизия самой машины, по умолчанию 1), найдено `${revision}`; версия языка пишется строкой `alula_version`"))
+        }
+        version = if revision == "" { "1" } else { revision }
+        format = alula_version
+        if old_lines.len() == 0 && !format_versions().contains(format) {
+            ro shown = if format == "" { "не указана" } else { format }
+            note(cx, struct_error(1, 1, "версия языка ${shown}: переводчик читает Алулу 2.27 (строка `alula_version: 2.27`); переходного периода нет"))
+        }
     }
     TxHeader { title, machine, version, format }
 }
@@ -191,7 +227,8 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
     ro classified = tx_classify_in(lines, words_load(info.lang), info.strict, info.strict)
     ro entries = classified.entries
     mut cx = cx_new_in(info.lang)
-    cx.v226 = info.version == "2.26"
+    // the rules of 2.26 and later: a file of 2.27 (and a file that still names 2.26 by an old key: the header refuses the key with the hint, the body is read by the rules of 2.27)
+    cx.v226 = info.version != "2.25"
     ro own226 = cx.v226
     for e in info.errors { cx.errors.push(e) }
     for e in classified.errors { cx.errors.push(e) }
@@ -262,6 +299,19 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
             types = decl_types(entries, sec, cx)
         }
         None => ()
+    }
+    // the called machines of the parties `machine <имя>` (AL-146): their types are declared in the caller, after its own (a type that the caller declares is its own)
+    if own226 {
+        ro brought = callees_import(entries, sections, registry, types, cx)
+        if brought.records.len() > 0 || brought.variants.len() > 0 {
+            mut with_records = []TxJ.new()
+            for r in types.records { with_records.push(r) }
+            for r in brought.records { with_records.push(r) }
+            mut with_variants = []TxJ.new()
+            for v in types.variants { with_variants.push(v) }
+            for v in brought.variants { with_variants.push(v) }
+            types = TxTypes { records: with_records, variants: with_variants }
+        }
     }
     // the external functions are declared after the types (a signature names them) and before the parties, the data and the rows that call them (a profile, a parse and a check of `Правит` name them too)
     mut primitives = []TxJ.new()
@@ -386,6 +436,12 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
         }
         None => ()
     }
+    // the fields of the request of a call are exactly the fields of the input of the called machine (AL-146)
+    if own226 && cx.callees.len() > 0 {
+        mut callers = []TxJ.new()
+        for row in party_rows { callers.push(TxObj(row.pairs)) }
+        callees_request_check(states, callers, blocks, cx)
+    }
     mut lib_states = TxLibStates { states: []TxJ.new(), names: []TxLibNames.new() }
     if own226 {
         lib_states = libs_states(lib_runs, states.len(), cx)
@@ -400,7 +456,12 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
     for x in classified.expansions { cx.errors.push(expansion_error(x.line, x.name)) }
 
     // the JSON
-    mut root = [kv("format", js("machine/2")), kv("alula_version", js(if format_versions().contains(header.format) { header.format } else { "2.25" })), kv("machine", js(header.machine)), kv("version", js(header.version))]
+    // the root of 2.27 (AL-147): `kind`, `alula_version`, `machine`, `revision` (an integer); the seam of 2.25 keeps `format` and `version`
+    mut root = if header.format == "2.25" {
+        [kv("format", js("machine/2")), kv("alula_version", js("2.25")), kv("machine", js(header.machine)), kv("version", js(header.version))]
+    } else {
+        [kv("kind", js("machine")), kv("alula_version", js("2.27")), kv("machine", js(header.machine)), kv("revision", TxRaw(if is_integer_text(header.version) { header.version } else { "1" }))]
+    }
     if header.title != "" { root.push(kv("title", js(header.title))) }
     if types.records.len() > 0 || types.variants.len() > 0 {
         mut tp = []TxKV.new()

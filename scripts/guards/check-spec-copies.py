@@ -5,9 +5,9 @@
     (с версии 0.3.2 пакета). Копия, которая разошлась с ним молча, даёт тестам неверные слова или образец, а правда живёт в другом месте.
 Проверяет: (а) `src/machine_text/alula-keywords.tsv` равна `spec/alula-keywords.tsv` (окончания строк не считаются);
     (б) три образца в `src/machine_agent/cases/` (`agent-step-methodology-222.alula.txt`, `.en.alula.txt`, `meeting-methodology-222.alula.txt`)
-    после переноса на 2.26 скриптом `tools/migrate-alula-226.py` равны образцам `spec/samples/` (`agent-step.alula.md`, `agent-step.en.alula.md`,
+    после переноса на 2.26 и на 2.27 скриптами `tools/migrate-alula-226.py` и `tools/migrate-alula-227.py` равны образцам `spec/samples/` (`agent-step.alula.md`, `agent-step.en.alula.md`,
     `meeting-definitions.alula.md`) во всём, кроме ссылок вида `[текст](цель)`: копии для тестов остаются такими, какими образцы вышли из методики
-    в форме 2.25 (их хеши закреплены тестами; шов 2.25 текстов тестов, задача 239), образцы `spec/samples/` — формы 2.26, а ссылки в них переписаны
+    в форме 2.25 (их хеши закреплены тестами; шов 2.25 текстов тестов, задача 239), образцы `spec/samples/` — формы 2.27, а ссылки в них переписаны
     под файлы пакета. Хеш подключения перенос берёт из файла библиотеки рядом с образцом (`spec/samples/libs/`) — с диска, а не из индекса.
 Не проверяет: смысл слов и образцов (это тесты и `tools/check-alula-*.py`); остальные файлы `cases/`.
 Правило: задача 155 продукта (переезд первоисточника языка в пакет).
@@ -30,13 +30,19 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 
 def migrated(text, origin):
-    """Текст копии 2.25 после переноса на 2.26 скриптом пакета (как если бы копия лежала на месте образца)."""
+    """Текст копии 2.25 после переноса на 2.26 и на 2.27 скриптами пакета (как если бы копия лежала на месте образца)."""
     spec = importlib.util.spec_from_file_location("migrate_alula_226", os.path.join(ROOT, "tools", "migrate-alula-226.py"))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     run = mod.Run()
     run.dry = True
     out = mod.migrate_md(os.path.join(ROOT, origin), text, run)
+    text = text if out is None else out
+    # then 2.26 -> 2.27 (task 244): the header, the requirements, the party `machine` without the types, the hashes of the connections
+    spec = importlib.util.spec_from_file_location("migrate_alula_227", os.path.join(ROOT, "tools", "migrate-alula-227.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    out = mod.migrate_md(os.path.join(ROOT, origin), text, mod.Run(True))
     return text if out is None else out
 
 LINK = re.compile(r'\[(?:[^\[\]]|\[[^\]]*\])*\]\([^)\s]*(?:\s+"[^"]*")?\)')

@@ -99,9 +99,10 @@ fn party_counter(cell TxCell, line int, mut cx TxCx) -> Result[str, TranslateErr
 
 // The cell `вид`: agent(итог Тип), human(итог ИсходВорот), enhanced(итог ИсходВорот), human или agent по настройке имя(итог ИсходВорот), machine имя(вход Тип, итог Тип)[; разбор: примитив[("роль")] -> Тип].
 // A party of the kind `machine` is a nested machine (rule 35): the name of the machine of the registry of the caller, the record type of its input, the type of its result and the parse.
-type TxKind { kind str, result str, setting str, nested str, input_type str, parse_primitive str, parse_type str }
+// Since 2.27 (AL-146) a party `machine <имя>` names no types: `input` and `types` come from the called machine (TxCallee).
+type TxKind { kind str, result str, setting str, nested str, input_type str, parse_primitive str, parse_type str, input []TxJ, types []str }
 
-fn kind_plain(kind str, result str, setting str) -> TxKind => { kind, result, setting, nested: "", input_type: "", parse_primitive: "", parse_type: "" }
+fn kind_plain(kind str, result str, setting str) -> TxKind => { kind, result, setting, nested: "", input_type: "", parse_primitive: "", parse_type: "", input: []TxJ.new(), types: []str.new() }
 
 // The name of the nested machine in the registry of the caller: the registry of the host (kind `machine` of `names_host.tsv`), else a Latin name as it is.
 fn nested_name(mut cx TxCx, t TxTok) -> str => nested_name_text(cx, t, t.text)
@@ -130,13 +131,32 @@ fn party_machine(mut p TxP, mut cx TxCx) -> Result[TxKind, TranslateError] {
     if n.kind != TK_NAME { return Err(p_fail(p, "после `${kw(words, "kind_party", "machine")}` ожидается имя вызываемой машины")) }
     p_adv(p)
     ro nested = nested_name(cx, n)
-    p_expect(p, "(")?
-    p_expect_kw(p, words, "kind_party", "input")?
-    ro input_type = ty_parse(p, cx)?
-    p_expect(p, ",")?
-    p_expect_kw(p, words, "kind_party", "result")?
-    ro result = ty_parse(p, cx)?
-    p_expect(p, ")")?
+    mut input_type = ""
+    mut result = ""
+    mut input = []TxJ.new()
+    mut types = []str.new()
+    if cx.v226 {
+        // 2.27 (AL-146): no brackets and no types; the input and the result are those of the called machine of the registry of the host
+        if p_is(p, "(") { return Err(p_fail(p, "с 2.27 типы берутся от вызываемой: сторона пишется `${kw(words, "kind_party", "machine")} ${n.text}` без скобок; тип входа и тип итога — из записи вызываемой машины в реестре хозяина, копии типов в вызывающей не объявляются")) }
+        mut found = false
+        for c in cx.callees {
+            if c.name == nested {
+                found = true
+                result = c.result
+                input = c.input
+                types = c.types
+            }
+        }
+        if !found { return Err(tx_err(n.line, n.col, "name", "вызываемой машины `${n.text}` нет в реестре хозяина: файл машины с `machine: ${nested}` рядом с вызывающей (или в папке реестра); типы входа и итога берутся из неё (AL-146)")) }
+    } else {
+        p_expect(p, "(")?
+        p_expect_kw(p, words, "kind_party", "input")?
+        input_type = ty_parse(p, cx)?
+        p_expect(p, ",")?
+        p_expect_kw(p, words, "kind_party", "result")?
+        result = ty_parse(p, cx)?
+        p_expect(p, ")")?
+    }
     mut prim = ""
     mut parse_type = ""
     if p_eat(p, ";") {
@@ -153,7 +173,7 @@ fn party_machine(mut p TxP, mut cx TxCx) -> Result[TxKind, TranslateError] {
         parse_type = ty_parse(p, cx)?
     }
     p_end(p)?
-    Ok(TxKind { kind: "machine", result, setting: "", nested, input_type, parse_primitive: prim, parse_type })
+    Ok(TxKind { kind: "machine", result, setting: "", nested, input_type, parse_primitive: prim, parse_type, input, types })
 }
 
 fn party_kind(cell TxCell, line int, mut cx TxCx) -> Result[TxKind, TranslateError] {
@@ -236,6 +256,8 @@ fn party_row_in(r TxEntry, mut cx TxCx, with_parts bool) -> Result[TxPartyRow, T
     mut pairs = [kv("name", js(en)), kv("id", js(id)), kv("kind", js(k.kind))]
     if k.nested != "" { pairs.push(kv("nested", js(k.nested))) }
     if k.input_type != "" { pairs.push(kv("input_type", js(k.input_type))) }
+    if k.input.len() > 0 { pairs.push(kv("input", TxArr(k.input))) }
+    if k.types.len() > 0 { pairs.push(kv("callee_types", jstrs(k.types))) }
     if k.result != "" { pairs.push(kv("result", js(k.result))) }
     if k.parse_primitive != "" {
         mut parse_pairs = [kv("primitive", js(k.parse_primitive))]

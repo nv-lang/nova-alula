@@ -1,8 +1,8 @@
 # Machine: Verdict
 
 - machine: Verdict
-- machine_version: 1
-- format: 2.26
+- revision: 1
+- alula_version: 2.27
 - language: en
 
 An enumeration with fields (spec 2, AL-99, AL-102): the answer of the judge is a `Verdict`, one of three forms, two of them with fields. The event `response: Form { field: name }` binds the fields of the

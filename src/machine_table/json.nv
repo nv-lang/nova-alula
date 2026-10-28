@@ -9,27 +9,34 @@ module alula.machine_table
 import std.encoding.json.{Json, JsonValue, JsonObject}
 import alula.machine.{Expr, FieldExpr, Lit, Text, Int, IntMin, TypeSpec, TypeDefs, FieldDef, RecordDef, VariantDef, EnumValue, CaseDef, Bind, DefFn, expr_from_json, field_def, TextType, ListType, TupleType, parse_spec}
 
-/// The format tag of the tree.
+/// The kind of the root of a tree of a machine (AL-147, Alula 2.27): `"kind": "machine"`; the number of the schema after a slash is gone, the schema follows `alula_version`.
+export const MACHINE_KIND = "machine"
+
+/// The format tag of a tree of the seam of 2.25 (`"format": "machine/2"`): the texts of the tests of the package written by hand in the form of 2.25 only; a tree of 2.27 that says it is
+/// refused with the hint (AL-147).
 export const MACHINE_FORMAT = "machine/2"
 
 /// The version of the language Alula of the methodology that the tree follows (the key `alula_version`; the translator writes it in every tree). The key was named `table_format`
 /// before task 113 and `alula_version` before task 148; neither old name is accepted (the language is called Alula, there is no transition period).
-export const ALULA_VERSION = "2.26"
+export const ALULA_VERSION = "2.27"
 
-/// The version of a tree without the key `alula_version`: 2.25. The translator writes the key in every tree; a tree without it is a tree of the tests of the package written by hand
-/// in the form of 2.25 (the seam of 2.25, task 239: the files of the users are migrated by `tools/migrate-alula-226.py`, the texts of the tests of the package keep the form of 2.25).
+/// The version of a tree without the key `alula_version` in the form of the seam (`format` and `version`): 2.25. A tree with `kind` and without the key is of 2.27 (spec 6: the version that
+/// the program reads).
 const TREE_VERSION_ABSENT = "2.25"
+
+/// The hint of the old keys of the root (AL-147).
+const OLD_ROOT_KEYS = "с 2.27 — kind и revision: `\"format\": \"machine/2\"` is `\"kind\": \"machine\"`, the key `version` is `revision` (an integer, 1 by default); there is no transition period"
 
 /// The former name of the key of the version (the language was called Alula before 2.14): a tree that holds it is refused with its own message, not with "not in the schema".
 const FORMER_VERSION_KEY = "portolan_version" // guard-allow(legacy-name): the former key is named here to be refused
 
-/// The versions of the language that this package writes and names (`alula version`): one, 2.26. There is no transition period (the word of the owner, 2026-10-20): the files of 2.25
-/// are migrated by the script `tools/migrate-alula-226.py` (task 239), a tree of 2.24 or of an older version is refused.
-export fn alula_versions() -> []str => ["2.26"]
+/// The versions of the language that this package writes and names (`alula version`): one, 2.27. There is no transition period (the word of the owner, 2026-10-20): the files of 2.26
+/// are migrated by the script `tools/migrate-alula-227.py` (task 244), a tree of 2.26 or of an older version is refused.
+export fn alula_versions() -> []str => ["2.27"]
 
-/// The versions whose tree the decoder takes: 2.26 and 2.25. The tree of 2.25 is read for the texts of the tests of the package that keep the form of 2.25 (the seam of 2.25, task 239,
-/// decided by the fact: about 130 texts in 57 files of tests); the files of the users and the samples are of 2.26.
-export fn alula_versions_read() -> []str => ["2.25", "2.26"]
+/// The versions whose tree the decoder takes: 2.27 and 2.25. The tree of 2.25 (with the old keys `format` and `version`) is read for the texts of the tests of the package that keep the
+/// form of 2.25 (the seam of 2.25, task 239); the files of the users and the samples are of 2.27.
+export fn alula_versions_read() -> []str => ["2.25", "2.27"]
 
 fn le(path str, message str) -> LoadError => { path, message }
 
@@ -230,7 +237,7 @@ fn j_fields_or_empty(o JsonObject, key str, defs TypeDefs, path str) -> Result[[
 
 /// The keys of the root object of a machine.
 export fn top_keys() -> []str => [
-    "format", "alula_version", "machine", "version", "title", "types", "constants", "params", "input", "data", "parties", "request_limit", "signals",
+    "kind", "format", "alula_version", "machine", "revision", "version", "title", "types", "constants", "params", "input", "data", "parties", "request_limit", "signals",
     "definitions", "includes", "initial", "error_end", "common_events", "states", "ends", "primitives"
 ]
 
@@ -240,7 +247,7 @@ export fn state_keys() -> []str => [
 ]
 
 /// The keys of a party.
-export fn party_keys() -> []str => ["name", "id", "kind", "profile", "signals", "progress", "setting", "nested", "input_type", "result", "parse", "counter"]
+export fn party_keys() -> []str => ["name", "id", "kind", "profile", "signals", "progress", "setting", "nested", "input_type", "input", "callee_types", "result", "parse", "counter"]
 
 /// The signals that `передать` passes to a nested machine (the built-in enum `Signal`, format 2).
 export fn signal_words() -> []str => ["stop", "continue", "halt", "cancel"]
@@ -744,12 +751,17 @@ fn dec_parties(root JsonObject, defs TypeDefs) -> Result[[]PartyDef, LoadError] 
         ro nested = j_str_or(o, "nested", "", p)?
         mut input_spec = []TypeSpec.new()
         if j_has(o, "input_type") { input_spec.push(j_type(o, "input_type", defs, p)?) }
+        // 2.27 (AL-146): the fields of the input of the called machine and the names of the types that came with it
+        mut input_fields = []FieldDef.new()
+        if j_has(o, "input") { input_fields = j_fields(j_need(o, "input", p)?, defs, "${p}.input")? }
+        mut callee_types = []str.new()
+        for v in j_arr_or_empty(o, "callee_types", p)? { callee_types.push(j_str(v, "${p}.callee_types")?) }
         mut result_spec = []TypeSpec.new()
         if j_has(o, "result") { result_spec.push(j_type(o, "result", defs, p)?) }
         mut parse = []ParseDef.new()
         if j_has(o, "parse") { parse.push(dec_parse(j_need_obj(o, "parse", p)?, defs, "${p}.parse")?) }
         ro counter = j_str_or(o, "counter", "", p)?
-        out.push(PartyDef { name, id, kind, profile, signals, progress, setting, nested, input_spec, result_spec, parse, counter })
+        out.push(PartyDef { name, id, kind, profile, signals, progress, setting, nested, input_spec, input_fields, callee_types, result_spec, parse, counter })
         i += 1
     }
     Ok(out)
@@ -1118,7 +1130,7 @@ fn dec_ends(root JsonObject, defs TypeDefs) -> Result[EndsPart, LoadError] {
 /// value 0, does not decrease, written by the engine only; the counter of a set (`name[*].field`) is a path of the field, with no initial value (the constructor of the record gives 0).
 /// The data of the tree hold no row for a counter. A tree of 2.25 names its counters in its data, as before.
 fn data_with_counters(declared []DataDef, parties []PartyDef, language_version str) -> Result[[]DataDef, LoadError] {
-    if language_version != "2.26" { return Ok(declared) }
+    if language_version == "2.25" { return Ok(declared) }
     mut out = []DataDef.new()
     for d in declared { out.push(d) }
     mut seen = []str.new()
@@ -1146,14 +1158,28 @@ fn dec_machine(root JsonObject) -> Result[MachineDef, LoadError] {
         }
     }
     j_only(root, top_keys(), "$")?
-    ro format = j_need_str(root, "format", "$")?
-    if format != MACHINE_FORMAT { return Err(le("$.format", "the format must be ${MACHINE_FORMAT}, got ${format}")) }
-    ro language_version = j_str_or(root, "alula_version", TREE_VERSION_ABSENT, "$")?
-    if !alula_versions_read().contains(language_version) {
-        return Err(le("$.alula_version", "the alula_version must be ${ALULA_VERSION} (the version of the language of the methodology; there is no transition period: a file of 2.25 is migrated by tools/migrate-alula-226.py), got ${language_version}"))
+    // the root of 2.27 says `kind` and `revision` (AL-147); the old keys `format` and `version` are read only in a tree of the seam of 2.25
+    ro seam = !j_has(root, "kind") && j_has(root, "format") && j_str_or(root, "alula_version", TREE_VERSION_ABSENT, "$")? == "2.25"
+    mut language_version = ""
+    mut version = ""
+    if seam {
+        ro format = j_need_str(root, "format", "$")?
+        if format != MACHINE_FORMAT { return Err(le("$.format", "the format must be ${MACHINE_FORMAT}, got ${format}")) }
+        language_version = TREE_VERSION_ABSENT
+        version = j_str_or(root, "version", "", "$")?
+    } else {
+        language_version = j_str_or(root, "alula_version", ALULA_VERSION, "$")?
+        if !alula_versions().contains(language_version) {
+            return Err(le("$.alula_version", "the alula_version must be ${ALULA_VERSION} (the version of the language of the methodology; there is no transition period: a file of 2.26 is migrated by tools/migrate-alula-227.py), got ${language_version}"))
+        }
+        if j_has(root, "format") { return Err(le("$.format", OLD_ROOT_KEYS)) }
+        if j_has(root, "version") { return Err(le("$.version", OLD_ROOT_KEYS)) }
+        ro kind = j_need_str(root, "kind", "$")?
+        if kind != MACHINE_KIND { return Err(le("$.kind", "the kind of the root of a tree of a machine is ${MACHINE_KIND}, got ${kind}")) }
+        ro revision = j_int_or(root, "revision", 1, "$")?
+        version = "${revision}"
     }
     ro name = j_need_str(root, "machine", "$")?
-    ro version = j_str_or(root, "version", "", "$")?
     ro types = dec_types(root)?
     ro constants = dec_constants(root, types)?
     ro params = dec_params(root, types)?

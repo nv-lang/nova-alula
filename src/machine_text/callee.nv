@@ -1,0 +1,277 @@
+// callee.nv - the called machine of a party `machine <имя>` (Alula 2.27, AL-146, spec 1 "Вход и итог вызываемой машины"): the party names no types, the types of the input and of the result
+// come from the record of the called machine in the registry of the host. The translator finds the called machine among the files that it is given with the libraries (a machine file with the
+// line `machine: <имя>`: the program puts the machines beside the file), declares the types of its `## Типы` in the caller as the libraries do (the names of its `## Имена` hold), and takes
+// the fields of its `## Вход` and the type of its `- Результат:`. The tree of the caller keeps them: the types (listed by the party in `callee_types`, the generator does not write them in
+// `## Типы`), the fields of the input (the key `input` of the party), the result. The fields of the request of a call are exactly the fields of the input of the called machine.
+module alula.machine_text
+
+import alula.machine.{NamedText}
+
+/// The Latin names of the called machines of the parties `machine <имя>` of the section `## Стороны`, in their order (the name of the registry of the host is put to its Latin name).
+fn callee_names(entries []TxEntry, sec TxSection, cx TxCx) -> []str {
+    mut out = []str.new()
+    ro head = "${kw(cx.words, "kind_party", "machine")} "
+    mut i = sec.first
+    while i < sec.last {
+        ro e = entries[i]
+        if e.kind == EN_ROW {
+            for c in e.cells {
+                ro t = c.text.trim_ascii()
+                if t.starts_with(head) {
+                    mut name = t[head.byte_len()..].trim_ascii()
+                    for stop in ["(", ";", " "] {
+                        ro at = name.find(stop) ?? -1
+                        if at >= 0 { name = name[..at] }
+                    }
+                    ro latin = match names_get(cx.names, "machine", name) {
+                        Some(en) => en
+                        None => name
+                    }
+                    if name != "" && !out.contains(latin) { out.push(latin) }
+                }
+            }
+        }
+        i += 1
+    }
+    out
+}
+
+/// The file of the machine `name` among the files of the registry: the text whose header says `machine: <name>` (a library says `library:`).
+fn callee_find(name str, registry []NamedText) -> Option[NamedText] {
+    for f in registry {
+        mut first = true
+        for raw in f.text.split("\n") {
+            ro line = raw.strip_suffix("\r") ?? raw
+            if first {
+                if line.trim_ascii() == "" { continue }
+                first = false
+                if !line.starts_with("# ") { break }
+                continue
+            }
+            if line.starts_with("## ") { break }
+            ro h = header_line(line)
+            if h.key == "machine" {
+                if h.value == name { return Some(f) }
+                break
+            }
+        }
+    }
+    None
+}
+
+// The first `n` notes of a list (the notes of the text of a called machine are its own, not the caller's).
+fn notes_first(items []TranslateError, n int) -> []TranslateError {
+    mut out = []TranslateError.new()
+    mut k = 0
+    for e in items {
+        if k < n { out.push(e) }
+        k += 1
+    }
+    out
+}
+
+/// The called machines of the parties of the file: each found is read for its types, its input and its result (in the context of the caller, with the words of its own language); the types
+/// come back to be put in the tree of the caller. A type that the caller declares itself (the same JSON name) is the caller's. A machine that is not found is the error of its party.
+fn callees_import(entries []TxEntry, sections []TxSection, registry []NamedText, caller_types TxTypes, mut cx TxCx) -> TxTypes {
+    mut records = []TxJ.new()
+    mut variants = []TxJ.new()
+    mut own = []str.new()
+    for r in caller_types.records { own.push(tj_name(r)) }
+    for v in caller_types.variants { own.push(tj_name(v)) }
+    match section_of(sections, "Parties") {
+        None => ()
+        Some(psec) => {
+            for name in callee_names(entries, psec, cx) {
+                match callee_find(name, registry) {
+                    None => ()
+                    Some(file) => {
+                        ro errors_before = cx.errors.len()
+                        ro warnings_before = cx.warnings.len()
+                        mut rows_before = []TxJnRow.new()
+                        for row in cx.jn.rows { rows_before.push(row) }
+                        ro decls_before = cx.jn.decls.len()
+                        ro total_before = cx.rows_total
+                        ro noted_before = cx.rows_noted
+                        ro places_before = cx.places.len()
+                        ro words_before = cx.words
+                        ro lines = lines_of(file.text)
+                        ro info = detect_language(lines)
+                        cx.words = words_load(info.lang)
+                        ro centries = tx_classify_in(lines, cx.words, info.strict, info.strict).entries
+                        ro csections = sections_in(centries, cx, section_keys())
+                        match section_of(csections, "Names") {
+                            Some(nsec) => jn_rows_read(centries, nsec, cx)
+                            None => ()
+                        }
+                        mut types = []str.new()
+                        match section_of(csections, "Types") {
+                            Some(tsec) => {
+                                ro t = decl_types(centries, tsec, cx)
+                                for r in t.records {
+                                    if !own.contains(tj_name(r)) {
+                                        records.push(r)
+                                        own.push(tj_name(r))
+                                        types.push(tj_name(r))
+                                    }
+                                }
+                                for v in t.variants {
+                                    if !own.contains(tj_name(v)) {
+                                        variants.push(v)
+                                        own.push(tj_name(v))
+                                        types.push(tj_name(v))
+                                    }
+                                }
+                            }
+                            None => ()
+                        }
+                        // the fields of `## Вход`: the JSON names by the rows of the called machine, the types in the tree words
+                        mut input = []TxJ.new()
+                        match section_of(csections, "Input") {
+                            Some(isec) => {
+                                for r in section_table(centries, isec, ["name", "type", "note"], cx) {
+                                    ro text = r.cells[0].text.trim_ascii()
+                                    ro json = jn_peek(cx, text, "поля входа", [text])
+                                    match lib_type_json(r.cells[1].text.trim_ascii(), r.line, r.cells[1].col, cx) {
+                                        Ok(t) => {
+                                            input.push(jobj([kv("name", js(json)), kv("type", js(t))]))
+                                            if !pair_has(cx.env.fields, text) { pair_add(cx.env.fields, text, json) }
+                                        }
+                                        Err(e) => ()
+                                    }
+                                }
+                            }
+                            None => ()
+                        }
+                        // the type of `- Результат:` of `## Выход`
+                        mut result = ""
+                        match section_of(csections, "Ends") {
+                            Some(esec) => {
+                                mut i = esec.first
+                                while i < esec.last {
+                                    ro e = centries[i]
+                                    if e.kind == EN_TEXT && kv_colon(e) >= 0 {
+                                        ro line = kv_read(centries, i)
+                                        if line.key == "Result" && line.segs.len() > 0 {
+                                            match lib_type_json(line.segs[0].text.trim_ascii(), e.line, 1, cx) {
+                                                Ok(t) => { result = t }
+                                                Err(err) => ()
+                                            }
+                                        }
+                                    }
+                                    i += 1
+                                }
+                            }
+                            None => ()
+                        }
+                        cx.words = words_before
+                        cx.jn.rows = rows_before
+                        mut decls = []TxJnDecl.new()
+                        mut k = 0
+                        for d in cx.jn.decls {
+                            if k < decls_before { decls.push(d) }
+                            k += 1
+                        }
+                        cx.jn.decls = decls
+                        cx.errors = notes_first(cx.errors, errors_before)
+                        cx.warnings = notes_first(cx.warnings, warnings_before)
+                        cx.rows_total = total_before
+                        cx.rows_noted = noted_before
+                        mut places = []TxPlace.new()
+                        k = 0
+                        for pl in cx.places {
+                            if k < places_before { places.push(pl) }
+                            k += 1
+                        }
+                        cx.places = places
+                        cx.callees.push(TxCallee { name, result, input, types })
+                    }
+                }
+            }
+        }
+    }
+    TxTypes { records, variants }
+}
+
+// The literal of a field of a request that does not fit the type of the field of the input (the type in the words of the tree): its kind (`text`, `number`, `bool`), or "" when it fits or
+// is no literal.
+fn literal_misfit(row TxJ, want_in str) -> str {
+    ro want = if want_in.starts_with("?") { want_in[1..] } else { want_in }
+    match el_get(row, "value") {
+        Some(v) => {
+            if el_str(v, "op") != "lit" { return "" }
+            ro texty = want == "text" || want == "id" || want.starts_with("\"")
+            ro numeric = want.starts_with("int") || want == "float"
+            match el_get(v, "value") {
+                Some(x) => {
+                    match x {
+                        TxStr(t) => { if numeric || want == "bool" { return "text" } }
+                        TxRaw(t) => { if texty || want == "bool" { return "number" } }
+                        TxBool(b) => { if texty || numeric { return "bool" } }
+                        _ => ()
+                    }
+                }
+                None => ()
+            }
+        }
+        None => ()
+    }
+    ""
+}
+
+/// The fields of the request of every call of a party `machine <имя>` of 2.27 are exactly the fields of the input of the called machine (AL-146): a field that the input has not, a field of the
+/// input that the request does not give (the field `profile` comes from the column `профиль`).
+fn callees_request_check(states []TxJ, parties []TxJ, blocks []TxBlock, mut cx TxCx) -> () {
+    for st in states {
+        ro party = tj_str_of(st, "party")
+        if party == "" { continue }
+        for p in parties {
+            if tj_name(p) != party { continue }
+            ro nested = tj_str_of(p, "nested")
+            if nested == "" { continue }
+            mut want = []str.new()
+            for c in cx.callees {
+                if c.name == nested {
+                    for f in c.input { want.push(tj_name(f)) }
+                }
+            }
+            if want.len() == 0 { continue }
+            mut given = []str.new()
+            ro name_of_state = tj_name(st)
+            for row in el_items(st, "inputs") {
+                ro field = tj_str_of(row, "field")
+                given.push(field)
+                // a literal of another type than the field of the input (the other expressions the check of the table types)
+                for c in cx.callees {
+                    if c.name != nested { continue }
+                    for f in c.input {
+                        if tj_name(f) == field {
+                            ro wrong = literal_misfit(row, tj_str_of(f, "type"))
+                            if wrong != "" {
+                                mut at = 1
+                                for blk in blocks {
+                                    if blk.latin == name_of_state { at = blk.line }
+                                }
+                                note(cx, struct_error(at, 1, "поле запроса `${field}` обращения к стороне `${party}`: литерал другого типа (${wrong}), а поле входа вызываемой машины `${nested}` — `${tj_str_of(f, "type")}` (AL-146)"))
+                            }
+                        }
+                    }
+                }
+            }
+            match el_get(p, "profile") {
+                Some(v) => given.push("profile")
+                None => ()
+            }
+            ro name = tj_name(st)
+            mut line = 1
+            for blk in blocks {
+                if blk.latin == name { line = blk.line }
+            }
+            for g in given {
+                if !want.contains(g) { note(cx, struct_error(line, 1, "поле запроса `${g}` обращения к стороне `${party}`: у вызываемой машины `${nested}` во `## Вход` такого поля нет (поля «Запроса» — ровно поля входа вызываемой, AL-146)")) }
+            }
+            for w in want {
+                if !given.contains(w) { note(cx, struct_error(line, 1, "у вызываемой машины `${nested}` во `## Вход` поле `${w}`, а «Запрос» обращения к стороне `${party}` его не даёт (поля «Запроса» — ровно поля входа вызываемой, AL-146)")) }
+            }
+        }
+    }
+}

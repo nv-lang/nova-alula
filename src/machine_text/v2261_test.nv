@@ -19,8 +19,8 @@ fn m2261() -> str {
     ro text = `# Машина: Halt
 
 - machine: Halt
-- machine_version: 1
-- format: 2.26
+- revision: 1
+- alula_version: 2.27
 
 ## Имена
 
@@ -143,7 +143,7 @@ test "v2261 the old parameter of the code of the halt is not a parameter of Paus
 fn vis_lib(fn_body str) -> str => `# Библиотека: Счёт
 
 - library: tally
-- format: 2.26
+- alula_version: 2.27
 
 ## Параметры
 
@@ -168,8 +168,8 @@ fn vis_machine(lib str, includes str) -> str {
     ro text = `# Машина: Vis
 
 - machine: Vis
-- machine_version: 1
-- format: 2.26
+- revision: 1
+- alula_version: 2.27
 
 ## Имена
 
@@ -285,7 +285,7 @@ test "v2261 a function of the machine with the name of a function of a library i
 }
 
 test "v2261 a parameter of the library in a type of the requirements is an error" {
-    ro lib = vis_lib("функция много(н число>=0) -> булево => н > 1").replace("## Данные\n", "## Требует\n\n| имя | тип |\n|---|---|\n| готово | число>=предел |\n\n## Данные\n")
+    ro lib = vis_lib("функция много(н число>=0) -> булево => н > 1").replace("## Данные\n", "## Требует данные\n\n| имя | тип |\n|---|---|\n| готово | число>=предел |\n\n## Данные\n")
     ro r = vis_report(lib, vis_one(lib))
     assert(says2261(r, "предел"))
 }
@@ -293,7 +293,7 @@ test "v2261 a parameter of the library in a type of the requirements is an error
 // ---- the built-in Pause of 2.25 is gone ---------------------------------------------------------------------------------------------------------------------
 
 test "v2261 the old call of Pause in a file of 2.25 is an error: a library is connected by its file only" {
-    ro text = m2261().replace("format: 2.26", "format: 2.25").replace("### Пауза\n- Файл: libs/pause.alula.md\n", "Пауза(сигнал_остановки: остановить, код_остановки: \"pause_halt\", вложенные: [], отмена_запросов: механика, вход_заново: ничего, право_записи: \"x\")\n")
+    ro text = m2261().replace("- alula_version: 2.27", "format: 2.25").replace("### Пауза\n- Файл: libs/pause.alula.md\n", "Пауза(сигнал_остановки: остановить, код_остановки: \"pause_halt\", вложенные: [], отмена_запросов: механика, вход_заново: ничего, право_записи: \"x\")\n")
     ro r = r2261(text)
     assert(first2261(r) != "ok")
     assert(!r.json.contains("\"fragments\""))
@@ -305,8 +305,8 @@ test "v2261 the old call of Pause in a file of 2.25 is an error: a library is co
 fn free_word_text() -> str => `# Машина: Free
 
 - machine: Free
-- machine_version: 1
-- format: 2.26
+- revision: 1
+- alula_version: 2.27
 
 ## Имена
 
@@ -358,13 +358,13 @@ test "v2261 the word of a free input is read by a row of the appeal to another p
 fn cancel_lib() -> str => `# Библиотека: Отмена
 
 - library: call_cancel
-- format: 2.26
+- alula_version: 2.27
 
-## Требует
+## Требует концы
 
-| имя | тип |
-|---|---|
-| ОСТАНОВЛЕНО | конец |
+| имя |
+|---|
+| ОСТАНОВЛЕНО |
 
 ## Общие события
 
@@ -377,8 +377,8 @@ fn cancel_machine() -> str {
     ro text = `# Машина: Cancel
 
 - machine: Cancel
-- machine_version: 1
-- format: 2.26
+- revision: 1
+- alula_version: 2.27
 
 ## Имена
 
@@ -452,8 +452,8 @@ test "v2261 the generator writes the part of an answer in the form of 2.26" {
     ro text = `# Машина: Part
 
 - machine: Part
-- machine_version: 1
-- format: 2.26
+- revision: 1
+- alula_version: 2.27
 
 ## Имена
 

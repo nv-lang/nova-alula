@@ -1,7 +1,7 @@
 # Library: Pause
 
 - library: pause
-- format: 2.26
+- alula_version: 2.27
 - language: en
 
 ## Parameters
@@ -13,13 +13,18 @@
 | request_cancel | "mechanics" \| "without_return_to_send" \| "stop_transport_turn" | the effects: the table of section 9 of the specification |
 | reentry | "nothing" \| "requests_from_to_send" | the effects: the table of section 9 of the specification |
 
-## Requires
+## Requires parties
 
-| name | type |
-|---|---|
-| enhanced | party enhanced with the signals continue { human_word str, author str, source str } and halt_signal |
-| Halted | end |
-| Errored | end |
+| name | kind | signals |
+|---|---|---|
+| enhanced | enhanced | continue { human_word str, author str, source str }, halt_signal |
+
+## Requires ends
+
+| name |
+|---|
+| Halted |
+| Errored |
 
 ## Types
 
