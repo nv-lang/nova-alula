@@ -2081,6 +2081,51 @@ CLEAN = {  # порча, которая ошибки давать не долж�
 
 
 MUTATED = {'spec/samples/agent-step.alula.md', 'spec/samples/agent-step.en.alula.md'}
+# библиотеки пакета (раздел 9), формы 2.27 которых сверяются: шапка и разделы требований (AL-144, AL-145)
+LIBS = [('libs/pause.alula.md', 'ru'), ('libs/pause.en.alula.md', 'en'), ('libs/cycle_arithmetic.alula.md', 'ru'),
+        ('libs/cycle_arithmetic.en.alula.md', 'en')]
+# порча формы 2.27 (AL-144…AL-146) по файлам — образцы машин и библиотеки: (файл, язык, описание, что заменить, на что)
+MUTATIONS_227 = [
+    ('spec/samples/agent-step.alula.md', 'ru', 'ключ шапки `machine_version` (до 2.27)', '- revision: 1\n', '- machine_version: 1\n'),
+    ('spec/samples/agent-step.alula.md', 'ru', 'ключ шапки `format` (до 2.27)', '- alula_version: 2.27\n', '- format: 2.27\n'),
+    ('spec/samples/agent-step.alula.md', 'ru', 'ревизия `alula-2.NN` (AL-144: целое число)', '- revision: 1\n', '- revision: alula-2.27\n'),
+    ('spec/samples/agent-step.alula.md', 'ru', 'другая версия формата', '- alula_version: 2.27\n', '- alula_version: 2.26\n'),
+    ('spec/samples/agent-step.alula.md', 'ru', 'шапка машины без `alula_version`', '- alula_version: 2.27\n', ''),
+    ('spec/samples/agent-step.en.alula.md', 'en', 'дробная ревизия', '- revision: 1\n', '- revision: 1.5\n'),
+    ('spec/samples/agent-step.en.alula.md', 'en', 'шапка не по порядку (`alula_version` раньше `revision`)', '- revision: 1\n- alula_version: 2.27\n',
+     '- alula_version: 2.27\n- revision: 1\n'),
+    ('spec/samples/agent-step.en.alula.md', 'en', 'шапка не по порядку (`language` раньше `alula_version`)', '- alula_version: 2.27\n- language: en\n',
+     '- language: en\n- alula_version: 2.27\n'),
+    ('spec/samples/meeting-definitions.alula.md', 'ru', 'сторона `machine` со скобками (до 2.27, AL-146)', '| machine шаг_агента; разбор: разобрать_ответ_автора',
+     '| machine шаг_агента(вход ВходШагаАгента, итог ИтогШагаАгента); разбор: разобрать_ответ_автора'),
+    ('spec/samples/meeting-definitions.alula.md', 'ru', 'сторона `machine` со скобками без разбора', '| machine шаг_агента; разбор: разобрать_ответ_линзы -> ИтогЛинзы |',
+     '| machine шаг_агента(вход ВходШагаАгента, итог ИтогЛинзы) |'),
+    ('libs/cycle_arithmetic.alula.md', 'ru', 'ревизия у библиотеки (AL-144)', '- library: cycle_arithmetic\n', '- library: cycle_arithmetic\n- revision: 1\n'),
+    ('libs/cycle_arithmetic.alula.md', 'ru', 'шапка библиотеки без `alula_version`', '- alula_version: 2.27\n', ''),
+    ('libs/pause.en.alula.md', 'en', 'единый раздел `Requires` (до 2.27, AL-145)', '## Requires parties\n', '## Requires\n'),
+    ('libs/pause.en.alula.md', 'en', 'ключ шапки `format` у библиотеки (до 2.27)', '- alula_version: 2.27\n', '- format: 2.27\n'),
+]
+CLEAN_227 = [  # правка формы 2.27, которая ошибки давать не должна
+    ('spec/samples/agent-step.alula.md', 'ru', 'шапка без `revision` (по умолчанию 1)', '- revision: 1\n', ''),
+    ('spec/samples/agent-step.en.alula.md', 'en', 'ревизия 12', '- revision: 1\n', '- revision: 12\n'),
+]
+
+
+def selftest_v227(words, gloss):
+    """Формы 2.27 (AL-144…AL-146): каждая порча `MUTATIONS_227` замечена, ни одна правка `CLEAN_227` ошибки не даёт."""
+    bad = []
+    for cases, want in ((MUTATIONS_227, True), (CLEAN_227, False)):
+        for name, lang, what, a, b in cases:
+            text = read(name)
+            if a not in text:
+                bad.append('самопроверка 2.27 (%s): файл не содержит заменяемого (%s)' % (name, what))
+                continue
+            e = check_sample(text.replace(a, b, 1), words, name, lang, gloss)
+            if want and not e:
+                bad.append('самопроверка 2.27 (%s): порча не замечена (%s)' % (name, what))
+            if not want and e:
+                bad.append('самопроверка 2.27 (%s): ложная ошибка (%s): %s' % (name, what, e[0]))
+    return bad
 
 
 def selftest(sample, words, name, lang, gloss):
@@ -2168,6 +2213,7 @@ def main():
         else:
             print('самопроверка образцов и словаря пропущена: не задан путь к глоссарию')
         errs += selftest_table(table)
+        errs += selftest_v227(words, gloss)
     for e in errs:
         print(e)
     rows = sum(len(words[k][0]) for k in KINDS)
