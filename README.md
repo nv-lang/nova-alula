@@ -37,6 +37,7 @@ Since task 241 (version 0.9.1, the language stays 2.26) a library does not write
 Since task 244 the program is **2.27.0**, the language **2.27** (AL-144 ... AL-147): `alula version` prints `alula 2.27.0 (Алула 2.27)`.
 Версия программы alula = версия формата Алулы + номер исправления (2.27.x). История 0.x и соответствующих форматов выше — до унификации.
 The header of a machine is `machine`, `revision` (the revision of the machine itself, an integer, 1 by default), `alula_version: 2.27`, `language`; of a library `library`, `alula_version`, `language`. In a file, “version” without qualification means `alula_version`; `revision` is the machine revision. The old keys `machine_version` and `format` are refused with the hint. The root of a tree says `"kind": "machine"` and `revision`, the root of a test `"kind": "test"` (no number of a schema after a slash). A library names its requirements in three sections (`## Требует данные`, `## Требует стороны`, `## Требует концы`). A party `machine <имя>` names no types: the translator takes the input and the result from the called machine beside the file (the program gives it the machines of the folder), the caller declares no copy of them. Files of 2.26 are moved by [tools/migrate-alula-227.py](tools/migrate-alula-227.py) (`python tools/migrate-alula-227.py [--dry-run] [--alula target/alula.exe] <file or folder>…`); the libraries in [libs/](libs/) are the files of the methodology 2.27. The criterion is `scripts/accept-244.sh`.
+Since task 245 (stream P2 of 2.27) the examples and the samples of 2.26 moved by the script equal the files of the package, the copies of the sets pass after the script (the methodology 514 of 514, the product 81 of 81), and the places the script leaves to the owners are named in [docs/owner-places-2.27.md](docs/owner-places-2.27.md); `tools/check-alula-keywords.py --selftest` spoils the samples and the libraries with the forms before 2.27. The criterion is `scripts/accept-245.sh`.
 
 The seam of 2.25 (decided by the fact, item 44 of [docs/history.md](docs/history.md)): the translator and the decoder still read a file and a tree of 2.25, because about
 130 texts in 57 files of the tests of the package keep that form, and the tests of the readings and of the generator of 2.25 that take an example apart read the examples as they were, the snapshot [src/examples/v225/](src/examples/v225/); the scripts `tools/check-alula-*.py` read 2.26 only. The product set needs its owner: its machines send the signal of the machine `отмена` in an appeal of the agent, which 2.26 can not declare (only the signals of the protocol of a call); the script names the place.
@@ -123,7 +124,7 @@ In `nova.toml` of the consumer:
 
 ```toml
 [dependencies]
-alula = { git = "<the repository of alula>", version = "0.1" }
+alula = { git = "<the repository of alula>", version = "2.27" }
 ```
 
 and `import alula.machine.{...}`, `import alula.engine.{...}` and so on. The modules of the package are the ones in the table above; a consumer takes the library only (the tests of the

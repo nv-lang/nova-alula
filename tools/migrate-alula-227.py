@@ -13,7 +13,7 @@
     с типом «конец»); пустой раздел не пишется;
   - сторона `machine имя(вход Тип, итог Тип)` (AL-146) — `machine имя` (разбор `; разбор: f -> Т` остаётся); копия типа итога, которую
     объявляет и вызываемая машина рядом (то же имя), и тип входа, который файл больше нигде не называет, убираются из `## Типы`
-    вызывающей (объявление в одну строку);
+    вызывающей (объявление в одну строку); раздел `## Типы`, в котором не осталось объявлений, убирается;
   - дерево `*.alula.json` (AL-147): `"format": "machine/2"` — `"kind": "machine"`, `"version"` — `"revision"` (целое, иначе 1),
     `alula_version` — `2.27`; рядом файл машины и задан `--alula` — дерево пересобирается `alula compile`;
   - тест `*.alula.test.json`: `"format": "test/0"` — `"kind": "test"`;
@@ -243,6 +243,19 @@ def machine_parties(lines, w, run, path):
                 continue
             del lines[k]
             n += 1
+    # a section `## Типы` left with an empty block of code is gone (task 245: the caller of the examples declared only the copies)
+    for i, l in enumerate(lines):
+        if l == '## ' + w['types']:
+            j = i + 1
+            while j < len(lines) and not lines[j].strip():
+                j += 1
+            if lines[j:j + 2] == ['```', '```']:
+                k = j + 2
+                while k < len(lines) and not lines[k].strip():
+                    k += 1
+                del lines[i:k]
+                n += 1
+            break
     return n
 
 

@@ -21,6 +21,9 @@
      (в русском образце допустима `- language: ru` или её отсутствие, иной язык — ошибка); образцы — Алулы 2.27 (задача 244
      перенесла их скриптом `tools/migrate-alula-227.py` с 2.26; задача 239 — скриптом `tools/migrate-alula-226.py` с 2.25); внешняя функция в разделе
      `## Внешние функции` — без слов `внешняя функция` (AL-142), подключение — подзаголовком `### Имя` (AL-140);
+     формы 2.27 (функция `check_v227`, задача 245): шапка машины `machine`, `revision`, `alula_version`, `language` по порядку, ревизия — целое,
+     `alula_version: 2.27`; у библиотек `libs/` (`LIBS`) — `library`, `alula_version`, `language`, ревизии нет; сторона `machine <имя>` без скобок (AL-146);
+     `--selftest` портит образцы и библиотеки формами до 2.27 (`MUTATIONS_227`) и ждёт ошибки, правки `CLEAN_227` ошибок не дают;
   4. знаки операторов (спецификация, 1а, AL-42): в блоках кода, строках таблиц и строках-ключах нет знаков `≥`, `≤`, `≠`, `→`, `⇒`, `∈`, `‥`
      (только ASCII: `>=`, `<=`, `!=`, `->`, `=>`, `in`, `..`); в прозе знак `→` допустим; прежняя запись (до 2.18, AL-67…AL-69) — ошибка:
      в заголовке функции `функция имя(…) -> Тип` (`fn`) первый знак `=` после типа результата (если раньше нет `{`
@@ -1418,6 +1421,38 @@ def check_calls(text, words, name, lang, gloss):
     return errs
 
 
+HEADER_227 = {'machine': ('machine', 'revision', 'alula_version', 'language'), 'library': ('library', 'alula_version', 'language')}
+def check_v227(text, name):
+    """Формы 2.27 (AL-144, AL-146): шапка машины `machine`, `revision`, `alula_version`, `language` (ревизия — целое, по умолчанию 1),
+    библиотеки `library`, `alula_version`, `language` (ревизии нет); `alula_version` — 2.27; сторона `machine <имя>` без скобок."""
+    errs, keys = [], []
+    for n, line in enumerate(text.split('\n'), 1):
+        if line.startswith('## '):
+            break
+        m = re.match(r'^- ([a-z_]+):\s*(.*?)\s*$', line)
+        if m:
+            keys.append((n, m.group(1), m.group(2)))
+    kind = 'library' if any(k == 'library' for _, k, _ in keys) else 'machine'
+    order = HEADER_227[kind]
+    got = [(n, k, v) for n, k, v in keys if k in order]
+    for n, k, v in got:
+        if k == 'revision' and not re.match(r'^[1-9][0-9]*$', v):
+            errs.append('%s:%d: ревизия `%s` — ревизия целое число (с 2.27, AL-144)' % (name, n, v))
+        if k == 'alula_version' and v != '2.27':
+            errs.append('%s:%d: `alula_version: %s` — образец пакета пишется на Алуле 2.27' % (name, n, v))
+    for (_, k1, _), (n2, k2, _) in zip(got, got[1:]):
+        if order.index(k2) <= order.index(k1):
+            errs.append('%s:%d: шапка не по порядку: `%s` после `%s` (порядок 2.27: %s)' % (name, n2, k2, k1, ', '.join(order)))
+    if kind == 'library':
+        errs += ['%s:%d: у библиотеки нет ревизии (с 2.27 — `library`, `alula_version`, `language`, AL-144)' % (name, n) for n, k, _ in keys if k == 'revision']
+    if not any(k == 'alula_version' for _, k, _ in keys):
+        errs.append('%s:1: в шапке нет `alula_version` (с 2.27 — вместо `format`, AL-144)' % name)
+    for n, line in enumerate(text.split('\n'), 1):
+        if line.startswith('|') and re.search(r'\|\s*machine [^\s|;(]+\(', line):
+            errs.append('%s:%d: сторона `machine` со скобками: с 2.27 типы берутся от вызываемой (`machine <имя>`, AL-146)' % (name, n))
+    return errs
+
+
 def check_removed(text, name):
     """Убранное событие `слово(…)`/`word(…)` (AL-38) в строках таблиц."""
     return ['%s:%d: событие `слово(…)` убрано, пишется `сигнал(…)` (AL-38)' % (name, n)
@@ -1691,7 +1726,7 @@ def check_json_names(text, words, name, lang, gloss, contract=None):
 
 def check_sample(text, words, name, lang, gloss):
     contract = [en for ru, en in words['readable_pairs'] if ru in CONTRACT_DATA] if 'readable_pairs' in words else []
-    errs = check_operators(text, name) + check_v219(text, name, lang) + check_v220(text, name, lang) + check_v221(text, name, lang) + check_v222(text, name, lang) + (check_calls(text, words, name, lang, gloss) if gloss is not None else []) + check_removed(text, name) + check_json_names(text, words, name, lang, gloss, contract)
+    errs = check_operators(text, name) + check_v219(text, name, lang) + check_v220(text, name, lang) + check_v221(text, name, lang) + check_v222(text, name, lang) + (check_calls(text, words, name, lang, gloss) if gloss is not None else []) + check_removed(text, name) + check_v227(text, name) + check_json_names(text, words, name, lang, gloss, contract)
     own = {k: v[0 if lang == 'ru' else 1] for k, v in words.items() if k in KINDS}
     other = {k: v[1 if lang == 'ru' else 0] for k, v in words.items() if k in KINDS}
     declared = re.search(r'^- language: (\w+)\s*$', text, re.M)
@@ -1734,7 +1769,7 @@ MUTATIONS = {
         ('образец ответа с одним полем в круглых скобках', 'ответ: Обрезан { расход: полученный }', 'ответ: Обрезан(расход: полученный)'),
         ('сигнал с полями в круглых скобках (до 2.19)', '| сигнал(разрешить) |', '| сигнал(разрешить(решение: р)) |'),
         ('`в {…}` в ячейке события (до 2.19)', 'сбой(причина в [КодСбоя.СоединениеОборвалось, КодСбоя.НетОтветаВСрок, КодСбоя.НетРезультата])', 'сбой(причина в {КодСбоя.СоединениеОборвалось, КодСбоя.НетОтветаВСрок, КодСбоя.НетРезультата})'),
-        ('`в {…}` в `Кроме` (до 2.19)', '- Кроме: остановка в [""]', '- Кроме: остановка в {""}'),
+        ('`в {…}` в `Кроме` (до 2.19)', '- Кроме: остановка в ["", "pause_halt", "cancel_request"]', '- Кроме: остановка в {"", "pause_halt", "cancel_request"}'),
         ('объявление сигнала с полями в круглых скобках (до 2.20)', 'продолжить { слово_человека строка, автор строка, источник строка }', 'продолжить(слово_человека строка, автор строка, источник строка)'),
         ('объявление сигнала с одним полем в круглых скобках', '| разрешить, отказать |', '| разрешить(решение строка), отказать |'),
         ('объявление сигнала с полем-кортежем в круглых скобках', '| разрешить, отказать |', '| разрешить(пара (число, строка)), отказать |'),
@@ -1745,7 +1780,7 @@ MUTATIONS = {
         ('пустая вставка `${}`', '| число_ходов += 1 | ХОД_АГЕНТА |', '| текст_ответа = "ход ${}" | ХОД_АГЕНТА |'),
         ('незакрытая вставка', '| число_ходов += 1 | ХОД_АГЕНТА |', '| текст_ответа = "ход ${число_ходов" | ХОД_АГЕНТА |'),
         ('литерал со вставкой в наборе литералов', '| ход | "first" \\| "retry"', '| ход | "first${число_ходов}" \\| "retry"'),
-        ('литерал со вставкой в `в […]`', '- Кроме: остановка в [""]', '- Кроме: остановка в ["${число_ходов}"]'),
+        ('литерал со вставкой в `в […]`', '- Кроме: остановка в ["", "pause_halt", "cancel_request"]', '- Кроме: остановка в ["${число_ходов}"]'),
         ('функция с английским именем функции каталога по словарю (`добавить` → `concat`)', 'функция пауза_повтора(п число>=0) -> число =>', 'функция добавить(а число) -> число =>\n  а\n\nфункция пауза_повтора(п число>=0) -> число =>'),
         ('функция с именем функции каталога', 'функция пауза_повтора(п число>=0) -> число =>', 'функция склеить(а строка, б строка) -> строка =>\n  а + б\n\nфункция пауза_повтора(п число>=0) -> число =>'),
         ('функция с именем примитива реестра образца', 'функция пауза_повтора(п число>=0) -> число =>', 'функция reply_validation(а число) -> число =>\n  а\n\nфункция пауза_повтора(п число>=0) -> число =>'),
@@ -1822,7 +1857,7 @@ MUTATIONS = {
         ('первая форма многострочного перечисления в заголовке', 'тип ВидДействия перечисление\n  | Чтение', 'тип ВидДействия перечисление Чтение = "read"\n  | Чтение'),
         ('строка формы многострочного перечисления без `|`', '  | Запись = "write"', '    Запись = "write"'),
         ('значения и поля в одном перечислении', '  | ВременнаяОшибка\n', '  | ВременнаяОшибка = "transient"\n'),
-        ('знак `in` в русском файле (до AL-100)', '- Кроме: остановка в [""]', '- Кроме: остановка in [""]'),
+        ('знак `in` в русском файле (до AL-100)', '- Кроме: остановка в ["", "pause_halt", "cancel_request"]', '- Кроме: остановка in ["", "pause_halt", "cancel_request"]'),
         ('знак `in` в ячейке события', 'сбой(причина в [', 'сбой(причина in ['),
         ('`=` после имени типа перечисления', 'тип ПроверкаОтвета перечисление Верна', 'тип ПроверкаОтвета = Верна'),
         ('`=` после слова `перечисление`', 'тип ПроверкаОтвета перечисление Верна', 'тип ПроверкаОтвета перечисление = Верна'),
@@ -1839,7 +1874,7 @@ MUTATIONS = {
         ('значение элемента перечисления без `=` (до 2.22)', 'Чтение = "read"', 'Чтение "read"'),
         ('значение элемента без `=` в строке формы', '| Исполнение = "execute"', '| Исполнение "execute"'),
         ('комментарий `//` в ячейке таблицы', '| число_ходов += 1 | ХОД_АГЕНТА |', '| число_ходов += 1 // ещё ход | ХОД_АГЕНТА |'),
-        ('комментарий `//` в строке-ключе', '- Кроме: остановка в [""]', '- Кроме: остановка в [""] // пусто не конец'),
+        ('комментарий `//` в строке-ключе', '- Кроме: остановка в ["", "pause_halt", "cancel_request"]', '- Кроме: остановка в ["", "pause_halt", "cancel_request"] // пусто не конец'),
         ('число `1__0`', '| число_ходов += 1 | ХОД_АГЕНТА |', '| число_ходов += 1__0 | ХОД_АГЕНТА |'),
         ('число `1_`', '| число_ходов += 1 | ХОД_АГЕНТА |', '| число_ходов += 1_ | ХОД_АГЕНТА |'),
         ('число `1e` без порядка', '(1..п).свёртка(ПАУЗА_ПОВТОРА,', '(1e..п).свёртка(ПАУЗА_ПОВТОРА,'),
@@ -1883,7 +1918,7 @@ MUTATIONS = {
         ('образец ответа в круглых скобках (до 2.19)', 'response: Finished { text, artifact, transport_usage: received }', 'response: Finished(text, artifact, transport_usage: received)'),
         ('сигнал с полями в круглых скобках (до 2.19)', '| signal(allow) |', '| signal(allow(decision: d)) |'),
         ('`in {…}` в ячейке события (до 2.19)', 'failure(reason in [FailCode.ConnectionLost, FailCode.Timeout, FailCode.NoResult])', 'failure(reason in {FailCode.ConnectionLost, FailCode.Timeout, FailCode.NoResult})'),
-        ('`in {…}` в `Except` (до 2.19)', '- Except: stop_reason in [""]', '- Except: stop_reason in {""}'),
+        ('`in {…}` в `Except` (до 2.19)', '- Except: stop_reason in ["", "pause_halt", "cancel_request"]', '- Except: stop_reason in {"", "pause_halt", "cancel_request"}'),
         ('объявление сигнала с полями в круглых скобках (до 2.20)', 'continue { human_word str, author str, source str }', 'continue(human_word str, author str, source str)'),
         ('объявление сигнала с полем-кортежем в круглых скобках', '| allow, deny |', '| allow(pair (int, str)), deny |'),
         ('альтернатива `match` по варианту в круглых скобках (до 2.20)', 'match action {\n    ActionKind.Delete |', 'match action {\n    Delete(path) |'),
@@ -1891,7 +1926,7 @@ MUTATIONS = {
         ('пустая вставка `${}`', '| turn_count += 1 | AgentTurn |', '| reply_text = "turn ${}" | AgentTurn |'),
         ('незакрытая вставка', '| turn_count += 1 | AgentTurn |', '| reply_text = "turn ${turn_count" | AgentTurn |'),
         ('литерал со вставкой в наборе литералов', '| turn | "first" \\| "retry"', '| turn | "first${turn_count}" \\| "retry"'),
-        ('литерал со вставкой в `in […]`', '- Except: stop_reason in [""]', '- Except: stop_reason in ["${turn_count}"]'),
+        ('литерал со вставкой в `in […]`', '- Except: stop_reason in ["", "pause_halt", "cancel_request"]', '- Except: stop_reason in ["${turn_count}"]'),
         ('функция с именем функции каталога `concat`', 'fn retry_pause(n int>=0) -> int =>', 'fn concat(a int) -> int =>\n  a\n\nfn retry_pause(n int>=0) -> int =>'),
         ('функция с именем вызова диапазона `range`', 'fn retry_pause(n int>=0) -> int =>', 'fn range(a int) -> int =>\n  a\n\nfn retry_pause(n int>=0) -> int =>'),
         ('функция с именем примитива реестра образца', 'fn retry_pause(n int>=0) -> int =>', 'fn reply_validation(a int) -> int =>\n  a\n\nfn retry_pause(n int>=0) -> int =>'),
@@ -1938,7 +1973,7 @@ MUTATIONS = {
         ('`|` перед первой формой однострочного перечисления', 'type ReplyCheck enum Valid', 'type ReplyCheck enum | Valid'),
         ('значения и поля в одном перечислении', '  | TransientError\n', '  | TransientError = "transient"\n'),
         ('русский знак `в` в английском файле', 'failure(reason in [', 'failure(reason в ['),
-        ('русский знак `в` в `Except`', '- Except: stop_reason in [""]', '- Except: stop_reason в [""]'),
+        ('русский знак `в` в `Except`', '- Except: stop_reason in ["", "pause_halt", "cancel_request"]', '- Except: stop_reason в ["", "pause_halt", "cancel_request"]'),
         ('русский знак `в` между выражениями', 'failure(reason in [', 'failure(reason в xs) | — | — | Accounting |\n| 99 | failure(reason in ['),
         ('`=` после имени типа перечисления', 'type ReplyCheck enum Valid', 'type ReplyCheck = Valid'),
         ('однострочное перечисление со значениями', 'type ReplyCheck enum Valid | Violated | Empty', 'type ReplyCheck enum Valid = "ok" | Violated | Empty'),
@@ -1985,7 +2020,7 @@ CLEAN = {  # порча, которая ошибки давать не долж�
         ('вложенный литерал со вставкой внутри вставки', '| число_ходов += 1 | ХОД_АГЕНТА |', '| текст_ответа = "${если истина то { "есть ${число_ходов}" } иначе { "нет" }}" | ХОД_АГЕНТА |'),
         ('диапазон и методы макросов в ячейке', '| число_ходов += 1 | ХОД_АГЕНТА |', '| число_ходов += (1..число_ходов + 1).фильтр(x => x > 0).количество(x => истина) | ХОД_АГЕНТА |'),
         ('метод `словарь` на литерале списка и поле записи после точки', '| число_ходов += 1 | ХОД_АГЕНТА |', '| число_ходов += длина([1, 2].словарь(x => x, x => x)) + расход.токены | ХОД_АГЕНТА |'),
-        ('литерал без вставки в `в […]`, одиночный знак `$`', '- Кроме: остановка в [""]', '- Кроме: остановка в ["", "$5"]'),
+        ('литерал без вставки в `в […]`, одиночный знак `$`', '- Кроме: остановка в ["", "pause_halt", "cancel_request"]', '- Кроме: остановка в ["", "$5"]'),
         ('функция с именем, не совпадающим с функцией каталога', 'функция пауза_повтора(п число>=0) -> число =>', 'функция добавить_всё(а число) -> число =>\n  а\n\nфункция пауза_повтора(п число>=0) -> число =>'),
         ('функция с именем, не совпадающим с примитивом', 'функция пауза_повтора(п число>=0) -> число =>', 'функция убрать_несостоятельные_заново(а число) -> число =>\n  а\n\nфункция пауза_повтора(п число>=0) -> число =>'),
         ('`для каждого … в [ … ]` со вставками в элементах', '| число_ходов += 1 | ХОД_АГЕНТА |', '| для x из ["a${число_ходов}", "b"] { число_ходов += 1 } | ХОД_АГЕНТА |'),
@@ -2120,7 +2155,8 @@ def selftest_v227(words, gloss):
             if a not in text:
                 bad.append('самопроверка 2.27 (%s): файл не содержит заменяемого (%s)' % (name, what))
                 continue
-            e = check_sample(text.replace(a, b, 1), words, name, lang, gloss)
+            clean = set(check_sample(text, words, name, lang, gloss))
+            e = [x for x in check_sample(text.replace(a, b, 1), words, name, lang, gloss) if x not in clean]
             if want and not e:
                 bad.append('самопроверка 2.27 (%s): порча не замечена (%s)' % (name, what))
             if not want and e:
@@ -2207,6 +2243,8 @@ def main():
         errs += check_sample(sample, words, name, lang, gloss)
         if '--selftest' in sys.argv and gloss is not None:
             errs += selftest(sample, words, name, lang, gloss)
+    for name, lang in LIBS:  # библиотеки пакета: формы 2.27 (полная сверка образца — у машин)
+        errs += check_v227(read(name), name)
     if '--selftest' in sys.argv:
         if gtext is not None:
             errs += selftest_dictionary(gtext, specs)
