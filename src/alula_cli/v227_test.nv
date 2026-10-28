@@ -1,0 +1,14 @@
+// v227_test.nv - task 244: the program is of the version 0.10.0 and reads the language Alula 2.27; the line of `alula version` names no version of the machine and no schema
+// after a slash.
+module alula.alula_cli
+
+import std.text
+
+test "v227 the program is of the version 0.10.0 of the language 2.27" {
+    assert(PROGRAM_VERSION == "0.10.0")
+    assert(version_text() == "alula 0.10.0 (Alula 2.27)\n")
+    ro ran = run0(["version"])
+    assert(ran.out.starts_with("alula 0.10.0 (Alula 2.27)"))
+    assert(!ran.out.contains("machine/2"))
+    assert(!ran.out.contains("machine_version"))
+}

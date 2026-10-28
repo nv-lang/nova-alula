@@ -1,0 +1,512 @@
+// v227_test.nv - task 244 (package 0.10.0, Alula 2.27, AL-144…AL-147): the header `revision` (an integer, 1 by default) and `alula_version` instead of `machine_version` and
+// `format`, the tree with `kind` and `revision`, the three sections `## Требует данные`, `## Требует стороны`, `## Требует концы` of a library, the party `machine <имя>` without the
+// types (the types of the input and of the result are taken from the called machine of the registry of the host), the old forms refused with the hint.
+module alula.machine_text
+
+import std.text
+import alula.machine.{NamedText, language_registry}
+
+fn pause227() -> str => embed_str("../../libs/pause.alula.md")
+
+fn pause227_en() -> str => embed_str("../../libs/pause.en.alula.md")
+
+fn cycle227() -> str => embed_str("../../libs/cycle_arithmetic.alula.md")
+
+fn cycle227_en() -> str => embed_str("../../libs/cycle_arithmetic.en.alula.md")
+
+fn libs227() -> []NamedText => [NamedText { name: "libs/pause.alula.md", text: pause227() }]
+
+// A machine of 2.27 that connects «Пауза»: the output reads the reason of the library.
+fn m227() -> str {
+    ro text = `# Машина: Halt
+
+- machine: Halt
+- revision: 3
+- alula_version: 2.27
+- language: ru
+
+## Имена
+
+| имя | JSON-имя |
+|---|---|
+| РАБОТА | Work |
+| КОНЕЦ | Finished |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | сигналы | счётчик |
+|---|---|---|---|---|---|
+| агент | agent | agent(итог строка) | — | — | попытка_агента |
+| усиленный | enhanced | enhanced(итог ИсходВорот) | — | продолжить { слово_человека строка, автор строка, источник строка }, остановить | попытка_усиленного |
+
+## Подключения
+
+### Пауза
+- Файл: libs/pause.alula.md
+- Хеш: HASH
+
+| параметр | значение |
+|---|---|
+| сигнал_остановки | "остановить" |
+| вложенные | [] |
+| отмена_запросов | "механика" |
+| вход_заново | "ничего" |
+
+## Состояния
+
+Начальное состояние: РАБОТА
+
+### РАБОТА — обращение
+- Сторона: агент
+
+| Событие | Условие | Действия | Куда |
+|---|---|---|---|
+| ответ |  |  | КОНЕЦ |
+
+### КОНЕЦ — конец
+
+### ОСТАНОВЛЕНО — конец
+
+### ОШИБКА — конец
+
+## Выход
+
+- Результат: строка
+
+| конец | когда | ответ |
+|---|---|---|
+| КОНЕЦ | истина | Ответ("ok") |
+| ОСТАНОВЛЕНО | Пауза.причина == ПричинаПаузы.Остановлена | Отказ(КодСбоя.ОстановленоЧеловеком, строка(Пауза.причина)) |
+| ОСТАНОВЛЕНО | Пауза.причина == ПричинаПаузы.Отменена | Отказ(КодСбоя.ОтмененоРодителем, строка(Пауза.причина)) |
+| ОШИБКА | истина | Отказ(КодСбоя.НетРезультата, "error") |
+`
+    text.replace("HASH", definitions_hash(pause227()))
+}
+
+fn r227(text str) -> TranslateReport => translate_report_with(text, libs227())
+
+fn r227_with(text str, files []NamedText) -> TranslateReport => translate_report_with(text, files)
+
+fn first227(report TranslateReport) -> str {
+    if report.errors.len() == 0 { return "ok" }
+    "${report.errors[0].line}:${report.errors[0].col} ${report.errors[0].kind} ${report.errors[0].message}"
+}
+
+fn says227(report TranslateReport, needle str) -> bool {
+    for e in report.errors {
+        if e.message.contains(needle) { return true }
+    }
+    false
+}
+
+// ---- AL-144: the header `revision` and `alula_version` -------------------------------------------------------------------------------------------------
+
+test "v227 a machine of 2.27 is translated: the tree has kind, alula_version and revision" {
+    ro r = r227(m227())
+    assert(first227(r) == "ok")
+    assert(r.json.contains("\"kind\":\"machine\""))
+    assert(r.json.contains("\"alula_version\":\"2.27\""))
+    assert(r.json.contains("\"revision\":3"))
+    assert(!r.json.contains("\"format\""))
+    assert(!r.json.contains("\"version\""))
+}
+
+test "v227 the revision is 1 by default" {
+    ro r = r227(m227().replace("- revision: 3\n", ""))
+    assert(first227(r) == "ok")
+    assert(r.json.contains("\"revision\":1"))
+}
+
+test "v227 a revision that is not an integer is an error" {
+    assert(says227(r227(m227().replace("- revision: 3", "- revision: alula-2.26")), "ревизия — целое число"))
+    assert(says227(r227(m227().replace("- revision: 3", "- revision: 1.5")), "ревизия — целое число"))
+    assert(says227(r227(m227().replace("- revision: 3", "- revision: один")), "ревизия — целое число"))
+}
+
+test "v227 machine_version in the header is an error with the hint" {
+    ro r = r227(m227().replace("- revision: 3", "- machine_version: 1"))
+    assert(says227(r, "с 2.27 — revision и alula_version"))
+}
+
+test "v227 format in the header is an error with the hint" {
+    assert(says227(r227(m227().replace("- alula_version: 2.27", "- format: 2.27")), "с 2.27 — revision и alula_version"))
+    assert(says227(r227(m227().replace("- alula_version: 2.27", "- format: 2.26")), "с 2.27 — revision и alula_version"))
+}
+
+test "v227 an alula_version other than 2.27 is an error" {
+    assert(!(first227(r227(m227().replace("- alula_version: 2.27", "- alula_version: 2.26"))) == "ok"))
+}
+
+test "v227 the order of the header is machine, revision, alula_version, language in the rendered file" {
+    ro r = r227(m227())
+    ro back = render_machine_libs(r.json, "ru", false, language_registry(), libs227())
+    assert(back.notes.len() == 0)
+    ro at_machine = back.text.find("- machine: Halt") ?? -1
+    ro at_revision = back.text.find("- revision: 3") ?? -1
+    ro at_version = back.text.find("- alula_version: 2.27") ?? -1
+    ro at_language = back.text.find("- language: ru") ?? -1
+    assert(at_machine >= 0 && at_machine < at_revision && at_revision < at_version && at_version < at_language)
+    assert(!back.text.contains("machine_version"))
+    assert(!back.text.contains("- format:"))
+}
+
+// ---- the libraries of 2.27 (AL-145) -------------------------------------------------------------------------------------------------------------------
+
+test "v227 the files of the libraries are those of the methodology for 2.27" {
+    assert(definitions_hash(pause227()) == "f14004122df2")
+    assert(definitions_hash(pause227_en()) == "5f2b384c7997")
+    assert(definitions_hash(cycle227()) == "27e3a65d6f9a")
+    assert(definitions_hash(cycle227_en()) == "07c9099132be")
+    assert(pause227().contains("- alula_version: 2.27"))
+    assert(pause227().contains("## Требует стороны"))
+    assert(pause227().contains("## Требует концы"))
+    assert(pause227_en().contains("## Requires parties"))
+    assert(pause227_en().contains("## Requires ends"))
+}
+
+// A library of 2.27 with the three sections of the requirements.
+fn req_lib(sections str) -> str => `# Библиотека: Счёт
+
+- library: tally
+- alula_version: 2.27
+- language: ru
+
+SECTIONS
+## Данные
+
+| имя | тип | начальное |
+|---|---|---|
+| раз | число>=0 | 0 |
+
+## Общие события
+
+| Событие | Условие | Действия | Куда |
+|---|---|---|---|
+| сигнал(сброс) | не конец(состояние) | раз = раз + 1 | ОСТАНОВЛЕНО |
+`.replace("SECTIONS", sections)
+
+fn req_all() -> str => `## Требует данные
+
+| имя | тип |
+|---|---|
+| метка | строка |
+
+## Требует стороны
+
+| имя | вид | сигналы |
+|---|---|---|
+| усиленный | enhanced | сброс |
+
+## Требует концы
+
+| имя |
+|---|
+| ОСТАНОВЛЕНО |
+`
+
+fn req_machine(lib str) -> str {
+    ro text = `# Машина: Req
+
+- machine: Req
+- revision: 1
+- alula_version: 2.27
+- language: ru
+
+## Имена
+
+| имя | JSON-имя |
+|---|---|
+| РАБОТА | Work |
+| КОНЕЦ | Finished |
+
+## Данные
+
+| имя | тип | начальное | не убывает |
+|---|---|---|---|
+| метка | строка | "" | — |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | сигналы | счётчик |
+|---|---|---|---|---|---|
+| агент | agent | agent(итог строка) | — | — | попытка_агента |
+| усиленный | enhanced | enhanced(итог ИсходВорот) | — | сброс | попытка_усиленного |
+
+## Подключения
+
+### Счёт
+- Файл: libs/tally.alula.md
+- Хеш: HASH
+
+## Состояния
+
+Начальное состояние: РАБОТА
+
+### РАБОТА — обращение
+- Сторона: агент
+
+| Событие | Условие | Действия | Куда |
+|---|---|---|---|
+| ответ |  |  | КОНЕЦ |
+
+### КОНЕЦ — конец
+
+### ОСТАНОВЛЕНО — конец
+
+### ОШИБКА — конец
+
+## Выход
+
+- Результат: строка
+
+| конец | когда | ответ |
+|---|---|---|
+| КОНЕЦ | истина | Ответ(метка) |
+| ОСТАНОВЛЕНО | истина | Отказ(КодСбоя.ОстановленоЧеловеком, "stop") |
+| ОШИБКА | истина | Отказ(КодСбоя.НетРезультата, "error") |
+`
+    text.replace("HASH", definitions_hash(lib))
+}
+
+fn req_report(lib str, machine str) -> TranslateReport => r227_with(machine, [NamedText { name: "libs/tally.alula.md", text: lib }])
+
+test "v227 a library with the three sections of the requirements is connected" {
+    ro lib = req_lib(req_all())
+    assert(first227(req_report(lib, req_machine(lib))) == "ok")
+}
+
+test "v227 the machine with the new Pause is translated" {
+    assert(first227(r227(m227())) == "ok")
+}
+
+test "v227 the requirement of a datum that the machine has not is an error" {
+    ro lib = req_lib(req_all())
+    ro r = req_report(lib, req_machine(lib).replace("| метка | строка | \"\" | — |\n", "").replace("Ответ(метка)", "Ответ(\"ok\")"))
+    assert(says227(r, "метка"))
+}
+
+test "v227 the requirement of a datum of another type is an error" {
+    ro lib = req_lib(req_all())
+    ro r = req_report(lib, req_machine(lib).replace("| метка | строка | \"\" | — |", "| метка | число | 0 | — |").replace("Ответ(метка)", "Ответ(\"ok\")"))
+    assert(says227(r, "метка"))
+}
+
+test "v227 the requirement of a party that the machine has not is an error" {
+    ro lib = req_lib(req_all())
+    ro r = req_report(lib, req_machine(lib).replace("| усиленный | enhanced | enhanced(итог ИсходВорот) | — | сброс | попытка_усиленного |\n", ""))
+    assert(says227(r, "усиленный"))
+}
+
+test "v227 the requirement of a signal that the party has not is an error" {
+    ro lib = req_lib(req_all().replace("| усиленный | enhanced | сброс |", "| усиленный | enhanced | сброс, пуск |"))
+    ro r = req_report(lib, req_machine(lib))
+    assert(says227(r, "пуск"))
+}
+
+test "v227 the requirement of an end that the machine has not is an error" {
+    ro lib = req_lib(req_all())
+    ro r = req_report(lib, req_machine(lib).replace("### ОСТАНОВЛЕНО — конец\n", "").replace("| ОСТАНОВЛЕНО | истина | Отказ(КодСбоя.ОстановленоЧеловеком, \"stop\") |\n", ""))
+    assert(says227(r, "ОСТАНОВЛЕНО"))
+}
+
+test "v227 the old single section of the requirements is an error with the hint" {
+    ro old = "## Требует\n\n| имя | тип |\n|---|---|\n| метка | строка |\n| ОСТАНОВЛЕНО | конец |\n"
+    ro lib = req_lib(old)
+    assert(says227(req_report(lib, req_machine(lib)), "с 2.27 три раздела"))
+}
+
+test "v227 format in the header of a library is an error with the hint" {
+    ro lib = req_lib(req_all()).replace("- alula_version: 2.27", "- format: 2.26")
+    assert(says227(req_report(lib, req_machine(lib)), "с 2.27 — revision и alula_version"))
+}
+
+// ---- AL-146: the party `machine <имя>` takes its types from the called machine ----------------------------------------------------------------------------
+
+fn callee227() -> str => `# Машина: Вызываемая
+
+- machine: callee
+- revision: 2
+- alula_version: 2.27
+- language: ru
+
+## Типы
+
+~~~
+тип Балл { значение число>=0 }
+тип CallOutput { answer строка, score Балл }
+~~~
+
+## Имена
+
+| имя | JSON-имя |
+|---|---|
+| ЗАПРОС | Ask |
+| КОНЕЦ | Done |
+
+## Вход
+
+| имя | тип | примечание |
+|---|---|---|
+| label | строка | метка |
+| count | число>=0 | число |
+
+## Данные
+
+| имя | тип | начальное | не убывает |
+|---|---|---|---|
+| label | строка | вход.label | — |
+| count | число>=0 | вход.count | — |
+| agent_text | ?строка | пусто | — |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | сигналы | счётчик |
+|---|---|---|---|---|---|
+| agent | agent | agent(итог строка) | — | — | agent_attempt |
+
+## Состояния
+
+Начальное состояние: ЗАПРОС
+
+### ЗАПРОС — обращение
+- Сторона: agent
+- Запрос:
+
+| поле запроса | выражение |
+|---|---|
+| prompt | label |
+
+| Событие | Условие | Действия | Куда |
+|---|---|---|---|
+| ответ(текст_ответа) |  | agent_text = текст_ответа | КОНЕЦ |
+
+### КОНЕЦ — конец
+
+### ОШИБКА — конец
+
+## Выход
+
+- Результат: CallOutput
+
+| конец | когда | ответ |
+|---|---|---|
+| КОНЕЦ | истина | Ответ(CallOutput { answer: обязательно(agent_text), score: Балл { значение: count } }) |
+| ОШИБКА | истина | Отказ(КодСбоя.НетРезультата, "дефект") |
+`.replace("~~~", "```")
+
+fn caller227(kind str) -> str => `# Машина: Вызывающая
+
+- machine: caller
+- revision: 1
+- alula_version: 2.27
+- language: ru
+
+## Имена
+
+| имя | JSON-имя |
+|---|---|
+| ВЫЗОВ | Call |
+| КОНЕЦ | Done |
+| ОТКАЗ | Failed |
+
+## Вход
+
+| имя | тип | примечание |
+|---|---|---|
+| task | строка | задание |
+
+## Данные
+
+| имя | тип | начальное | не убывает |
+|---|---|---|---|
+| task | строка | вход.task | — |
+| child_result | ?CallOutput | пусто | — |
+
+## Стороны
+
+| имя | идентификатор | вид | профиль | сигналы | счётчик |
+|---|---|---|---|---|---|
+| child | callee | KIND | — | — | child_attempt |
+
+## Состояния
+
+Начальное состояние: ВЫЗОВ
+
+### ВЫЗОВ — обращение
+- Сторона: child
+- Запрос:
+
+| поле запроса | выражение |
+|---|---|
+| label | task |
+| count | 3 |
+
+| Событие | Условие | Действия | Куда |
+|---|---|---|---|
+| ответ(итог) |  | child_result = итог; журнал("child_answered", answer: итог.answer, score: строка(итог.score.значение)) | КОНЕЦ |
+| сбой(причина) |  | журнал("child_failed", code: строка(причина)) | ОТКАЗ |
+
+### КОНЕЦ — конец
+
+### ОТКАЗ — конец
+
+### ОШИБКА — конец
+
+## Выход
+
+- Результат: строка
+
+| конец | когда | ответ |
+|---|---|---|
+| КОНЕЦ | истина | Ответ(обязательно(child_result).answer) |
+| ОТКАЗ | истина | Отказ(КодСбоя.НетРезультата, "child") |
+| ОШИБКА | истина | Отказ(КодСбоя.НетРезультата, "дефект") |
+`.replace("KIND", kind)
+
+fn host227() -> []NamedText => [NamedText { name: "callee.alula.md", text: callee227() }]
+
+test "v227 the party machine without the brackets takes the types of the called machine" {
+    ro r = r227_with(caller227("machine callee"), host227())
+    assert(first227(r) == "ok")
+    assert(r.json.contains("\"nested\":\"callee\""))
+    assert(r.json.contains("\"result\":\"CallOutput\""))
+    // the type of the result and the type that it uses come into the tree from the called machine; the caller declares no copy
+    assert(r.json.contains("\"name\":\"CallOutput\""))
+    assert(r.json.contains("\"name\":\"Балл\"") || r.json.contains("\"name\":\"Ball\""))
+    assert(!r.json.contains("\"input_type\""))
+}
+
+test "v227 the called machine is the one of the registry of the host: without it the party is an error" {
+    ro r = r227_with(caller227("machine callee"), []NamedText.new())
+    assert(says227(r, "callee"))
+    assert(says227(r, "реестр"))
+}
+
+test "v227 the old form of the party machine with the types is an error with the hint" {
+    ro r = r227_with(caller227("machine callee(вход CallInput, итог CallOutput)"), host227())
+    assert(says227(r, "с 2.27 типы берутся от вызываемой"))
+}
+
+test "v227 the fields of the request are exactly the fields of the input of the called machine" {
+    ro extra = caller227("machine callee").replace("| count | 3 |", "| count | 3 |\n| lost | 1 |")
+    assert(says227(r227_with(extra, host227()), "lost"))
+    ro missing = caller227("machine callee").replace("| count | 3 |\n", "")
+    assert(says227(r227_with(missing, host227()), "count"))
+    ro wrong = caller227("machine callee").replace("| count | 3 |", "| count | \"три\" |")
+    assert(says227(r227_with(wrong, host227()), "count"))
+}
+
+test "v227 the parse of a party machine stays" {
+    ro text = caller227("machine callee; разбор: разобрать -> строка")
+    ro r = r227_with(text, host227())
+    assert(!says227(r, "с 2.27 типы берутся от вызываемой"))
+}
+
+test "v227 the rendered caller names the party without the brackets and declares no copy of the types" {
+    ro r = r227_with(caller227("machine callee"), host227())
+    assert(first227(r) == "ok")
+    ro back = render_machine(r.json, "ru")
+    assert(back.text.contains("| child | callee | machine callee |"))
+    assert(!back.text.contains("тип CallOutput"))
+    assert(!back.text.contains("вход CallInput"))
+}
