@@ -8,7 +8,7 @@
 # alula
 
 The core of the language of state machines written as data, on [Nova](https://github.com/nv-lang/nova): a machine is a table of states and
-rows (a file in Russian or in English, or its JSON tree `machine/2`); one interpreter runs it, and a test (`test/0`) proves it. The package
+rows (a file in Russian or in English, or its JSON tree, `"kind": "machine"`); one interpreter runs it, and a test (`"kind": "test"`) proves it. The package
 was written inside the CrewHarness product (`unitcraft/crew-harness`, tasks 106-126) and extracted from it by task 144 of that repository; the
 product now depends on this package.
 
@@ -34,6 +34,7 @@ and `cycle_arithmetic.alula.md` with their English twins, put beside the machine
 the code 0 means moved, 1 means moved with the places it does not decide (each as `file:line: kind: what to do`), 2 an error of the start. The examples and the samples of
 the package are of 2.26 (moved by the script); the methodology set (508 tests) passes on a copy moved by it (criterion `scripts/accept-239.sh`).
 Since task 241 (version 0.9.1, the language stays 2.26) a library does not write into the data of the machine: «Пауза» ([libs/pause.alula.md](libs/pause.alula.md), hash e7d85aa43589; the English twin d254e6297f61) has its own enumeration `ПричинаПаузы` and its own datum `причина`, the machine reads `Пауза.причина`, the parameter `код_остановки` and the requirement of `остановка` are gone; the functions, the types and the constants of a library use no parameter and no datum of it, two copies of one library share the functions and keep their data apart by the prefix of the instance; the built-in Pause of 2.25 is gone (a library is connected by its file only, the tree key `fragments` is refused); `alula convert --language en` and `alula render --language en` name the English twin of each library (`libs/pause.en.alula.md`) with its hash and write the twins beside `-o`; the migration script moves a connection of «Пауза» with the code of the halt (2.25 and 0.9.0) to 0.9.1 keeping the behavior; the criterion is `scripts/accept-241.sh`.
+Since task 244 (version 0.10.0) the language is **2.27** (AL-144 ... AL-147): `alula version` prints `alula 0.10.0 (Alula 2.27)`. The header of a machine is `machine`, `revision` (the revision of the machine itself, an integer, 1 by default), `alula_version: 2.27`, `language`; of a library `library`, `alula_version`, `language`; the old keys `machine_version` and `format` are refused with the hint. The root of a tree says `"kind": "machine"` and `revision`, the root of a test `"kind": "test"` (no number of a schema after a slash). A library names its requirements in three sections (`## Требует данные`, `## Требует стороны`, `## Требует концы`). A party `machine <имя>` names no types: the translator takes the input and the result from the called machine beside the file (the program gives it the machines of the folder), the caller declares no copy of them. Files of 2.26 are moved by [tools/migrate-alula-227.py](tools/migrate-alula-227.py) (`python tools/migrate-alula-227.py [--dry-run] [--alula target/alula.exe] <file or folder>…`); the libraries in [libs/](libs/) are the files of the methodology 2.27. The criterion is `scripts/accept-244.sh`.
 
 The seam of 2.25 (decided by the fact, item 44 of [docs/history.md](docs/history.md)): the translator and the decoder still read a file and a tree of 2.25, because about
 130 texts in 57 files of the tests of the package keep that form, and the tests of the readings and of the generator of 2.25 that take an example apart read the examples as they were, the snapshot [src/examples/v225/](src/examples/v225/); the scripts `tools/check-alula-*.py` read 2.26 only. The product set needs its owner: its machines send the signal of the machine `отмена` in an appeal of the agent, which 2.26 can not declare (only the signals of the protocol of a call); the script names the place.
@@ -52,7 +53,7 @@ One folder under `src/` is one module `alula.<folder>` and one unit of tests (Or
 | `alula.machine` | the core of the machines: the dynamic `Value`, the types, the tree of an expression, the pure evaluator, the registry of the primitives of the host and the table of the journal codes (the language names two primitives and 35 codes, a host gives the rest as data: `registry.md`, `journal.md`), and the schemas `schema/` compiled in ([README](src/machine/README.md)) |
 | `alula.examples` | tests only: the examples (`examples/`: 15 machines as JSON, 10 as tables, 66 tests, `registry.md`, `journal.md`) and the registry of the samples of the specification, embedded into the tests |
 | `alula.machine_table` | the model of a machine, the decoder of the tree `machine/2`, the type syntax, the checks of a table |
-| `alula.machine_text` | the translator of tables (Russian and English, format 2.26; 2.25 for the texts of the tests) to the JSON and the reverse generator ([README](src/machine_text/README.md)) |
+| `alula.machine_text` | the translator of tables (Russian and English, Alula 2.27; 2.25 for the texts of the tests) to the JSON and the reverse generator ([README](src/machine_text/README.md)) |
 | `alula.machine_run` | the interpreter `AlulaMachine`, the state, the host of the primitives, nested machines (`machine` parties), the runner of tests |
 | `alula.host`, `alula.host_impls` | the contract of the host of the external functions (spec 7a, AL-130): `bind_pure`, `bind_volatile`, `bind_acting`, the records `ReadEnv` and `ActEnv`, the test host with counters by class and the check of the version of the world; the implementations in a separate module under the guard of the imports ([README](src/host/README.md)) |
 | `alula.alula_cli`, program `alula` | the commands `compile`, `render`, `convert`, `check`, `summary`, `run`, `test`, `version` ([README](src/alula_cli/README.md)); `src/alula.nv` is the program |
@@ -101,6 +102,7 @@ python tools/check-alula-keywords.py --glossary <path>/state-machine-glossary.md
 python tools/check-alula-samples.py --glossary <path>/state-machine-glossary.md    # the two samples of the agent step against each other
 python tools/check-alula-translation.py             # the English text of the specification against the Russian
 python tools/migrate-alula-226.py --alula target/alula.exe <folder>   # move the files of 2.25 to 2.26 (tables, trees, libraries, tests)
+python tools/migrate-alula-227.py --alula target/alula.exe <folder>   # move the files of 2.26 to 2.27 (headers, requirements, parties machine, hashes, trees, tests)
 ```
 
 Tests are `*_test.nv` beside the sources. The output of a unit must stay under 4 KB (item 20 of the notes), hence the short names of the tests.

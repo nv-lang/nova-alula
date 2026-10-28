@@ -365,7 +365,15 @@ def main(argv):
         return 2
     run = Run(dry)
     trees = []
-    for path in candidates(paths):
+    # the libraries first: a connection takes the hash of the moved file of its library
+    def library_first(path):
+        try:
+            head = open(path, encoding='utf-8').read(400)
+        except (UnicodeDecodeError, OSError):
+            return 1
+        return 0 if re.match(r'^\s*# (Библиотека|Library):', head) else 1
+    ordered = sorted(candidates(paths), key=library_first)
+    for path in ordered:
         try:
             with open(path, encoding='utf-8', newline='') as f:
                 text = f.read()
@@ -394,6 +402,8 @@ def main(argv):
             if done.returncode != 0:
                 first = [l for l in (done.stderr or done.stdout).splitlines() if l.strip()][:1]
                 run.place(path, 1, 'дерево', 'alula compile не собрал дерево из %s: %s' % (os.path.basename(md), first[0] if first else 'код %d' % done.returncode))
+                # the tree stays moved by its keys: the engine reads it until the file is built
+                write(path, text, new, run)
             else:
                 run.changed.append(path)
         else:
