@@ -75,7 +75,7 @@ want_version="alula 0.27.0 (Алула 0.27)"
 got_version=$("$alula" version 2>&1 | head -1)
 [ "$got_version" = "$want_version" ] || red "alula version: «$got_version», нужно «$want_version»"
 grep -q '^version = "0.27.0"' nova.toml || red "nova.toml: version не 0.27.0"
-grep -q '2\.27\.0' README.md || red "README.md: нет версии 0.27.0"
+grep -q '0\.27\.0' README.md || red "README.md: нет версии 0.27.0"
 old=$(git grep -n -I -E '0\.10\.0|2\.27\.0|Алула 2\.27|alula_version: 2\.27|"alula_version": ?"2\.27"' -- . ':(exclude)docs/history.md' ':(exclude)spec/alula-changelog*.md' ':(exclude)scripts/accept-245.sh' 2>/dev/null | head -5)
 [ -z "$old" ] || { red "номер 0.10.0 или 0.27 (выпуск переименован в 0.27, слово владельца 2026-10-28 21:28) в дереве"; echo "$old"; }
 

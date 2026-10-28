@@ -118,7 +118,7 @@ for f in md:
         head.append(l)
     h = '\n'.join(head)
     if re.search(r'^- (machine_version|format):', h, re.M): no('%s: старая шапка (machine_version/format)' % f)
-    if not re.search(r'^- alula_version: 2\.27$', h, re.M): no('%s: нет alula_version: 0.27' % f)
+    if not re.search(r'^- alula_version: 0\.27$', h, re.M): no('%s: нет alula_version: 0.27' % f)
     text = open(f, encoding='utf-8').read()
     if re.search(r'^## (Требует|Requires)\s*$', text, re.M): no('%s: единый раздел Требует' % f)
     if re.search(r'\| machine \S+\((вход|input) ', text): no('%s: сторона machine со скобками' % f)
