@@ -76,7 +76,7 @@ test "test object input" {
 test "test refused" {
     assert(parse_err("not json").contains("not valid JSON"))
     assert(parse_err("{}").contains("kind"))
-    assert(parse_err("{\"format\":\"test/1\"}").contains("с 2.27 — kind и revision"))
+    assert(parse_err("{\"format\":\"test/1\"}").contains("с 0.27 — kind и revision"))
     assert(parse_err(one_step("{\"do\":\"jump\"}")).contains("operation"))
     assert(parse_err(one_step("{\"do\":\"feed\",\"event\":{\"kind\":\"dance\"}}")).contains("kind of an event"))
     assert(parse_err(one_step("{\"do\":\"feed\",\"zzz\":1}")).contains("zzz"))

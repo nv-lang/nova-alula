@@ -21,23 +21,23 @@ test "v217 fixture ru and en give one tree" {
 test "v217 format 2.23 is refused" {
     ro text = ru17("- format: 2.25", "- format: 2.23")
     assert(!is_clean(text))
-    assert(note_says(text, "с 2.27 — revision и alula_version"))
+    assert(note_says(text, "с 0.27 — revision и alula_version"))
     assert(note_says(text, "переходного периода нет"))
 }
 
 test "v217 format 2.22 is refused" {
     ro text = ru17("- format: 2.25", "- format: 2.22")
     assert(!is_clean(text))
-    assert(note_says(text, "с 2.27 — revision и alula_version"))
+    assert(note_says(text, "с 0.27 — revision и alula_version"))
     assert(note_says(text, "переходного периода нет"))
     ro older = ru17("- format: 2.25", "- format: 2.14")
     assert(!is_clean(older))
-    assert(note_says(older, "с 2.27 — revision и alula_version"))
-    assert(note_says(older, "alula_version: 2.27"))
+    assert(note_says(older, "с 0.27 — revision и alula_version"))
+    assert(note_says(older, "alula_version: 0.27"))
 }
 
 test "v217 format 2.16 is refused" {
-    assert(note_says(ru17("- format: 2.25", "- format: 2.16"), "с 2.27 — revision и alula_version"))
+    assert(note_says(ru17("- format: 2.25", "- format: 2.16"), "с 0.27 — revision и alula_version"))
 }
 
 // ---- AL-53: the JSON name is built by itself -------------------------------------------------------------------------------------------------

@@ -1,22 +1,22 @@
 #!/bin/sh
-# Зачем: одна команда-критерий задачи 245 «Алула 2.27, поток П2: пакет nova-alula 2.27.0» — образцы и examples скриптом миграции, наборы машин на копиях,
+# Зачем: одна команда-критерий задачи 245 «Алула 0.27, поток П2: пакет nova-alula 0.27.0» — образцы и examples скриптом миграции, наборы машин на копиях,
 #     места владельцам, доводка check-alula-keywords.py (поверх потока П1, scripts/accept-244.sh).
-# Проверяет: (1) версия 2.27.0 везде: `alula version` — `alula 2.27.0 (Алула 2.27)`, nova.toml и README — 2.27.0, номера 0.10.0 нет (кроме записи истории о смене номера);
-#     (2) tools/check-alula-keywords.py — зелёный, `--selftest` — зелёный (порчи формы 2.27: шапка `revision`/`alula_version` и её порядок, ревизия — целое,
+# Проверяет: (1) версия 0.27.0 везде: `alula version` — `alula 0.27.0 (Алула 0.27)`, nova.toml и README — 0.27.0, номеров 0.10.0 и 2.27.0, шапок и деревьев 2.27 нет (кроме истории и журнала изменений);
+#     (2) tools/check-alula-keywords.py — зелёный, `--selftest` — зелёный (порчи формы 0.27: шапка `revision`/`alula_version` и её порядок, ревизия — целое,
 #         у библиотеки ревизии нет, единый `## Требует`, сторона `machine` со скобками — замечены; ALULA_GLOSSARY=<словарь методики> — ещё самопроверка образцов по словарю);
-#     (3) examples и spec/samples 2.26 (вершина e69d729) с библиотеками методики 2.27 рядом переносятся tools/migrate-alula-227.py в файлы дерева: md — построчно
+#     (3) examples и spec/samples 2.26 (вершина e69d729) с библиотеками методики 0.27 рядом переносятся tools/migrate-alula-227.py в файлы дерева: md — построчно
 #         (проза-комментарий не сверяется), деревья и тесты — по JSON; повторный запуск ничего не меняет; `alula test` перенесённых examples — все;
 #     (4) наборы машин ALULA_METHODOLOGY_MACHINES / ALULA_PRODUCT_MACHINES (копии во временной папке): скрипт переносит, его места — только перечисленные
-#         в docs/owner-places-2.27.md, `alula test` — все (ALULA_METHODOLOGY_TESTS / ALULA_PRODUCT_TESTS=<число> — ещё и число тестов);
-#     (5) docs/owner-places-2.27.md называет каждое место скрипта (файл, вид, тип) и место пакета `Vec.join`; (6) `nova test` всех папок пакета с тестами; стражи дерева.
-# Не проверяет: публикацию (метка v2.27.0 — по слову владельца); правку наборов машин в их репозиториях; то, что проверяет scripts/accept-244.sh (тексты спецификации, хеши библиотек).
+#         в docs/owner-places-0.27.md, `alula test` — все (ALULA_METHODOLOGY_TESTS / ALULA_PRODUCT_TESTS=<число> — ещё и число тестов);
+#     (5) docs/owner-places-0.27.md называет каждое место скрипта (файл, вид, тип) и место пакета `Vec.join`; (6) `nova test` всех папок пакета с тестами; стражи дерева.
+# Не проверяет: публикацию (метка v0.27.0 — по слову владельца); правку наборов машин в их репозиториях; то, что проверяет scripts/accept-244.sh (тексты спецификации, хеши библиотек).
 # Предпосылки: Nova Oracle 0.1.0 в окружении (nova в PATH, setup-env.ps1), Python 3.9+, git.
 # Использование: sh scripts/accept-245.sh   (из корня дерева пакета; последняя строка «ПРИНЯТО 245: …» и код 0, иначе «НЕ ПРИНЯТО 245 …» и код 1)
 #   ALULA=<путь>                       готовая программа alula вместо сборки в target/alula.exe
 #   ALULA_GLOSSARY=<файл>              словарь методики state-machine-glossary.md (необязательно)
 #   ALULA_METHODOLOGY_MACHINES=<папка> набор машин методики (alula-machines); ALULA_PRODUCT_MACHINES=<папка> набор машин продукта (machines/product); без них шаги пропускаются
 #   ACCEPT_245_SKIP_NOVA_TEST=1        пропустить nova test (только для разработки: приёмка идёт без пропуска)
-# Правило: слово владельца, 2026-10-28: «делай обновление-улучшение, супер быстро» (задание 245 интегратора, выпуск 2.27.0).
+# Правило: слово владельца, 2026-10-28: «делай обновление-улучшение, супер быстро» (задание 245 интегратора); 21:28 — выпуск «Алула 0.27» вместо 2.27, программа 0.27.0.
 set -u
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -33,7 +33,7 @@ trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 fails=0
 red() { fails=$((fails + 1)); echo "КРАСНО: $*"; }
 migrate="$PYTHON tools/migrate-alula-227.py"
-places=docs/owner-places-2.27.md
+places=docs/owner-places-0.27.md
 base226=e69d729
 
 if [ -n "${ALULA:-}" ]; then
@@ -48,7 +48,7 @@ fi
 
 tests_of() { "$alula" test "$1" 2>&1 | tail -1 | sed -n 's/^\([0-9][0-9]*\) of \([0-9][0-9]*\) tests passed$/\1 \2/p'; }
 
-# место скрипта миграции названо в docs/owner-places-2.27.md: имя файла, вид места и тип в обратных кавычках — в одной строке документа
+# место скрипта миграции названо в docs/owner-places-0.27.md: имя файла, вид места и тип в обратных кавычках — в одной строке документа
 named() {
   "$PYTHON" - "$places" "$1" <<'EOF'
 import os, re, sys
@@ -70,14 +70,14 @@ EOF
 
 # ---- (1) версия -------------------------------------------------------------------------------------------------------------------------------------
 
-echo "== версия 2.27.0"
-want_version="alula 2.27.0 (Алула 2.27)"
+echo "== версия 0.27.0"
+want_version="alula 0.27.0 (Алула 0.27)"
 got_version=$("$alula" version 2>&1 | head -1)
 [ "$got_version" = "$want_version" ] || red "alula version: «$got_version», нужно «$want_version»"
-grep -q '^version = "2.27.0"' nova.toml || red "nova.toml: version не 2.27.0"
-grep -q '2\.27\.0' README.md || red "README.md: нет версии 2.27.0"
-old=$(git grep -n -I '0\.10\.0' -- . ':(exclude)docs/history.md' ':(exclude)scripts/accept-245.sh' 2>/dev/null | head -5)
-[ -z "$old" ] || { red "номер 0.10.0 в дереве"; echo "$old"; }
+grep -q '^version = "0.27.0"' nova.toml || red "nova.toml: version не 0.27.0"
+grep -q '2\.27\.0' README.md || red "README.md: нет версии 0.27.0"
+old=$(git grep -n -I -E '0\.10\.0|2\.27\.0|Алула 2\.27|alula_version: 2\.27|"alula_version": ?"2\.27"' -- . ':(exclude)docs/history.md' ':(exclude)spec/alula-changelog*.md' ':(exclude)scripts/accept-245.sh' 2>/dev/null | head -5)
+[ -z "$old" ] || { red "номер 0.10.0 или 2.27 (выпуск переименован в 0.27, слово владельца 2026-10-28 21:28) в дереве"; echo "$old"; }
 
 # ---- (2) таблица слов и самопроверка ------------------------------------------------------------------------------------------------------------------
 
@@ -94,7 +94,7 @@ echo "== examples и spec/samples 2.26 ($base226) скриптом миграц�
 mkdir -p "$tmp/ex"
 git archive "$base226" examples spec/samples | tar -x -C "$tmp/ex" || red "git archive $base226"
 for f in "$tmp"/ex/examples/libs/*.alula.md "$tmp"/ex/spec/samples/libs/*.alula.md; do
-  [ -f "$f" ] && cp "libs/$(basename "$f")" "$f"   # библиотеки 2.27 — файлы методики (libs/), а не перенос скриптом
+  [ -f "$f" ] && cp "libs/$(basename "$f")" "$f"   # библиотеки 0.27 — файлы методики (libs/), а не перенос скриптом
 done
 $migrate --alula "$alula" "$tmp/ex/examples" "$tmp/ex/spec/samples" >"$tmp/ex.mig" 2>&1; ex_code=$?
 grep -v '^перенесён' "$tmp/ex.mig" | sed "s|$tmp/||" | sed "s/^/  /"

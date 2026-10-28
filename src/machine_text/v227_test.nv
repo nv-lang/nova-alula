@@ -1,4 +1,4 @@
-// v227_test.nv - task 244 (package 2.27.0, Alula 2.27, AL-144…AL-147): the header `revision` (an integer, 1 by default) and `alula_version` instead of `machine_version` and
+// v227_test.nv - task 244 (package 0.27.0, Alula 0.27, AL-144…AL-147): the header `revision` (an integer, 1 by default) and `alula_version` instead of `machine_version` and
 // `format`, the tree with `kind` and `revision`, the three sections `## Требует данные`, `## Требует стороны`, `## Требует концы` of a library, the party `machine <имя>` without the
 // types (the types of the input and of the result are taken from the called machine of the registry of the host), the old forms refused with the hint.
 module alula.machine_text
@@ -16,13 +16,13 @@ fn cycle227_en() -> str => embed_str("../../libs/cycle_arithmetic.en.alula.md")
 
 fn libs227() -> []NamedText => [NamedText { name: "libs/pause.alula.md", text: pause227() }]
 
-// A machine of 2.27 that connects «Пауза»: the output reads the reason of the library.
+// A machine of 0.27 that connects «Пауза»: the output reads the reason of the library.
 fn m227() -> str {
     ro text = `# Машина: Halt
 
 - machine: Halt
 - revision: 3
-- alula_version: 2.27
+- alula_version: 0.27
 - language: ru
 
 ## Имена
@@ -110,11 +110,11 @@ fn says227(report TranslateReport, needle str) -> bool {
 
 // ---- AL-144: the header `revision` and `alula_version` -------------------------------------------------------------------------------------------------
 
-test "v227 a machine of 2.27 is translated: the tree has kind, alula_version and revision" {
+test "v227 a machine of 0.27 is translated: the tree has kind, alula_version and revision" {
     ro r = r227(m227())
     assert(first227(r) == "ok")
     assert(r.json.contains("\"kind\":\"machine\""))
-    assert(r.json.contains("\"alula_version\":\"2.27\""))
+    assert(r.json.contains("\"alula_version\":\"0.27\""))
     assert(r.json.contains("\"revision\":3"))
     assert(!r.json.contains("\"format\""))
     assert(!r.json.contains("\"version\""))
@@ -134,16 +134,16 @@ test "v227 a revision that is not an integer is an error" {
 
 test "v227 machine_version in the header is an error with the hint" {
     ro r = r227(m227().replace("- revision: 3", "- machine_version: 1"))
-    assert(says227(r, "с 2.27 — revision и alula_version"))
+    assert(says227(r, "с 0.27 — revision и alula_version"))
 }
 
 test "v227 format in the header is an error with the hint" {
-    assert(says227(r227(m227().replace("- alula_version: 2.27", "- format: 2.27")), "с 2.27 — revision и alula_version"))
-    assert(says227(r227(m227().replace("- alula_version: 2.27", "- format: 2.26")), "с 2.27 — revision и alula_version"))
+    assert(says227(r227(m227().replace("- alula_version: 0.27", "- format: 0.27")), "с 0.27 — revision и alula_version"))
+    assert(says227(r227(m227().replace("- alula_version: 0.27", "- format: 2.26")), "с 0.27 — revision и alula_version"))
 }
 
-test "v227 an alula_version other than 2.27 is an error" {
-    assert(!(first227(r227(m227().replace("- alula_version: 2.27", "- alula_version: 2.26"))) == "ok"))
+test "v227 an alula_version other than 0.27 is an error" {
+    assert(!(first227(r227(m227().replace("- alula_version: 0.27", "- alula_version: 2.26"))) == "ok"))
 }
 
 test "v227 the order of the header is machine, revision, alula_version, language in the rendered file" {
@@ -152,32 +152,32 @@ test "v227 the order of the header is machine, revision, alula_version, language
     assert(back.notes.len() == 0)
     ro at_machine = back.text.find("- machine: Halt") ?? -1
     ro at_revision = back.text.find("- revision: 3") ?? -1
-    ro at_version = back.text.find("- alula_version: 2.27") ?? -1
+    ro at_version = back.text.find("- alula_version: 0.27") ?? -1
     ro at_language = back.text.find("- language: ru") ?? -1
     assert(at_machine >= 0 && at_machine < at_revision && at_revision < at_version && at_version < at_language)
     assert(!back.text.contains("machine_version"))
     assert(!back.text.contains("- format:"))
 }
 
-// ---- the libraries of 2.27 (AL-145) -------------------------------------------------------------------------------------------------------------------
+// ---- the libraries of 0.27 (AL-145) -------------------------------------------------------------------------------------------------------------------
 
-test "v227 the files of the libraries are those of the methodology for 2.27" {
-    assert(definitions_hash(pause227()) == "f14004122df2")
-    assert(definitions_hash(pause227_en()) == "5f2b384c7997")
-    assert(definitions_hash(cycle227()) == "27e3a65d6f9a")
-    assert(definitions_hash(cycle227_en()) == "07c9099132be")
-    assert(pause227().contains("- alula_version: 2.27"))
+test "v227 the files of the libraries are those of the methodology for 0.27" {
+    assert(definitions_hash(pause227()) == "87162f9feb8c")
+    assert(definitions_hash(pause227_en()) == "429adaba4cec")
+    assert(definitions_hash(cycle227()) == "34ef3ee7c00b")
+    assert(definitions_hash(cycle227_en()) == "95c29f6d64ac")
+    assert(pause227().contains("- alula_version: 0.27"))
     assert(pause227().contains("## Требует стороны"))
     assert(pause227().contains("## Требует концы"))
     assert(pause227_en().contains("## Requires parties"))
     assert(pause227_en().contains("## Requires ends"))
 }
 
-// A library of 2.27 with the three sections of the requirements.
+// A library of 0.27 with the three sections of the requirements.
 fn req_lib(sections str) -> str => `# Библиотека: Счёт
 
 - library: tally
-- alula_version: 2.27
+- alula_version: 0.27
 - language: ru
 
 SECTIONS
@@ -218,7 +218,7 @@ fn req_machine(lib str) -> str {
 
 - machine: Req
 - revision: 1
-- alula_version: 2.27
+- alula_version: 0.27
 - language: ru
 
 ## Имена
@@ -321,12 +321,12 @@ test "v227 the requirement of an end that the machine has not is an error" {
 test "v227 the old single section of the requirements is an error with the hint" {
     ro old = "## Требует\n\n| имя | тип |\n|---|---|\n| метка | строка |\n| ОСТАНОВЛЕНО | конец |\n"
     ro lib = req_lib(old)
-    assert(says227(req_report(lib, req_machine(lib)), "с 2.27 три раздела"))
+    assert(says227(req_report(lib, req_machine(lib)), "с 0.27 три раздела"))
 }
 
 test "v227 format in the header of a library is an error with the hint" {
-    ro lib = req_lib(req_all()).replace("- alula_version: 2.27", "- format: 2.26")
-    assert(says227(req_report(lib, req_machine(lib)), "с 2.27 — revision и alula_version"))
+    ro lib = req_lib(req_all()).replace("- alula_version: 0.27", "- format: 2.26")
+    assert(says227(req_report(lib, req_machine(lib)), "с 0.27 — revision и alula_version"))
 }
 
 // ---- AL-146: the party `machine <имя>` takes its types from the called machine ----------------------------------------------------------------------------
@@ -335,7 +335,7 @@ fn callee227() -> str => `# Машина: Вызываемая
 
 - machine: callee
 - revision: 2
-- alula_version: 2.27
+- alula_version: 0.27
 - language: ru
 
 ## Типы
@@ -407,7 +407,7 @@ fn caller227(kind str) -> str => `# Машина: Вызывающая
 
 - machine: caller
 - revision: 1
-- alula_version: 2.27
+- alula_version: 0.27
 - language: ru
 
 ## Имена
@@ -493,7 +493,7 @@ test "v227 the called machine is the one of the registry of the host: without it
 
 test "v227 the old form of the party machine with the types is an error with the hint" {
     ro r = r227_with(caller227("machine callee(вход CallInput, итог CallOutput)"), host227())
-    assert(says227(r, "с 2.27 типы берутся от вызываемой"))
+    assert(says227(r, "с 0.27 типы берутся от вызываемой"))
 }
 
 test "v227 the fields of the request are exactly the fields of the input of the called machine" {
@@ -508,7 +508,7 @@ test "v227 the fields of the request are exactly the fields of the input of the 
 test "v227 the parse of a party machine stays" {
     ro text = caller227("machine callee; разбор: разобрать -> строка")
     ro r = r227_with(text, host227())
-    assert(!says227(r, "с 2.27 типы берутся от вызываемой"))
+    assert(!says227(r, "с 0.27 типы берутся от вызываемой"))
 }
 
 test "v227 the rendered caller names the party without the brackets and declares no copy of the types" {

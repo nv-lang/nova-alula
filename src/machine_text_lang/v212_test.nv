@@ -30,8 +30,8 @@ test "v212 version en" {
 test "v212 version 2.11 refused" {
     ro text = with_format(v212_ru(), "2.11")
     assert(!is_clean(text))
-    assert(note_says(text, "с 2.27 — revision и alula_version"))
-    assert(note_says(text, "alula_version: 2.27"))
+    assert(note_says(text, "с 0.27 — revision и alula_version"))
+    assert(note_says(text, "alula_version: 0.27"))
     assert(has_note_at(text, 4, 1, "structure"))
 }
 
@@ -48,12 +48,12 @@ test "v212 newer version refused" {
 
 test "v212 version missing" {
     assert(!is_clean(v212_ru().replace("- format: 2.25\n", "")))
-    assert(note_says(v212_ru().replace("- format: 2.25\n", ""), "с 2.27 — revision и alula_version"))
+    assert(note_says(v212_ru().replace("- format: 2.25\n", ""), "с 0.27 — revision и alula_version"))
 }
 
 test "v212 version 2.11 en refused" {
     assert(!is_clean(with_format(v212_en(), "2.11")))
-    assert(note_says(with_format(v212_en(), "2.11"), "с 2.27 — revision и alula_version"))
+    assert(note_says(with_format(v212_en(), "2.11"), "с 0.27 — revision и alula_version"))
 }
 
 test "v212 machine version line" {

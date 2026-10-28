@@ -31,16 +31,16 @@ test "pv former key refused" {
 }
 
 test "pv former versions refused" {
-    assert(says(with_key("alula_version", "2.12"), "must be 2.27"))
-    assert(says(with_key("alula_version", "2.13"), "must be 2.27"))
+    assert(says(with_key("alula_version", "2.12"), "must be 0.27"))
+    assert(says(with_key("alula_version", "2.13"), "must be 0.27"))
     assert(says(with_key("alula_version", "2.12"), "there is no transition period"))
 }
 
 test "pv versions" {
     assert(alula_versions().len() == 1)
-    assert(alula_versions().contains("2.27"))
+    assert(alula_versions().contains("0.27"))
     assert(says(with_key("alula_version", "2.13"), "alula_version"))
-    assert(says(with_key("alula_version", "2.4"), "must be 2.27"))
+    assert(says(with_key("alula_version", "2.4"), "must be 0.27"))
     ro number = tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"alula_version\":2.25,")
     assert(says(number, "alula_version"))
 }
@@ -48,7 +48,7 @@ test "pv versions" {
 test "pv schema" {
     ro schema = text_of_file(schema_files(), "machine-2.schema.json")
     assert(schema.contains("\"alula_version\""))
-    assert(schema.contains("\"2.27\""))
+    assert(schema.contains("\"0.27\""))
     assert(top_keys().contains("alula_version"))
     assert(!top_keys().contains("table_format"))
     assert(!schema.contains("table_format"))

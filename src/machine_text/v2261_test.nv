@@ -20,7 +20,7 @@ fn m2261() -> str {
 
 - machine: Halt
 - revision: 1
-- alula_version: 2.27
+- alula_version: 0.27
 
 ## Имена
 
@@ -119,8 +119,8 @@ test "v2261 the file of Pause has no parameter of the code and no requirement of
 }
 
 test "v2261 the hashes of the two files of Pause are those of the methodology" {
-    assert(definitions_hash(pause_file()) == "f14004122df2")
-    assert(definitions_hash(pause_en_file()) == "5f2b384c7997")
+    assert(definitions_hash(pause_file()) == "87162f9feb8c")
+    assert(definitions_hash(pause_en_file()) == "429adaba4cec")
 }
 
 test "v2261 a machine reads the reason of Pause by the prefix of the instance" {
@@ -143,7 +143,7 @@ test "v2261 the old parameter of the code of the halt is not a parameter of Paus
 fn vis_lib(fn_body str) -> str => `# Библиотека: Счёт
 
 - library: tally
-- alula_version: 2.27
+- alula_version: 0.27
 
 ## Параметры
 
@@ -169,7 +169,7 @@ fn vis_machine(lib str, includes str) -> str {
 
 - machine: Vis
 - revision: 1
-- alula_version: 2.27
+- alula_version: 0.27
 
 ## Имена
 
@@ -293,7 +293,7 @@ test "v2261 a parameter of the library in a type of the requirements is an error
 // ---- the built-in Pause of 2.25 is gone ---------------------------------------------------------------------------------------------------------------------
 
 test "v2261 the old call of Pause in a file of 2.25 is an error: a library is connected by its file only" {
-    ro text = m2261().replace("- alula_version: 2.27", "format: 2.25").replace("### Пауза\n- Файл: libs/pause.alula.md\n", "Пауза(сигнал_остановки: остановить, код_остановки: \"pause_halt\", вложенные: [], отмена_запросов: механика, вход_заново: ничего, право_записи: \"x\")\n")
+    ro text = m2261().replace("- alula_version: 0.27", "format: 2.25").replace("### Пауза\n- Файл: libs/pause.alula.md\n", "Пауза(сигнал_остановки: остановить, код_остановки: \"pause_halt\", вложенные: [], отмена_запросов: механика, вход_заново: ничего, право_записи: \"x\")\n")
     ro r = r2261(text)
     assert(first2261(r) != "ok")
     assert(!r.json.contains("\"fragments\""))
@@ -306,7 +306,7 @@ fn free_word_text() -> str => `# Машина: Free
 
 - machine: Free
 - revision: 1
-- alula_version: 2.27
+- alula_version: 0.27
 
 ## Имена
 
@@ -358,7 +358,7 @@ test "v2261 the word of a free input is read by a row of the appeal to another p
 fn cancel_lib() -> str => `# Библиотека: Отмена
 
 - library: call_cancel
-- alula_version: 2.27
+- alula_version: 0.27
 
 ## Требует концы
 
@@ -378,7 +378,7 @@ fn cancel_machine() -> str {
 
 - machine: Cancel
 - revision: 1
-- alula_version: 2.27
+- alula_version: 0.27
 
 ## Имена
 
@@ -453,7 +453,7 @@ test "v2261 the generator writes the part of an answer in the form of 2.26" {
 
 - machine: Part
 - revision: 1
-- alula_version: 2.27
+- alula_version: 0.27
 
 ## Имена
 

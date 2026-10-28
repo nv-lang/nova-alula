@@ -1,4 +1,4 @@
-// v227_test.nv - task 244 (Alula 2.27, AL-147): the root of a test file says `"kind": "test"` instead of `"format": "test/0"` (no number of the schema after a slash); the old key
+// v227_test.nv - task 244 (Alula 0.27, AL-147): the root of a test file says `"kind": "test"` instead of `"format": "test/0"` (no number of the schema after a slash); the old key
 // is an error with the hint.
 module alula.machine_run
 
@@ -16,7 +16,7 @@ test "v227 a test file with kind test is read" {
 test "v227 the key format of a test file is an error with the hint" {
     match parse_test(test227("\"format\":\"test/0\"")) {
         Ok(sc) => assert(false)
-        Err(e) => assert(e.message.contains("с 2.27 — kind и revision"))
+        Err(e) => assert(e.message.contains("с 0.27 — kind и revision"))
     }
 }
 

@@ -280,7 +280,7 @@ fn one_in_host(name str, text str) -> []NamedText {
     mut out = [NamedText { name, text }, NamedText { name: "${dir}/registry.md", text: example_registry_text() }, NamedText { name: "${dir}/journal.md", text: example_journal_text() }]
     // the libraries that the tables of the examples connect (2.26, task 239) lie beside them in `libs/`
     for f in library_files_in(dir) { out.push(f) }
-    // 2.27 (AL-146): a party `machine callee` takes its types from the called machine beside (the program gives the machines of the folder)
+    // 0.27 (AL-146): a party `machine callee` takes its types from the called machine beside (the program gives the machines of the folder)
     if !name.ends_with("/callee.alula.md") { out.push(NamedText { name: "${dir}/callee.alula.md", text: embed_str("../../examples/callee.alula.md") }) }
     out
 }
