@@ -296,8 +296,8 @@ export fn parse_test(text str) -> Result[Test, LoadError] {
     }
     ro o = sj_obj(parsed, "$")?
     sj_only(o, ["kind", "format", "machine", "name", "start_at", "steps", "params", "standalone"], "$")?
-    // the root of a test says `"kind": "test"` since 2.27 (AL-147); the former `"format": "test/0"` is refused with the hint
-    if sj_present(o, "format") { return Err(sle("$.format", "с 2.27 — kind и revision: `\"format\": \"test/0\"` is `\"kind\": \"test\"` (there is no transition period)")) }
+    // the root of a test says `"kind": "test"` since 0.27 (AL-147); the former `"format": "test/0"` is refused with the hint
+    if sj_present(o, "format") { return Err(sle("$.format", "с 0.27 — kind и revision: `\"format\": \"test/0\"` is `\"kind\": \"test\"` (there is no transition period)")) }
     ro kind = sj_need_str(o, "kind", "$")?
     if kind != "test" { return Err(sle("$.kind", "the kind of the root of a test file is test, got ${kind}")) }
     ro machine = sj_need_str(o, "machine", "$")?

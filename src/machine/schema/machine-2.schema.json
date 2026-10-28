@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/nv-lang/nova-alula/src/machine/schema/machine-2.schema.json",
-  "title": "a state machine as data (\"kind\": \"machine\"; the language Alula of the methodology, version 2.27, in English keys; the schema follows alula_version, there is no number after a slash, AL-147)",
+  "title": "a state machine as data (\"kind\": \"machine\"; the language Alula of the methodology, version 0.27, in English keys; the schema follows alula_version, there is no number after a slash, AL-147)",
   "description": "The tree that the interpreter of the product (src/machine_run) runs. The source of the language is spec/alula-spec.md of the package alula; the keys are English. The decoder in src/machine_table/json.nv is the reference: a key that is not listed here is refused. The checks of the table (reads against Request and Reads, writes against the data, reachability, the classes of the primitives, the exhaustiveness of the Ends) are check.nv and cannot be written in a schema.",
   "type": "object",
   "additionalProperties": false,
   "required": ["kind", "machine", "initial", "states", "ends"],
   "properties": {
     "kind": { "const": "machine", "description": "the kind of the root (AL-147; the former \"format\": \"machine/2\" is refused with the hint)" },
-    "alula_version": { "enum": ["2.27"], "description": "the version of the language Alula of the methodology that the tree follows (optional; absent means 2.27; the older versions are not read, there is no transition period)" },
+    "alula_version": { "enum": ["0.27"], "description": "the version of the language Alula of the methodology that the tree follows (optional; absent means 0.27; the older versions are not read, there is no transition period)" },
     "machine": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$", "description": "the Latin name of the machine (the name in the journal, `machine_started`)" },
     "revision": { "type": "integer", "minimum": 0, "description": "the revision of the machine itself (the header line revision; 1 by default; not the version of the language, AL-144)" },
     "title": { "type": "string" },
@@ -161,8 +161,8 @@
         "setting": { "type": "string", "description": "the setting of the project that makes a gatekeeper a human or an agent" },
         "nested": { "type": "string", "description": "the name of the nested machine in the registry of the caller (kind machine)" },
         "input_type": { "$ref": "#/$defs/type", "description": "the record type of the input of the call of a nested machine in a tree of the seam of 2.25 (kind machine)" },
-        "input": { "type": "array", "items": { "$ref": "#/$defs/field" }, "description": "the fields of the ## Вход of the called machine (kind machine, 2.27, AL-146): the fields of its request" },
-        "callee_types": { "type": "array", "items": { "type": "string" }, "description": "the JSON names of the types that came into the tree with the called machine (kind machine, 2.27, AL-146): the generator does not write them in ## Типы" },
+        "input": { "type": "array", "items": { "$ref": "#/$defs/field" }, "description": "the fields of the ## Вход of the called machine (kind machine, 0.27, AL-146): the fields of its request" },
+        "callee_types": { "type": "array", "items": { "type": "string" }, "description": "the JSON names of the types that came into the tree with the called machine (kind machine, 0.27, AL-146): the generator does not write them in ## Типы" },
         "result": { "$ref": "#/$defs/type", "description": "the type of the result of an agent or of a machine (the answer)" },
         "parse": {
           "type": "object", "additionalProperties": false, "required": ["primitive", "type"],

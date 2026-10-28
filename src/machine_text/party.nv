@@ -99,7 +99,7 @@ fn party_counter(cell TxCell, line int, mut cx TxCx) -> Result[str, TranslateErr
 
 // The cell `вид`: agent(итог Тип), human(итог ИсходВорот), enhanced(итог ИсходВорот), human или agent по настройке имя(итог ИсходВорот), machine имя(вход Тип, итог Тип)[; разбор: примитив[("роль")] -> Тип].
 // A party of the kind `machine` is a nested machine (rule 35): the name of the machine of the registry of the caller, the record type of its input, the type of its result and the parse.
-// Since 2.27 (AL-146) a party `machine <имя>` names no types: `input` and `types` come from the called machine (TxCallee).
+// Since 0.27 (AL-146) a party `machine <имя>` names no types: `input` and `types` come from the called machine (TxCallee).
 type TxKind { kind str, result str, setting str, nested str, input_type str, parse_primitive str, parse_type str, input []TxJ, types []str }
 
 fn kind_plain(kind str, result str, setting str) -> TxKind => { kind, result, setting, nested: "", input_type: "", parse_primitive: "", parse_type: "", input: []TxJ.new(), types: []str.new() }
@@ -136,8 +136,8 @@ fn party_machine(mut p TxP, mut cx TxCx) -> Result[TxKind, TranslateError] {
     mut input = []TxJ.new()
     mut types = []str.new()
     if cx.v226 {
-        // 2.27 (AL-146): no brackets and no types; the input and the result are those of the called machine of the registry of the host
-        if p_is(p, "(") { return Err(p_fail(p, "с 2.27 типы берутся от вызываемой: сторона пишется `${kw(words, "kind_party", "machine")} ${n.text}` без скобок; тип входа и тип итога — из записи вызываемой машины в реестре хозяина, копии типов в вызывающей не объявляются")) }
+        // 0.27 (AL-146): no brackets and no types; the input and the result are those of the called machine of the registry of the host
+        if p_is(p, "(") { return Err(p_fail(p, "с 0.27 типы берутся от вызываемой: сторона пишется `${kw(words, "kind_party", "machine")} ${n.text}` без скобок; тип входа и тип итога — из записи вызываемой машины в реестре хозяина, копии типов в вызывающей не объявляются")) }
         mut found = false
         for c in cx.callees {
             if c.name == nested {

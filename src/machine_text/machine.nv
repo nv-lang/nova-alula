@@ -26,12 +26,12 @@ fn cx_new() -> TxCx => cx_new_in("ru")
 
 // ---- the header ------------------------------------------------------------------------------------------------------------------------------
 
-/// TxHeader: the title, the Latin name, the revision of the machine (`revision`, "1" by default since 2.27; the line `machine_version` of the seam of 2.25), the version of the language.
+/// TxHeader: the title, the Latin name, the revision of the machine (`revision`, "1" by default since 0.27; the line `machine_version` of the seam of 2.25), the version of the language.
 type TxHeader { title str, machine str, version str, format str }
 
 /// The hint of the old keys of the header (AL-144).
 fn header_old_hint() -> str {
-    ro message_text = "с 2.27 — revision и alula_version: `machine_version: …` пишется `revision: <целое>`, `format: 2.NN` — `alula_version: 2.27`; переходного периода нет"
+    ro message_text = "с 0.27 — revision и alula_version: `machine_version: …` пишется `revision: <целое>`, `format: 2.NN` — `alula_version: 0.27`; переходного периода нет"
     message_text
 }
 
@@ -109,7 +109,7 @@ fn header_read(entries []TxEntry, mut cx TxCx) -> TxHeader {
         format = alula_version
         if old_lines.len() == 0 && !format_versions().contains(format) {
             ro shown = if format == "" { "не указана" } else { format }
-            note(cx, struct_error(1, 1, "версия языка ${shown}: переводчик читает Алулу 2.27 (строка `alula_version: 2.27`); переходного периода нет"))
+            note(cx, struct_error(1, 1, "версия языка ${shown}: переводчик читает Алулу 0.27 (строка `alula_version: 0.27`); переходного периода нет"))
         }
     }
     TxHeader { title, machine, version, format }
@@ -226,7 +226,7 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
     ro classified = tx_classify_in(lines, words_load(info.lang), info.strict, info.strict)
     ro entries = classified.entries
     mut cx = cx_new_in(info.lang)
-    // the rules of 2.26 and later: a file of 2.27 (and a file that still names 2.26 by an old key: the header refuses the key with the hint, the body is read by the rules of 2.27)
+    // the rules of 2.26 and later: a file of 0.27 (and a file that still names 2.26 by an old key: the header refuses the key with the hint, the body is read by the rules of 0.27)
     cx.v226 = info.version != "2.25"
     ro own226 = cx.v226
     for e in info.errors { cx.errors.push(e) }
@@ -455,11 +455,11 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
     for x in classified.expansions { cx.errors.push(expansion_error(x.line, x.name)) }
 
     // the JSON
-    // the root of 2.27 (AL-147): `kind`, `alula_version`, `machine`, `revision` (an integer); the seam of 2.25 keeps `format` and `version`
+    // the root of 0.27 (AL-147): `kind`, `alula_version`, `machine`, `revision` (an integer); the seam of 2.25 keeps `format` and `version`
     mut root = if header.format == "2.25" {
         [kv("format", js("machine/2")), kv("alula_version", js("2.25")), kv("machine", js(header.machine)), kv("version", js(header.version))]
     } else {
-        [kv("kind", js("machine")), kv("alula_version", js("2.27")), kv("machine", js(header.machine)), kv("revision", TxRaw(if is_integer_text(header.version) { header.version } else { "1" }))]
+        [kv("kind", js("machine")), kv("alula_version", js("0.27")), kv("machine", js(header.machine)), kv("revision", TxRaw(if is_integer_text(header.version) { header.version } else { "1" }))]
     }
     if header.title != "" { root.push(kv("title", js(header.title))) }
     if types.records.len() > 0 || types.variants.len() > 0 {

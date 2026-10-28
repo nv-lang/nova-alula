@@ -1,4 +1,4 @@
-// callee.nv - the called machine of a party `machine <имя>` (Alula 2.27, AL-146, spec 1 "Вход и итог вызываемой машины"): the party names no types, the types of the input and of the result
+// callee.nv - the called machine of a party `machine <имя>` (Alula 0.27, AL-146, spec 1 "Вход и итог вызываемой машины"): the party names no types, the types of the input and of the result
 // come from the record of the called machine in the registry of the host. The translator finds the called machine among the files that it is given with the libraries (a machine file with the
 // line `machine: <имя>`: the program puts the machines beside the file), declares the types of its `## Типы` in the caller as the libraries do (the names of its `## Имена` hold), and takes
 // the fields of its `## Вход` and the type of its `- Результат:`. The tree of the caller keeps them: the types (listed by the party in `callee_types`, the generator does not write them in
@@ -218,7 +218,7 @@ fn literal_misfit(row TxJ, want_in str) -> str {
     ""
 }
 
-/// The fields of the request of every call of a party `machine <имя>` of 2.27 are exactly the fields of the input of the called machine (AL-146): a field that the input has not, a field of the
+/// The fields of the request of every call of a party `machine <имя>` of 0.27 are exactly the fields of the input of the called machine (AL-146): a field that the input has not, a field of the
 /// input that the request does not give (the field `profile` comes from the column `профиль`).
 fn callees_request_check(states []TxJ, parties []TxJ, blocks []TxBlock, mut cx TxCx) -> () {
     for st in states {

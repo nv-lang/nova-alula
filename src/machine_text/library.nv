@@ -24,7 +24,7 @@ type TxLibUse { heading str, instance str, named bool, file str, hash str, line 
 /// TxLibParam: a parameter of a library (`## Параметры`, `имя | тип | комментарий`): the name, the type as written and as the tree writes it.
 type TxLibParam { name str, type_text str, type_json str }
 
-/// TxLibReq: a row of a section of the requirements with the parameters put in: what the library takes from the machine (AL-145, Alula 2.27). `kind` is `datum` (`## Требует данные`,
+/// TxLibReq: a row of a section of the requirements with the parameters put in: what the library takes from the machine (AL-145, Alula 0.27). `kind` is `datum` (`## Требует данные`,
 /// `имя | тип`), `party` (`## Требует стороны`, `имя | вид | сигналы`: `type_text` is the kind of the party, `signals` the names of its signals) or `end` (`## Требует концы`, `имя`).
 type TxLibReq { kind str, name str, type_text str, signals []str, line int }
 
@@ -237,9 +237,9 @@ fn lib_header(lines []str, mut cx TxCx) -> TxLibHead {
         }
     }
     if library == "" { note(cx, struct_error(1, 1, "в шапке библиотеки нет строки `- library: <латинское_имя>`")) }
-    if format != "2.27" && !old {
+    if format != "0.27" && !old {
         ro shown = if format == "" { "не указана" } else { format }
-        note(cx, struct_error(1, 1, "версия языка библиотеки ${shown}: библиотека пишется на Алуле 2.27 (строка `- alula_version: 2.27`)"))
+        note(cx, struct_error(1, 1, "версия языка библиотеки ${shown}: библиотека пишется на Алуле 0.27 (строка `- alula_version: 0.27`)"))
     }
     TxLibHead { title, library, format }
 }
@@ -491,7 +491,7 @@ fn lib_load(u TxLibUse, file NamedText, mut cx TxCx) -> TxLibRun {
     mut reqs = []TxLibReq.new()
     // the single section of 2.26 is refused with the hint (AL-145)
     match section_of(sections, "Requires") {
-        Some(sec) => note(cx, struct_error(sec.line, 1, "с 2.27 три раздела: `## ${kw(cx.words, "section", "Requires data")}` (имя | тип), `## ${kw(cx.words, "section", "Requires parties")}` (имя | вид | сигналы), `## ${kw(cx.words, "section", "Requires ends")}` (имя); переходного периода нет"))
+        Some(sec) => note(cx, struct_error(sec.line, 1, "с 0.27 три раздела: `## ${kw(cx.words, "section", "Requires data")}` (имя | тип), `## ${kw(cx.words, "section", "Requires parties")}` (имя | вид | сигналы), `## ${kw(cx.words, "section", "Requires ends")}` (имя); переходного периода нет"))
         None => ()
     }
     match section_of(sections, "Requires data") {

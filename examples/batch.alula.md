@@ -2,7 +2,7 @@
 
 - machine: Batch
 - revision: 1
-- alula_version: 2.27
+- alula_version: 0.27
 - language: en
 
 A set of nested calls (spec 4.2, `set:`; the party of the kind `machine`): one request to the machine `callee` for every name of the input `names`, no more than `LIMIT` at once (`Request limit`). The answers
@@ -49,7 +49,7 @@ type Job { name str, attempt int>=0 }
 
 ### Pause
 - File: libs/pause.en.alula.md
-- Hash: 5f2b384c7997
+- Hash: 429adaba4cec
 
 | parameter | value |
 |---|---|

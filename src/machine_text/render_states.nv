@@ -522,11 +522,11 @@ fn rn_machine(machine_json str, language str, copy_includes bool, registry Regis
     match rj_parse(machine_json) {
         Err(e) => RenderReport { text: "", notes: ["not a JSON: ${e}"] }
         Ok(root) => {
-            // the root of 2.27 says `kind` and `revision` (AL-147); a tree of the seam of 2.25 says `format` and `version`
+            // the root of 0.27 says `kind` and `revision` (AL-147); a tree of the seam of 2.25 says `format` and `version`
             ro seam = !rj_has(root, "kind") && rj_gstr(root, "format") == "machine/2" && (rj_gstr(root, "alula_version") == "" || rj_gstr(root, "alula_version") == "2.25")
             if !seam {
                 if rj_has(root, "format") || rj_has(root, "version") {
-                    ro message_keys = "с 2.27 — kind и revision: the tree says `format` or `version` (AL-147; there is no transition period)"
+                    ro message_keys = "с 0.27 — kind и revision: the tree says `format` or `version` (AL-147; there is no transition period)"
                     return RenderReport { text: "", notes: [message_keys] }
                 }
                 if rj_gstr(root, "kind") != "machine" {
@@ -538,8 +538,8 @@ fn rn_machine(machine_json str, language str, copy_includes bool, registry Regis
                 return RenderReport { text: "", notes: ["the key `portolan_version` is the former name of `alula_version` (the language is called Alula since the format 2.14; there is no transition period)"] } // guard-allow(legacy-name): the message names the former key
             }
             // a tree of another version of the language is not written (no transition period, task 125): the file would say a version that the translator does not read
-            if !seam && rj_gstr(root, "alula_version") != "" && rj_gstr(root, "alula_version") != "2.27" {
-                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 2.27 only is read and written (there is no transition period)"] }
+            if !seam && rj_gstr(root, "alula_version") != "" && rj_gstr(root, "alula_version") != "0.27" {
+                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 0.27 only is read and written (there is no transition period)"] }
             }
             ro former = rn_former_note(root, "$")
             if former != "" { return RenderReport { text: "", notes: [former] } }
@@ -558,10 +558,10 @@ fn rn_machine(machine_json str, language str, copy_includes bool, registry Regis
                 out.push("- machine_version: ${rj_gstr(shown, "version")}")
                 out.push("- format: 2.25")
             } else {
-                // the order of the header of 2.27 (1b (а), AL-144): machine, revision, alula_version, language
+                // the order of the header of 0.27 (1b (а), AL-144): machine, revision, alula_version, language
                 ro revision = rj_gscalar(shown, "revision")
                 out.push("- revision: ${if revision == "" { "1" } else { revision }}")
-                out.push("- alula_version: 2.27")
+                out.push("- alula_version: 0.27")
             }
             out.push("- language: ${language}")
             out.push("")

@@ -2,7 +2,7 @@
 
 - machine: meeting
 - revision: 1
-- alula_version: 2.27
+- alula_version: 0.27
 
 Это **запись машины «Совещание агентов» целиком на Алуле**, версия формата 2.24 ([spec/alula-spec.md](../alula-spec.md); он единственное определение языка записи). Первоисточник — эта запись на Алуле; прежние таблицы лежат в архиве и не обновляются. Прежняя запись — таблицы состояний [archive/task-runner-meeting-states.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/task-runner-meeting-states.md), код автомата [archive/task-runner-meeting-automaton.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/task-runner-meeting-automaton.md) и псевдокод [archive/task-runner-meeting-pseudocode.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/task-runner-meeting-pseudocode.md). Фрагмент «Пауза» — [archive/state-machine-pause-states.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/state-machine-pause-states.md), коды журнала — [state-machine-journal.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/state-machine-journal.md), имена — [state-machine-glossary.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/state-machine-glossary.md). Вложенная машина «Шаг агента» — [spec/samples/agent-step.alula.md](agent-step.alula.md). Справка к записи — что не уложилось в формат, неоднозначности спецификации, соответствие источнику — [spec/samples/meeting-notes.md](meeting-notes.md).
 
@@ -168,11 +168,11 @@
 
 ### арифметика_цикла
 - Файл: libs/cycle_arithmetic.alula.md
-- Хеш: 27e3a65d6f9a
+- Хеш: 34ef3ee7c00b
 
 ### Пауза
 - Файл: libs/pause.alula.md
-- Хеш: f14004122df2
+- Хеш: 87162f9feb8c
 
 | параметр | значение |
 |---|---|

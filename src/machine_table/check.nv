@@ -1115,7 +1115,7 @@ fn request_names(cx Checker, st StateDef) -> []str {
 export type StateReads { state str, names []str, all bool }
 
 /// Does the check derive the reads of the states of the tree (the version 2.26: there is no line `Читает:`, AL-138)? Before 2.26 the reads are written and checked by rule 11.
-export fn reads_derived(def MachineDef) -> bool => def.alula_version == "2.27"
+export fn reads_derived(def MachineDef) -> bool => def.alula_version == "0.27"
 
 /// The reads of every state of the machine in the order of the states, derived from its expressions and from the registry of the host (format 2.26, AL-138). A path of a dict
 /// (`имя[*].поле`) is no datum of its own: the state reads the dict.
@@ -1401,7 +1401,7 @@ fn check_target(mut cx Checker, target LValue, path str) -> () {
 // A datum of a tree of 2.26 that only the engine writes: a counter of a party (the loader declares it) or a datum of the engine of the contract (`open_requests`,
 // `call_request_id`); `to_send` is written by the rows and by the engine. A tree of 2.25 keeps the former words of the mark.
 fn engine_only(def MachineDef, kind WriteKind) -> bool {
-    if def.alula_version != "2.27" { return false }
+    if def.alula_version != "0.27" { return false }
     match kind {
         MechanicsWrite => true
         _ => false
@@ -1414,7 +1414,7 @@ fn engine_data_words() -> str => "a counter of a party or a datum of the engine 
 // registry of the host) name a datum of the engine: an error at the call.
 fn check_engine_writes(mut cx Checker) -> () {
     ro def = cx.def
-    if def.alula_version != "2.27" { return }
+    if def.alula_version != "0.27" { return }
     mut i = 0
     for st in def.states {
         ro p = "$.states[${i}]"
@@ -2362,7 +2362,7 @@ fn check_call_state(mut cx Checker, st StateDef, path str) -> () {
     }
     if party.kind != MachineParty { return }
     if !silence_is_none(st) { cx_issue(cx, "${path}.silence", "a call of a nested machine has no idle term (rule 35, item 5)") }
-    // 2.27 (AL-146): the fields of the request are exactly the fields of the input of the called machine
+    // 0.27 (AL-146): the fields of the request are exactly the fields of the input of the called machine
     if party.input_spec.len() == 0 {
         if party.input_fields.len() == 0 { return }
         mut given = []str.new()
@@ -2651,7 +2651,7 @@ export fn check_nested(def MachineDef, name str, callee MachineDef) -> []NestedP
         ro p = "$.parties[${i}]"
         i += 1
         if pt.kind != MachineParty || pt.nested != name { continue }
-        // 2.27 (AL-146): the fields of the input that the tree took from the record of the registry are those of the called machine
+        // 0.27 (AL-146): the fields of the input that the tree took from the record of the registry are those of the called machine
         if pt.input_fields.len() > 0 {
             for f in callee.input.fields {
                 mut found = false
@@ -2839,7 +2839,7 @@ fn check_forks(mut cx Checker) -> () {
                 if r.is_else { has_else = true }
             }
             // 2.26 (AL-137, section 4.1): the row else is not required, an uncovered fork leads to the error by the engine (`fork_no_match`); AL-57 holds for a tree of 2.25
-            if !has_else && cx.def.alula_version != "2.27" && !fork_proved(cx.def, st) {
+            if !has_else && cx.def.alula_version != "0.27" && !fork_proved(cx.def, st) {
                 cx_issue(cx, "$.states[${i}].rows", "the fork ${st.name} has no row else and the type does not prove that one of the rows is taken (the rows must be `x == value` for one name and name every value of an enum, of a variant without fields or of a set of literals) (AL-57)")
             }
         }
