@@ -53,7 +53,7 @@ test "pm key" {
     ro older = pm_text().replace("\"alula_version\": \"2.25\"", "\"alula_version\": \"2.11\"")
     match load_alula_machine(older, sample_registry()) {
         Ok(m) => panic("2.11 is accepted")
-        Err(e) => assert(e.contains("2.25"))
+        Err(e) => assert(e.contains("2.27"))
     }
     // the old name of the key is not accepted
     ro old = pm_text().replace("\"format\": \"machine/2\",", "\"format\": \"machine/2\", \"table_format\": \"2.5\",")

@@ -106,11 +106,11 @@ test "mk format 2.25" {
     ro report = checked(tiny_text())
     assert(report.errors.len() == 0)
     assert(report.json.starts_with("{\"format\":\"machine/2\",\"alula_version\":\"2.25\",\"machine\":\"Tiny\""))
-    assert(note_says(tiny_text().replace("format: 2.25", "format: 2.11"), "читает формат 2.25"))
+    assert(note_says(tiny_text().replace("format: 2.25", "format: 2.11"), "с 2.27 — revision и alula_version"))
 }
 
 test "mk format 2.12 and 2.13 are refused" {
-    assert(note_says(tiny_text().replace("format: 2.25", "format: 2.12"), "формат 2.12: версия не известна переводчику, он читает формат 2.25"))
-    assert(note_says(tiny_text().replace("format: 2.25", "format: 2.13"), "формат 2.13: версия не известна переводчику, он читает формат 2.25"))
+    assert(note_says(tiny_text().replace("format: 2.25", "format: 2.12"), "с 2.27 — revision и alula_version"))
+    assert(note_says(tiny_text().replace("format: 2.25", "format: 2.13"), "с 2.27 — revision и alula_version"))
     assert(note_says(tiny_text().replace("format: 2.25", "format: 2.12"), "переходного периода нет"))
 }

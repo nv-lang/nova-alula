@@ -503,6 +503,6 @@ test "v226 lib the generator writes the connection by the subheading and the cir
     assert(text.contains("| сигнал_остановки | \"halt\" |"))
     assert(!text.contains("### ПАУЗА"))
     ro again = rl(text)
-    assert(first_lib(again) == "ok")
+    if first_lib(again) != "ok" { panic(first_lib(again)) }
     assert(again.json == j)
 }

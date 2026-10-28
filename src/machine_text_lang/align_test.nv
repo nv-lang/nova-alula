@@ -5,8 +5,8 @@ module alula.machine_text_lang
 
 import std.text
 import alula.machine.{NamedText, text_of_file}
-import alula.examples.{table_files_225, table_files, sample_registry}
-import alula.machine_text.{translate_checked_with, definitions_hash, TranslateReport, render}
+import alula.examples.{table_files_225, table_files, sample_registry, library_files_in}
+import alula.machine_text.{translate_checked_with, translate_report_with, library_registry, definitions_hash, TranslateReport, render}
 
 fn list154() -> str => "{\"op\":\"list\",\"items\":[]}"
 
@@ -99,10 +99,16 @@ test "p154 the cell expression of the request has the type of the datum of the s
 
 test "p154 the cell expression of the request has the type of the field of the input of the called machine" {
     ro caller = text_of_file(table_files(), "caller.alula.md")
-    ro text = caller.replace("тип CallInput { label строка, count число>=0, profile строка }", "тип CallInput { label строка, count число>=0, profile строка, tags []число }").replace("| count | 3 |", "| count | 3 |\n| tags | [] |")
+    ro text = caller.replace("| count | 3 |", "| count | 3 |\n| tags | [] |")
+    ro callee = text_of_file(table_files(), "callee.alula.md").replace("| label | строка | метка вызова: подсказка агенту |", "| label | строка | метка вызова: подсказка агенту |\n| tags | []число | список |")
+    mut files = library_files_in(".")
+    files.push(NamedText { name: "callee.alula.md", text: callee })
+    ro report = translate_report_with(text, library_registry(files))
     assert(text != caller)
-    assert(!note_says(text, "AL-85"))
-    assert(has154(text, "{\"field\":\"tags\",\"value\":${list154()}"))
+    assert(callee != text_of_file(table_files(), "callee.alula.md"))
+    for e in report.errors { assert(!e.message.contains("AL-85")) }
+    assert(report.errors.len() == 0)
+    assert(report.json.contains("{\"field\":\"tags\",\"value\":${list154()}"))
 }
 
 test "p154 a name of neither the input nor a datum gives no type to the cell of the request" {

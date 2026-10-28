@@ -35,13 +35,12 @@ fn header_old_hint() -> str {
     message_text
 }
 
-/// Is the text an integer (the digits only)?
+/// Is the text a representable integer? The JSON form is written from its parsed value, not the spelling of the header.
 fn is_integer_text(s str) -> bool {
-    if s.byte_len() == 0 { return false }
-    for c in s.chars() {
-        if !tx_is_digit(c) { return false }
+    match s.to_int() {
+        Ok(value) => true
+        Err(error) => false
     }
-    true
 }
 
 fn header_read(entries []TxEntry, mut cx TxCx) -> TxHeader {
@@ -106,7 +105,7 @@ fn header_read(entries []TxEntry, mut cx TxCx) -> TxHeader {
         if revision != "" && !is_integer_text(revision) {
             note(cx, struct_error(revision_line, 1, "ревизия — целое число (ревизия самой машины, по умолчанию 1), найдено `${revision}`; версия языка пишется строкой `alula_version`"))
         }
-        version = if revision == "" { "1" } else { revision }
+        version = "${revision.to_int() ?? 1}"
         format = alula_version
         if old_lines.len() == 0 && !format_versions().contains(format) {
             ro shown = if format == "" { "не указана" } else { format }

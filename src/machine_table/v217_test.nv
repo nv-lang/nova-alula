@@ -25,9 +25,9 @@ fn warnings17(text str) -> []str {
 
 // ---- the version -------------------------------------------------------------------------------------------------------------------------------
 
-test "v217 the version of the language is 2.26" {
-    assert(ALULA_VERSION == "2.26")
-    assert(alula_versions() == ["2.26"])
+test "v217 the version of the language is 2.27" {
+    assert(ALULA_VERSION == "2.27")
+    assert(alula_versions() == ["2.27"])
 }
 
 test "v217 a tree of the version 2.25 loads" {
@@ -49,12 +49,12 @@ test "v217 a tree of the version 2.22 is refused" {
     ro older = tiny().replace("\"format\":\"machine/2\"", "\"format\":\"machine/2\",\"alula_version\":\"2.14\"")
     assert(!ok_text(older))
     assert(says(older, "2.14"))
-    assert(says(older, "2.25"))
+    assert(says(older, "2.27"))
 }
 
 test "v217 the schema names the version 2.25" {
     ro schema = text_of_file(schema_files(), "machine-2.schema.json")
-    assert(schema.contains("\"enum\": [\"2.25\"]"))
+    assert(schema.contains("\"enum\": [\"2.27\"]"))
     assert(!schema.contains("2.14"))
 }
 

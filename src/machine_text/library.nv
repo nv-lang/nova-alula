@@ -1188,10 +1188,25 @@ fn libs_requires(runs []TxLibRun, blocks []TxBlock, data []TxJ, mut cx TxCx) -> 
                 if found && known == None { pair_add(cx.env.states, req.name, latin) }
                 if !found { note(cx, tx_err(u.line, u.col, "check", "библиотека `${run.title}` требует конец `${req.name}`; в машине его нет (раздел 9)")) }
             } else if req.kind == "party" {
+                // A generated file names the party and its signals by their JSON names, as it names data and ends.
+                if !pair_has(cx.env.parties, req.name) {
+                    ro auto = jn_peek(cx, req.name, "стороны", [req.name])
+                    match pair_get(cx.env.parties, auto) {
+                        Some(en) => pair_add(cx.env.parties, req.name, en)
+                        None => ()
+                    }
+                }
                 if !pair_has(cx.env.parties, req.name) {
                     note(cx, tx_err(u.line, u.col, "check", "библиотека `${run.title}` требует сторону `${req.name}`; в машине её нет (раздел 9)"))
                 } else {
                     for bare in req.signals {
+                        if !pair_has(cx.env.psignals, bare) {
+                            ro auto = jn_peek(cx, bare, "сигнала", [req.name, bare])
+                            match pair_get(cx.env.psignals, auto) {
+                                Some(en) => pair_add(cx.env.psignals, bare, en)
+                                None => ()
+                            }
+                        }
                         if !pair_has(cx.env.psignals, bare) { note(cx, tx_err(u.line, u.col, "check", "библиотека `${run.title}` требует у стороны `${req.name}` сигнал `${bare}`; в столбце `${kw(cx.words, "column", "signals")}` его нет (раздел 9)")) }
                     }
                 }

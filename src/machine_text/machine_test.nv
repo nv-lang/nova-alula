@@ -51,8 +51,8 @@ test "tm names of the states" {
 
 test "tm header" {
     assert(note_says(tiny_with("# Машина: Малая", "# Что-то: Малая"), "начинается со строки `# Машина:"))
-    assert(note_says(tiny_with("format: 2.25", "format: 2.4"), "формат 2.4: версия не известна переводчику, он читает формат 2.25"))
-    assert(note_says(tiny_with("format: 2.25\n", ""), "формат не указан"))
+    assert(note_says(tiny_with("format: 2.25", "format: 2.4"), "с 2.27 — revision и alula_version"))
+    assert(note_says(tiny_with("format: 2.25\n", ""), "с 2.27 — revision и alula_version"))
     assert(note_says(tiny_with("machine: Tiny\n", ""), "нет строки `machine:"))
     assert(note_says(tiny_with("machine: Tiny", "machine: Малая"), "латинский идентификатор"))
     assert(note_says(tiny_with("machine_version: 1", "machine_version: 1\nлишнее: слово"), "лишняя строка в шапке"))
@@ -61,7 +61,11 @@ test "tm header" {
 
 test "tm header places" {
     ro all = notes(tiny_with("format: 2.25", "format: 2.4"))
-    assert(all[0].starts_with("1:1 structure"))
+    mut found = false
+    for line in all {
+        if line.starts_with("4:1 structure") && line.contains("с 2.27 — revision и alula_version") { found = true }
+    }
+    assert(found)
 }
 
 // ---- the sections ------------------------------------------------------------------------------------------------------------

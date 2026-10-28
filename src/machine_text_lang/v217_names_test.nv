@@ -21,23 +21,23 @@ test "v217 fixture ru and en give one tree" {
 test "v217 format 2.23 is refused" {
     ro text = ru17("- format: 2.25", "- format: 2.23")
     assert(!is_clean(text))
-    assert(note_says(text, "формат 2.23: версия не известна"))
-    assert(note_says(text, "читает формат 2.25"))
+    assert(note_says(text, "с 2.27 — revision и alula_version"))
+    assert(note_says(text, "переходного периода нет"))
 }
 
 test "v217 format 2.22 is refused" {
     ro text = ru17("- format: 2.25", "- format: 2.22")
     assert(!is_clean(text))
-    assert(note_says(text, "версия не известна"))
-    assert(note_says(text, "читает формат 2.25"))
+    assert(note_says(text, "с 2.27 — revision и alula_version"))
+    assert(note_says(text, "переходного периода нет"))
     ro older = ru17("- format: 2.25", "- format: 2.14")
     assert(!is_clean(older))
-    assert(note_says(older, "версия не известна"))
-    assert(note_says(older, "2.25"))
+    assert(note_says(older, "с 2.27 — revision и alula_version"))
+    assert(note_says(older, "alula_version: 2.27"))
 }
 
 test "v217 format 2.16 is refused" {
-    assert(note_says(ru17("- format: 2.25", "- format: 2.16"), "версия не известна"))
+    assert(note_says(ru17("- format: 2.25", "- format: 2.16"), "с 2.27 — revision и alula_version"))
 }
 
 // ---- AL-53: the JSON name is built by itself -------------------------------------------------------------------------------------------------
@@ -164,4 +164,3 @@ test "v217 the dictionary is not read for a name with two English names" {
     ro text = ru17_data("| расход | число>=0 | 0 | да | действия |")
     assert(has17(text, "\"name\":\"raskhod\""))
 }
-

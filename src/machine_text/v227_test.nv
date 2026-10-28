@@ -85,6 +85,15 @@ fn m227() -> str {
 
 fn r227(text str) -> TranslateReport => translate_report_with(text, libs227())
 
+test "v227 an integer revision is written as a canonical JSON number" {
+    ro signed = r227(m227().replace("- revision: 3", "- revision: -2"))
+    assert(first227(signed) == "ok")
+    assert(signed.json.contains("\"revision\":-2"))
+    ro padded = r227(m227().replace("- revision: 3", "- revision: 003"))
+    assert(first227(padded) == "ok")
+    assert(padded.json.contains("\"revision\":3"))
+}
+
 fn r227_with(text str, files []NamedText) -> TranslateReport => translate_report_with(text, files)
 
 fn first227(report TranslateReport) -> str {

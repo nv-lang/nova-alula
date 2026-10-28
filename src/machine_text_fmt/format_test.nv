@@ -32,10 +32,10 @@ test "fm unknown version" {
     for v in ["2.4", "2.11", "3", "2.7.1", ""] {
         ro report = checked(replaced(base_text(), "- format: 2.25", "- format: ${v}"))
         assert(report.errors.len() > 0)
-        assert(report_says(report, "читает формат 2.25"))
+        assert(report_says(report, "с 2.27 — revision и alula_version"))
     }
     ro missing = replaced(base_text(), "- format: 2.25\n", "")
-    assert(errors_say(missing, "формат не указан"))
+    assert(errors_say(missing, "с 2.27 — revision и alula_version"))
 }
 
 test "fm old style" {

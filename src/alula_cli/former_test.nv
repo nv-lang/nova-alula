@@ -65,7 +65,7 @@ test "fn a file of the format 2.12 is refused" {
     assert(old != tiny_ru())
     ro ran = run_with(["compile", "/work/tiny.alula.md"], one("/work/tiny.alula.md", old))
     assert(ran.code == 1)
-    assert(ran.err.contains("формат 2.12: версия не известна переводчику, он читает формат 2.25"))
+    assert(ran.err.contains("с 2.27 — revision и alula_version"))
     assert(ran.err.contains("переходного периода нет"))
     ro checked = run_with(["check", "/work/tiny.alula.md"], one("/work/tiny.alula.md", old))
     assert(checked.code == 1)

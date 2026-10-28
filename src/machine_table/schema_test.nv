@@ -103,13 +103,18 @@ test "schema files" {
 
 test "schema root" {
     ro root = schema_root()
-    assert(same_names(property_names(root), top_keys()))
+    // The public schema is 2.27; the decoder also knows the two old root keys for the test-only seam of 2.25.
+    mut canonical = []str.new()
+    for key in top_keys() {
+        if key != "format" && key != "version" { canonical.push(key) }
+    }
+    assert(same_names(property_names(root), canonical))
     ro required = match root.get("required") {
         Some(v) => v.array() ?? []JsonValue.new()
         None => []JsonValue.new()
     }
     assert(required.len() == 5)
-    assert(sub(sub(root, "properties"), "format").contains("const"))
+    assert(sub(sub(root, "properties"), "kind").contains("const"))
 }
 
 test "schema keys" {
