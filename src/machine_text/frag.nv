@@ -150,7 +150,7 @@ export fn translate_types(text str) -> Result[str, []TranslateError] => translat
 /// The same for a text in the language `lang`.
 export fn translate_types_in(text str, lang str) -> Result[str, []TranslateError] {
     mut cx = frag_cx([], lang)
-    ro entries = tx_classify_in(lines_of(text), cx.words, false, false).entries
+    ro entries = tx_classify_in(lines_of(text), cx.words, false, false, false).entries
     ro sec = TxSection { name: "Types", title: kw(cx.words, "section", "Types"), line: 1, first: 0, last: entries.len() }
     ro types = decl_types(entries, sec, cx)
     if cx.errors.len() > 0 { return Err(frag_errors(cx, None, "")) }

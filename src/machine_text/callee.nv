@@ -97,7 +97,7 @@ fn callees_import(entries []TxEntry, sections []TxSection, registry []NamedText,
                         ro lines = lines_of(file.text)
                         ro info = detect_language(lines)
                         cx.words = words_load(info.lang)
-                        ro centries = tx_classify_in(lines, cx.words, info.strict, info.strict).entries
+                        ro centries = tx_classify_in(lines, cx.words, info.strict, info.strict, info.version != "2.25").entries
                         ro csections = sections_in(centries, cx, section_keys())
                         match section_of(csections, "Names") {
                             Some(nsec) => jn_rows_read(centries, nsec, cx)

@@ -335,7 +335,12 @@ fn foreign_error(w TxWords, line int, col int, word str, kind str, key str) -> T
 // ---- the paragraphs ------------------------------------------------------------------------------------------------------------
 
 /// The closed list of the key words of a state, a section and a connection (format 4.1; `Куда` is a column, not a key, AL-14): a paragraph that starts with one of them without the list marker is warned about.
-fn prose_keys(w TxWords) -> []str => kw_all(w, "key", ["Party", "Set", "Idle term", "Request", "Reads", "Edits", "Check", "Form returns", "On entry", "On accept", "Result", "Except", "Request limit", "Initial state"])
+/// `modern`: the file is read by the rules of 0.28 — the keys of 0.28 (`Набор`, `Проверка`, `Начальное состояние` as items of a list) are warned about; a file of the seam of 2.25 has them not, a paragraph there starts with these words freely.
+fn prose_keys(w TxWords, modern bool) -> []str {
+    mut keys = kw_all(w, "key", ["Party", "Idle term", "Request", "Reads", "Edits", "Form returns", "On entry", "On accept", "Result", "Except", "Request limit"])
+    if modern { for k in kw_all(w, "key", ["Set", "Check", "Initial state"]) { keys.push(k) } }
+    keys
+}
 
 // A line that begins a declaration of the sections `Типы`, `Функции` and `Внешние функции`.
 fn is_decl_start(text str, w TxWords) -> bool {
@@ -357,7 +362,7 @@ fn is_call_start(text str) -> bool {
 }
 
 // The key word that a line of a paragraph starts with, after the marks that may stand before a key (`-`, a dash, a bullet) and spaces; "" when it starts with none.
-fn prose_key_of(text str, w TxWords) -> str {
+fn prose_key_of(text str, w TxWords, modern bool) -> str {
     ro n = text.byte_len()
     mut at = 0
     while at < n {
@@ -366,7 +371,7 @@ fn prose_key_of(text str, w TxWords) -> str {
         at += c.len_utf8()
     }
     ro rest = text[at..]
-    for key in prose_keys(w) {
+    for key in prose_keys(w, modern) {
         if rest.starts_with(key) {
             ro after = rest[key.byte_len()..]
             if after == "" || after.starts_with(" ") || after.starts_with(":") || after.starts_with("\t") { return key }
@@ -384,7 +389,7 @@ type TxParaLine { line int, indent int, text str }
 
 /// TxClsState: what the classification has so far: the entries, the warnings, the open paragraph (its lines wait for what follows them) and whether it is a comment for certain (a declaration outside a block of code).
 // ORACLE-WORKAROUND(46): the lists are fields of a `mut` record and are assigned as fields, because assigning a `mut` parameter changes only the local name; pass the lists as `mut` parameters when item 46 is fixed
-type TxClsState { out []TxEntry, warnings []TranslateError, para []TxParaLine, forced bool }
+type TxClsState { out []TxEntry, warnings []TranslateError, para []TxParaLine, forced bool, modern bool }
 
 // The open paragraph ends. `touching`: it ends against a table, a heading or a list item with no empty line between (format 2.9, AL-12): its lines are no paragraph, the reader takes
 // them for extra lines of the neighbour block and the warning says so. Otherwise it is a comment; the lines that start with a key word are warned about.
@@ -397,7 +402,7 @@ fn cls_flush(mut st TxClsState, touching bool, what str, w TxWords) -> () {
         st.warnings.push(tx_err(st.para[0].line, st.para[0].indent + 1, "warning", "строка текста вплотную к ${what} без пустой строки — это не абзац, разбор читает её как лишнюю строку соседнего блока; между абзацем и ${what} нужна пустая строка"))
     } else {
         for p in st.para {
-            ro key = prose_key_of(p.text, w)
+            ro key = prose_key_of(p.text, w, st.modern)
             if key != "" { st.warnings.push(prose_warning(p.line, p.indent + 1, key)) }
         }
     }
@@ -417,8 +422,8 @@ fn expansion_error(line int, title str) -> TranslateError {
 /// Format 2.7 (P-1, P-2): a paragraph (a line after an empty line, outside the tables, the blocks of code and the key lines, with the lines that follow it up to an empty line) is a comment and
 /// gives no entry; the section of the expansion of 2.12 gives no entry but its heading. `strict` is format 2.9 and later (AL-12): a paragraph pressed against a table, a heading or a list
 /// item is no paragraph. `decl_comment` (a machine of format 2.9 and later, AL-13): a declaration outside a block of code is a comment with a warning.
-fn tx_classify_in(lines []str, w TxWords, strict bool, decl_comment bool) -> TxClassified {
-    mut st = TxClsState { out: []TxEntry.new(), warnings: []TranslateError.new(), para: []TxParaLine.new(), forced: false }
+fn tx_classify_in(lines []str, w TxWords, strict bool, decl_comment bool, modern bool) -> TxClassified {
+    mut st = TxClsState { out: []TxEntry.new(), warnings: []TranslateError.new(), para: []TxParaLine.new(), forced: false, modern }
     mut errors = []TranslateError.new()
     mut expansions = []TxExpansion.new()
     mut no = 0
@@ -572,7 +577,7 @@ fn tx_classify_in(lines []str, w TxWords, strict bool, decl_comment bool) -> TxC
 }
 
 /// The entries of the lines of a file in Russian, in order, and the warnings (format 2.7 and earlier reading: no strictness of 2.9).
-fn tx_classify_full(lines []str) -> TxClassified => tx_classify_in(lines, words_load("ru"), false, false)
+fn tx_classify_full(lines []str) -> TxClassified => tx_classify_in(lines, words_load("ru"), false, false, false)
 
 /// The entries of the lines of a file in Russian, in order (without the warnings).
 fn tx_classify(lines []str) -> []TxEntry => tx_classify_full(lines).entries

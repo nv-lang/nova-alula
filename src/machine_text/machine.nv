@@ -223,7 +223,7 @@ type TxFull { report TranslateReport, tree TxJ }
 fn translate_full(file_text str, registry []NamedText) -> TxFull {
     ro lines = lines_of(file_text)
     ro info = detect_language(lines)
-    ro classified = tx_classify_in(lines, words_load(info.lang), info.strict, info.strict)
+    ro classified = tx_classify_in(lines, words_load(info.lang), info.strict, info.strict, info.version != "2.25")
     ro entries = classified.entries
     mut cx = cx_new_in(info.lang)
     // the rules of 2.26 and later: a file of 0.27 (and a file that still names 2.26 by an old key: the header refuses the key with the hint, the body is read by the rules of 0.27)

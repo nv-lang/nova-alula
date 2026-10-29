@@ -211,14 +211,14 @@ test "v212 a literal of the role in the parse is an error with the hint of AL-13
     ro text = with_prims_in(role_fns_registry(), boss212().replace("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput); разбор: read_author(\"author\") -> CallOutput | — |"), ["read_author"])
     ro report = checked_parse(text)
     assert(report.errors.len() > 0)
-    assert(note_says_in(report, "литерал роли в разбор:"))
+    assert(note_says_in(report, "литерал роли в разборе:"))
     assert(note_says_in(report, "отдельная функция на роль"))
     assert(note_says_in(report, "разобрать_ответ_свидетеля"))
 }
 
 test "v212 the parse names the function without brackets" {
     ro text = with_prims_in(role_fns_registry(), boss212().replace("machine callee(вход CallInput, итог CallOutput) | — |", "machine callee(вход CallInput, итог CallOutput); разбор: read_author() -> CallOutput | — |"), ["read_author"])
-    assert(note_says_in(checked_parse(text), "литерал роли в разбор:"))
+    assert(note_says_in(checked_parse(text), "литерал роли в разборе:"))
 }
 
 fn reads_seen(text str) -> str => text.replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | seen = reply | DONE |").replace("| reply | ?CallOutput | пусто | — | действия |", "| reply | ?CallOutput | пусто | — | действия |\n| seen | ?CallOutput | пусто | — | действия |")

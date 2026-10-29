@@ -83,6 +83,8 @@ fn rn_destination(cx RnCx, row RJ) -> str {
     if to == "@previous" { text = rn_kw(cx, "destination", "previous") }
     if to == "@same" { text = rn_kw(cx, "destination", "same") }
     if to == "@prepare_return" { text = rn_kw(cx, "destination", "preparation_return") }
+    // the underscore of 0.28 is the space of 2.25: the seam writes the word of two words (`то же`)
+    if !cx.v226 && (to == "@same" || to == "@prepare_return") { text = text.replace("_", " ") }
     // 0.28: the restart mode is the column `заново`, the "Where" holds it not; the seam of 2.25 writes the former suffix (the word `запуск заново` is of the layer of 2.25)
     if !cx.v226 {
         match rj_get(row, "restart") {
@@ -193,7 +195,7 @@ fn rn_rows_226(mut cx RnCx, rows []RJ, kind str, locals []str) -> []str {
         mut out2 = []RnRow.new()
         for r in out {
             mut cells2 = r.cells
-            cells2.push("")
+            cells2.push(RN_EMPTY)
             out2.push(RnRow { cells: cells2 })
         }
         mut k = 0

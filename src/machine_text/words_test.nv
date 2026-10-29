@@ -439,9 +439,9 @@ test "wt versions" {
 
 // ---- the classification of the lines ---------------------------------------------------------------------------------------
 
-fn classify_en(text str, strict bool) -> TxClassified => tx_classify_in(lines_in(text), words_load("en"), strict, strict)
+fn classify_en(text str, strict bool) -> TxClassified => tx_classify_in(lines_in(text), words_load("en"), strict, strict, true)
 
-fn classify_ru(text str, strict bool) -> TxClassified => tx_classify_in(lines_in(text), words_load("ru"), strict, strict)
+fn classify_ru(text str, strict bool) -> TxClassified => tx_classify_in(lines_in(text), words_load("ru"), strict, strict, true)
 
 test "wt key lines en" {
     ro c = classify_en("## States\n\n- Party: agent\n- Idle term: 0\n- Request: none\nInitial state: Start\n", false)
@@ -509,7 +509,7 @@ test "wt declaration outside" {
     ro loose = classify_en(text, false)
     assert(loose.warnings.len() == 0)
     assert(loose.entries.len() == 4)
-    ro fenced_only = tx_classify_in(lines_in(text), words_load("en"), true, false)
+    ro fenced_only = tx_classify_in(lines_in(text), words_load("en"), true, false, true)
     assert(fenced_only.entries.len() == 4)
 }
 

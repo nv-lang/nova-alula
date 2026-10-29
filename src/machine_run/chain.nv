@@ -683,14 +683,11 @@ fn apply_parse(ctx Ctx, party PartyDef, mut host PrimitiveHost) -> Result[Parsed
         Ok(v) => {
             // the type of the result of the parse: of a tree of the seam of 2.25 — the type after `->` of the tree; of a tree of 0.28 — the result of the declaration
             // of the function in the registry of the host (the tree holds the type not)
-            mut spec = pr.result
-            match spec {
-                Some(r) => ()
-                None => {
-                    match find_primitive(ctx.table.registry, pr.primitive) {
-                        Some(pf) => { spec = Some(pf.result) }
-                        None => ()
-                    }
+            ro spec = match pr.result {
+                Some(r) => Some(r)
+                None => match find_primitive(ctx.table.registry, pr.primitive) {
+                    Some(pf) => Some(pf.result)
+                    None => None
                 }
             }
             match spec {

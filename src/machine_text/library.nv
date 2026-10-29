@@ -483,12 +483,12 @@ fn lib_load(u TxLibUse, file NamedText, mut cx TxCx) -> TxLibRun {
     ro info = detect_language(raw_lines)
     if info.lang != cx.words.lang { note(cx, tx_err(u.line, u.col, "language", "библиотека `${u.file}` написана на языке ${info.lang}, а машина — на ${cx.words.lang}: ключевые слова файла пишутся на одном языке")) }
     ro head = lib_header(raw_lines, cx)
-    ro first = tx_classify_in(raw_lines, cx.words, true, true).entries
+    ro first = tx_classify_in(raw_lines, cx.words, true, true, info.version != "2.25").entries
     ro params = lib_params_read(first, cx)
     lib_visibility_check(first, params, cx)
     lib_args_check(u, head.title, params, cx)
     ro text = lib_substitute(file.text, u.args, params, cx.words)
-    ro classified = tx_classify_in(lines_of(text), cx.words, true, true)
+    ro classified = tx_classify_in(lines_of(text), cx.words, true, true, info.version != "2.25")
     for e in classified.errors { cx.errors.push(e) }
     ro entries = classified.entries
     ro sections = sections_in(entries, cx, lib_section_keys())

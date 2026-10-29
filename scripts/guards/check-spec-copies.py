@@ -5,10 +5,10 @@
     (с версии 0.3.2 пакета). Копия, которая разошлась с ним молча, даёт тестам неверные слова или образец, а правда живёт в другом месте.
 Проверяет: (а) `src/machine_text/alula-keywords.tsv` равна `spec/alula-keywords.tsv` (окончания строк не считаются);
     (б) три образца в `src/machine_agent/cases/` (`agent-step-methodology-222.alula.txt`, `.en.alula.txt`, `meeting-methodology-222.alula.txt`)
-    после переноса на 2.26 и на 0.27 скриптами `tools/migrate-alula-226.py` и `tools/migrate-alula-227.py` равны образцам `spec/samples/` (`agent-step.alula.md`, `agent-step.en.alula.md`,
-    `meeting-definitions.alula.md`) во всём, кроме ссылок вида `[текст](цель)`: копии для тестов остаются такими, какими образцы вышли из методики
-    в форме 2.25 (их хеши закреплены тестами; шов 2.25 текстов тестов, задача 239), образцы `spec/samples/` — формы 0.27, а ссылки в них переписаны
-    под файлы пакета. Хеш подключения перенос берёт из файла библиотеки рядом с образцом (`spec/samples/libs/`) — с диска, а не из индекса.
+    после переноса на 2.26, на 0.27 и на 0.28 скриптами `tools/migrate-alula-226.py`, `tools/migrate-alula-227.py` и `tools/migrate-alula-228.py` равны образцам `spec/samples/` (`agent-step.alula.md`, `agent-step.en.alula.md`,
+    `meeting-definitions.alula.md`) по структурным строкам (заголовки, таблицы, строки-ключи, код), со ссылками вида `[текст](цель)` снятыми: копии для тестов остаются такими, какими образцы вышли из методики
+    в форме 2.25 (их хеши закреплены тестами; шов 2.25 текстов тестов, задача 239), образцы `spec/samples/` — формы 0.28, ссылки в них переписаны
+    под файлы пакета, а проза правится руками (перенос её не трогает, переводчик её пропускает — P-1). Хеш подключения перенос берёт из файла библиотеки рядом с образцом (`spec/samples/libs/`) — с диска, а не из индекса.
 Не проверяет: смысл слов и образцов (это тесты и `tools/check-alula-*.py`); остальные файлы `cases/`.
 Правило: задача 155 продукта (переезд первоисточника языка в пакет).
 
@@ -43,9 +43,31 @@ def migrated(text, origin):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     out = mod.migrate_md(os.path.join(ROOT, origin), text, mod.Run(True))
+    text = text if out is None else out
+    # then 0.27 -> 0.28 (task 253): the header `alula_version: 0.28`, the parties of eight columns, the keys one per item, the words with the underscore
+    spec = importlib.util.spec_from_file_location("migrate_alula_228", os.path.join(ROOT, "tools", "migrate-alula-228.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    out = mod.migrate_md(os.path.join(ROOT, origin), text, mod.Run(True))
     return text if out is None else out
 
 LINK = re.compile(r'\[(?:[^\[\]]|\[[^\]]*\])*\]\([^)\s]*(?:\s+"[^"]*")?\)')
+
+# A line of prose (a comment for the reader, P-1): not a heading, not a row of a table, not a key line of a list, not a line of a block of code.
+def is_prose(lines):
+    out = []
+    fence = False
+    for line in lines:
+        if line.startswith("```"):
+            fence = not fence
+            out.append(False)
+            continue
+        if fence:
+            out.append(False)
+            continue
+        s = line.lstrip()
+        out.append(bool(s) and not s.startswith("#") and not s.startswith("|") and not s.startswith("-") and not s.startswith(">") and not s.startswith("//"))
+    return out
 
 # (копия, первоисточник, сравнивать ли без ссылок; у образцов копия сравнивается после переноса на 2.26)
 PAIRS = [
@@ -78,11 +100,15 @@ def judge(source, args, rep):
             rep.add(copy, None, "no-file", "файл пары не прочитан")
             continue
         x, y = normal(a, without_links, origin if without_links else None).split("\n"), normal(b, without_links).split("\n")
+        if without_links:
+            # the prose of the samples is edited by hand (the migration scripts touch it not, and the copies are pinned by the fingerprints of the tests): the comparison is of the structural lines
+            x = [line for line, prose in zip(x, is_prose(x)) if not prose]
+            y = [line for line, prose in zip(y, is_prose(y)) if not prose]
         if x == y:
             continue
         first = next((i for i in range(min(len(x), len(y))) if x[i] != y[i]), min(len(x), len(y)))
         rep.add(copy, first + 1, "copy-differs", "копия расходится с %s (первая разница на строке %d)%s" % (
-            origin, first + 1, ", ссылки не считаются, копия — после переноса на 2.26" if without_links else ""))
+            origin, first + 1, ", ссылки и проза не считаются, копия — после переноса на 0.28" if without_links else ""))
     return guardlib.Outcome(count=count)
 
 

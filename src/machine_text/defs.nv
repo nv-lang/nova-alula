@@ -138,7 +138,7 @@ fn defs_read(file_text str, mut cx TxCx) -> TxDefsDoc {
     ro info = detect_language(lines)
     mut dcx = cx_new_in(info.lang)
     for e in info.errors { dcx.errors.push(e) }
-    ro classified = tx_classify_in(lines, dcx.words, info.strict, false)
+    ro classified = tx_classify_in(lines, dcx.words, info.strict, false, info.version != "2.25")
     for e in classified.errors { dcx.errors.push(e) }
     ro entries = classified.entries
     ro version = defs_header(entries, dcx)

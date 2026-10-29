@@ -495,19 +495,22 @@ fn line_edits(kvl TxKv, mut cx TxCx) -> Result[TxEdits, TranslateError] {
     p_adv(p)
     ro datum = tr_global(cx, d)
     mut check = ""
-    if p_is(p, ";") {
-        if cx.v226 {
+    if cx.v226 {
+        // 0.28: the check is its own item of the list (`- Проверка: примитив`); `; проверка: …` is an error with a hint (section 10)
+        if p_is(p, ";") {
             ro t = p_tok(p)
             return Err(tx_err(t.line, t.col, "syntax", "с 0.28 ключи по одному в элементе: `- ${kw(cx.words, "key", "Edits")}: …` и отдельный элемент `- ${kw(cx.words, "key", "Check")}: примитив`; переходного периода нет"))
         }
-        p_adv(p)
-        if !p_eat_kw(p, cx.words, "key", "check") { return Err(p_fail(p, "после данного ожидается `${kw(cx.words, "key", "check")}: примитив`")) }
-        p_expect(p, ":")?
-        ro f = p_tok(p)
-        if f.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "key", "check")}:` ожидается имя примитива")) }
-        p_adv(p)
-        check = tr_primitive(cx, f)
+        p_end(p)?
+        return Ok(TxEdits { datum, check })
     }
+    p_expect(p, ";")?
+    if !p_eat_kw(p, cx.words, "key", "check") { return Err(p_fail(p, "после данного ожидается `${kw(cx.words, "key", "check")}: примитив`")) }
+    p_expect(p, ":")?
+    ro f = p_tok(p)
+    if f.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "key", "check")}:` ожидается имя примитива")) }
+    p_adv(p)
+    check = tr_primitive(cx, f)
     p_end(p)?
     Ok(TxEdits { datum, check })
 }
