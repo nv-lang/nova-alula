@@ -1,0 +1,14 @@
+{
+  "kind": "test",
+  "machine": "ChatSession",
+  "name": "a restart acknowledges the committed key once more",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "signal", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
+    {"do": "accept", "event": {"kind": "progress", "name": "agent_chunk", "request": "agent-1", "input": "one ", "source": "acp-1"}, "expect": {"state": "Awaiting"}},
+    {"do": "restart", "expect": {"state": "Awaiting"}},
+    {"do": "pump", "expect": {"state": "Awaiting"}},
+    {"do": "restart", "expect": {"state": "Awaiting"}},
+    {"do": "pump", "expect": {"state": "Awaiting"}}
+  ]
+}

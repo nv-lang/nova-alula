@@ -1,0 +1,13 @@
+{
+  "kind": "test",
+  "machine": "ChatSession",
+  "name": "a silent agent ends with Timeout and is cancelled",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "signal", "name": "user_message", "input": "hi"}, "expect": {"state": "Awaiting"}},
+    {"do": "advance", "ms": 29000},
+    {"do": "pump", "expect": {"state": "Awaiting", "open": ["agent-1"], "outcome": "none"}},
+    {"do": "advance", "ms": 1001},
+    {"do": "pump", "expect": {"state": "Failed", "journal": [{"code": "no_answer_in_time", "params": {}}], "outcome": "refusal:Timeout", "open": [], "cancelled": ["agent-1"]}}
+  ]
+}
