@@ -6,11 +6,11 @@ The examples of the package `alula` (task 158): small machines that show one con
 ```powershell
 . C:/work/nova/nova-oracle-0.1.0-windows-x86_64/setup-env.ps1
 nova build src/alula.nv -o target/alula.exe
-target/alula.exe test examples        # 66 of 66 tests passed
+target/alula.exe test examples        # 105 of 105 tests passed (66 here and 39 of chat/)
 ```
 
 `registry.md` and `journal.md` are the host "examples": the program takes them from the folder of the machines (spec 7a, AL-113; the form is in [src/machine/README.md](../src/machine/README.md)). The language itself holds
-one primitive (`new_id`) and 35 journal codes; the host of the examples adds the primitive `close_agent_turn` and 44 codes of the machines below (24 of the former examples and 20 of the new tables).
+one primitive (`new_id`) and 35 journal codes; the host of the examples adds the primitive `close_agent_turn` and 51 codes of the machines below (24 of the former examples, 20 of the new tables and 7 of `chat`, which also keeps them in its own `chat/journal.md`).
 
 | Machine | File | What it shows | Tests (`tests/`) |
 |---|---|---|---|
@@ -28,6 +28,7 @@ one primitive (`new_id`) and 35 journal codes; the host of the examples adds the
 | `Pausable` | `pausable.alula.md` | the library "Pause": stop, continue, halt | `pause-*` 3 |
 | `Keeper` | `keeper.alula.md` | a gate (`human or agent by setting`) with two signals | `keeper-*` 3 |
 | `Batch` | `batch.alula.md` | a set of nested calls to the machine `callee`, the limit 2 | `batch-*` 3 |
+| `ChatSession` | `chat/chat.alula.md` | the demo machine: one conversation with an agent, waiting, answer, refusal, cancel, timeout (its own folder, [chat/README.md](chat/README.md)) | `chat/tests/chat-*` 39 |
 
 The new tables (`Echo` ... `Batch`) are written in English; the tests are `test/0`. Run one: `target/alula.exe run examples/echo.alula.json examples/tests/echo-signals.alula.test.json`.
 The machines of the product CrewHarness and of the methodology are not here: they are the data of their owners (the CrewHarness repository, `machines/`).

@@ -48,3 +48,10 @@
 | ворота | `signal_denied` | сигнал «отказать» | — |
 | пачка | `job_answered` | работа {party} ответила: {answer} | `party`, `answer` |
 | пачка | `job_lost` | работа {party} потеряна | `party`, `code` |
+| чат | `agent_chunk` | часть ответа агента: {text} | `text` |
+| чат | `agent_done` | агент закончил ответ | — |
+| чат | `agent_refused` | агент отказал: {code} | `code` |
+| чат | `cancelled_before_request` | отмена до запроса | — |
+| чат | `cancelled_while_waiting` | отмена в ожидании ответа | — |
+| чат | `no_answer_in_time` | ответа в срок нет | — |
+| чат | `user_message` | сообщение пользователя: {text} | `text` |

@@ -91,7 +91,7 @@ $p = "target/alula.exe"
 & $p convert target/callee.en.alula.md --language ru -o target/callee.ru.alula.md --registry examples/registry.md --journal examples/journal.md   # back to Russian (through the JSON)
 & $p summary target/callee.alula.json                                                   # the states, the rows, the actions
 & $p run examples/echo.alula.json examples/tests/echo-signals.alula.test.json     # ok
-& $p test examples                                                                       # 66 of 66 tests passed
+& $p test examples                                                                       # 105 of 105 tests passed
 ```
 
 An error in a file (a transition leads to a state that is not there; the quoted line is cut here):
