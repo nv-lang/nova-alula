@@ -111,7 +111,7 @@ fn defs_header(entries []TxEntry, mut cx TxCx) -> str {
         Err(err) => ()
     }
     if !version_ok { note(cx, struct_error(1, 1, "в шапке нет строки `functions_version: <целое>`")) }
-    if !format_versions().contains(format) { note(cx, struct_error(1, 1, "формат файла определений должен быть ${format_versions().join(", ")}, найдено: ${format}")) }
+    if !format_versions().contains(format) { note(cx, struct_error(1, 1, "формат файла определений должен быть ${format_versions().join(", ")}, найдено: ${format}; переходного периода нет: файл 0.27 переносит tools/migrate-alula-228.py (2.26 — tools/migrate-alula-227.py)")) }
     version
 }
 

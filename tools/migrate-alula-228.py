@@ -27,7 +27,8 @@
 Что НЕ решает сам (выход 1, строка на место `файл:строка: вид: что сделать`): дерево с файлом машины рядом без `--alula`.
 Запуск: `python tools/migrate-alula-228.py [--dry-run] [--alula <программа alula>] <файл или папка>…` (папки — рекурсивно);
 код 0 — перенесено (или нечего), 1 — остались места, 2 — ошибка запуска. `--dry-run` ничего не пишет.
-Повторный запуск ничего не меняет.
+`--selftest` — регрессионный тест: папка «машина + библиотеки» переносится одним запуском (хеши подключений считаются
+по новым текстам библиотек этого же запуска), повторный запуск ничего не меняет.
 """
 import json, os, re, subprocess, sys
 
@@ -341,8 +342,13 @@ def lib_hash(text):
     return m.lib_hash(text)
 
 
-def hashes(lines, path, run):
-    """`- Хеш:` подключения — хеш файла библиотеки рядом с машиной (файлы библиотек 0.28 другие: шапка `alula_version`, формы 0.28)."""
+def hashes(lines, path, run, texts=None):
+    """`- Хеш:` подключения — хеш файла библиотеки рядом с машиной (файлы библиотек 0.28 другие: шапка `alula_version`, формы 0.28).
+
+    `texts` — словарь «нормальный путь → текст после переноса» всех файлов запуска: библиотека, которая сама
+    переносится этим же запуском, хешируется по её НОВОМУ тексту (иначе при переносе машины и библиотек одной
+    папкой хеш считался бы по старому тексту и первая сборка дерева падала на несовпадении хеша — блокер приёмки
+    253); библиотеки вне запуска читаются с диска."""
     n = 0
     for i, l in enumerate(lines):
         mf = re.match(r'^- (?:Файл|File): (\S+)\s*$', l)
@@ -350,20 +356,31 @@ def hashes(lines, path, run):
             continue
         mh = re.match(r'^- (Хеш|Hash): ([0-9a-f]{12})\s*$', lines[i + 1])
         lib = os.path.join(os.path.dirname(path) or '.', mf.group(1))
-        if not mh or not os.path.exists(lib):
+        if not mh:
             continue
-        h = lib_hash(open(lib, encoding='utf-8').read())
+        key = os.path.normcase(os.path.abspath(lib))
+        if texts is not None and key in texts:
+            text = texts[key]
+        elif os.path.exists(lib):
+            with open(lib, encoding='utf-8') as f:
+                text = f.read()
+        else:
+            continue
+        h = lib_hash(text)
         if h != mh.group(2):
             lines[i + 1] = '- %s: %s' % (mh.group(1), h)
             n += 1
     return n
 
 
-def migrate_md(path, text, run):
+def migrate_md(path, text, run, hash_texts=None):
     lines = text.replace('\r\n', '\n').split('\n')
     w = W.get(file_lang(lines), W['ru'])
     n = header_line(lines) + parties(lines, w) + key_split(lines, w) + key_words(lines, w) \
-        + full_map(lines, w) + state_tables(lines, w) + accept_tables(lines, w) + list_table_gap(lines) + hashes(lines, path, run)
+        + full_map(lines, w) + state_tables(lines, w) + accept_tables(lines, w) + list_table_gap(lines)
+    # hash_texts=False — перенос без хешей (первый проход main: тексты библиотек ещё не готовы)
+    if hash_texts is not False:
+        n += hashes(lines, path, run, hash_texts)
     if not n:
         return None
     return '\n'.join(lines)
@@ -429,13 +446,68 @@ def write(path, old, new, run):
     return True
 
 
+def selftest(alula):
+    """Регрессионный тест (блокер приёмки 253): папка «машина + библиотеки» 0.27 переносится ОДНИМ запуском
+    (rc=0, мест 0, дерево пересобрано, хеш подключения — от новой библиотеки), повторный запуск ничего не
+    меняет (идемпотентность: rc=0, файлов 0). Образец — examples/chat, опущенный до 0.27 строкой версии."""
+    import contextlib, io as sio, shutil, tempfile
+    if not alula:
+        alula = os.path.normpath(os.path.join(HERE, '..', 'target', 'alula.exe'))
+    if not os.path.exists(alula):
+        sys.stderr.write('самотесту нужна программа alula (ключ --alula или переменная ALULA), нет: %s\n' % alula)
+        return 2
+    tmp = tempfile.mkdtemp(prefix='migrate228-selftest-')
+    try:
+        work = os.path.join(tmp, 'chat')
+        shutil.copytree(os.path.join(HERE, '..', 'examples', 'chat'), work)
+
+        def rw(path, fn):
+            with open(path, encoding='utf-8', newline='') as f:
+                t = fn(f.read())
+            with open(path, 'w', encoding='utf-8', newline='') as f:
+                f.write(t)
+
+        lib = os.path.join(work, 'libs', 'call_cancel.alula.md')
+        mac = os.path.join(work, 'chat.alula.md')
+        for p in (lib, mac):
+            rw(p, lambda t: t.replace('- alula_version: 0.28', '- alula_version: 0.27'))
+        with open(lib, encoding='utf-8') as f:
+            h = lib_hash(f.read())
+        rw(mac, lambda t: re.sub(r'^- Хеш: [0-9a-f]{12}$', '- Хеш: ' + h, t, flags=re.M))
+
+        out = sio.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc1 = main(['--alula', alula, work])
+        first = out.getvalue()
+        with open(lib, encoding='utf-8') as f:
+            want = '- Хеш: ' + lib_hash(f.read())
+        with open(mac, encoding='utf-8') as f:
+            body = f.read()
+        out = sio.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc2 = main(['--alula', alula, work])
+        second = out.getvalue()
+        ok = rc1 == 0 and rc2 == 0 and want in body and 'alula_version: 0.27' not in body \
+            and 'мест 0' in first and 'файлов 0' in second
+        if ok:
+            print('самотест migrate-alula-228: ок (первый запуск — rc=0, мест 0; повторный — rc=0, файлов 0)')
+            return 0
+        sys.stderr.write('САМОТЕСТ КРАСНЫЙ: rc1=%d rc2=%d хеш_новый=%s\n--- первый запуск:\n%s--- второй:\n%s'
+                         % (rc1, rc2, want in body, first, second))
+        return 1
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main(argv):
-    paths, dry, alula = [], False, os.environ.get('ALULA') or None
+    paths, dry, alula, selftest_mode = [], False, os.environ.get('ALULA') or None, False
     i = 0
     while i < len(argv):
         a = argv[i]
         if a == '--dry-run':
             dry = True
+        elif a == '--selftest':
+            selftest_mode = True
         elif a == '--alula':
             if i + 1 >= len(argv):
                 sys.stderr.write('--alula: нужен путь к программе alula\n')
@@ -448,8 +520,14 @@ def main(argv):
         else:
             paths.append(a)
         i += 1
+    if selftest_mode:
+        if paths:
+            sys.stderr.write('--selftest не берёт путей\n')
+            return 2
+        return selftest(alula)
     if not paths:
-        sys.stderr.write('запуск: python tools/migrate-alula-228.py [--dry-run] [--alula <программа alula>] <файл или папка>...\n')
+        sys.stderr.write('запуск: python tools/migrate-alula-228.py [--dry-run] [--alula <программа alula>] <файл или папка>...\n'
+                         '        python tools/migrate-alula-228.py --selftest [--alula <программа alula>] — регрессионный тест\n')
         return 2
     for p in paths:
         if not os.path.exists(p):
@@ -460,6 +538,7 @@ def main(argv):
         return 2
     run = Run(dry)
     trees = []
+    docs = []
     for path in candidates(paths):
         try:
             with open(path, encoding='utf-8', newline='') as f:
@@ -470,7 +549,17 @@ def main(argv):
         if path.endswith('.alula.json'):
             trees.append((path, text))
         elif re.search(r'^# ', text[:2000], re.M):
-            write(path, text, migrate_md(path, text, run), run)
+            docs.append((path, text))
+    # два прохода: сначала перенос всех файлов без хешей, затем хеши подключений — по НОВЫМ текстам библиотек
+    # этого же запуска (папка «машина + библиотеки» переносится одним запуском, rc=0; блокер приёмки 253)
+    planned = {}
+    for path, text in docs:
+        new = migrate_md(path, text, run, False)
+        planned[os.path.normcase(os.path.abspath(path))] = text if new is None else new
+    for path, text in docs:
+        base = planned[os.path.normcase(os.path.abspath(path))]
+        lines = base.split('\n')
+        write(path, text, '\n'.join(lines) if hashes(lines, path, run, planned) else base, run)
     for path, text in trees:
         md = path[:-len('.alula.json')] + '.alula.md'
         new = migrate_tree(path, text, run)

@@ -109,7 +109,7 @@ fn header_read(entries []TxEntry, mut cx TxCx) -> TxHeader {
         format = alula_version
         if old_lines.len() == 0 && !format_versions().contains(format) {
             ro shown = if format == "" { "не указана" } else { format }
-            note(cx, struct_error(1, 1, "версия языка ${shown}: переводчик читает Алулу 0.28 (строка `alula_version: 0.28`); переходного периода нет"))
+            note(cx, struct_error(1, 1, "версия языка ${shown}: переводчик читает Алулу 0.28 (строка `alula_version: 0.28`); переходного периода нет: файл 0.27 переносит tools/migrate-alula-228.py (2.26 — tools/migrate-alula-227.py)"))
         }
     }
     TxHeader { title, machine, version, format }

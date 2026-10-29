@@ -597,7 +597,7 @@ fn rn_machine(machine_json str, language str, copy_includes bool, registry Regis
             }
             // a tree of another version of the language is not written (no transition period, task 125): the file would say a version that the translator does not read
             if !seam && rj_gstr(root, "alula_version") != "" && rj_gstr(root, "alula_version") != "0.28" {
-                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 0.28 only is read and written (there is no transition period)"] }
+                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 0.28 only is read and written (there is no transition period: a tree of 0.27 is migrated by tools/migrate-alula-228.py, of 2.26 — by tools/migrate-alula-227.py)"] }
             }
             ro former = rn_former_note(root, "$")
             if former != "" { return RenderReport { text: "", notes: [former] } }

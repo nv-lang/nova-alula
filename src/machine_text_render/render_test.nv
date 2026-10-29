@@ -45,6 +45,11 @@ test "rn former key and former version refused" {
     ro refused = render_machine(older, "en")
     assert(refused.text == "")
     assert(refused.notes[0].contains("the version 0.28 only is read and written"))
+    // task 253 (приёмка): the refusal of a tree of 0.27 names the migration script
+    ro of27 = calc_json().replace("\"alula_version\": \"2.25\"", "\"alula_version\": \"0.27\"").replace("\"format\": \"machine/2\"", "\"kind\": \"machine\"").replace("\"version\": \"1\"", "\"revision\": 1")
+    ro refused27 = render_machine(of27, "ru")
+    assert(refused27.text == "")
+    assert(refused27.notes[0].contains("migrate-alula-228.py"))
 }
 
 test "rn eleven sections" {

@@ -101,6 +101,8 @@ test "in defs file" {
     assert(defs_with("# Функции: арифметика_цикла", "# Что-то: арифметика_цикла").errors.len() >= 1)
     assert(defs_says(defs_with("functions_version: 1", "functions_version: x"), "functions_version: <целое>"))
     assert(defs_says(defs_with("format: 2.25", "format: 2.3"), "формат файла определений должен быть 2.25"))
+    // task 253 (приёмка): the refusal of a defs file of 0.27 names the migration script
+    assert(defs_says(defs_with("format: 2.25", "alula_version: 0.27"), "migrate-alula-228.py"))
     assert(defs_says(defs_with("## Константы\n—\n\n", ""), "три раздела по порядку"))
     assert(defs_says(defs_with("## Типы\n—", "## Типы\n—\n\n## Подключения\n—"), "три раздела по порядку"))
     assert(defs_says(defs_with("functions_version: 1", "functions_version: 1\nлишнее: слово"), "в шапке файла определений"))

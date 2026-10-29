@@ -142,8 +142,11 @@ test "v227 format in the header is an error with the hint" {
     assert(says227(r227(m227().replace("- alula_version: 0.28", "- format: 2.26")), "с 0.27 — revision и alula_version"))
 }
 
-test "v227 an alula_version other than 0.27 is an error" {
+test "v227 an alula_version other than 0.28 is an error" {
     assert(!(first227(r227(m227().replace("- alula_version: 0.28", "- alula_version: 2.26"))) == "ok"))
+    // task 253 (приёмка): the refusal of a file of 0.27 names the migration script
+    assert(says227(r227(m227().replace("- alula_version: 0.28", "- alula_version: 0.27")), "tools/migrate-alula-228.py"))
+    assert(says227(r227(m227().replace("- alula_version: 0.28", "- alula_version: 2.26")), "tools/migrate-alula-228.py"))
 }
 
 test "v227 the order of the header is machine, revision, alula_version, language in the rendered file" {
