@@ -836,6 +836,7 @@ fn check_bind_shadow(mut cx Checker, ev EventPat, path str) -> () {
 fn sends_requests(kind PartyKind) -> bool {
     match kind {
         AgentParty => true
+        ServiceParty => true
         MachineParty => true
         _ => false
     }
@@ -2192,7 +2193,12 @@ fn check_parties(mut cx Checker) -> () {
         if pt.kind == GatekeeperParty && pt.setting == "" { cx_issue(cx, "${p}.setting", "a gatekeeper names the setting of the project") }
         if pt.kind == MachineParty && pt.nested == "" { cx_issue(cx, "${p}.nested", "a nested machine party names the machine") }
         if pt.kind != MachineParty && pt.nested != "" { cx_issue(cx, "${p}.nested", "only a machine party names a nested machine") }
-        if sends_requests(pt.kind) && pt.result_spec.len() == 0 { cx_issue(cx, "${p}.result", "an agent or a machine party declares the type of its result (format 2.2, the column kind: result)") }
+        if sends_requests(pt.kind) && pt.result_spec.len() == 0 { cx_issue(cx, "${p}.result", "an agent, service or machine party declares the type of its result (the column kind: result)") }
+        if pt.kind == ServiceParty {
+            if pt.setting != "" { cx_issue(cx, "${p}.setting", "a service has no gatekeeper setting") }
+            if pt.profile.len() > 0 { cx_issue(cx, "${p}.profile", "a service has no agent profile") }
+            if pt.progress.len() > 0 { cx_issue(cx, "${p}.progress", "streaming is outside the service contract") }
+        }
         if pt.counter == "" {
             // only a party of a free input has no counter: of the kind free_input (0.28, spec 1), in a tree of the seam of 2.25 — a human without a counter (AL-52);
             // the other parties name the datum of their attempt counter (rule 15)

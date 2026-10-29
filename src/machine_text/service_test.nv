@@ -1,0 +1,50 @@
+// service_test.nv - a service uses the shared request/result contract, in both languages.
+module alula.machine_text
+
+import std.text
+import alula.machine.{language_registry}
+import alula.machine_table.{load_machine}
+
+fn service_en() -> str => embed_str("../../spec/samples/service.en.alula.md")
+fn service_ru() -> str => embed_str("../../spec/samples/service.alula.md")
+
+fn service_json(text str) -> str {
+    ro report = translate_report(text)
+    if report.errors.len() > 0 { panic(report.errors[0].message) }
+    report.json
+}
+
+test "service bilingual" {
+    ro en = service_json(service_en())
+    assert(en.contains("\"kind\":\"service\""))
+    assert(en == service_json(service_ru()))
+}
+
+test "service result required" {
+    assert(translate_report(service_en().replace("service(result str)", "service")).errors.len() > 0)
+    ro bad = service_json(service_en().replace("service(result str)", "service(result Missing)"))
+    match load_machine(bad, language_registry()) {
+        Ok(m) => assert(false)
+        Err(issues) => assert(issues.len() > 0)
+    }
+}
+
+test "service no profile" {
+    ro bad = service_en().replace("| — | — | — | — | external_attempt |", "| — | — | \"model\" | — | external_attempt |")
+    assert(translate_report(bad).errors.len() > 0)
+}
+
+test "service counter required" {
+    assert(translate_report(service_en().replace("| external_attempt |", "| — |")).errors.len() > 0)
+}
+
+test "service roundtrip" {
+    ro json = service_json(service_en())
+    ro en = render_machine(json, "en")
+    assert(en.notes.len() == 0)
+    assert(service_json(en.text) == json)
+    ro ru = render_machine(json, "ru")
+    assert(ru.notes.len() == 0)
+    assert(ru.text.contains("сервис(итог строка)"))
+    assert(service_json(ru.text) == json)
+}

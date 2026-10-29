@@ -691,12 +691,13 @@ fn dec_data(root JsonObject, defs TypeDefs) -> Result[[]DataDef, LoadError] {
 fn party_kind_of(word str, path str) -> Result[PartyKind, LoadError] {
     match word {
         "agent" => Ok(AgentParty)
+        "service" => Ok(ServiceParty)
         "human" => Ok(HumanParty)
         "enhanced" => Ok(EnhancedParty)
         "gatekeeper" => Ok(GatekeeperParty)
         "free_input" => Ok(FreeInputParty)
         "machine" => Ok(MachineParty)
-        _ => Err(le(path, "the kind of a party must be agent, human, enhanced, gatekeeper, free_input or machine, got ${word}"))
+        _ => Err(le(path, "the kind of a party must be agent, service, human, enhanced, gatekeeper, free_input or machine, got ${word}"))
     }
 }
 

@@ -154,7 +154,7 @@
       "properties": {
         "name": { "type": "string" },
         "id": { "type": "string", "description": "the Latin id of the party (in the id of a request); empty for a party used with a set" },
-        "kind": { "enum": ["agent", "human", "enhanced", "gatekeeper", "free_input", "machine"] },
+        "kind": { "enum": ["agent", "service", "human", "enhanced", "gatekeeper", "free_input", "machine"] },
         "profile": { "$ref": "#/$defs/expr" },
         "signals": { "type": "array", "items": { "$ref": "#/$defs/signal_def" }, "description": "the signals of a party (human, enhanced, gatekeeper), declared in the column signals of the table of the parties (format 2.13, AL-38)" },
         "progress": { "type": "array", "items": { "$ref": "#/$defs/signal_def" }, "description": "the parts of an answer of an agent or of a machine (the request stays open)" },
@@ -163,7 +163,7 @@
         "input_type": { "$ref": "#/$defs/type", "description": "the record type of the input of the call of a nested machine in a tree of the seam of 2.25 (kind machine)" },
         "input": { "type": "array", "items": { "$ref": "#/$defs/field" }, "description": "the fields of the ## Вход of the called machine (kind machine, 0.27, AL-146): the fields of its request" },
         "callee_types": { "type": "array", "items": { "type": "string" }, "description": "the JSON names of the types that came into the tree with the called machine (kind machine, 0.27, AL-146): the generator does not write them in ## Типы" },
-        "result": { "$ref": "#/$defs/type", "description": "the type of the result of an agent or of a machine (the answer)" },
+        "result": { "$ref": "#/$defs/type", "description": "the type of the result of an agent, service or machine (the answer)" },
         "parse": {
           "type": "object", "additionalProperties": false, "required": ["primitive"],
           "properties": {

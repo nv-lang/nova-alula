@@ -1,0 +1,108 @@
+// service_test.nv - the external service is a request party, not a gate or an agent.
+module alula.machine_run
+
+import std.text
+import alula.engine.{Incoming, EventKind}
+import alula.machine_text.{translate_report}
+import alula.machine.{language_registry}
+
+fn service_machine() -> AlulaMachine {
+    service_machine_from(embed_str("../../spec/samples/service.en.alula.md"))
+}
+
+fn service_machine_from(text str) -> AlulaMachine {
+    ro report = translate_report(text)
+    if report.errors.len() > 0 { panic(report.errors[0].message) }
+    match load_alula_machine(report.json, language_registry()) {
+        Ok(m) => m
+        Err(e) => panic(e)
+    }
+}
+
+fn service_started(m AlulaMachine) -> Out => run1(m, m.initial(), start_with("{\"operation_key\":\"order-17\"}"))
+
+test "service sends request" {
+    ro m = service_machine()
+    ro first = service_started(m)
+    assert(first.state.name == "Wait")
+    assert(summary(first.orders).contains("send:external:"))
+    assert(summary(first.orders).contains("order-17"))
+    assert(summary(first.orders).contains(":5000"))
+    assert(datum_json(first.state, "external_attempt") == "1")
+}
+
+test "service typed answer" {
+    ro m = service_machine()
+    ro first = service_started(m)
+    ro answered = run1(m, first.state, stamped(EventKind.Answered, "answer", Some("external-1"), "ready"))
+    assert(answered.state.name == "Done")
+    assert(datum_json(answered.state, "result") == "\"ready\"")
+    assert(summary(answered.orders).contains("finish:answer:ready"))
+}
+
+test "service wrong request" {
+    ro m = service_machine()
+    // Correlation is the engine's boundary, before the interpreter sees an event.
+    ro checked = run_text(m, `{"kind":"test","machine":"ServiceCall","name":"service correlation","start_at":1000,"steps":[
+{"do":"feed","event":{"kind":"start","input":{"operation_key":"order-17"}},"expect":{"state":"Wait","open":["external-1"],"data":{"result":""}}},
+{"do":"feed","event":{"kind":"answer","request":"other-1","input":"wrong"},"expect":{"state":"Wait","open":["external-1"],"data":{"result":""}}},
+{"do":"feed","event":{"kind":"answer","request":"external-1","input":"ready"},"expect":{"state":"Done","open":[],"data":{"result":"ready"},"outcome":"answer:ready"}},
+{"do":"feed","event":{"kind":"answer","request":"external-1","input":"changed"},"expect":{"state":"Done","open":[],"data":{"result":"ready"},"outcome":"answer:ready"}}
+]}`)
+    if !run_ok(checked) { panic(report_text(checked)) }
+}
+
+test "service failure unknown" {
+    ro m = service_machine()
+    ro first = service_started(m)
+    ro failed = run1(m, first.state, stamped(EventKind.Refused, "failure", Some("external-1"), "TransportUnavailable"))
+    assert(failed.state.name == "Unknown")
+    assert(!summary(failed.orders).contains("send:"))
+    mut explained = false
+    for order in failed.orders {
+        match order {
+            Finish(conclusion) => { explained = conclusion.text.contains("reconciled") }
+            _ => ()
+        }
+    }
+    assert(explained)
+}
+
+test "service late answer" {
+    ro m = service_machine()
+    ro first = service_started(m)
+    ro failed = run1(m, first.state, stamped(EventKind.Refused, "failure", Some("external-1"), "Timeout"))
+    assert(failed.state.name == "Unknown")
+    ro late = run1(m, failed.state, stamped(EventKind.Answered, "answer", Some("external-1"), "ready"))
+    assert(!late.moved)
+    assert(late.state.name == "Unknown")
+    assert(datum_json(late.state, "result") == "\"\"")
+}
+
+test "service waiting snapshot" {
+    ro m = service_machine()
+    ro first = service_started(m)
+    match m.decode_state(m.encode_state(first.state)) {
+        Some(back) => {
+            assert(m.encode_state(back) == m.encode_state(first.state))
+            ro answered = run1(m, back, stamped(EventKind.Answered, "answer", Some("external-1"), "ready"))
+            assert(answered.state.name == "Done")
+            ro repeated = run1(m, answered.state, stamped(EventKind.Answered, "answer", Some("external-1"), "changed"))
+            assert(!repeated.moved)
+            assert(datum_json(repeated.state, "result") == "\"ready\"")
+            assert(!summary(repeated.orders).contains("finish:"))
+        }
+        None => assert(false)
+    }
+}
+
+test "service rejects wrong type" {
+    ro source = embed_str("../../spec/samples/service.en.alula.md").replace("service(result str)", "service(result int)").replace("| result | str | \"\" |", "| result | int | 0 |").replace("- Result: str", "- Result: int")
+    ro m = service_machine_from(source)
+    ro first = service_started(m)
+    ro bad = run1(m, first.state, stamped(EventKind.Answered, "answer", Some("external-1"), "not-an-integer"))
+    assert(!bad.moved)
+    assert(bad.state.name == "Wait")
+    assert(datum_json(bad.state, "result") == "0")
+    assert(summary(bad.orders) == "log:event_malformed(name=answer)")
+}

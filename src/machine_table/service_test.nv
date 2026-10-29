@@ -1,0 +1,32 @@
+// service_test.nv - a service is a distinct, typed request party with no gate or nested-machine configuration.
+module alula.machine_table
+
+import std.text
+
+fn service_tree() -> str => `{"kind":"machine","machine":"ServiceCheck","revision":1,"alula_version":"0.28",
+"parties":[{"name":"external","id":"external","kind":"service","result":"text","counter":"external_attempt"}],
+"initial":"Wait","states":[{"name":"Wait","kind":"appeal","party":"external","rows":[{"n":1,"event":{"kind":"answer"},"to":"Done"}]},{"name":"Done","kind":"end"}],
+"ends":{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"lit","value":"ok"}}}]}}`
+
+test "service loads" {
+    ro issue = first_issue(service_tree())
+    if issue != "ok" { panic(issue) }
+}
+
+test "service requires result" {
+    assert(!ok_text(service_tree().replace("\"result\":\"text\",\"counter\"", "\"counter\"")))
+    assert(!ok_text(service_tree().replace("\"result\":\"text\",\"counter\"", "\"result\":\"Missing\",\"counter\"")))
+}
+
+test "service requires counter" {
+    assert(!ok_text(service_tree().replace(",\"counter\":\"external_attempt\"", "")))
+}
+
+test "service rejects configuration" {
+    ro tree = service_tree()
+    assert(!ok_text(tree.replace("\"kind\":\"service\"", "\"kind\":\"service\",\"setting\":\"mode\"")))
+    assert(!ok_text(tree.replace("\"kind\":\"service\"", "\"kind\":\"service\",\"nested\":\"Child\"")))
+    assert(!ok_text(tree.replace("\"kind\":\"service\"", "\"kind\":\"service\",\"profile\":{\"op\":\"lit\",\"value\":\"model\"}")))
+    assert(!ok_text(tree.replace("\"kind\":\"service\"", "\"kind\":\"service\",\"signals\":[{\"name\":\"done\"}]")))
+    assert(!ok_text(tree.replace("\"kind\":\"service\"", "\"kind\":\"service\",\"progress\":[{\"name\":\"chunk\"}]")))
+}

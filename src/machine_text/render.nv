@@ -283,7 +283,7 @@ fn rn_sec_data_226(mut cx RnCx, root RJ) -> []str {
 
 fn rn_party_kind(mut cx RnCx, p RJ, path str) -> str {
     ro kind = rj_gstr(p, "kind")
-    if kind == "agent" { return "${rn_kw(cx, "kind_party", "agent")}(${rn_kw(cx, "kind_party", "result")} ${rn_type(cx, rj_gstr(p, "result"))})" }
+    if kind == "agent" || kind == "service" { return "${rn_kw(cx, "kind_party", kind)}(${rn_kw(cx, "kind_party", "result")} ${rn_type(cx, rj_gstr(p, "result"))})" }
     ro gate = "(${rn_kw(cx, "kind_party", "result")} ${rn_kw(cx, "type", "GateOutcome")})"
     if kind == "human" || kind == "enhanced" { return "${rn_kw(cx, "kind_party", kind)}${gate}" }
     // 0.28: the gatekeeper and the free input are kinds without brackets; the setting of the gatekeeper and the parse of a machine are columns of the table.

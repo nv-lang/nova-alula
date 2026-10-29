@@ -264,7 +264,7 @@ the types are written as the format writes them (`int>=0`, `?text`, `[]Finding`,
 | `constants`, `params` | `name`, `type`, `value` / `default` (+ `project_key`: the key after `проект.` of the column "project override", format 2.7); evaluated in order when the machine is built (1, 8) |
 | `input` | `fields`, `invariants` - the input of a call; the event `start` carries it as an object (1) |
 | `data` | `name`, `type`, `initial` (`{"expr": E}` or `{"from_input": "field"}`), `monotonic` (`true`, or `{"bound": E}` for `<= E`), `writes` (`rows`, `mechanics`, `rows_and_mechanics`; the data of a library carry no mark, 0.9.1); a name `x[*].f` is a path datum that carries only the marks (2) |
-| `parties` | `name`, `id`, `kind` (`agent`, `human`, `enhanced`, `gatekeeper`, `machine`), `signals` (the signals of the party: `name`, `fields`; `words` before, AL-38, refused by name), `progress` (parts of an answer), `result` (the type of the answer, required for agent and machine), `counter` (the datum of the attempt counter, required), `profile`, `setting`, `nested` (1) |
+| `parties` | `name`, `id`, `kind` (see specification section 1), `signals` (the signals of the party: `name`, `fields`; `words` before, AL-38, refused by name), `progress` (parts of an answer), `result` (the type of the answer, required for agent, service and machine), `counter` (the datum of the attempt counter, required except for free input), `profile`, `setting`, `nested` (1) |
 | `signals` | signals of the machine that belong to no party (stop, cancel) (4.3 `signal`) |
 | `definitions`, `includes` | pure functions `name(params) -> result = body`; the lines `definitions: <name> version <N> hash <hex12>` (8) |
 | `initial`, `error_end` | the initial state; the end ERROR (A4) |

@@ -15,6 +15,7 @@ export type LoadError { path str, message str }
 /// PartyKind: the kind of a party (format section 1). `Gatekeeper` is "human or agent by a setting of the project" (the column `настройка` since 0.28); `FreeInput` is a human without gates and without a counter (0.28).
 export type PartyKind enum
     | AgentParty
+    | ServiceParty
     | HumanParty
     | EnhancedParty
     | GatekeeperParty
@@ -174,6 +175,7 @@ export fn builtin_names() -> []str => ["input", "event", "party", "state", "trac
 export fn party_kind_word(kind PartyKind) -> str {
     match kind {
         AgentParty => "agent"
+        ServiceParty => "service"
         HumanParty => "human"
         EnhancedParty => "enhanced"
         GatekeeperParty => "gatekeeper"

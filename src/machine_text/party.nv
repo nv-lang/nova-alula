@@ -204,6 +204,8 @@ fn party_kind(cell TxCell, line int, mut cx TxCx) -> Result[TxKind, TranslateErr
         }
         if p_eat_kw(p, words, "kind_party", "agent") {
             kind = "agent"
+        } else if p_eat_kw(p, words, "kind_party", "service") {
+            kind = "service"
         } else if p_eat_kw(p, words, "kind_party", "human") {
             // the former record of the gatekeeper `human или agent по настройке <имя>(итог …)` is an error with a hint (section 10)
             if p_tok(p).text == "или" || p_tok(p).text == "or" { return Err(p_fail(p, "с 0.28 вратарь — вид `${kw(words, "kind_party", "gatekeeper")}`, настройка — столбец `${kw(words, "column", "setting")}`")) }
@@ -211,7 +213,7 @@ fn party_kind(cell TxCell, line int, mut cx TxCx) -> Result[TxKind, TranslateErr
         } else if p_eat_kw(p, words, "kind_party", "enhanced") {
             kind = "enhanced"
         } else {
-            return Err(tx_err(w.line, w.col, "syntax", "вид стороны: ${kw(words, "kind_party", "agent")}, ${kw(words, "kind_party", "human")}, ${kw(words, "kind_party", "enhanced")}, ${kw(words, "kind_party", "gatekeeper")}, ${kw(words, "kind_party", "free_input")}, ${kw(words, "kind_party", "machine")}"))
+            return Err(tx_err(w.line, w.col, "syntax", "вид стороны: ${kw(words, "kind_party", "agent")}, ${kw(words, "kind_party", "service")}, ${kw(words, "kind_party", "human")}, ${kw(words, "kind_party", "enhanced")}, ${kw(words, "kind_party", "gatekeeper")}, ${kw(words, "kind_party", "free_input")}, ${kw(words, "kind_party", "machine")}"))
         }
     } else {
         // the seam of 2.25: the gatekeeper is `human или agent по настройке <имя>(итог …)` with the setting in the cell of the kind (the word of the layer of 2.25)
@@ -234,7 +236,7 @@ fn party_kind(cell TxCell, line int, mut cx TxCx) -> Result[TxKind, TranslateErr
     p_expect(p, "(")?
     p_expect_kw(p, words, "kind_party", "result")?
     mut result = ""
-    if kind == "agent" {
+    if kind == "agent" || kind == "service" {
         result = ty_parse(p, cx)?
     } else {
         if !p_eat_kw(p, words, "type", "GateOutcome") { return Err(p_fail(p, "у этой стороны итог — `${kw(words, "type", "GateOutcome")}`")) }
@@ -265,6 +267,9 @@ fn party_row_in(r TxEntry, mut cx TxCx, with_parts bool) -> Result[TxPartyRow, T
     ro n = cell_name(r.cells[0], r.line)?
     ro id = if r.cells[1].text == "—" { "" } else { r.cells[1].text }
     ro k = party_kind(r.cells[2], r.line, cx)?
+    if k.kind == "service" && r.cells[5].text != "—" {
+        return Err(tx_err(r.line, r.cells[5].col, "structure", "у сервиса профиль — `—`: транспорт и реализацию предоставляет хозяин"))
+    }
     ro en = party_en(cx, n, id)
     if pair_has(cx.env.parties, n.text) { return Err(tx_err(n.line, n.col, "name", "сторона `${n.text}` уже объявлена")) }
     pair_add(cx.env.parties, n.text, en)
