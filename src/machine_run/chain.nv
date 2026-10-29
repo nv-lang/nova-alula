@@ -4,7 +4,7 @@ module alula.machine_run
 import std.text
 import std.encoding.json.{Json, JsonValue, JsonObject}
 import alula.engine.{Incoming, EventKind, Environment, Transition, SendOrder, CancelOrder, FailCode, JournalParam, journal_event, param, Go, Stay}
-import alula.machine.{Value, Null, Int, Bool, Text, List, Record, record_get, RecordField, Binding, PrimitiveHost, PrimitiveFailed, TypeSpec, TypeDefs, RecordType, OptionalType, Lit, check_call_args, value_json, value_to_json, value_from_json, make_record, check_value, enum_value, spec_text}
+import alula.machine.{Value, Null, Int, Bool, Text, List, Record, record_get, RecordField, Binding, PrimitiveHost, PrimitiveFailed, TypeSpec, TypeDefs, RecordType, OptionalType, Lit, check_call_args, value_json, value_to_json, value_from_json, make_record, check_value, enum_value, spec_text, find_primitive}
 import alula.machine_table.{StateDef, Goto, PartyDef, MachineDef, LValue, KeyStep, FieldStep, MachineParty, find_state, find_party, find_data}
 import alula.machine_table.{ToState}
 
@@ -681,9 +681,26 @@ fn apply_parse(ctx Ctx, party PartyDef, mut host PrimitiveHost) -> Result[Parsed
     }
     match host.call_primitive(pr.primitive, args) {
         Ok(v) => {
-            match check_value(pr.result, v, ctx.def.types) {
-                Ok(u) => Ok(ParsedOk(v))
-                Err(x) => Err(defect_fault("type_mismatch", "the value of the parse ${pr.primitive} is not of the type ${spec_text(pr.result)}: ${x.path} ${x.message}"))
+            // the type of the result of the parse: of a tree of the seam of 2.25 — the type after `->` of the tree; of a tree of 0.28 — the result of the declaration
+            // of the function in the registry of the host (the tree holds the type not)
+            mut spec = pr.result
+            match spec {
+                Some(r) => ()
+                None => {
+                    match find_primitive(ctx.table.registry, pr.primitive) {
+                        Some(pf) => { spec = Some(pf.result) }
+                        None => ()
+                    }
+                }
+            }
+            match spec {
+                Some(s) => {
+                    match check_value(s, v, ctx.def.types) {
+                        Ok(u) => Ok(ParsedOk(v))
+                        Err(x) => Err(defect_fault("type_mismatch", "the value of the parse ${pr.primitive} is not of the type ${spec_text(s)}: ${x.path} ${x.message}"))
+                    }
+                }
+                None => Ok(ParsedOk(v))
             }
         }
         Err(x) => {

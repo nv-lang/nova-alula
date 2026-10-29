@@ -199,7 +199,8 @@ fn rn_ty_read(cx RnCx, mut t RnTy) -> str {
         ro value = rn_ty_read(cx, t)
         rn_ty_ws(t)
         rn_ty_eat(t, '}')
-        ro word = if full { rn_kw(cx, "type", "full map") } else { rn_kw(cx, "type", "map") }
+        // 0.28: the word is `полный_словарь`; the seam of 2.25 writes `полный словарь` of two words (the layer of 2.25)
+        ro word = if full { rn_kw(cx, "type", if cx.v226 { "full_map" } else { "full map" }) } else { rn_kw(cx, "type", "map") }
         return "${word}[${key}, ${value}]"
     }
     mut j = t.pos
@@ -830,8 +831,8 @@ fn rn_action(mut cx RnCx, a RJ, locals []str) -> str {
     "—"
 }
 
-/// The actions of a list, one after another with `; `; a `let` binds its name for the actions after it.
-fn rn_actions(mut cx RnCx, items []RJ, locals []str) -> RnActs {
+/// The actions of a list, one after another with the separator `sep` (`; ` inside a block or a value line, `<br>` in a cell of a table of 0.28); a `let` binds its name for the actions after it.
+fn rn_actions_in(mut cx RnCx, items []RJ, locals []str, sep str) -> RnActs {
     if items.len() == 0 { return RnActs { text: "—", locals } }
     mut parts = []str.new()
     mut inner = rn_copy(locals)
@@ -839,8 +840,13 @@ fn rn_actions(mut cx RnCx, items []RJ, locals []str) -> RnActs {
         parts.push(rn_action(cx, a, inner))
         if rj_gstr(a, "do") == "bind" { inner = rn_with(inner, rj_gstr(a, "name")) }
     }
-    RnActs { text: parts.join("; "), locals: inner }
+    RnActs { text: parts.join(sep), locals: inner }
 }
+
+fn rn_actions(mut cx RnCx, items []RJ, locals []str) -> RnActs => rn_actions_in(cx, items, locals, "; ")
+
+/// The separator of the actions of a cell of a table: `<br>` since 0.28 (the seam of 2.25 writes `; `).
+fn rn_cell_sep(cx RnCx) -> str => if cx.v226 { "<br>" } else { "; " }
 
 /// A list of actions given as a JSON text, in the language.
 export fn render_actions_in(json str, lang str, locals []str) -> str {

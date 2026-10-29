@@ -1,7 +1,7 @@
 # Библиотека: арифметика_цикла
 
 - library: cycle_arithmetic
-- alula_version: 0.27
+- alula_version: 0.28
 
 ## Функции
 

@@ -84,14 +84,14 @@ test "wd not on records" {
 
 test "wd table format" {
     assert(ok_text(tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"alula_version\":\"2.25\",")))
-    assert(says(tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"alula_version\":\"2.7\","), "must be 0.27"))
-    assert(says(tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"alula_version\":\"2.11\","), "must be 0.27"))
+    assert(says(tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"alula_version\":\"2.7\","), "must be 0.28"))
+    assert(says(tiny().replace("\"format\":\"machine/2\",", "\"format\":\"machine/2\",\"alula_version\":\"2.11\","), "must be 0.28"))
     assert(alula_versions().len() == 1)
 }
 
 test "wd schema" {
     ro schema = text_of_file(schema_files(), "machine-2.schema.json")
-    assert(schema.contains("\"0.27\""))
+    assert(schema.contains("\"0.28\""))
     ro variant = def_of("variant_def")
     assert(same_names(property_names(variant), ["name", "cases", "values"]))
     assert(schema.contains("the values of an enum"))

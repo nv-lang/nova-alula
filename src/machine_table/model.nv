@@ -12,12 +12,13 @@ import alula.machine.{Expr, FieldExpr, TypeSpec, TypeDefs, FieldDef, Bind, DefFn
 /// LoadError: why a machine is refused, with the place in the JSON (`$.states[2].rows[0].event`).
 export type LoadError { path str, message str }
 
-/// PartyKind: the kind of a party (format section 1). `Gatekeeper` is "human or agent by a setting of the project".
+/// PartyKind: the kind of a party (format section 1). `Gatekeeper` is "human or agent by a setting of the project" (the column `настройка` since 0.28); `FreeInput` is a human without gates and without a counter (0.28).
 export type PartyKind enum
     | AgentParty
     | HumanParty
     | EnhancedParty
     | GatekeeperParty
+    | FreeInputParty
     | MachineParty
 
 /// WriteKind: who changes a datum (format section 2, the column `writes`).
@@ -102,9 +103,10 @@ export type InputField { field str, value Expr, to_party bool }
 /// SignalDef: a signal of a party or of the machine, with its fields; a part of an answer (`progress`) has the same shape and is kept in the same type.
 export type SignalDef { name str, fields []FieldDef }
 
-/// ParseDef: the `разбор` of a party of the kind `machine` (format section 1): the volatile primitive that turns the answer into the value of the answer (one function per role, AL-131:
-/// it takes the answer only, the tree holds no literal of a role) and the type of its result.
-export type ParseDef { primitive str, result TypeSpec }
+/// ParseDef: the `разбор` of a party of the kind `machine` (format section 1, the column `разбор` since 0.28): the volatile primitive that turns the answer into the value of the
+/// answer (one function per role, AL-131: it takes the answer only, the tree holds no literal of a role). 0.28: the tree holds no type of the result — the type is the result of the
+/// declaration of the function, the check and the runner take it from the registry of the host; a tree of the seam of 2.25 keeps the type after `->` (`result` is of it).
+export type ParseDef { primitive str, result Option[TypeSpec] }
 
 /// PartyDef: a party (format section 1); `profile` is zero or one expression. A party of the kind `machine` names the nested machine (`nested`, a name of the registry of the caller)
 /// and may have `parse` (zero or one). Since 0.27 (AL-146) the types come from the called machine: `input_fields` are the fields of its `## Вход` (the key `input` of the party), `result_spec`
@@ -175,6 +177,7 @@ export fn party_kind_word(kind PartyKind) -> str {
         HumanParty => "human"
         EnhancedParty => "enhanced"
         GatekeeperParty => "gatekeeper"
+        FreeInputParty => "free_input"
         MachineParty => "machine"
     }
 }

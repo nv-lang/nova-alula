@@ -83,14 +83,17 @@ fn rn_destination(cx RnCx, row RJ) -> str {
     if to == "@previous" { text = rn_kw(cx, "destination", "previous") }
     if to == "@same" { text = rn_kw(cx, "destination", "same") }
     if to == "@prepare_return" { text = rn_kw(cx, "destination", "preparation_return") }
-    match rj_get(row, "restart") {
-        Some(r) => {
-            match r {
-                RBool(b) => { if b { text = "${text}, ${rn_kw(cx, "destination", "rerun")}" } }
-                _ => ()
+    // 0.28: the restart mode is the column `заново`, the "Where" holds it not; the seam of 2.25 writes the former suffix (the word `запуск заново` is of the layer of 2.25)
+    if !cx.v226 {
+        match rj_get(row, "restart") {
+            Some(r) => {
+                match r {
+                    RBool(b) => { if b { text = "${text}, ${rn_kw(cx, "destination", "rerun")}" } }
+                    _ => ()
+                }
             }
+            None => ()
         }
-        None => ()
     }
     text
 }
@@ -171,9 +174,42 @@ fn rn_rows_226(mut cx RnCx, rows []RJ, kind str, locals []str) -> []str {
             cells.push(if is_else { rn_kw(cx, "event", "else") } else { cond })
         }
         ro acts = rj_garr(r, "actions")
-        cells.push(if acts.len() == 0 { RN_EMPTY } else { rn_actions(cx, acts, row_locals).text })
+        cells.push(if acts.len() == 0 { RN_EMPTY } else { rn_actions_in(cx, acts, row_locals, "<br>").text })
         cells.push(rn_destination(cx, r))
         out.push(RnRow { cells })
+    }
+    // 0.28: the mode "заново" is the optional last column of the table (written when at least one row has it)
+    mut has_rerun = false
+    for r in rows {
+        match rj_get(r, "restart") {
+            Some(rb) => match rb {
+                RBool(b) => { if b { has_rerun = true } }
+                _ => ()
+            }
+            None => ()
+        }
+    }
+    if has_rerun {
+        mut out2 = []RnRow.new()
+        for r in out {
+            mut cells2 = r.cells
+            cells2.push("")
+            out2.push(RnRow { cells: cells2 })
+        }
+        mut k = 0
+        for r in rows {
+            match rj_get(r, "restart") {
+                Some(rb) => match rb {
+                    RBool(b) => { if b { out2[k].cells[out2[k].cells.len() - 1] = rn_kw(cx, "enum_value", "yes") } }
+                    _ => ()
+                }
+                None => ()
+            }
+            k += 1
+        }
+        mut keys = rows_columns(kind, true)
+        keys.push("rerun")
+        return rn_table(rn_cols(cx, keys), out2)
     }
     rn_table(rn_cols(cx, rows_columns(kind, true)), out)
 }
@@ -205,18 +241,33 @@ fn rn_state(mut cx RnCx, st RJ, index int) -> []str {
     out.push("### ${rj_gstr(st, "name")} — ${rn_kw(cx, "kind_state", kind)}")
     if kind == "appeal" {
         ro party_word = rj_gstr(st, "party")
+        // 0.28: one key per item of the list: `Набор` is a line of its own; the seam of 2.25 writes `; набор: …` in the line of the party (the word of the layer of 2.25)
         mut party_line = "- ${rn_kw(cx, "key", "Party")}: ${party_word}"
         match rj_get(st, "set") {
-            Some(e) => { party_line = "${party_line}; ${rn_kw(cx, "key", "set")}: ${rn_expr(cx, e, []str.new())}" }
+            Some(e) => {
+                if cx.v226 {
+                    out.push(party_line)
+                    out.push("- ${rn_kw(cx, "key", "Set")}: ${rn_expr(cx, e, []str.new())}")
+                    party_line = ""
+                } else {
+                    party_line = "${party_line}; ${rn_kw(cx, "key", "set")}: ${rn_expr(cx, e, []str.new())}"
+                }
+            }
             None => ()
         }
-        out.push(party_line)
+        if party_line != "" { out.push(party_line) }
         match rj_get(st, "silence") {
             Some(e) => { out.push("- ${rn_kw(cx, "key", "Idle term")}: ${rn_expr(cx, e, []str.new())}") }
             None => ()
         }
         if rj_gstr(st, "edits") != "" {
-            out.push("- ${rn_kw(cx, "key", "Edits")}: ${rn_global(cx, rj_gstr(st, "edits"))}; ${rn_kw(cx, "key", "check")}: ${rj_gstr(st, "edit_check")}")
+            // 0.28: `Проверка` is an item of its own; the seam of 2.25 writes `; проверка: …` in the line of `Правит` (the word of the layer of 2.25)
+            if cx.v226 {
+                out.push("- ${rn_kw(cx, "key", "Edits")}: ${rn_global(cx, rj_gstr(st, "edits"))}")
+                if rj_gstr(st, "edit_check") != "" { out.push("- ${rn_kw(cx, "key", "Check")}: ${rj_gstr(st, "edit_check")}") }
+            } else {
+                out.push("- ${rn_kw(cx, "key", "Edits")}: ${rn_global(cx, rj_gstr(st, "edits"))}; ${rn_kw(cx, "key", "check")}: ${rj_gstr(st, "edit_check")}")
+            }
         }
         match rj_get(st, "form_returns") {
             Some(n) => { out.push("- ${rn_kw(cx, "key", "Form returns")}: ${rj_gscalar(st, "form_returns")}") }
@@ -259,7 +310,7 @@ fn rn_state(mut cx RnCx, st RJ, index int) -> []str {
                     Some(e) => rn_event(cx, e, []str.new())
                     None => RnEvent { text: "—", locals: []str.new() }
                 }
-                rows.push(RnRow { cells: [ev.text, rn_actions(cx, rj_garr(a, "actions"), ev.locals).text] })
+                rows.push(RnRow { cells: [ev.text, rn_actions_in(cx, rj_garr(a, "actions"), ev.locals, rn_cell_sep(cx)).text] })
             }
             rn_add(out, rn_table(rn_cols(cx, ["event", "actions"]), rows))
         }
@@ -296,7 +347,12 @@ fn rn_state(mut cx RnCx, st RJ, index int) -> []str {
 
 fn rn_sec_states(mut cx RnCx, root RJ) -> []str {
     mut out = []str.new()
-    out.push("${rn_kw(cx, "key", "Initial state")}: ${rj_gstr(root, "initial")}")
+    // 0.28: the initial state is the first item of the list of the section
+    if cx.v226 {
+        out.push("- ${rn_kw(cx, "key", "Initial state")}: ${rj_gstr(root, "initial")}")
+    } else {
+        out.push("${rn_kw(cx, "key", "Initial state")}: ${rj_gstr(root, "initial")}")
+    }
     mut at = 0
     for st in rj_garr(root, "states") {
         out.push("")
@@ -538,8 +594,8 @@ fn rn_machine(machine_json str, language str, copy_includes bool, registry Regis
                 return RenderReport { text: "", notes: ["the key `portolan_version` is the former name of `alula_version` (the language is called Alula since the format 2.14; there is no transition period)"] } // guard-allow(legacy-name): the message names the former key
             }
             // a tree of another version of the language is not written (no transition period, task 125): the file would say a version that the translator does not read
-            if !seam && rj_gstr(root, "alula_version") != "" && rj_gstr(root, "alula_version") != "0.27" {
-                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 0.27 only is read and written (there is no transition period)"] }
+            if !seam && rj_gstr(root, "alula_version") != "" && rj_gstr(root, "alula_version") != "0.28" {
+                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 0.28 only is read and written (there is no transition period)"] }
             }
             ro former = rn_former_note(root, "$")
             if former != "" { return RenderReport { text: "", notes: [former] } }
@@ -561,7 +617,7 @@ fn rn_machine(machine_json str, language str, copy_includes bool, registry Regis
                 // the order of the header of 0.27 (1b (а), AL-144): machine, revision, alula_version, language
                 ro revision = rj_gscalar(shown, "revision")
                 out.push("- revision: ${if revision == "" { "1" } else { revision }}")
-                out.push("- alula_version: 0.27")
+                out.push("- alula_version: 0.28")
             }
             out.push("- language: ${language}")
             out.push("")

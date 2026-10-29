@@ -39,7 +39,7 @@ fn has_row(rows []TxWord, kind str, key str) -> bool {
 
 test "wt table shape" {
     ro rows = method_rows()
-    assert(rows.len() == 219)
+    assert(rows.len() == 221)
     for k in all_kinds() { assert(kind_count(rows, k) > 0) }
     for r in rows {
         assert(all_kinds().contains(r.kind))
@@ -81,13 +81,13 @@ test "wt the former product layer is in the layer of 2.25" {
 
 test "wt all rows loaded" {
     // the table of 0.27 and the layer of 2.25 (the seam of task 195, with the former product layer since task 197 and the former words of 2.26 since task 244)
-    assert(words_rows().len() == 219 + 32)
+    assert(words_rows().len() == 221 + 38)
 }
 
 test "wt the layer of 2.25 holds only the words that 2.26 removed" {
     mut layer = []TxWord.new()
     words_read(keywords_225_text(), layer)
-    assert(layer.len() == 32)
+    assert(layer.len() == 38)
     ro method = method_rows()
     for r in layer {
         for m in method {
@@ -114,10 +114,16 @@ test "wt kw ru" {
     assert(kw(w, "action", "for") == "для")
     assert(kw(w, "action", "in") == "из")
     assert(kw(w, "type", "bool") == "булево")
-    assert(kw(w, "type", "full map") == "полный словарь")
-    assert(kw(w, "kind_party", "human or agent by setting") == "human или agent по настройке")
-    assert(kw(w, "destination", "same") == "то же")
-    assert(kw(w, "destination", "rerun") == "запуск заново")
+    assert(kw(w, "type", "full_map") == "полный_словарь")
+    assert(kw(w, "kind_party", "gatekeeper") == "gatekeeper")
+    assert(kw(w, "kind_party", "free_input") == "свободный_ввод")
+    assert(kw(w, "destination", "same") == "то_же")
+    assert(kw(w, "column", "rerun") == "заново")
+    assert(kw(w, "column", "setting") == "настройка")
+    assert(kw(w, "column", "parse") == "разбор")
+    assert(kw(w, "key", "Set") == "Набор")
+    assert(kw(w, "key", "Check") == "Проверка")
+    assert(kw(w, "key", "As") == "Экземпляр")
     assert(kw(w, "column", "№") == "№")
     assert(kw(w, "header", "machine") == "machine")
 }
@@ -313,7 +319,7 @@ test "wt every key listed" {
         assert(has_row(rows, "enum_value", k))
     }
     for k in ["column"] { assert(kind_count(rows, k) > 0) }
-    for k in ["№", "Event", "Condition", "Actions", "To", "event", "actions", "request_field", "expression", "reads", "end", "response", "when", "name", "type", "value", "default", "project_override", "note", "initial", "non_decreasing", "writes", "id", "kind", "profile", "signals", "allowed_values", "counter", "parameters", "result", "class", "fields", "party"] {
+    for k in ["№", "Event", "Condition", "Actions", "To", "rerun", "event", "actions", "request_field", "expression", "reads", "end", "response", "when", "name", "type", "value", "default", "project_override", "note", "initial", "non_decreasing", "writes", "id", "kind", "setting", "parse", "profile", "signals", "allowed_values", "counter", "parameters", "result", "class", "fields", "party"] {
         assert(has_row(rows, "column", k))
     }
 }
@@ -426,8 +432,8 @@ test "wt lang inside fence" {
 }
 
 test "wt versions" {
-    assert(format_versions() == ["2.25", "0.27"])
-    assert(version_strict("2.25") && version_strict("0.27"))
+    assert(format_versions() == ["2.25", "0.28"])
+    assert(version_strict("2.25") && version_strict("0.28"))
     assert(!version_strict("2.11") && !version_strict("2.10") && !version_strict("2.9") && !version_strict(""))
 }
 

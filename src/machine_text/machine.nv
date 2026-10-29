@@ -29,9 +29,9 @@ fn cx_new() -> TxCx => cx_new_in("ru")
 /// TxHeader: the title, the Latin name, the revision of the machine (`revision`, "1" by default since 0.27; the line `machine_version` of the seam of 2.25), the version of the language.
 type TxHeader { title str, machine str, version str, format str }
 
-/// The hint of the old keys of the header (AL-144).
+/// The hint of the old keys of the header (AL-144; the keys are of 0.27, the version of the language to write is 0.28).
 fn header_old_hint() -> str {
-    ro message_text = "с 0.27 — revision и alula_version: `machine_version: …` пишется `revision: <целое>`, `format: 2.NN` — `alula_version: 0.27`; переходного периода нет"
+    ro message_text = "с 0.27 — revision и alula_version: `machine_version: …` пишется `revision: <целое>`, `format: 2.NN` — `alula_version: 0.28`; переходного периода нет"
     message_text
 }
 
@@ -109,7 +109,7 @@ fn header_read(entries []TxEntry, mut cx TxCx) -> TxHeader {
         format = alula_version
         if old_lines.len() == 0 && !format_versions().contains(format) {
             ro shown = if format == "" { "не указана" } else { format }
-            note(cx, struct_error(1, 1, "версия языка ${shown}: переводчик читает Алулу 0.27 (строка `alula_version: 0.27`); переходного периода нет"))
+            note(cx, struct_error(1, 1, "версия языка ${shown}: переводчик читает Алулу 0.28 (строка `alula_version: 0.28`); переходного периода нет"))
         }
     }
     TxHeader { title, machine, version, format }
@@ -455,11 +455,11 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
     for x in classified.expansions { cx.errors.push(expansion_error(x.line, x.name)) }
 
     // the JSON
-    // the root of 0.27 (AL-147): `kind`, `alula_version`, `machine`, `revision` (an integer); the seam of 2.25 keeps `format` and `version`
+    // the root of 0.28: `kind`, `alula_version`, `machine`, `revision` (an integer); the seam of 2.25 keeps `format` and `version`
     mut root = if header.format == "2.25" {
         [kv("format", js("machine/2")), kv("alula_version", js("2.25")), kv("machine", js(header.machine)), kv("version", js(header.version))]
     } else {
-        [kv("kind", js("machine")), kv("alula_version", js("0.27")), kv("machine", js(header.machine)), kv("revision", TxRaw(if is_integer_text(header.version) { header.version } else { "1" }))]
+        [kv("kind", js("machine")), kv("alula_version", js("0.28")), kv("machine", js(header.machine)), kv("revision", TxRaw(if is_integer_text(header.version) { header.version } else { "1" }))]
     }
     if header.title != "" { root.push(kv("title", js(header.title))) }
     if types.records.len() > 0 || types.variants.len() > 0 {
@@ -510,13 +510,15 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
 }
 
 // The keys of a file of 2.26 that are items of a list (format 4.1, AL-137): the marker `- ` is obligatory, a key without it is an error (the reading "the marker is optional" of 2.5 is gone);
-// the line `Читает:` is no key any more (AL-138: the reads are derived by the check). The header and `Начальное состояние:` are not items of the list of a state.
+// the line `Читает:` is no key any more (AL-138: the reads are derived by the check). 0.28: `Начальное состояние` is an item of the list too; `Набор` and `Проверка` are keys of their own items.
 fn key_lines_226(entries []TxEntry, mut cx TxCx) -> () {
-    ro listed = ["Party", "Idle term", "Edits", "Form returns", "Request", "On entry", "On accept", "Except", "Result", "Request limit", "Invariant"]
+    ro listed = ["Party", "Set", "Idle term", "Edits", "Check", "Form returns", "Request", "On entry", "On accept", "Except", "Result", "Request limit", "Invariant"]
     for e in entries {
         if e.kind != EN_TEXT || e.indent != 0 || e.colon < 0 || e.fenced { continue }
         if e.key == "Reads" {
             note(cx, struct_error(e.line, 1, "строки `${e.text[..e.colon].trim_ascii()}:` нет: с 2.26 чтения выводятся (AL-138) — проверка выводит их из выражений строк, «${kw(cx.words, "key", "Request")}», «${kw(cx.words, "key", "On accept")}», «${kw(cx.words, "key", "On entry")}» и списков `читает` внешних функций"))
+        } else if e.shift == 0 && e.key == "Initial state" {
+            note(cx, struct_error(e.line, 1, "`${e.text[..e.colon].trim_ascii()}: ИМЯ` — элемент списка: с 0.28 пишется `- ${kw(cx.words, "key", "Initial state")}: ИМЯ` (первый элемент раздела `## ${kw(cx.words, "section", "States")}`); переходного периода нет"))
         } else if e.shift == 0 && listed.contains(e.key) {
             note(cx, struct_error(e.line, 1, "строка-ключ без маркера `- `: с 2.26 строка-ключ пишется элементом списка (`- ${e.text[..e.colon].trim_ascii()}: …`, AL-137); markdown склеивает строки без маркера в один абзац"))
         }

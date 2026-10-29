@@ -286,10 +286,14 @@ fn rn_party_kind(mut cx RnCx, p RJ, path str) -> str {
     if kind == "agent" { return "${rn_kw(cx, "kind_party", "agent")}(${rn_kw(cx, "kind_party", "result")} ${rn_type(cx, rj_gstr(p, "result"))})" }
     ro gate = "(${rn_kw(cx, "kind_party", "result")} ${rn_kw(cx, "type", "GateOutcome")})"
     if kind == "human" || kind == "enhanced" { return "${rn_kw(cx, "kind_party", kind)}${gate}" }
+    // 0.28: the gatekeeper and the free input are kinds without brackets; the setting of the gatekeeper and the parse of a machine are columns of the table.
+    // The seam of 2.25 writes the gatekeeper with the setting in the cell of the kind.
     if kind == "gatekeeper" {
+        if cx.v226 { return rn_kw(cx, "kind_party", kind) }
         ro setting = rj_gstr(p, "setting")
         return "${rn_kw(cx, "kind_party", "human or agent by setting")} ${setting}${gate}"
     }
+    if kind == "free_input" { return rn_kw(cx, "kind_party", kind) }
     if kind == "machine" {
         ro nested = rj_gstr(p, "nested")
         mut text = "${rn_kw(cx, "kind_party", "machine")} ${nested}"
@@ -299,11 +303,14 @@ fn rn_party_kind(mut cx RnCx, p RJ, path str) -> str {
             ro result = rn_type(cx, rj_gstr(p, "result"))
             text = "${text}(${rn_kw(cx, "kind_party", "input")} ${input}, ${rn_kw(cx, "kind_party", "result")} ${result})"
         }
-        match rj_get(p, "parse") {
-            Some(pr) => {
-                text = "${text}; ${rn_kw(cx, "kind_party", "parse")}: ${rj_gstr(pr, "primitive")} -> ${rn_type(cx, rj_gstr(pr, "type"))}"
+        // 0.28: the parse is the column `разбор`; the seam of 2.25 writes `; разбор: имя -> Тип` in the cell of the kind
+        if !cx.v226 {
+            match rj_get(p, "parse") {
+                Some(pr) => {
+                    text = "${text}; ${rn_kw(cx, "kind_party", "parse")}: ${rj_gstr(pr, "primitive")} -> ${rn_type(cx, rj_gstr(pr, "type"))}"
+                }
+                None => ()
             }
-            None => ()
         }
         return text
     }
@@ -335,19 +342,28 @@ fn rn_sec_parties(mut cx RnCx, root RJ) -> []str {
             Some(e) => rn_expr(cx, e, []str.new())
             None => "—"
         }
-        // a party with no counter is a party of a free input: `—` (spec 1, AL-52)
+        // 0.28: the columns `настройка` and `разбор` after `вид`: the setting of a gatekeeper, the parse of a machine; `—` at the others
+        ro setting = if rj_gstr(p, "setting") == "" { "—" } else { rj_gstr(p, "setting") }
+        ro parse = match rj_get(p, "parse") {
+            Some(pr) => rj_gstr(pr, "primitive")
+            None => "—"
+        }
+        // a party with no counter is a party of a free input: `—` (spec 1)
         ro counter = if rj_gstr(p, "counter") == "" { "—" } else { rn_datum_name(cx, rj_gstr(p, "counter")) }
-        if rn_parts_column(cx, root) {
+        if !cx.v226 {
+            // the seam of 2.25: no columns `настройка`/`разбор` of 0.28 and no `части` of 2.26; the setting and the parse are of the cell of the kind
+            rows.push(RnRow { cells: [party_word, rj_gstr(p, "id"), kind, profile, rn_signals_cell(cx, p), counter] })
+        } else if rn_parts_column(cx, root) {
             // 2.26 (section 7а): the column `части` names the type of the parts of the party (its `progress`, one record)
             ro progress = rj_garr(p, "progress")
             ro parts = if progress.len() == 0 { "—" } else { rj_gstr(progress[0], "name") }
-            rows.push(RnRow { cells: [party_word, rj_gstr(p, "id"), kind, profile, rn_signals_cell(cx, p), parts, counter] })
+            rows.push(RnRow { cells: [party_word, rj_gstr(p, "id"), kind, setting, parse, profile, rn_signals_cell(cx, p), parts, counter] })
         } else {
-            rows.push(RnRow { cells: [party_word, rj_gstr(p, "id"), kind, profile, rn_signals_cell(cx, p), counter] })
+            rows.push(RnRow { cells: [party_word, rj_gstr(p, "id"), kind, setting, parse, profile, rn_signals_cell(cx, p), counter] })
         }
     }
     mut out = []str.new()
-    if rows.len() > 0 { out = rn_table(rn_cols(cx, if rn_parts_column(cx, root) { ["name", "id", "kind", "profile", "signals", "parts", "counter"] } else { ["name", "id", "kind", "profile", "signals", "counter"] }), rows) }
+    if rows.len() > 0 { out = rn_table(rn_cols(cx, if !cx.v226 { ["name", "id", "kind", "profile", "signals", "counter"] } else if rn_parts_column(cx, root) { ["name", "id", "kind", "setting", "parse", "profile", "signals", "parts", "counter"] } else { ["name", "id", "kind", "setting", "parse", "profile", "signals", "counter"] }), rows) }
     match rj_get(root, "request_limit") {
         Some(e) => {
             if out.len() > 0 { out.push("") }

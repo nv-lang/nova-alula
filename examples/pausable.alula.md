@@ -2,7 +2,7 @@
 
 - machine: Pausable
 - revision: 1
-- alula_version: 0.27
+- alula_version: 0.28
 - language: en
 
 The library `Pause` (spec 9, `libs/pause.en.alula.md`): a human stops the machine in the middle of the work of the agent, the open request is cancelled and the machine waits in `Pause`; `continue` enters the state it was stopped
@@ -17,10 +17,10 @@ in again, with a new request; `halt` ends the machine with its own reason `Pause
 
 ## Parties
 
-| name | id | kind | profile | signals | counter |
-|---|---|---|---|---|---|
-| worker | worker | agent(result str) | — | — | worker_attempt |
-| enhanced | enhanced | enhanced(result GateOutcome) | — | continue { human_word str, author str, source str }, halt | enhanced_attempt |
+| name | id | kind | setting | parse | profile | signals | counter |
+|---|---|---|---|---|---|---|---|
+| worker | worker | agent(result str) | — | — | — | — | worker_attempt |
+| enhanced | enhanced | enhanced(result GateOutcome) | — | — | — | continue { human_word str, author str, source str }, halt | enhanced_attempt |
 
 - Request limit: 1
 
@@ -28,7 +28,7 @@ in again, with a new request; `halt` ends the machine with its own reason `Pause
 
 ### Pause
 - File: libs/pause.en.alula.md
-- Hash: 429adaba4cec
+- Hash: 042bcf5854f5
 
 | parameter | value |
 |---|---|
@@ -40,7 +40,7 @@ in again, with a new request; `halt` ends the machine with its own reason `Pause
 
 ## States
 
-Initial state: Work
+- Initial state: Work
 
 ### Work — appeal
 - Party: worker
@@ -53,8 +53,8 @@ Initial state: Work
 
 | Event | Condition | Actions | To |
 |---|---|---|---|
-| response(text) |  | reply = text; journal("worked", text: text) | Done |
-| failure(reason) |  | stop_reason = "failed"; journal("work_lost", reason: text(reason)) | Halted |
+| response(text) |  | reply = text<br>journal("worked", text: text) | Done |
+| failure(reason) |  | stop_reason = "failed"<br>journal("work_lost", reason: text(reason)) | Halted |
 
 ### Done — end
 

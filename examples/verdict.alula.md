@@ -2,7 +2,7 @@
 
 - machine: Verdict
 - revision: 1
-- alula_version: 0.27
+- alula_version: 0.28
 - language: en
 
 An enumeration with fields (spec 2, AL-99, AL-102): the answer of the judge is a `Verdict`, one of three forms, two of them with fields. The event `response: Form { field: name }` binds the fields of the
@@ -26,13 +26,13 @@ type Verdict enum
 
 ## Parties
 
-| name | id | kind | profile | signals | counter |
-|---|---|---|---|---|---|
-| judge | judge | agent(result Verdict) | — | — | judge_attempt |
+| name | id | kind | setting | parse | profile | signals | counter |
+|---|---|---|---|---|---|---|---|
+| judge | judge | agent(result Verdict) | — | — | — | — | judge_attempt |
 
 ## States
 
-Initial state: Judge
+- Initial state: Judge
 
 ### Judge — appeal
 - Party: judge
@@ -45,10 +45,10 @@ Initial state: Judge
 
 | Event | Condition | Actions | To |
 |---|---|---|---|
-| response: Accepted { score: points } |  | total = points; journal("verdict_accepted", score: text(points)) | Passed |
-| response: Rejected { reason: why } |  | note = why; journal("verdict_rejected", reason: why) | Failed |
+| response: Accepted { score: points } |  | total = points<br>journal("verdict_accepted", score: text(points)) | Passed |
+| response: Rejected { reason: why } |  | note = why<br>journal("verdict_rejected", reason: why) | Failed |
 | response: Unsure |  | journal("verdict_unsure") | Doubt |
-| failure(reason) |  | note = text(reason); journal("verdict_lost", reason: text(reason)) | Failed |
+| failure(reason) |  | note = text(reason)<br>journal("verdict_lost", reason: text(reason)) | Failed |
 
 ### Passed — end
 

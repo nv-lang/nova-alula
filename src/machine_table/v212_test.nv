@@ -54,7 +54,7 @@ test "v212 version accepted" {
 test "v212 version 2.11 refused" {
     assert(!ok_text(with_version("2.11")))
     assert(says(with_version("2.11"), "alula_version"))
-    assert(says(with_version("2.11"), "0.27"))
+    assert(says(with_version("2.11"), "0.28"))
 }
 
 test "v212 older versions refused" {
@@ -65,13 +65,13 @@ test "v212 older versions refused" {
 
 test "v212 versions list" {
     assert(alula_versions().len() == 1)
-    assert(alula_versions()[0] == "0.27")
-    assert(ALULA_VERSION == "0.27")
+    assert(alula_versions()[0] == "0.28")
+    assert(ALULA_VERSION == "0.28")
 }
 
 test "v212 schema versions" {
     ro schema = text_of_file(schema_files(), "machine-2.schema.json")
-    assert(schema.contains("\"0.27\""))
+    assert(schema.contains("\"0.28\""))
     assert(!schema.contains("\"2.11\""))
     assert(!schema.contains("\"2.5\""))
 }

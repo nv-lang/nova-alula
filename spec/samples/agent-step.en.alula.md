@@ -2,7 +2,7 @@
 
 - machine: agent_step
 - revision: 1
-- alula_version: 0.27
+- alula_version: 0.28
 - language: en
 
 This is an **illustration**: the "Agent step" machine in full, written in the Alula format, format version 2.24 ([spec/alula-spec.md](../alula-spec.md); it is the only definition of the notation). It is the English-language twin of [spec/samples/agent-step.alula.md](agent-step.alula.md): the same machine, row for row, with the English keywords of the [word table](../alula-keywords.tsv) (spec, section 1a); the JSON tree `machine/2` is the same for both files up to the internal names (constants, parameters, functions, party names, bindings). The file lets a reader open and see a real machine: types, data, parties, functions, all 37 transition rows, the ends with the "end to response" table, the attached "Pause" fragment; what the fragment brings (parameters, common events COMMON 1-6, the Pause state with events PAUSE 1-4) is described in section 9 of the specification.
@@ -66,7 +66,7 @@ The envelope types (request, response, refusal) are not declared: the executor b
 | name | type | default | project_override |
 |---|---|---|---|
 | RETRY_PAUSE | int>=0 | 2000 | — |
-| PERMISSION_POLICY | full map[ActionKind, "allow" \| "deny" \| "ask"] | [ActionKind.Read: "ask", ActionKind.Write: "ask", ActionKind.Delete: "ask", ActionKind.Move: "ask", ActionKind.Search: "ask", ActionKind.Execute: "ask", ActionKind.Network: "ask", ActionKind.Think: "ask", ActionKind.SwitchMode: "ask", ActionKind.Other: "ask"] | — |
+| PERMISSION_POLICY | full_map[ActionKind, "allow" \| "deny" \| "ask"] | [ActionKind.Read: "ask", ActionKind.Write: "ask", ActionKind.Delete: "ask", ActionKind.Move: "ask", ActionKind.Search: "ask", ActionKind.Execute: "ask", ActionKind.Network: "ask", ActionKind.Think: "ask", ActionKind.SwitchMode: "ask", ActionKind.Other: "ask"] | — |
 
 The sources call both values a project parameter but give no project key: the column holds `—`. The value of `RETRY_PAUSE` was accepted by the owner in the source, it is not a stub. The values of `PERMISSION_POLICY` are `"allow"`, `"deny"`, `"ask"`: the set of literals stands in the type argument of the map.
 
@@ -111,11 +111,11 @@ The bound `turn_count <= turn limit` is not written: when the limit is below 1, 
 
 ## Parties
 
-| name | id | kind | profile | signals | counter |
-|---|---|---|---|---|---|
-| agent | agent | agent(result TurnResult) | — | — | agent_attempt |
-| gatekeeper | gatekeeper | human or agent by setting elevated_attention_executor(result GateOutcome) | — | allow, deny | gatekeeper_attempt |
-| enhanced | enhanced | enhanced(result GateOutcome) | — | continue { human_word str, author str, source str }, halt | enhanced_attempt |
+| name | id | kind | setting | parse | profile | signals | counter |
+|---|---|---|---|---|---|---|---|
+| agent | agent | agent(result TurnResult) | — | — | — | — | agent_attempt |
+| gatekeeper | gatekeeper | gatekeeper | elevated_attention_executor | — | — | allow, deny | gatekeeper_attempt |
+| enhanced | enhanced | enhanced(result GateOutcome) | — | — | — | continue { human_word str, author str, source str }, halt | enhanced_attempt |
 
 - Request limit: 1
 
@@ -209,7 +209,7 @@ Correspondence to the automaton code: the names of the functions are the names o
 
 ### Pause
 - File: libs/pause.en.alula.md
-- Hash: 429adaba4cec
+- Hash: 042bcf5854f5
 
 | parameter | value |
 |---|---|
@@ -221,14 +221,14 @@ Correspondence to the automaton code: the names of the functions are the names o
 
 ## States
 
-Initial state: Start
+- Initial state: Start
 
 ### Start — operation
 - On entry: let moment = event.at
 
 | Actions | To |
 |---|---|
-| started = moment; turn_count = 1 | AgentTurn |
+| started = moment<br>turn_count = 1 | AgentTurn |
 
 ### AgentTurn — appeal
 - Party: agent
@@ -246,15 +246,15 @@ Initial state: Start
 
 | Event | Condition | Actions | To |
 |---|---|---|---|
-| response: Finished { text, artifact, transport_usage: received } |  | transport_usage = add_usage(transport_usage, received); reply_text = text; reply_artifact = artifact | ReplyValidation |
+| response: Finished { text, artifact, transport_usage: received } |  | transport_usage = add_usage(transport_usage, received)<br>reply_text = text<br>reply_artifact = artifact | ReplyValidation |
 | response: Truncated { transport_usage: received } |  | transport_usage = add_usage(transport_usage, received) | Continuation |
-| response: TurnRequestLimit { transport_usage: received } |  | transport_usage = add_usage(transport_usage, received); stop_reason = "max_turn_requests"; journal("turn_requests_exhausted") | Accounting |
-| response: ModelRefusal { transport_usage: received } |  | transport_usage = add_usage(transport_usage, received); stop_reason = "model_refused"; journal("model_refused") | Accounting |
-| response: Stopped { transport_usage: received } |  | transport_usage = add_usage(transport_usage, received); stop_reason = "stopped_by_agent"; journal("turn_cancelled") | Accounting |
+| response: TurnRequestLimit { transport_usage: received } |  | transport_usage = add_usage(transport_usage, received)<br>stop_reason = "max_turn_requests"<br>journal("turn_requests_exhausted") | Accounting |
+| response: ModelRefusal { transport_usage: received } |  | transport_usage = add_usage(transport_usage, received)<br>stop_reason = "model_refused"<br>journal("model_refused") | Accounting |
+| response: Stopped { transport_usage: received } |  | transport_usage = add_usage(transport_usage, received)<br>stop_reason = "stopped_by_agent"<br>journal("turn_cancelled") | Accounting |
 | response: TransientError |  |  | Retry |
-| response: PermanentError |  | stop_reason = "no_result"; journal("agent_permanent_error") | Accounting |
+| response: PermanentError |  | stop_reason = "no_result"<br>journal("agent_permanent_error") | Accounting |
 | response: NeedsPermission { permission_request: request } |  | permission_request = request | Policy |
-| failure(reason in [FailCode.ConnectionLost, FailCode.Timeout, FailCode.NoResult]) |  | stop_reason = text(reason); journal("turn_failed", reason: text(reason)) | Accounting |
+| failure(reason in [FailCode.ConnectionLost, FailCode.Timeout, FailCode.NoResult]) |  | stop_reason = text(reason)<br>journal("turn_failed", reason: text(reason)) | Accounting |
 
 The appeal has no "On accept" (in the code `on_accept` is empty). A form fix goes not as a return within the same request but as a new turn "fix" by the rows of ReplyValidation, hence `Form returns: 0`. A failure code outside the list of row 9 is brought by the executor to `NoResult`, which is in the list.
 
@@ -262,17 +262,17 @@ The appeal has no "On accept" (in the code `on_accept` is empty). A form fix goe
 
 | Condition | Actions | To |
 |---|---|---|
-| retry_count < RETRIES and turn != "retry" | retry_count += 1; turn_before_retry = turn; turn = "retry"; journal("agent_transient_error", retry: text(retry_count)) | Budget |
-| retry_count < RETRIES and turn == "retry" | retry_count += 1; journal("agent_transient_error", retry: text(retry_count)) | Budget |
-| retry_count >= RETRIES | stop_reason = "no_result"; journal("agent_transient_error_exhausted", retries: text(RETRIES)) | Accounting |
+| retry_count < RETRIES and turn != "retry" | retry_count += 1<br>turn_before_retry = turn<br>turn = "retry"<br>journal("agent_transient_error", retry: text(retry_count)) | Budget |
+| retry_count < RETRIES and turn == "retry" | retry_count += 1<br>journal("agent_transient_error", retry: text(retry_count)) | Budget |
+| retry_count >= RETRIES | stop_reason = "no_result"<br>journal("agent_transient_error_exhausted", retries: text(RETRIES)) | Accounting |
 | else | machine_error("fork_no_match", fork: "Retry") |  |
 
 ### Continuation — fork
 
 | Condition | Actions | To |
 |---|---|---|
-| continuation_count < CONTINUATIONS | continuation_count += 1; turn = "continue"; journal("output_truncated_continue") | Budget |
-| continuation_count >= CONTINUATIONS | stop_reason = "max_tokens"; journal("output_truncated_again") | Accounting |
+| continuation_count < CONTINUATIONS | continuation_count += 1<br>turn = "continue"<br>journal("output_truncated_continue") | Budget |
+| continuation_count >= CONTINUATIONS | stop_reason = "max_tokens"<br>journal("output_truncated_again") | Accounting |
 | else | machine_error("fork_no_match", fork: "Continuation") |  |
 
 ### ReplyValidation — fork
@@ -281,9 +281,9 @@ The appeal has no "On accept" (in the code `on_accept` is empty). A form fix goe
 | Condition | Actions | To |
 |---|---|---|
 | validation == ReplyCheck.Valid |  | Accounting |
-| validation == ReplyCheck.Empty | stop_reason = "no_result"; journal("agent_no_result") | Accounting |
-| validation == ReplyCheck.Violated and return_count < FORM_RETURNS | return_count += 1; turn = "fix"; journal("reply_form_violated") | Budget |
-| validation == ReplyCheck.Violated and return_count >= FORM_RETURNS | stop_reason = "form_not_fixed"; journal("reply_form_not_fixed") | Accounting |
+| validation == ReplyCheck.Empty | stop_reason = "no_result"<br>journal("agent_no_result") | Accounting |
+| validation == ReplyCheck.Violated and return_count < FORM_RETURNS | return_count += 1<br>turn = "fix"<br>journal("reply_form_violated") | Budget |
+| validation == ReplyCheck.Violated and return_count >= FORM_RETURNS | stop_reason = "form_not_fixed"<br>journal("reply_form_not_fixed") | Accounting |
 | else | machine_error("fork_no_match", fork: "ReplyValidation") |  |
 
 ### Policy — fork
@@ -293,8 +293,8 @@ The appeal has no "On accept" (in the code `on_accept` is empty). A form fix goe
 
 | Condition | Actions | To |
 |---|---|---|
-| decision == "allow" | permission_decision = "allow"; turn = "permission"; journal("permission_auto_allowed", action: text(request.action)) | Budget |
-| decision == "deny" | permission_decision = "deny"; turn = "permission"; journal("permission_auto_denied", action: text(request.action)) | Budget |
+| decision == "allow" | permission_decision = "allow"<br>turn = "permission"<br>journal("permission_auto_allowed", action: text(request.action)) | Budget |
+| decision == "deny" | permission_decision = "deny"<br>turn = "permission"<br>journal("permission_auto_denied", action: text(request.action)) | Budget |
 | decision == "ask" |  | Permission |
 | else | machine_error("fork_no_match", fork: "Policy") |  |
 
@@ -309,8 +309,8 @@ The appeal has no "On accept" (in the code `on_accept` is empty). A form fix goe
 
 | Event | Condition | Actions | To |
 |---|---|---|---|
-| signal(allow) |  | permission_decision = "allow"; turn = "permission"; journal("permission_human_allowed", action: text(require(permission_request).action)) | Budget |
-| signal(deny) |  | permission_decision = "deny"; turn = "permission"; journal("permission_human_denied", action: text(require(permission_request).action)) | Budget |
+| signal(allow) |  | permission_decision = "allow"<br>turn = "permission"<br>journal("permission_human_allowed", action: text(require(permission_request).action)) | Budget |
+| signal(deny) |  | permission_decision = "deny"<br>turn = "permission"<br>journal("permission_human_denied", action: text(require(permission_request).action)) | Budget |
 
 The request field `permission_request` is named as the data but with another expression: when building the request the code applies `require`, the rows read the data and take `require` themselves.
 
@@ -322,9 +322,9 @@ The request field `permission_request` is named as the data but with another exp
 
 | Condition | Actions | To |
 |---|---|---|
-| tokens_exhausted | stop_reason = "max_tokens"; journal("token_limit", spent: text(tokens_spent(transport_usage))) | Accounting |
-| not tokens_exhausted and cost_exhausted | stop_reason = "cost_limit"; journal("cost_limit", spent: text(cost_spent(transport_usage))) | Accounting |
-| not tokens_exhausted and not cost_exhausted and turns_exhausted | stop_reason = "max_turn_requests"; journal("turn_limit", sent: text(turn_count)) | Accounting |
+| tokens_exhausted | stop_reason = "max_tokens"<br>journal("token_limit", spent: text(tokens_spent(transport_usage))) | Accounting |
+| not tokens_exhausted and cost_exhausted | stop_reason = "cost_limit"<br>journal("cost_limit", spent: text(cost_spent(transport_usage))) | Accounting |
+| not tokens_exhausted and not cost_exhausted and turns_exhausted | stop_reason = "max_turn_requests"<br>journal("turn_limit", sent: text(turn_count)) | Accounting |
 | not tokens_exhausted and not cost_exhausted and not turns_exhausted | turn_count += 1 | AgentTurn |
 | else | machine_error("fork_no_match", fork: "Budget") |  |
 
@@ -335,7 +335,7 @@ The request field `permission_request` is named as the data but with another exp
 
 | Actions | To |
 |---|---|
-| usage = collected; journal(usage_event(collected)) | StepOutcome |
+| usage = collected<br>journal(usage_event(collected)) | StepOutcome |
 
 ### StepOutcome — fork
 

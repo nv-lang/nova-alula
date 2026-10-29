@@ -892,7 +892,7 @@ fn check_event_for(mut cx Checker, ev EventPat, party_ix int, path str, mut used
             check_answer_party(cx, party_ix, path)
             if party_ix >= 0 {
                 ro party = def.parties[party_ix]
-                ro answer_spec = answer_spec_of(party)
+                ro answer_spec = answer_spec_of(cx.registry, party)
                 if answer_spec.len() == 0 {
                     cx_issue(cx, path, "the party ${party.name} has no result type, answer_variant needs a variant")
                 } else {
@@ -926,9 +926,19 @@ fn check_event_for(mut cx Checker, ev EventPat, party_ix int, path str, mut used
     }
 }
 
-// The type of the value of the answer of a party: the result of its parse when it has one (format 1, `разбор`), else its result.
-fn answer_spec_of(party PartyDef) -> []TypeSpec {
-    if party.parse.len() > 0 { return [party.parse[0].result] }
+// The type of the value of the answer of a party: of a tree of the seam of 2.25 — the type after `->` of its parse; of a tree of 0.28 — the result of the function of its parse in
+// the registry of the host (the tree holds the type not), else its result.
+fn answer_spec_of(registry Registry, party PartyDef) -> []TypeSpec {
+    if party.parse.len() > 0 {
+        match party.parse[0].result {
+            Some(r) => { return [r] }
+            None => ()
+        }
+        match find_primitive(registry, party.parse[0].primitive) {
+            Some(p) => { return [p.result] }
+            None => { return []TypeSpec.new() }
+        }
+    }
     party.result_spec
 }
 
@@ -1115,7 +1125,7 @@ fn request_names(cx Checker, st StateDef) -> []str {
 export type StateReads { state str, names []str, all bool }
 
 /// Does the check derive the reads of the states of the tree (the version 2.26: there is no line `Читает:`, AL-138)? Before 2.26 the reads are written and checked by rule 11.
-export fn reads_derived(def MachineDef) -> bool => def.alula_version == "0.27"
+export fn reads_derived(def MachineDef) -> bool => def.alula_version == "0.28"
 
 /// The reads of every state of the machine in the order of the states, derived from its expressions and from the registry of the host (format 2.26, AL-138). A path of a dict
 /// (`имя[*].поле`) is no datum of its own: the state reads the dict.
@@ -1401,7 +1411,7 @@ fn check_target(mut cx Checker, target LValue, path str) -> () {
 // A datum of a tree of 2.26 that only the engine writes: a counter of a party (the loader declares it) or a datum of the engine of the contract (`open_requests`,
 // `call_request_id`); `to_send` is written by the rows and by the engine. A tree of 2.25 keeps the former words of the mark.
 fn engine_only(def MachineDef, kind WriteKind) -> bool {
-    if def.alula_version != "0.27" { return false }
+    if def.alula_version != "0.28" { return false }
     match kind {
         MechanicsWrite => true
         _ => false
@@ -1414,7 +1424,7 @@ fn engine_data_words() -> str => "a counter of a party or a datum of the engine 
 // registry of the host) name a datum of the engine: an error at the call.
 fn check_engine_writes(mut cx Checker) -> () {
     ro def = cx.def
-    if def.alula_version != "0.27" { return }
+    if def.alula_version != "0.28" { return }
     mut i = 0
     for st in def.states {
         ro p = "$.states[${i}]"
@@ -2184,8 +2194,12 @@ fn check_parties(mut cx Checker) -> () {
         if pt.kind != MachineParty && pt.nested != "" { cx_issue(cx, "${p}.nested", "only a machine party names a nested machine") }
         if sends_requests(pt.kind) && pt.result_spec.len() == 0 { cx_issue(cx, "${p}.result", "an agent or a machine party declares the type of its result (format 2.2, the column kind: result)") }
         if pt.counter == "" {
-            // only a human may have no counter: a party of a free input (spec 1, AL-52); the other parties name the datum of their attempt counter (rule 15)
-            if pt.kind != HumanParty { cx_issue(cx, "${p}.counter", "a party names the datum of its attempt counter (rule 15); only a party of the kind human may have none, a party of a free input (AL-52)") }
+            // only a party of a free input has no counter: of the kind free_input (0.28, spec 1), in a tree of the seam of 2.25 — a human without a counter (AL-52);
+            // the other parties name the datum of their attempt counter (rule 15)
+            ro free_ok = if def.alula_version == "0.28" { pt.kind == FreeInputParty } else { pt.kind == HumanParty || pt.kind == FreeInputParty }
+            if !free_ok { cx_issue(cx, "${p}.counter", "a party names the datum of its attempt counter (rule 15); only a party of a free input has none (0.28: the kind free_input; 2.25: a human, AL-52)") }
+        } else if def.alula_version == "0.28" && pt.kind == FreeInputParty {
+            cx_issue(cx, "${p}.counter", "a party of the kind free_input has no counter (0.28, spec 1)")
         } else if pt.id != "" {
             ro at = find_data(def, pt.counter)
             if at < 0 {
@@ -2431,8 +2445,8 @@ fn check_edits_state(mut cx Checker, st StateDef, path str) -> () {
     }
 }
 
-// The `разбор` of a party (AL-131, sections 1, 7 and 10): a volatile function of one parameter, the answer, of the type `итог` of the party; its result is the type after `->` of the parse.
-// One function per role: there is no second parameter and no literal of a role.
+// The `разбор` of a party (AL-131, sections 1, 7 and 10): a volatile function of one parameter, the answer, of the type `итог` of the party; 0.28: the tree holds no type of its
+// result — the type of the value of the answer is the result of the declaration of the function (`answer_spec_of`). One function per role: there is no second parameter and no literal of a role.
 fn check_party_parse(mut cx Checker, pt PartyDef, path str) -> () {
     if pt.parse.len() == 0 { return }
     if pt.kind != MachineParty { cx_issue(cx, "${path}.parse", "only a party of the kind machine has a parse") }
@@ -2447,8 +2461,14 @@ fn check_party_parse(mut cx Checker, pt PartyDef, path str) -> () {
                 if pt.result_spec.len() > 0 && spec_text(p.params[0].spec) != spec_text(pt.result_spec[0]) {
                     cx_issue(cx, "${path}.parse.primitive", "the first parameter of the parse ${pr.primitive} is ${spec_text(p.params[0].spec)}, the result of the party is ${spec_text(pt.result_spec[0])}")
                 }
-                if spec_text(p.result) != spec_text(pr.result) {
-                    cx_issue(cx, "${path}.parse.type", "the parse ${pr.primitive} gives ${spec_text(p.result)}, the type after `->` of the parse is ${spec_text(pr.result)}")
+                // a tree of the seam of 2.25 keeps the type after `->` of the parse: it must be the result of the declaration (a tree of 0.28 holds no type)
+                match pr.result {
+                    Some(r) => {
+                        if spec_text(p.result) != spec_text(r) {
+                            cx_issue(cx, "${path}.parse.type", "the parse ${pr.primitive} gives ${spec_text(p.result)}, the type after `->` of the parse is ${spec_text(r)}")
+                        }
+                    }
+                    None => ()
                 }
             }
         }
@@ -2702,8 +2722,8 @@ export fn check_nested(def MachineDef, name str, callee MachineDef) -> []NestedP
 
 // ---- the party of a free input (spec 1, 4.2, AL-51, AL-52) -------------------------------------------------------------------------------------
 
-/// Is the party a party of a free input: a human with no counter, so with no gates?
-fn is_free_party(pt PartyDef) -> bool => pt.kind == HumanParty && pt.counter == ""
+/// Is the party a party of a free input (0.28: the kind `free_input`; a tree of the seam of 2.25 keeps a human with no counter)?
+fn is_free_party(pt PartyDef) -> bool => pt.kind == FreeInputParty || (pt.kind == HumanParty && pt.counter == "")
 
 fn is_answer_event(ev EventPat) -> bool {
     match ev {
@@ -2839,7 +2859,7 @@ fn check_forks(mut cx Checker) -> () {
                 if r.is_else { has_else = true }
             }
             // 2.26 (AL-137, section 4.1): the row else is not required, an uncovered fork leads to the error by the engine (`fork_no_match`); AL-57 holds for a tree of 2.25
-            if !has_else && cx.def.alula_version != "0.27" && !fork_proved(cx.def, st) {
+            if !has_else && cx.def.alula_version != "0.28" && !fork_proved(cx.def, st) {
                 cx_issue(cx, "$.states[${i}].rows", "the fork ${st.name} has no row else and the type does not prove that one of the rows is taken (the rows must be `x == value` for one name and name every value of an enum, of a variant without fields or of a set of literals) (AL-57)")
             }
         }

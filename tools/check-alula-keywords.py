@@ -10,20 +10,25 @@
      `kind` — из закрытого перечня (header, section, column, kind_state, key, kind_party, event, destination, decl, type,
      expr, action, operator, readable, catalog, enum_value; вида `kind_param` с 2.26 нет — виды параметров заменены типами, AL-140),
      каждый вид представлен; в пределах вида слова `ru` не повторяются и слова `en` не повторяются (в разных видах слово может
-     повторяться); слова 2.26 (AL-137…AL-143, `TABLE_226_ADDED`) и 0.27 (AL-144, AL-145: `revision`, `alula_version`, `Требует данные`/`Requires data`,
-     `Требует стороны`/`Requires parties`, `Требует концы`/`Requires ends`, `TABLE_227_ADDED`) стоят в таблице парами, убранные в 2.26
-     (`TABLE_226_REMOVED`) и 0.27 (`machine_version`, `format`, единый `Требует`, `TABLE_227_REMOVED`) — нет;
+     повторяться); слова 2.26 (AL-137…AL-143, `TABLE_226_ADDED`), 0.27 (AL-144, AL-145: `revision`, `alula_version`, `Требует данные`/`Requires data`,
+     `Требует стороны`/`Requires parties`, `Требует концы`/`Requires ends`, `TABLE_227_ADDED`) и 0.28 (AL-148…AL-152: `настройка`/`setting`,
+     `разбор`/`parse`, `заново`/`rerun`, `свободный_ввод`/`free_input`, `Набор`/`Set`, `Проверка`/`Check`, `Экземпляр`/`As`, `то_же`/`same`,
+     `полный_словарь`/`full_map`, `TABLE_228_ADDED`) стоят в таблице парами, убранные в 2.26
+     (`TABLE_226_REMOVED`), 0.27 (`machine_version`, `format`, единый `Требует`, `TABLE_227_REMOVED`) и 0.28 (`human или agent по настройке`,
+     `то же`, `запуск заново`, `набор`, `проверка`, `Имя`, `полный словарь`, `TABLE_228_REMOVED`) — нет;
   2. русский образец: структурные слова (имена шапки и ключи шапки, заголовки разделов `##`, строки-ключи `- Ключ:` и `Начальное состояние:`,
      заголовки столбцов таблиц, виды состояний в заголовках `###`) есть в таблице в колонке `ru` своего вида;
      английское структурное слово (есть в колонке `en`, нет в `ru`) в русском образце — ошибка;
   3. английский образец: те же структурные слова по колонке `en` (`Initial state:` вместо `Начальное состояние:`);
      русское структурное слово (есть в колонке `ru`, нет в `en`) в нём — ошибка; строка шапки `- language: en` обязательна
-     (в русском образце допустима `- language: ru` или её отсутствие, иной язык — ошибка); образцы — Алулы 0.27 (задача 244
-     перенесла их скриптом `tools/migrate-alula-227.py` с 2.26; задача 239 — скриптом `tools/migrate-alula-226.py` с 2.25); внешняя функция в разделе
+     (в русском образце допустима `- language: ru` или её отсутствие, иной язык — ошибка); образцы — Алулы 0.28 (задача 253
+     перенесла их скриптом `tools/migrate-alula-228.py` с 0.27, задача 244 — скриптом `tools/migrate-alula-227.py` с 2.26; задача 239 — скриптом `tools/migrate-alula-226.py` с 2.25); внешняя функция в разделе
      `## Внешние функции` — без слов `внешняя функция` (AL-142), подключение — подзаголовком `### Имя` (AL-140);
-     формы 0.27 (функция `check_v227`, задача 245): шапка машины `machine`, `revision`, `alula_version`, `language` по порядку, ревизия — целое,
-     `alula_version: 0.27`; у библиотек `libs/` (`LIBS`) — `library`, `alula_version`, `language`, ревизии нет; сторона `machine <имя>` без скобок (AL-146);
-     `--selftest` портит образцы и библиотеки формами до 0.27 (`MUTATIONS_227`) и ждёт ошибки, правки `CLEAN_227` ошибок не дают;
+     формы 0.28 (функция `check_v228`, задача 253): шапка машины `machine`, `revision`, `alula_version`, `language` по порядку, ревизия — целое,
+     `alula_version: 0.28`; у библиотек `libs/` (`LIBS`) — `library`, `alula_version`, `language`, ревизии нет; сторона `machine <имя>` без скобок (AL-146);
+     записи 0.27 (фраза вратаря, `, запуск заново`, `то же`, второй ключ после `;`, `- Имя:`, `Начальное состояние:` без маркера,
+     `полный словарь` из двух слов) — ошибки (AL-148…AL-152);
+     `--selftest` портит образцы и библиотеки формами до 0.28 (`MUTATIONS_228`) и ждёт ошибки, правки `CLEAN_228` ошибок не дают;
   4. знаки операторов (спецификация, 1а, AL-42): в блоках кода, строках таблиц и строках-ключах нет знаков `≥`, `≤`, `≠`, `→`, `⇒`, `∈`, `‥`
      (только ASCII: `>=`, `<=`, `!=`, `->`, `=>`, `in`, `..`); в прозе знак `→` допустим; прежняя запись (до 2.18, AL-67…AL-69) — ошибка:
      в заголовке функции `функция имя(…) -> Тип` (`fn`) первый знак `=` после типа результата (если раньше нет `{`
@@ -161,7 +166,7 @@ TABLE_226_ADDED = (
     ('header', 'Библиотека', 'Library'), ('header', 'library', 'library'), ('section', 'Выход', 'Output'),
     ('section', 'Данные движка', 'Engine data'), ('section', 'События стороны', 'Party events'),
     ('column', 'комментарий', 'comment'), ('column', 'параметр', 'parameter'), ('column', 'части', 'parts'),
-    ('key', 'Файл', 'File'), ('key', 'Имя', 'Name'), ('key', 'Хеш', 'Hash'), ('event', 'часть', 'part'), ('event', 'срок', 'timeout'),
+    ('key', 'Файл', 'File'), ('key', 'Хеш', 'Hash'), ('event', 'часть', 'part'), ('event', 'срок', 'timeout'),
     ('action', 'сторона', 'party'), ('type', 'КодСбоя', 'FailCode'),
     ('enum_value', 'НетРезультата', 'NoResult'), ('enum_value', 'ОтказМодели', 'ModelRefused'),
     ('enum_value', 'СоединениеОборвалось', 'ConnectionLost'), ('enum_value', 'ФормаНеИсправлена', 'FormNotFixed'),
@@ -176,6 +181,18 @@ TABLE_227_ADDED = (
     ('section', 'Требует данные', 'Requires data'), ('section', 'Требует стороны', 'Requires parties'), ('section', 'Требует концы', 'Requires ends'))
 # слова, которые версия 0.27 убрала: ключи шапки `machine_version` и `format`, единый раздел `Требует` (вид, ru)
 TABLE_227_REMOVED = (('header', 'machine_version'), ('header', 'format'), ('section', 'Требует'))
+# слова, которые внесла версия 0.28 (AL-148…AL-152): столбцы `настройка`, `разбор` и `заново` сторон и строк, вид
+# `свободный_ввод`, ключи `Набор`, `Проверка` и `Экземпляр`, назначение `то_же` и тип `полный_словарь` одним словом
+TABLE_228_ADDED = (
+    ('column', 'настройка', 'setting'), ('column', 'разбор', 'parse'), ('column', 'заново', 'rerun'),
+    ('kind_party', 'свободный_ввод', 'free_input'), ('key', 'Набор', 'Set'), ('key', 'Проверка', 'Check'),
+    ('key', 'Экземпляр', 'As'), ('destination', 'то_же', 'same'), ('type', 'полный_словарь', 'full_map'))
+# слова, которые версия 0.28 убрала: фраза вратаря `human или agent по настройке` (вид `gatekeeper` и столбец
+# `настройка`), назначения `то же` и `запуск заново` (`то_же` и столбец `заново`), вторые ключи `набор` и `проверка`
+# (ключи по одному в элементе), ключ `Имя` подключения (`Экземпляр`), тип `полный словарь` из двух слов (вид, ru)
+TABLE_228_REMOVED = (
+    ('kind_party', 'human или agent по настройке'), ('destination', 'то же'), ('destination', 'запуск заново'),
+    ('key', 'набор'), ('key', 'проверка'), ('key', 'Имя'), ('type', 'полный словарь'))
 # слова, которые версия 2.26 убрала: столбцы `№` и `пишет`, строка-ключ `Читает`, событие `сразу`, слово `внешняя`, раздел `Концы`
 # (теперь `Выход`), шапки файла функций и старого подключаемого файла (теперь библиотека); (вид, ru)
 TABLE_226_REMOVED = (
@@ -251,6 +268,12 @@ def check_table(text):
     for kind, ru in TABLE_227_REMOVED:
         if kind in words and ru in words[kind][0]:
             errs.append('%s: слово `%s` (вид `%s`) версия 0.27 убрала (AL-144, AL-145)' % (TABLE, ru, kind))
+    for kind, ru, en in TABLE_228_ADDED:
+        if (kind, ru, en) not in rows:
+            errs.append('%s: нет строки `%s %s %s`: её внесла версия 0.28 (AL-148…AL-152)' % (TABLE, kind, ru, en))
+    for kind, ru in TABLE_228_REMOVED:
+        if kind in words and ru in words[kind][0]:
+            errs.append('%s: слово `%s` (вид `%s`) версия 0.28 убрала (AL-148…AL-152)' % (TABLE, ru, kind))
     words['readable_pairs'] = pairs
     return errs, words
 
@@ -1421,10 +1444,12 @@ def check_calls(text, words, name, lang, gloss):
     return errs
 
 
-HEADER_227 = {'machine': ('machine', 'revision', 'alula_version', 'language'), 'library': ('library', 'alula_version', 'language')}
-def check_v227(text, name):
-    """Формы 0.27 (AL-144, AL-146): шапка машины `machine`, `revision`, `alula_version`, `language` (ревизия — целое, по умолчанию 1),
-    библиотеки `library`, `alula_version`, `language` (ревизии нет); `alula_version` — 0.27; сторона `machine <имя>` без скобок."""
+HEADER_228 = {'machine': ('machine', 'revision', 'alula_version', 'language'), 'library': ('library', 'alula_version', 'language')}
+def check_v228(text, name):
+    """Формы 0.28 (AL-144, AL-146, AL-148…AL-152): шапка машины `machine`, `revision`, `alula_version`, `language`
+    (ревизия — целое, по умолчанию 1), библиотеки `library`, `alula_version`, `language` (ревизии нет); `alula_version`
+    — 0.28; сторона `machine <имя>` без скобок; записи 0.27 (фраза вратаря, `, запуск заново`, `то же`, второй ключ
+    после `;`, `- Имя:`, `Начальное состояние:` без маркера, `полный словарь`) — ошибки."""
     errs, keys = [], []
     for n, line in enumerate(text.split('\n'), 1):
         if line.startswith('## '):
@@ -1433,16 +1458,16 @@ def check_v227(text, name):
         if m:
             keys.append((n, m.group(1), m.group(2)))
     kind = 'library' if any(k == 'library' for _, k, _ in keys) else 'machine'
-    order = HEADER_227[kind]
+    order = HEADER_228[kind]
     got = [(n, k, v) for n, k, v in keys if k in order]
     for n, k, v in got:
         if k == 'revision' and not re.match(r'^[1-9][0-9]*$', v):
             errs.append('%s:%d: ревизия `%s` — ревизия целое число (с 0.27, AL-144)' % (name, n, v))
-        if k == 'alula_version' and v != '0.27':
-            errs.append('%s:%d: `alula_version: %s` — образец пакета пишется на Алуле 0.27' % (name, n, v))
+        if k == 'alula_version' and v != '0.28':
+            errs.append('%s:%d: `alula_version: %s` — образец пакета пишется на Алуле 0.28' % (name, n, v))
     for (_, k1, _), (n2, k2, _) in zip(got, got[1:]):
         if order.index(k2) <= order.index(k1):
-            errs.append('%s:%d: шапка не по порядку: `%s` после `%s` (порядок 0.27: %s)' % (name, n2, k2, k1, ', '.join(order)))
+            errs.append('%s:%d: шапка не по порядку: `%s` после `%s` (порядок 0.28: %s)' % (name, n2, k2, k1, ', '.join(order)))
     if kind == 'library':
         errs += ['%s:%d: у библиотеки нет ревизии (с 0.27 — `library`, `alula_version`, `language`, AL-144)' % (name, n) for n, k, _ in keys if k == 'revision']
     if not any(k == 'alula_version' for _, k, _ in keys):
@@ -1450,6 +1475,21 @@ def check_v227(text, name):
     for n, line in enumerate(text.split('\n'), 1):
         if line.startswith('|') and re.search(r'\|\s*machine [^\s|;(]+\(', line):
             errs.append('%s:%d: сторона `machine` со скобками: с 0.27 типы берутся от вызываемой (`machine <имя>`, AL-146)' % (name, n))
+        if line.startswith('|'):
+            if 'human или agent по настройке' in line or 'human or agent by setting' in line:
+                errs.append('%s:%d: фраза вратаря 0.27: с 0.28 — вид `gatekeeper`, настройка — столбец `настройка` (AL-148)' % (name, n))
+            if re.search(r',\s*(запуск заново|rerun)\s*\|', line):
+                errs.append('%s:%d: `, запуск заново` в «Куда»: с 0.28 режим — столбец `заново` (AL-150)' % (name, n))
+            if re.search(r'\|\s*то же\s*\|', line):
+                errs.append('%s:%d: назначение `то же`: с 0.28 — `то_же` (AL-152)' % (name, n))
+        if 'полный словарь' in line or 'full map' in line:
+            errs.append('%s:%d: тип из двух слов: с 0.28 — `полный_словарь`/`full_map` (AL-152)' % (name, n))
+        if re.match(r'^- .*; *(набор|проверка|set|check): ', line):
+            errs.append('%s:%d: второй ключ после `;`: с 0.28 ключи по одному в элементе (AL-149)' % (name, n))
+        if re.match(r'^- (Имя|Name): ', line):
+            errs.append('%s:%d: ключ `- Имя:` подключения: с 0.28 — `- Экземпляр:` (AL-152)' % (name, n))
+        if re.match(r'^(Начальное состояние|Initial state): ', line):
+            errs.append('%s:%d: `Начальное состояние:` без маркера: с 0.28 — элемент списка (AL-152)' % (name, n))
     return errs
 
 
@@ -1509,6 +1549,7 @@ def declarations(text, lang, readable=()):
     sec_input, sec_data, sec_prim, sec_types, sec_parties = names
     signals_col = 'сигналы' if lang == 'ru' else 'signals'
     kind_col = 'вид' if lang == 'ru' else 'kind'
+    setting_col = 'настройка' if lang == 'ru' else 'setting'
     sec, in_code, header, in_variant = None, False, None, False
     decls = []  # (номер строки, объявление, член варианта?) блока типов
 
@@ -1562,9 +1603,12 @@ def declarations(text, lang, readable=()):
             if '[*]' not in cells[0] and not (js is None and nm in readable):
                 out.append((n, {sec_input: 'поля входа', sec_data: 'данного', sec_prim: 'примитива'}[sec], False, nm, (nm,), js))
         if sec == sec_parties and kind_col in header:
-            m = re.search(r'(?:по настройке|by setting) (\S+?)(?: \(([^()\s]+)\))?\(', cells[header.index(kind_col)])
-            if m:
-                out.append((n, 'настройки вратаря', False, m.group(1), (m.group(1),), m.group(2)))
+            ki = header.index(kind_col)
+            # 0.28 (AL-148): имя настройки вратаря — столбец `настройка` строки вида `gatekeeper`
+            if cells[ki] == 'gatekeeper' and setting_col in header:
+                s = cells[header.index(setting_col)]
+                if s != '—':
+                    out.append((n, 'настройки вратаря', False, s, (s,), None))
         if sec == sec_parties and signals_col in header and cells[header.index(signals_col)] != '—':
             party = cells[0]
             for sig in split_top(cells[header.index(signals_col)]):
@@ -1726,7 +1770,7 @@ def check_json_names(text, words, name, lang, gloss, contract=None):
 
 def check_sample(text, words, name, lang, gloss):
     contract = [en for ru, en in words['readable_pairs'] if ru in CONTRACT_DATA] if 'readable_pairs' in words else []
-    errs = check_operators(text, name) + check_v219(text, name, lang) + check_v220(text, name, lang) + check_v221(text, name, lang) + check_v222(text, name, lang) + (check_calls(text, words, name, lang, gloss) if gloss is not None else []) + check_removed(text, name) + check_v227(text, name) + check_json_names(text, words, name, lang, gloss, contract)
+    errs = check_operators(text, name) + check_v219(text, name, lang) + check_v220(text, name, lang) + check_v221(text, name, lang) + check_v222(text, name, lang) + (check_calls(text, words, name, lang, gloss) if gloss is not None else []) + check_removed(text, name) + check_v228(text, name) + check_json_names(text, words, name, lang, gloss, contract)
     own = {k: v[0 if lang == 'ru' else 1] for k, v in words.items() if k in KINDS}
     other = {k: v[1 if lang == 'ru' else 0] for k, v in words.items() if k in KINDS}
     declared = re.search(r'^- language: (\w+)\s*$', text, re.M)
@@ -2119,48 +2163,50 @@ MUTATED = {'spec/samples/agent-step.alula.md', 'spec/samples/agent-step.en.alula
 # библиотеки пакета (раздел 9), формы 0.27 которых сверяются: шапка и разделы требований (AL-144, AL-145)
 LIBS = [('libs/pause.alula.md', 'ru'), ('libs/pause.en.alula.md', 'en'), ('libs/cycle_arithmetic.alula.md', 'ru'),
         ('libs/cycle_arithmetic.en.alula.md', 'en')]
-# порча формы 0.27 (AL-144…AL-146) по файлам — образцы машин и библиотеки: (файл, язык, описание, что заменить, на что)
-MUTATIONS_227 = [
+# порча формы 0.28 (AL-144…AL-146, AL-148…AL-152) по файлам — образцы машин и библиотеки: (файл, язык, описание, что заменить, на что)
+MUTATIONS_228 = [
     ('spec/samples/agent-step.alula.md', 'ru', 'ключ шапки `machine_version` (до 0.27)', '- revision: 1\n', '- machine_version: 1\n'),
-    ('spec/samples/agent-step.alula.md', 'ru', 'ключ шапки `format` (до 0.27)', '- alula_version: 0.27\n', '- format: 0.27\n'),
-    ('spec/samples/agent-step.alula.md', 'ru', 'ревизия `alula-2.NN` (AL-144: целое число)', '- revision: 1\n', '- revision: alula-0.27\n'),
-    ('spec/samples/agent-step.alula.md', 'ru', 'другая версия формата', '- alula_version: 0.27\n', '- alula_version: 2.26\n'),
-    ('spec/samples/agent-step.alula.md', 'ru', 'шапка машины без `alula_version`', '- alula_version: 0.27\n', ''),
+    ('spec/samples/agent-step.alula.md', 'ru', 'ключ шапки `format` (до 0.27)', '- alula_version: 0.28\n', '- format: 0.27\n'),
+    ('spec/samples/agent-step.alula.md', 'ru', 'ревизия `alula-2.NN` (AL-144: целое число)', '- revision: 1\n', '- revision: alula-0.28\n'),
+    ('spec/samples/agent-step.alula.md', 'ru', 'другая версия формата', '- alula_version: 0.28\n', '- alula_version: 0.27\n'),
+    ('spec/samples/agent-step.alula.md', 'ru', 'шапка машины без `alula_version`', '- alula_version: 0.28\n', ''),
     ('spec/samples/agent-step.en.alula.md', 'en', 'дробная ревизия', '- revision: 1\n', '- revision: 1.5\n'),
-    ('spec/samples/agent-step.en.alula.md', 'en', 'шапка не по порядку (`alula_version` раньше `revision`)', '- revision: 1\n- alula_version: 0.27\n',
-     '- alula_version: 0.27\n- revision: 1\n'),
-    ('spec/samples/agent-step.en.alula.md', 'en', 'шапка не по порядку (`language` раньше `alula_version`)', '- alula_version: 0.27\n- language: en\n',
-     '- language: en\n- alula_version: 0.27\n'),
-    ('spec/samples/meeting-definitions.alula.md', 'ru', 'сторона `machine` со скобками (до 0.27, AL-146)', '| machine шаг_агента; разбор: разобрать_ответ_автора',
-     '| machine шаг_агента(вход ВходШагаАгента, итог ИтогШагаАгента); разбор: разобрать_ответ_автора'),
-    ('spec/samples/meeting-definitions.alula.md', 'ru', 'сторона `machine` со скобками без разбора', '| machine шаг_агента; разбор: разобрать_ответ_линзы -> ИтогЛинзы |',
-     '| machine шаг_агента(вход ВходШагаАгента, итог ИтогЛинзы) |'),
+    ('spec/samples/agent-step.en.alula.md', 'en', 'шапка не по порядку (`alula_version` раньше `revision`)', '- revision: 1\n- alula_version: 0.28\n',
+     '- alula_version: 0.28\n- revision: 1\n'),
+    ('spec/samples/agent-step.en.alula.md', 'en', 'шапка не по порядку (`language` раньше `alula_version`)', '- alula_version: 0.28\n- language: en\n',
+     '- language: en\n- alula_version: 0.28\n'),
+    ('spec/samples/meeting-definitions.alula.md', 'ru', 'сторона `machine` со скобками (до 0.27, AL-146)', '| автор | author | machine шаг_агента | — | разобрать_ответ_автора |',
+     '| автор | author | machine шаг_агента(вход ВходШагаАгента, итог ИтогШагаАгента) | — | разобрать_ответ_автора |'),
+    ('spec/samples/meeting-definitions.alula.md', 'ru', 'фраза вратаря 0.27 (AL-148)', '| вратарь | gatekeeper | gatekeeper | исполнитель_повышенного_внимания |',
+     '| вратарь | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) |'),
+    ('spec/samples/meeting-definitions.alula.md', 'ru', 'режим заново в «Куда» 0.27 (AL-150)', '| сбойное_обращение == "Witness" |  | СВИДЕТЕЛЬ | да |',
+     '| сбойное_обращение == "Witness" |  | СВИДЕТЕЛЬ, запуск заново | да |'),
     ('libs/cycle_arithmetic.alula.md', 'ru', 'ревизия у библиотеки (AL-144)', '- library: cycle_arithmetic\n', '- library: cycle_arithmetic\n- revision: 1\n'),
-    ('libs/cycle_arithmetic.alula.md', 'ru', 'шапка библиотеки без `alula_version`', '- alula_version: 0.27\n', ''),
+    ('libs/cycle_arithmetic.alula.md', 'ru', 'шапка библиотеки без `alula_version`', '- alula_version: 0.28\n', ''),
     ('libs/pause.en.alula.md', 'en', 'единый раздел `Requires` (до 0.27, AL-145)', '## Requires parties\n', '## Requires\n'),
-    ('libs/pause.en.alula.md', 'en', 'ключ шапки `format` у библиотеки (до 0.27)', '- alula_version: 0.27\n', '- format: 0.27\n'),
+    ('libs/pause.en.alula.md', 'en', 'ключ шапки `format` у библиотеки (до 0.27)', '- alula_version: 0.28\n', '- format: 0.27\n'),
 ]
-CLEAN_227 = [  # правка формы 0.27, которая ошибки давать не должна
+CLEAN_228 = [  # правка формы 0.28, которая ошибки давать не должна
     ('spec/samples/agent-step.alula.md', 'ru', 'шапка без `revision` (по умолчанию 1)', '- revision: 1\n', ''),
     ('spec/samples/agent-step.en.alula.md', 'en', 'ревизия 12', '- revision: 1\n', '- revision: 12\n'),
 ]
 
 
-def selftest_v227(words, gloss):
-    """Формы 0.27 (AL-144…AL-146): каждая порча `MUTATIONS_227` замечена, ни одна правка `CLEAN_227` ошибки не даёт."""
+def selftest_v228(words, gloss):
+    """Формы 0.28 (AL-144…AL-146, AL-148…AL-152): каждая порча `MUTATIONS_228` замечена, ни одна правка `CLEAN_228` ошибки не даёт."""
     bad = []
-    for cases, want in ((MUTATIONS_227, True), (CLEAN_227, False)):
+    for cases, want in ((MUTATIONS_228, True), (CLEAN_228, False)):
         for name, lang, what, a, b in cases:
             text = read(name)
             if a not in text:
-                bad.append('самопроверка 0.27 (%s): файл не содержит заменяемого (%s)' % (name, what))
+                bad.append('самопроверка 0.28 (%s): файл не содержит заменяемого (%s)' % (name, what))
                 continue
             clean = set(check_sample(text, words, name, lang, gloss))
             e = [x for x in check_sample(text.replace(a, b, 1), words, name, lang, gloss) if x not in clean]
             if want and not e:
-                bad.append('самопроверка 0.27 (%s): порча не замечена (%s)' % (name, what))
+                bad.append('самопроверка 0.28 (%s): порча не замечена (%s)' % (name, what))
             if not want and e:
-                bad.append('самопроверка 0.27 (%s): ложная ошибка (%s): %s' % (name, what, e[0]))
+                bad.append('самопроверка 0.28 (%s): ложная ошибка (%s): %s' % (name, what, e[0]))
     return bad
 
 
@@ -2244,14 +2290,14 @@ def main():
         if '--selftest' in sys.argv and gloss is not None:
             errs += selftest(sample, words, name, lang, gloss)
     for name, lang in LIBS:  # библиотеки пакета: формы 0.27 (полная сверка образца — у машин)
-        errs += check_v227(read(name), name)
+        errs += check_v228(read(name), name)
     if '--selftest' in sys.argv:
         if gtext is not None:
             errs += selftest_dictionary(gtext, specs)
         else:
             print('самопроверка образцов и словаря пропущена: не задан путь к глоссарию')
         errs += selftest_table(table)
-        errs += selftest_v227(words, gloss)
+        errs += selftest_v228(words, gloss)
     for e in errs:
         print(e)
     rows = sum(len(words[k][0]) for k in KINDS)

@@ -70,7 +70,7 @@ fn rn_library_lines(mut cx RnCx, root RJ, copy_includes bool) -> []str {
         out.push("### ${twin.heading}")
         out.push("- ${rn_kw(cx, "key", "File")}: ${twin.file}")
         out.push("- ${rn_kw(cx, "key", "Hash")}: ${twin.hash}")
-        if rj_gstr(inc, "instance") != "" { out.push("- ${rn_kw(cx, "key", "Name")}: ${rj_gstr(inc, "instance")}") }
+        if rj_gstr(inc, "instance") != "" { out.push("- ${rn_kw(cx, "key", if cx.v226 { "As" } else { "Name" })}: ${rj_gstr(inc, "instance")}") }
         ro args = rj_garr(inc, "args")
         if args.len() > 0 {
             mut rows = []RnRow.new()

@@ -10,7 +10,7 @@ fn tiny226_text() -> str => `# Машина: Tiny
 
 - machine: Tiny
 - revision: 1
-- alula_version: 0.27
+- alula_version: 0.28
 
 ## Имена
 
@@ -32,13 +32,13 @@ fn tiny226_text() -> str => `# Машина: Tiny
 
 ## Стороны
 
-| имя | идентификатор | вид | профиль | сигналы | счётчик |
-|---|---|---|---|---|---|
-| вратарь | gatekeeper | human или agent по настройке исполнитель_повышенного_внимания(итог ИсходВорот) | — | разрешить, отказать | попытка_вратаря |
+| имя | идентификатор | вид | настройка | разбор | профиль | сигналы | счётчик |
+|---|---|---|---|---|---|---|---|
+| вратарь | gatekeeper | gatekeeper | исполнитель_повышенного_внимания | — | — | разрешить, отказать | попытка_вратаря |
 
 ## Состояния
 
-Начальное состояние: ЖДАТЬ
+- Начальное состояние: ЖДАТЬ
 
 ### ЖДАТЬ — обращение
 - Сторона: вратарь
@@ -112,7 +112,7 @@ test "v226 the small machine of 2.26 is translated with no error" {
 }
 
 test "v226 the tree says the version 2.26" {
-    assert(json226(tiny226_text()).contains("\"alula_version\":\"0.27\""))
+    assert(json226(tiny226_text()).contains("\"alula_version\":\"0.28\""))
 }
 
 test "v226 the rows of a table without the column number are numbered in their order" {
@@ -139,11 +139,11 @@ test "v226 an empty cell of the condition and of the actions is none" {
     assert(j.contains("\"to\":\"Finished\"}"))
 }
 
-test "v226 the actions of a cell are parted by br as by the semicolon" {
+test "v226 the actions of a cell are parted by br; the semicolon of 0.27 is an error with the hint" {
     ro j = json226(tiny226_text())
     assert(j.contains("{\"do\":\"journal\""))
-    ro semi = json226(t226_with("число_ходов += 1<br>журнал(\"turn_counted\")", "число_ходов += 1; журнал(\"turn_counted\")"))
-    assert(semi == j)
+    // 0.28 (AL-152): `; ` between the actions of a cell is an error with the hint, the only separator is `<br>`
+    assert(says226(t226_with("число_ходов += 1<br>журнал(\"turn_counted\")", "число_ходов += 1; журнал(\"turn_counted\")"), "<br>"))
 }
 
 test "v226 br in a string literal is the text" {
@@ -227,7 +227,7 @@ test "v226 a section of one dash is an error: an empty section is not written" {
 
 test "v226 a file of 2.25 is read in the former form" {
     assert(format_versions().contains("2.25"))
-    assert(format_versions().contains("0.27"))
+    assert(format_versions().contains("0.28"))
     assert(r226(tiny_text()).errors.len() == 0)
     assert(json226(tiny_text()).contains("\"alula_version\":\"2.25\""))
 }
@@ -267,7 +267,7 @@ test "v226 the table of words is the copy of the table of the specification of 2
 test "v226 the generator writes a tree of 2.26 in the form of 2.26 and the circle gives the same tree" {
     ro j = json226(tiny226_text())
     ro text = render(j, "ru")
-    assert(text.contains("- alula_version: 0.27"))
+    assert(text.contains("- alula_version: 0.28"))
     assert(text.contains("## Выход"))
     assert(!text.contains("## Концы"))
     assert(!text.contains("| № |"))

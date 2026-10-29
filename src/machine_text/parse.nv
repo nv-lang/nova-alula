@@ -560,8 +560,22 @@ fn ty_parse(mut p TxP, mut cx TxCx) -> Result[str, TranslateError] {
     if p_eat_kw(p, words, "type", "State") { return Ok("State") }
     if p_eat_kw(p, words, "type", "Signal") { return Ok("Signal") }
     if p_eat_kw(p, words, "type", "bool") { return Ok("bool") }
-    if p_is_kw(p, words, "type", "full map") || p_is_kw(p, words, "type", "map") {
-        ro full = p_eat_kw(p, words, "type", "full map")
+    // 0.28: the former `полный словарь` of two words is an error with a hint (section 10); the word is `полный_словарь`, its two halves are taken from the table of words (the code
+    // holds no Cyrillic word of the structure). A file of 2.25 writes the type with the two words (the underscore of 0.28 is the space of 2.25).
+    ro fm = kw(words, "type", "full_map")
+    ro fm_us = fm.find("_") ?? -1
+    mut full225 = false
+    if fm_us > 0 && p_tok(p).text == fm[..fm_us] && p_ahead(p, 1).text == fm[fm_us + 1..] {
+        if cx.v226 {
+            ro two = p_tok(p)
+            return Err(tx_err(two.line, two.col, "syntax", "с 0.28 — `${fm}` (одно слово); `${fm[..fm_us]} ${fm[fm_us + 1..]}` с пробелом не пишется, переходного периода нет"))
+        }
+        p_adv(p)
+        p_adv(p)
+        full225 = true
+    }
+    if full225 || p_is_kw(p, words, "type", "full_map") || p_is_kw(p, words, "type", "map") {
+        ro full = full225 || p_eat_kw(p, words, "type", "full_map")
         if !full {
             ro plain = p_eat_kw(p, words, "type", "map")
         }

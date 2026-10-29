@@ -7,13 +7,13 @@ import std.text
 fn up227() -> str => `,{"name":"u_attempt","type":"int>=0","initial":{"expr":${jl("0")}},"monotonic":true,"writes":"mechanics"}`
 
 // The small machine as a tree of 0.27: the root keys of 0.27, the counter of the party without a row (the rules of 2.26 stay).
-fn tiny227() -> str => tiny().replace(up227(), "").replace("{\"format\":\"machine/2\",\"machine\":\"Tiny\",\"version\":\"1\",", "{\"kind\":\"machine\",\"alula_version\":\"0.27\",\"machine\":\"Tiny\",\"revision\":4,")
+fn tiny227() -> str => tiny().replace(up227(), "").replace("{\"format\":\"machine/2\",\"machine\":\"Tiny\",\"version\":\"1\",", "{\"kind\":\"machine\",\"alula_version\":\"0.28\",\"machine\":\"Tiny\",\"revision\":4,")
 
 test "v227 a tree of 0.27 with kind and revision is loaded" {
     assert(first_issue(tiny227()) == "ok")
     match parse_machine(tiny227()) {
         Ok(def) => {
-            assert(def.alula_version == "0.27")
+            assert(def.alula_version == "0.28")
             assert(def.version == "4")
         }
         Err(e) => assert(false)
@@ -51,14 +51,14 @@ test "v227 a kind other than machine is refused" {
 }
 
 test "v227 a tree of another version of the language is refused" {
-    assert(!ok_text(tiny227().replace("\"alula_version\":\"0.27\"", "\"alula_version\":\"2.26\"")))
-    assert(says(tiny227().replace("\"alula_version\":\"0.27\"", "\"alula_version\":\"2.26\""), "0.27"))
+    assert(!ok_text(tiny227().replace("\"alula_version\":\"0.28\"", "\"alula_version\":\"2.26\"")))
+    assert(says(tiny227().replace("\"alula_version\":\"0.28\"", "\"alula_version\":\"2.26\""), "0.27"))
 }
 
 test "v227 the package names the one version 0.27" {
     assert(alula_versions().len() == 1)
     assert(alula_versions().contains("0.27"))
-    assert(ALULA_VERSION == "0.27")
+    assert(ALULA_VERSION == "0.28")
     assert(top_keys().contains("kind"))
     assert(top_keys().contains("revision"))
 }

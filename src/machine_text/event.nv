@@ -254,6 +254,17 @@ fn where_parse(mut p TxP, mut cx TxCx) -> Result[TxWhere, TranslateError] {
         } else if p_eat_kw(p, cx.words, "destination", "same") {
             to = "@same"
         } else {
+            // 0.28: the destination word is `то_же` (one word); the halves are taken from the table of words (the code holds no Cyrillic word of the structure). In a file of 0.28
+            // the former `то же` of two words is an error with a hint (section 10); a file of 2.25 writes the destination with them (the underscore of 0.28 is the space of 2.25).
+            ro sm = kw(cx.words, "destination", "same")
+            ro sm_us = sm.find("_") ?? -1
+            ro two = sm_us > 0 && t.text == sm[..sm_us] && p_ahead(p, 1).text == sm[sm_us + 1..]
+            if two && cx.v226 { return Err(tx_err(t.line, t.col, "syntax", "с 0.28 — `${sm}` (одно слово); `${sm[..sm_us]} ${sm[sm_us + 1..]}` с пробелом не пишется, переходного периода нет")) }
+            if two {
+                p_adv(p)
+                p_adv(p)
+                to = "@same"
+            } else {
             p_adv(p)
             // a state of a library: `Пауза.ПАУЗА`, the prefix of the instance (2.26, section 9)
             if cx.env.instances.contains(t.text) && p_is(p, ".") && p_ahead(p, 1).kind == TK_NAME {
@@ -277,16 +288,25 @@ fn where_parse(mut p TxP, mut cx TxCx) -> Result[TxWhere, TranslateError] {
                     }
                 }
             }
+            }
         }
     } else {
-        return Err(p_fail(p, "ожидается состояние, `предыдущее`, `то же` или `—`"))
+        return Err(p_fail(p, "ожидается состояние, `${kw(cx.words, "destination", "previous")}`, `${kw(cx.words, "destination", "same")}` или `—`"))
     }
     mut restart = false
-    if p_eat(p, ",") {
-        if p_eat_kw(p, cx.words, "destination", "rerun") {
-            restart = true
+    // 0.28: the restart mode is the column `заново` of the table of the rows; in a file of 0.28 the former `, запуск заново` in "Куда" is an error with a hint (section 10),
+    // a file of 2.25 writes the mode with it (the word of 2.25 is of the layer `keywords_225.tsv`)
+    if p_is(p, ",") {
+        if !cx.v226 {
+            p_adv(p)
+            if p_eat_kw(p, cx.words, "destination", "rerun") {
+                restart = true
+            } else {
+                return Err(p_fail(p, "после запятой ожидается `${kw(cx.words, "destination", "rerun")}`"))
+            }
         } else {
-            return Err(p_fail(p, "после запятой ожидается `${kw(cx.words, "destination", "rerun")}`"))
+            ro comma = p_tok(p)
+            return Err(tx_err(comma.line, comma.col, "syntax", "с 0.28 режим — столбец `${kw(cx.words, "column", "rerun")}` таблицы строк (`да` или пусто); запись `, запуск заново` в «${kw(cx.words, "column", "To")}» не пишется, переходного периода нет"))
         }
     }
     Ok(TxWhere { to, restart })

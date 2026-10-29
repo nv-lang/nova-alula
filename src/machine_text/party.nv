@@ -97,9 +97,9 @@ fn party_counter(cell TxCell, line int, mut cx TxCx) -> Result[str, TranslateErr
     Ok(text)
 }
 
-// The cell `вид`: agent(итог Тип), human(итог ИсходВорот), enhanced(итог ИсходВорот), human или agent по настройке имя(итог ИсходВорот), machine имя(вход Тип, итог Тип)[; разбор: примитив[("роль")] -> Тип].
-// A party of the kind `machine` is a nested machine (rule 35): the name of the machine of the registry of the caller, the record type of its input, the type of its result and the parse.
-// Since 0.27 (AL-146) a party `machine <имя>` names no types: `input` and `types` come from the called machine (TxCallee).
+// The cell `вид` of 0.28: agent(итог Тип), human(итог ИсходВорот), enhanced(итог ИсходВорот), gatekeeper, свободный_ввод, machine <имя>. The gatekeeper takes its setting from the column `настройка`, the parse of a nested machine from the column `разбор` (the type comes from the function).
+// A file of 2.25 writes the gatekeeper `human или agent по настройке <имя>(итог …)` and the parse of a machine in the same cell `; разбор: примитив -> Тип` (the words of the layer of 2.25).
+// A party of the kind `machine` is a nested machine (rule 35): the name of the machine of the registry of the caller; since 0.27 (AL-146) it names no types: `input` and `types` come from the called machine (TxCallee).
 type TxKind { kind str, result str, setting str, nested str, input_type str, parse_primitive str, parse_type str, input []TxJ, types []str }
 
 fn kind_plain(kind str, result str, setting str) -> TxKind => { kind, result, setting, nested: "", input_type: "", parse_primitive: "", parse_type: "", input: []TxJ.new(), types: []str.new() }
@@ -118,10 +118,10 @@ fn nested_name_text(mut cx TxCx, at TxTok, name str) -> str {
     name
 }
 
-// The message about a literal of the role in `разбор:` (AL-131, section 7 of the specification): the hint names the three functions in the language of the file.
+// The message about a literal of the role in the parse of a party (AL-131, section 7 of the specification): the hint names the three functions in the language of the file. Since 0.28 the parse is written in the column `разбор`.
 fn role_literal_message(lang str) -> str {
     ro message_names = if lang == "en" { "`parse_witness_reply`, `parse_author_reply`, `parse_lens_reply`" } else { "`разобрать_ответ_свидетеля`, `разобрать_ответ_автора`, `разобрать_ответ_линзы`" }
-    ro message_text = "литерал роли в разбор: с 2.24 — отдельная функция на роль: ${message_names}; разбор называется именем без скобок и аргументов; переходного периода нет"
+    ro message_text = "литерал роли в разборе: отдельная функция на роль: ${message_names}; разбор называется именем без скобок и аргументов; переходного периода нет"
     message_text
 }
 
@@ -157,9 +157,15 @@ fn party_machine(mut p TxP, mut cx TxCx) -> Result[TxKind, TranslateError] {
         result = ty_parse(p, cx)?
         p_expect(p, ")")?
     }
+    // 0.28: the parse is the column `разбор`; in a file of 0.28 the record `; разбор: …` in the cell of the kind is an error with a hint (section 10), a file of 2.25 writes it so
     mut prim = ""
     mut parse_type = ""
-    if p_eat(p, ";") {
+    if p_is(p, ";") {
+        if cx.v226 {
+            ro t = p_tok(p)
+            return Err(tx_err(t.line, t.col, "syntax", "с 0.28 разбор — столбец, тип берётся от функции: функция разбора пишется именем без скобок в столбце `${kw(words, "column", "parse")}`, а не записью `; разбор: … -> Тип` в виде стороны"))
+        }
+        p_adv(p)
         p_expect_kw(p, words, "kind_party", "parse")?
         p_expect(p, ":")?
         ro f = p_tok(p)
@@ -182,22 +188,48 @@ fn party_kind(cell TxCell, line int, mut cx TxCx) -> Result[TxKind, TranslateErr
     if w.kind != TK_NAME { return Err(p_fail(p, "ожидается вид стороны")) }
     ro words = cx.words
     if p_eat_kw(p, words, "kind_party", "machine") { return party_machine(p, cx) }
-    mut setting = ""
     mut kind = ""
-    if p_eat_kw(p, words, "kind_party", "human or agent by setting") {
-        ro s = p_tok(p)
-        if s.kind != TK_NAME { return Err(p_fail(p, "ожидается имя настройки проекта")) }
-        p_adv(p)
-        setting = decl_json(p, cx, s, "настройки вратаря", "параметры и константы", [s.text])?
-        kind = "gatekeeper"
-    } else if p_eat_kw(p, words, "kind_party", "agent") {
-        kind = "agent"
-    } else if p_eat_kw(p, words, "kind_party", "human") {
-        kind = "human"
-    } else if p_eat_kw(p, words, "kind_party", "enhanced") {
-        kind = "enhanced"
+    mut setting = ""
+    if cx.v226 {
+        // 0.28: the gatekeeper and the free input are kinds without brackets and a result; the setting of the gatekeeper is the column `настройка`
+        if p_eat_kw(p, words, "kind_party", "gatekeeper") {
+            if p_is(p, "(") { return Err(p_fail(p, "у вратаря (`${kw(words, "kind_party", "gatekeeper")}`) скобок и итога нет: итог всегда `${kw(words, "type", "GateOutcome")}`, настройка — столбец `${kw(words, "column", "setting")}`")) }
+            p_end(p)?
+            return Ok(kind_plain("gatekeeper", "", ""))
+        }
+        if p_eat_kw(p, words, "kind_party", "free_input") {
+            if p_is(p, "(") { return Err(p_fail(p, "у стороны вида `${kw(words, "kind_party", "free_input")}` скобок и итога нет")) }
+            p_end(p)?
+            return Ok(kind_plain("free_input", "", ""))
+        }
+        if p_eat_kw(p, words, "kind_party", "agent") {
+            kind = "agent"
+        } else if p_eat_kw(p, words, "kind_party", "human") {
+            // the former record of the gatekeeper `human или agent по настройке <имя>(итог …)` is an error with a hint (section 10)
+            if p_tok(p).text == "или" || p_tok(p).text == "or" { return Err(p_fail(p, "с 0.28 вратарь — вид `${kw(words, "kind_party", "gatekeeper")}`, настройка — столбец `${kw(words, "column", "setting")}`")) }
+            kind = "human"
+        } else if p_eat_kw(p, words, "kind_party", "enhanced") {
+            kind = "enhanced"
+        } else {
+            return Err(tx_err(w.line, w.col, "syntax", "вид стороны: ${kw(words, "kind_party", "agent")}, ${kw(words, "kind_party", "human")}, ${kw(words, "kind_party", "enhanced")}, ${kw(words, "kind_party", "gatekeeper")}, ${kw(words, "kind_party", "free_input")}, ${kw(words, "kind_party", "machine")}"))
+        }
     } else {
-        return Err(tx_err(w.line, w.col, "syntax", "вид стороны: ${kw(words, "kind_party", "agent")}, ${kw(words, "kind_party", "human")}, ${kw(words, "kind_party", "enhanced")}, ${kw(words, "kind_party", "human or agent by setting")} …, ${kw(words, "kind_party", "machine")}"))
+        // the seam of 2.25: the gatekeeper is `human или agent по настройке <имя>(итог …)` with the setting in the cell of the kind (the word of the layer of 2.25)
+        if p_eat_kw(p, words, "kind_party", "human or agent by setting") {
+            ro s = p_tok(p)
+            if s.kind != TK_NAME { return Err(p_fail(p, "ожидается имя настройки проекта")) }
+            p_adv(p)
+            setting = decl_json(p, cx, s, "настройки вратаря", "параметры и константы", [s.text])?
+            kind = "gatekeeper"
+        } else if p_eat_kw(p, words, "kind_party", "agent") {
+            kind = "agent"
+        } else if p_eat_kw(p, words, "kind_party", "human") {
+            kind = "human"
+        } else if p_eat_kw(p, words, "kind_party", "enhanced") {
+            kind = "enhanced"
+        } else {
+            return Err(tx_err(w.line, w.col, "syntax", "вид стороны: ${kw(words, "kind_party", "agent")}, ${kw(words, "kind_party", "human")}, ${kw(words, "kind_party", "enhanced")}, ${kw(words, "kind_party", "human or agent by setting")} …, ${kw(words, "kind_party", "machine")}"))
+        }
     }
     p_expect(p, "(")?
     p_expect_kw(p, words, "kind_party", "result")?
@@ -227,7 +259,8 @@ fn party_parts(cell TxCell, line int, mut cx TxCx, party str) -> Result[str, Tra
 
 fn party_row(r TxEntry, mut cx TxCx) -> Result[TxPartyRow, TranslateError] => party_row_in(r, cx, false)
 
-/// A row of `## Стороны`; `with_parts`: the table of 2.26 has the column `части` after `сигналы` (the type of the parts, the pair `parts_type` of the row for the tree).
+/// A row of `## Стороны` of 0.28: `| имя | идентификатор | вид | настройка | разбор | профиль | сигналы | счётчик |`; `with_parts`: the optional column `части` before `счётчик` (section 7а: the type of the parts, the pair `parts_type` of the row for the tree).
+/// A row of the seam of 2.25: `| имя | идентификатор | вид | профиль | сигналы | счётчик |` — the setting of the gatekeeper and the parse of a machine are of the cell of the kind.
 fn party_row_in(r TxEntry, mut cx TxCx, with_parts bool) -> Result[TxPartyRow, TranslateError] {
     ro n = cell_name(r.cells[0], r.line)?
     ro id = if r.cells[1].text == "—" { "" } else { r.cells[1].text }
@@ -235,23 +268,80 @@ fn party_row_in(r TxEntry, mut cx TxCx, with_parts bool) -> Result[TxPartyRow, T
     ro en = party_en(cx, n, id)
     if pair_has(cx.env.parties, n.text) { return Err(tx_err(n.line, n.col, "name", "сторона `${n.text}` уже объявлена")) }
     pair_add(cx.env.parties, n.text, en)
+    mut setting = ""
+    mut parse_primitive = ""
+    mut parse_type = ""
     mut profile = TxNull
     mut has_profile = false
-    if r.cells[3].text != "—" && r.cells[3].text != "" {
-        profile = cell_expr(r.cells[3], r.line, cx, sc_empty())?
+    mut signals = []TxJ.new()
+    mut parts_type = ""
+    mut counter = ""
+    if !cx.v226 {
+        // the seam of 2.25: no columns `настройка`/`разбор` (0.28), `—` of the counter is the free input of a human (AL-52)
+        if r.cells[3].text != "—" && r.cells[3].text != "" {
+            profile = cell_expr(r.cells[3], r.line, cx, sc_empty())?
+            has_profile = true
+        }
+        signals = party_signals(r.cells[4], r.line, cx, n.text)?
+        ro counter225 = r.cells[5]
+        if counter225.text == "—" || counter225.text == "" {
+            if k.kind != "human" {
+                return Err(tx_err(r.line, counter225.col, "structure", "у стороны вида `${k.kind}` счётчик обязателен: `—` (нет значения, свободный ввод, AL-52) допустим только у стороны вида `${kw(cx.words, "kind_party", "human")}`"))
+            }
+        } else {
+            counter = party_counter(counter225, r.line, cx)?
+        }
+        setting = k.setting
+        parse_primitive = k.parse_primitive
+        parse_type = k.parse_type
+    } else {
+    // the column `настройка` (0.28): only at the kind `gatekeeper` — the key of the project setting; an empty cell at the gatekeeper and a non-empty one at another kind are errors (section 10)
+    if k.kind == "gatekeeper" {
+        if r.cells[3].text == "—" || r.cells[3].text == "" {
+            return Err(tx_err(r.line, r.cells[3].col, "structure", "у вратаря (`${kw(cx.words, "kind_party", "gatekeeper")}`) настройка обязательна: в столбце `${kw(cx.words, "column", "setting")}` — ключ настройки проекта (параметр или константа машины), по значению которого решается, кто исполняет ворота"))
+        }
+        mut sp = cell_p(r.cells[3], r.line)?
+        ro s = p_tok(sp)
+        if s.kind != TK_NAME { return Err(p_fail(sp, "в столбце `${kw(cx.words, "column", "setting")}` — имя настройки проекта")) }
+        p_adv(sp)
+        setting = decl_json(sp, cx, s, "настройки вратаря", "параметры и константы", [s.text])?
+        p_end(sp)?
+    } else if r.cells[3].text != "—" && r.cells[3].text != "" {
+        return Err(tx_err(r.line, r.cells[3].col, "structure", "столбец `${kw(cx.words, "column", "setting")}` — только у вида `${kw(cx.words, "kind_party", "gatekeeper")}`; у стороны вида `${k.kind}` здесь `—`"))
+    }
+    // the column `разбор` (0.28): only at the kind `machine` — the name of the parse function without brackets; the type of its result comes from the declaration of the function (the check compares, section 10)
+    if r.cells[4].text != "—" && r.cells[4].text != "" {
+        if k.kind != "machine" {
+            return Err(tx_err(r.line, r.cells[4].col, "structure", "столбец `${kw(cx.words, "column", "parse")}` — только у вида `${kw(cx.words, "kind_party", "machine")}`; у стороны вида `${k.kind}` здесь `—`"))
+        }
+        mut pp = cell_p(r.cells[4], r.line)?
+        ro f = p_tok(pp)
+        if f.kind != TK_NAME { return Err(p_fail(pp, "в столбце `${kw(cx.words, "column", "parse")}` — имя функции разбора без скобок и аргументов")) }
+        p_adv(pp)
+        if p_is(pp, "(") { return Err(p_fail(pp, role_literal_message(cx.words.lang))) }
+        parse_primitive = tr_primitive(cx, f)
+        p_end(pp)?
+    }
+    if r.cells[5].text != "—" && r.cells[5].text != "" {
+        profile = cell_expr(r.cells[5], r.line, cx, sc_empty())?
         has_profile = true
     }
-    ro signals = party_signals(r.cells[4], r.line, cx, n.text)?
-    mut parts_type = ""
-    if with_parts { parts_type = party_parts(r.cells[5], r.line, cx, n.text)? }
-    ro counter_cell = if with_parts { r.cells[6] } else { r.cells[5] }
-    mut counter = ""
+    signals = party_signals(r.cells[6], r.line, cx, n.text)?
+    if with_parts { parts_type = party_parts(r.cells[7], r.line, cx, n.text)? }
+    ro counter_cell = if with_parts { r.cells[8] } else { r.cells[7] }
     if counter_cell.text == "—" || counter_cell.text == "" {
-        if k.kind != "human" {
-            return Err(tx_err(r.line, counter_cell.col, "structure", "у стороны вида `${k.kind}` счётчик обязателен: `—` (нет значения, свободный ввод, AL-52) допустим только у стороны вида `${kw(cx.words, "kind_party", "human")}`"))
+        if k.kind == "human" {
+            return Err(tx_err(r.line, counter_cell.col, "structure", "с 0.28 человек без ворот — вид `${kw(cx.words, "kind_party", "free_input")}`: у `${kw(cx.words, "kind_party", "human")}` счётчик обязателен, `—` бывает только у свободного ввода"))
+        }
+        if k.kind != "free_input" {
+            return Err(tx_err(r.line, counter_cell.col, "structure", "у стороны вида `${k.kind}` счётчик обязателен: `—` (нет значения) допустим только у стороны вида `${kw(cx.words, "kind_party", "free_input")}`"))
         }
     } else {
+        if k.kind == "free_input" {
+            return Err(tx_err(r.line, counter_cell.col, "structure", "у стороны вида `${kw(cx.words, "kind_party", "free_input")}` счётчика нет: в столбце `${kw(cx.words, "column", "counter")}` только `—`"))
+        }
         counter = party_counter(counter_cell, r.line, cx)?
+    }
     }
     mut pairs = [kv("name", js(en)), kv("id", js(id)), kv("kind", js(k.kind))]
     if k.nested != "" { pairs.push(kv("nested", js(k.nested))) }
@@ -259,13 +349,14 @@ fn party_row_in(r TxEntry, mut cx TxCx, with_parts bool) -> Result[TxPartyRow, T
     if k.input.len() > 0 { pairs.push(kv("input", TxArr(k.input))) }
     if k.types.len() > 0 { pairs.push(kv("callee_types", jstrs(k.types))) }
     if k.result != "" { pairs.push(kv("result", js(k.result))) }
-    if k.parse_primitive != "" {
-        mut parse_pairs = [kv("primitive", js(k.parse_primitive))]
-        parse_pairs.push(kv("type", js(k.parse_type)))
+    if parse_primitive != "" {
+        mut parse_pairs = [kv("primitive", js(parse_primitive))]
+        // the tree of the seam of 2.25 keeps the type after `->` of the parse; the tree of 0.28 takes it from the declaration of the function
+        if !cx.v226 { parse_pairs.push(kv("type", js(parse_type))) }
         pairs.push(kv("parse", jobj(parse_pairs)))
     }
     if has_profile { pairs.push(kv("profile", profile)) }
-    if k.setting != "" { pairs.push(kv("setting", js(k.setting))) }
+    if setting != "" { pairs.push(kv("setting", js(setting))) }
     if counter != "" { pairs.push(kv("counter", js(counter))) }
     if signals.len() > 0 { pairs.push(kv("signals", TxArr(signals))) }
     // the type of the parts: the machine puts the record of the type as the `progress` of the party (machine.nv, `party_json`)
@@ -273,10 +364,13 @@ fn party_row_in(r TxEntry, mut cx TxCx, with_parts bool) -> Result[TxPartyRow, T
     Ok(TxPartyRow { ru: n.text, en, pairs })
 }
 
-fn party_columns() -> []str => ["name", "id", "kind", "profile", "signals", "counter"]
+fn party_columns() -> []str => ["name", "id", "kind", "setting", "parse", "profile", "signals", "counter"]
 
-// The columns of `## Стороны` of 2.26 with the column `части` (section 7а: what the party sends before its answer, by the pattern of `сигналы`).
-fn party_columns_parts() -> []str => ["name", "id", "kind", "profile", "signals", "parts", "counter"]
+// The columns of `## Стороны` with the optional column `части` before `счётчик` (section 7а: what the party sends before its answer, by the pattern of `сигналы`).
+fn party_columns_parts() -> []str => ["name", "id", "kind", "setting", "parse", "profile", "signals", "parts", "counter"]
+
+// The columns of `## Стороны` of the seam of 2.25: no `настройка`/`разбор` of 0.28 (the setting and the parse are of the cell of the kind) and no `части` of 2.26.
+fn party_columns_225() -> []str => ["name", "id", "kind", "profile", "signals", "counter"]
 
 fn limit_expression(line TxKv, mut cx TxCx) -> Result[TxJ, TranslateError] {
     mut p = lex_segs(line.segs)?
@@ -314,9 +408,9 @@ fn decl_parties(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxPartyRow {
     while i < sec.last {
         ro e = entries[i]
         if e.kind == EN_ROW {
-            // a file of 2.26 may have the column `части` after `сигналы` (section 7а)
+            // a file of 0.28 may have the column `части` before `счётчик` (section 7а); the seam of 2.25 reads the table without the columns `настройка`/`разбор` and `части`
             ro with_parts = cx.v226 && e.cells.len() == party_columns_parts().len()
-            ro t = tab_read(entries, i, sec.last, if with_parts { party_columns_parts() } else { party_columns() }, cx)
+            ro t = tab_read(entries, i, sec.last, if with_parts { party_columns_parts() } else if cx.v226 { party_columns() } else { party_columns_225() }, cx)
             for r in t.rows {
                 cx.rows_total += 1
                 ro before = cx.errors.len()

@@ -257,8 +257,8 @@ type TxClassified { entries []TxEntry, warnings []TranslateError, errors []Trans
 
 // ---- the key lines ---------------------------------------------------------------------------------------------------------------
 
-/// The keys of the state, the section and the connection lines that begin a line `Ключ: значение` (the English word of the key, the same in both languages of the file).
-fn line_keys() -> []str => ["Initial state", "Party", "Idle term", "Edits", "Form returns", "Request", "Reads", "On accept", "On entry", "Except", "Result", "Request limit", "Invariant", "functions"]
+/// The keys of the state, the section and the connection lines that begin a line `Ключ: значение` (the English word of the key, the same in both languages of the file). 0.28: `Set` and `Check` are keys of their own items.
+fn line_keys() -> []str => ["Initial state", "Party", "Set", "Idle term", "Edits", "Check", "Form returns", "Request", "Reads", "On accept", "On entry", "Except", "Result", "Request limit", "Invariant", "functions"]
 
 /// The keys of the header of a file.
 fn header_keys() -> []str => ["machine", "revision", "alula_version", "machine_version", "format", "functions_version", "language"]
@@ -335,7 +335,7 @@ fn foreign_error(w TxWords, line int, col int, word str, kind str, key str) -> T
 // ---- the paragraphs ------------------------------------------------------------------------------------------------------------
 
 /// The closed list of the key words of a state, a section and a connection (format 4.1; `Куда` is a column, not a key, AL-14): a paragraph that starts with one of them without the list marker is warned about.
-fn prose_keys(w TxWords) -> []str => kw_all(w, "key", ["Party", "Idle term", "Request", "Reads", "Edits", "Form returns", "On entry", "On accept", "Result", "Except", "Request limit"])
+fn prose_keys(w TxWords) -> []str => kw_all(w, "key", ["Party", "Set", "Idle term", "Request", "Reads", "Edits", "Check", "Form returns", "On entry", "On accept", "Result", "Except", "Request limit", "Initial state"])
 
 // A line that begins a declaration of the sections `Типы`, `Функции` and `Внешние функции`.
 fn is_decl_start(text str, w TxWords) -> bool {

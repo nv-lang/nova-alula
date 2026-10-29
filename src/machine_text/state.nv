@@ -24,6 +24,10 @@ fn head_parse(entry TxEntry, mut cx TxCx) -> Result[TxBlock, TranslateError] {
     mut p = p_new(tokens, entry.line, entry.level + 2 + entry.text.chars().count())
     ro n = p_tok(p)
     if n.kind != TK_NAME { return Err(p_fail(p, "ожидается имя состояния")) }
+    // 0.28 (4.1): a word of the destination (`то_же`, `предыдущее`, `возврат_подготовки`) is reserved, it cannot be the name of a state
+    if t_is_kw(n, words, "destination", "same") || t_is_kw(n, words, "destination", "previous") || t_is_kw(n, words, "destination", "preparation_return") {
+        return Err(tx_err(n.line, n.col, "name", "слово назначения `${n.text}` нельзя объявить именем состояния: оно зарезервировано для столбца «${kw(words, "column", "To")}» (4.1)"))
+    }
     p_adv(p)
     p_expect(p, "—")?
     ro k = p_tok(p)
@@ -150,8 +154,27 @@ fn dash_cell_error(cell TxCell, line int) -> TranslateError {
     tx_err(line, cell.col, "syntax", "с 2.26 «нет» — пустая ячейка: `—` в ячейке строки не пишется (AL-137); переходного периода нет")
 }
 
+// 0.28: the actions of a cell are parted by `<br>`; the sign `;` between them at the top level of the cell (outside brackets, outside string literals) is an error with a hint (section 10).
+fn semicolon_check(cell TxCell, line int) -> Result[(), TranslateError] {
+    mut p = cell_p(cell, line)?
+    mut depth = 0
+    while !p_done(p) {
+        ro t = p_tok(p)
+        if t_is(t, "(") || t_is(t, "[") || t_is(t, "{") {
+            depth += 1
+        } else if t_is(t, ")") || t_is(t, "]") || t_is(t, "}") {
+            depth -= 1
+        } else if t_is(t, ";") && depth == 0 {
+            return Err(tx_err(line, t.col, "syntax", "с 0.28 действия разделяет `<br>`: `действие<br>действие`; запись через `; ` в ячейке не пишется, переходного периода нет"))
+        }
+        p_adv(p)
+    }
+    Ok(())
+}
+
 fn ac_cell(cell TxCell, line int, mut cx TxCx, sc TxScope) -> Result[TxActList, TranslateError] {
     if cx.v226 && cell.text == "—" { return Err(dash_cell_error(cell, line)) }
+    if cx.v226 { semicolon_check(cell, line)? }
     ro text = if cx.v226 { br_parted(cell.text) } else { cell.text }
     mut p = cell_p(TxCell { text, col: cell.col }, line)?
     ro all = ac_list_scoped(p, cx, sc)?
@@ -159,9 +182,9 @@ fn ac_cell(cell TxCell, line int, mut cx TxCx, sc TxScope) -> Result[TxActList, 
     Ok(all)
 }
 
-/// A row of transitions of a state of the kind `kind`; returns the JSON of the row. `place` is the number of the row in its table (from 1): the number of a row of 2.26, which has no column `№`.
-fn row_parse(r TxEntry, kind str, place int, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
-    if cx.v226 { return row_parse_226(r, kind, place, cx, sc) }
+/// A row of transitions of a state of the kind `kind`; returns the JSON of the row. `place` is the number of the row in its table (from 1): the number of a row of 2.26, which has no column `№`. `rerun`: the table has the last column `заново` (0.28).
+fn row_parse(r TxEntry, kind str, place int, rerun bool, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    if cx.v226 { return row_parse_226(r, kind, place, rerun, cx, sc) }
     ro n = n_of_cell(r.cells[0], r.line)?
     mut event_json = ev_json("now", [])
     mut scope = sc_clone(sc)
@@ -190,9 +213,9 @@ fn row_parse(r TxEntry, kind str, place int, mut cx TxCx, sc TxScope) -> Result[
     Ok(jobj(pairs))
 }
 
-// A row of 2.26 (AL-137): no column `№`; an appeal and a common event `Событие | Условие | Действия | Куда`, a fork `Условие | Действия | Куда`, an operation `Действия | Куда` (its event is
-// `now`, no condition). An empty cell is "none"; an empty "Куда" only at a row of `ошибка_машины` (the check); `—` is an error.
-fn row_parse_226(r TxEntry, kind str, place int, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+// A row of 0.28 (AL-137): no column `№`; an appeal and a common event `Событие | Условие | Действия | Куда`, a fork `Условие | Действия | Куда`, an operation `Действия | Куда` (its event is
+// `now`, no condition); `rerun`: the table has the optional last column `заново` (`да` or empty, 4.1). An empty cell is "none"; an empty "Куда" only at a row of `ошибка_машины` (the check); `—` is an error.
+fn row_parse_226(r TxEntry, kind str, place int, rerun bool, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
     mut event_json = ev_json("now", [])
     mut scope = sc_clone(sc)
     mut at = 0
@@ -220,6 +243,19 @@ fn row_parse_226(r TxEntry, kind str, place int, mut cx TxCx, sc TxScope) -> Res
         mut wp = cell_p(to_cell, r.line)?
         where = where_parse(wp, cx)?
         p_end(wp)?
+    }
+    // 0.28: the restart mode is the last column `заново` (`да` or empty; another value is an error, section 10)
+    if rerun {
+        ro rc = r.cells[at + 2]
+        if rc.text != "" {
+            mut rp = cell_p(rc, r.line)?
+            if p_eat_kw(rp, cx.words, "enum_value", "yes") {
+                where = TxWhere { to: where.to, restart: true }
+            } else {
+                return Err(tx_err(r.line, rc.col, "syntax", "в столбце `${kw(cx.words, "column", "rerun")}` — `${kw(cx.words, "enum_value", "yes")}` или пусто, найдено: ${rc.text}"))
+            }
+            p_end(rp)?
+        }
     }
     mut pairs = [kv("n", jint(place)), kv("event", event_json)]
     if cond.has_expr { pairs.push(kv("cond", cond.expr)) }
@@ -260,7 +296,13 @@ fn rows_read(entries []TxEntry, at int, last int, kind str, path str, mut cx TxC
 // The same, the numbers of the places start at `already`.
 fn rows_read_from(entries []TxEntry, at int, last int, kind str, path str, already int, mut cx TxCx, sc TxScope) -> []TxJ {
     mut out = []TxJ.new()
-    ro expected = rows_columns(kind, cx.v226)
+    mut expected = rows_columns(kind, cx.v226)
+    // 0.28: the optional last column `заново` of the table of the rows (4.1: `да` or empty)
+    mut rerun = false
+    if cx.v226 && entries[at].cells.len() == expected.len() + 1 && header_norm(entries[at].cells[expected.len()].text) == header_norm(kw(cx.words, "column", "rerun")) {
+        expected.push("rerun")
+        rerun = true
+    }
     if cx.v226 && entries[at].cells.len() > 0 && entries[at].cells[0].text == kw(cx.words, "column", "№") {
         note(cx, struct_error(entries[at].line, entries[at].cells[0].col, "столбца `№` нет: с 2.26 строки таблицы не нумеруются, их порядок — порядок строк (AL-137); столбцы: ${kw_all(cx.words, "column", expected).join(" | ")}"))
         return out
@@ -271,7 +313,7 @@ fn rows_read_from(entries []TxEntry, at int, last int, kind str, path str, alrea
         cx.rows_total += 1
         place += 1
         ro before = cx.errors.len()
-        match row_parse(r, kind, place, cx, sc) {
+        match row_parse(r, kind, place, rerun, cx, sc) {
             Ok(j) => {
                 out.push(j)
                 cx_place(cx, "${path}[${already + out.len() - 1}]", r.line)
@@ -380,7 +422,8 @@ fn input_row_226(r TxEntry, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateErr
 
 // ---- the state -----------------------------------------------------------------------------------------------------------------------------------
 
-// `Сторона: имя[; набор: выр]` -> the pairs "party" and "set".
+// `Сторона: имя` -> the pair "party". 0.28: the set is its own item `- Набор: выр`; in a file of 0.28 `; набор: …` in the same item is an error with a hint (section 10),
+// a file of 2.25 writes the set in the same item (the word `набор` of 2.25 is of the layer `keywords_225.tsv`).
 fn line_party(kvl TxKv, mut cx TxCx, sc TxScope) -> Result[[]TxKV, TranslateError] {
     mut p = lex_segs(kvl.segs)?
     ro n = p_tok(p)
@@ -396,7 +439,12 @@ fn line_party(kvl TxKv, mut cx TxCx, sc TxScope) -> Result[[]TxKV, TranslateErro
             pairs.push(kv("party", js(n.text)))
         }
     }
-    if p_eat(p, ";") {
+    if p_is(p, ";") {
+        if cx.v226 {
+            ro t = p_tok(p)
+            return Err(tx_err(t.line, t.col, "syntax", "с 0.28 ключи по одному в элементе: `- ${kw(cx.words, "key", "Party")}: ${n.text}` и отдельный элемент `- ${kw(cx.words, "key", "Set")}: …`; переходного периода нет"))
+        }
+        p_adv(p)
         p_expect_kw(p, cx.words, "key", "set")?
         p_expect(p, ":")?
         ro set = ex_expr(p, cx, sc)?
@@ -404,6 +452,15 @@ fn line_party(kvl TxKv, mut cx TxCx, sc TxScope) -> Result[[]TxKV, TranslateErro
     }
     p_end(p)?
     Ok(pairs)
+}
+
+// `Набор: выр` of an appeal (0.28: a key of its own item of the list) -> the expression of the set.
+fn line_set(kvl TxKv, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    mut p = lex_segs(kvl.segs)?
+    if value_is_empty(p) { return Err(empty_value_error(kvl, kw(cx.words, "key", "Set"), "набора нет")) }
+    ro set = ex_expr(p, cx, sc)?
+    p_end(p)?
+    Ok(set)
 }
 
 // The error about a key with an empty value (AL-40): the empty value is not written, no line means the default.
@@ -428,24 +485,42 @@ fn line_silence(kvl TxKv, mut cx TxCx, sc TxScope) -> Result[Option[TxJ], Transl
     Ok(Some(e))
 }
 
-// `Правит: данное; проверка: примитив` -> the datum and the primitive of the check (Latin).
+// `Правит: данное` -> the datum (Latin) and, in a file of 2.25, the primitive of the check of the same item (`Правит: данное; проверка: примитив`; 0.28: the check is its own item
+// `- Проверка: примитив`, `; проверка: …` is an error with a hint, section 10; the word `проверка` of 2.25 is of the layer `keywords_225.tsv`).
 type TxEdits { datum str, check str }
-
 fn line_edits(kvl TxKv, mut cx TxCx) -> Result[TxEdits, TranslateError] {
     mut p = lex_segs(kvl.segs)?
     ro d = p_tok(p)
     if d.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "key", "Edits")}:` ожидается имя данного")) }
     p_adv(p)
     ro datum = tr_global(cx, d)
-    p_expect(p, ";")?
-    if !p_eat_kw(p, cx.words, "key", "check") { return Err(p_fail(p, "после данного ожидается `${kw(cx.words, "key", "check")}: примитив`")) }
-    p_expect(p, ":")?
+    mut check = ""
+    if p_is(p, ";") {
+        if cx.v226 {
+            ro t = p_tok(p)
+            return Err(tx_err(t.line, t.col, "syntax", "с 0.28 ключи по одному в элементе: `- ${kw(cx.words, "key", "Edits")}: …` и отдельный элемент `- ${kw(cx.words, "key", "Check")}: примитив`; переходного периода нет"))
+        }
+        p_adv(p)
+        if !p_eat_kw(p, cx.words, "key", "check") { return Err(p_fail(p, "после данного ожидается `${kw(cx.words, "key", "check")}: примитив`")) }
+        p_expect(p, ":")?
+        ro f = p_tok(p)
+        if f.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "key", "check")}:` ожидается имя примитива")) }
+        p_adv(p)
+        check = tr_primitive(cx, f)
+    }
+    p_end(p)?
+    Ok(TxEdits { datum, check })
+}
+
+// `Проверка: примитив` of an appeal (0.28: a key of its own item of the list, written together with `Правит`) -> the Latin name of the primitive.
+fn line_check(kvl TxKv, mut cx TxCx) -> Result[str, TranslateError] {
+    mut p = lex_segs(kvl.segs)?
     ro f = p_tok(p)
-    if f.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "key", "check")}:` ожидается имя примитива")) }
+    if f.kind != TK_NAME { return Err(p_fail(p, "после `${kw(cx.words, "key", "Check")}:` ожидается имя примитива")) }
     p_adv(p)
     ro check = tr_primitive(cx, f)
     p_end(p)?
-    Ok(TxEdits { datum, check })
+    Ok(check)
 }
 
 // `Возвратов формы: N` -> N (a whole number, zero too).
@@ -569,6 +644,11 @@ fn state_translate(entries []TxEntry, blk TxBlock, index int, mut cx TxCx) -> Tx
                     Ok(ps) => { party_pairs = ps }
                     Err(err) => note(cx, err)
                 }
+            } else if key == "Set" && blk.kind == "appeal" {
+                match line_set(line, cx, sc) {
+                    Ok(j) => { party_pairs.push(kv("set", j)) }
+                    Err(err) => note(cx, err)
+                }
             } else if key == "Idle term" && blk.kind == "appeal" {
                 match line_silence(line, cx, sc) {
                     Ok(o) => {
@@ -586,8 +666,13 @@ fn state_translate(entries []TxEntry, blk TxBlock, index int, mut cx TxCx) -> Tx
                 match line_edits(line, cx) {
                     Ok(ed) => {
                         edits_datum = ed.datum
-                        edits_check = ed.check
+                        if ed.check != "" { edits_check = ed.check }
                     }
+                    Err(err) => note(cx, err)
+                }
+            } else if key == "Check" && blk.kind == "appeal" {
+                match line_check(line, cx) {
+                    Ok(name) => { edits_check = name }
                     Err(err) => note(cx, err)
                 }
             } else if key == "Form returns" && blk.kind == "appeal" {
@@ -692,10 +777,9 @@ fn state_translate(entries []TxEntry, blk TxBlock, index int, mut cx TxCx) -> Tx
         for q in party_pairs { pairs.push(q) }
         if party_pairs.len() == 0 { note(cx, struct_error(blk.line, 1, "у обращения `${blk.ru}` нет строки `Сторона:`")) }
         if has_silence { pairs.push(kv("silence", silence)) }
-        if edits_datum != "" {
-            pairs.push(kv("edits", js(edits_datum)))
-            pairs.push(kv("edit_check", js(edits_check)))
-        }
+        if edits_datum != "" { pairs.push(kv("edits", js(edits_datum))) }
+        // 0.28: the check is its own item, an appeal without it carries no `edit_check`; the seam of 2.25 keeps the pair with the empty check, as before
+        if edits_check != "" || (edits_datum != "" && !cx.v226) { pairs.push(kv("edit_check", js(edits_check))) }
         if form_returns > 0 { pairs.push(kv("form_returns", jint(form_returns))) }
         if inputs.len() > 0 { pairs.push(kv("inputs", TxArr(inputs))) }
         if accept.len() > 0 { pairs.push(kv("accept", TxArr(accept))) }

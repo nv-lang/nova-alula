@@ -94,7 +94,7 @@ fn lib_cut(text str) -> str {
 
 // ---- the connections -------------------------------------------------------------------------------------------------------------------------------
 
-/// TxLibKey: a key line of a connection: the key (`File`, `Name`, `Hash`; empty for another line) and the value without a comment.
+/// TxLibKey: a key line of a connection: the key (`File`, `As`, `Hash`; empty for another line) and the value without a comment. 0.28: the key of the instance is `- Экземпляр:`, the former `- Имя:` is "Former name".
 type TxLibKey { key str, value str }
 
 fn lib_key_line(text str, w TxWords) -> TxLibKey {
@@ -106,9 +106,11 @@ fn lib_key_line(text str, w TxWords) -> TxLibKey {
     mut value = t[colon + 1..]
     ro comment = value.find("//") ?? -1
     if comment >= 0 { value = value[..comment] }
+    // 0.28: the former `- Имя:` / `- Name:` is an error with a hint (section 10); the word itself is not written in the code, it is asked of the table of the former forms
+    if former_is(w.lang, "key", head) { return TxLibKey { key: "Former name", value: value.trim_ascii() } }
     match kw_key(w, "key", head) {
         Some(k) => {
-            if k == "File" || k == "Name" || k == "Hash" { return TxLibKey { key: k, value: value.trim_ascii() } }
+            if k == "File" || k == "As" || k == "Hash" { return TxLibKey { key: k, value: value.trim_ascii() } }
         }
         None => ()
     }
@@ -117,7 +119,7 @@ fn lib_key_line(text str, w TxWords) -> TxLibKey {
 
 fn lib_use_new(heading str, line int) -> TxLibUse => { heading, instance: heading, named: false, file: "", hash: "", line, col: 5, args: []TxLibArg.new() }
 
-fn lib_only(e TxEntry) -> TranslateError => tx_err(e.line, e.indent + 1, "structure", "в разделе `Подключения` только подзаголовки `### Имя` библиотек со строками `- Файл:`, `- Хеш:`, `- Имя:` и таблицей `| параметр | значение |` (раздел 9); проза сюда не пишется")
+fn lib_only(e TxEntry) -> TranslateError => tx_err(e.line, e.indent + 1, "structure", "в разделе `Подключения` только подзаголовки `### Имя` библиотек со строками `- Файл:`, `- Хеш:`, `- Экземпляр:` и таблицей `| параметр | значение |` (раздел 9); проза сюда не пишется")
 
 /// The connections of the section `## Подключения` of a file of 2.26: one subheading `###` per library. An old line of connection (`функции: …`, `Пауза(…)`) is the error with the hint.
 fn lib_uses_read(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxLibUse {
@@ -144,7 +146,9 @@ fn lib_uses_read(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxLibUse {
                 i += 1
             } else {
                 ro kl = lib_key_line(e.text, cx.words)
-                if kl.key != "" && have {
+                if kl.key == "Former name" {
+                    note(cx, tx_err(e.line, 1, "structure", "с 0.28 — `- ${kw(cx.words, "key", "As")}:`: ключ `- Имя:` подключения не пишется, переходного периода нет"))
+                } else if kl.key != "" && have {
                     if kl.key == "File" {
                         cur.file = kl.value
                     } else if kl.key == "Hash" {
@@ -237,9 +241,9 @@ fn lib_header(lines []str, mut cx TxCx) -> TxLibHead {
         }
     }
     if library == "" { note(cx, struct_error(1, 1, "в шапке библиотеки нет строки `- library: <латинское_имя>`")) }
-    if format != "0.27" && !old {
+    if format != "0.28" && !old {
         ro shown = if format == "" { "не указана" } else { format }
-        note(cx, struct_error(1, 1, "версия языка библиотеки ${shown}: библиотека пишется на Алуле 0.27 (строка `- alula_version: 0.27`)"))
+        note(cx, struct_error(1, 1, "версия языка библиотеки ${shown}: библиотека пишется на Алуле 0.28 (строка `- alula_version: 0.28`)"))
     }
     TxLibHead { title, library, format }
 }
@@ -797,9 +801,9 @@ fn libs_open(entries []TxEntry, sec TxSection, registry []NamedText, mut cx TxCx
                 ro places_from = cx.places.len()
                 ro jn_before = cx.jn.decls.len()
                 mut run = lib_load(u, file, cx)
-                if run.title != "" && u.heading != run.title { note(cx, tx_err(u.line, u.col, "name", "подзаголовок подключения — имя библиотеки: `### ${run.title}`, а написано `### ${u.heading}` (другое имя экземпляра задаёт `- ${kw(cx.words, "key", "Name")}:`)")) }
+                if run.title != "" && u.heading != run.title { note(cx, tx_err(u.line, u.col, "name", "подзаголовок подключения — имя библиотеки: `### ${run.title}`, а написано `### ${u.heading}` (другое имя экземпляра задаёт `- ${kw(cx.words, "key", "As")}:`)")) }
                 ro inst = u.instance
-                if cx.env.instances.contains(inst) { note(cx, tx_err(u.line, u.col, "name", "экземпляр `${inst}` подключён дважды: другое имя задаёт `- ${kw(cx.words, "key", "Name")}:`")) }
+                if cx.env.instances.contains(inst) { note(cx, tx_err(u.line, u.col, "name", "экземпляр `${inst}` подключён дважды: другое имя задаёт `- ${kw(cx.words, "key", "As")}:`")) }
                 if (lib_has(run, "States") || lib_has(run, "Common events")) && libraries.contains(run.library) {
                     note(cx, tx_err(u.line, u.col, "structure", "библиотека `${run.title}` с состояниями и общими событиями подключается один раз (раздел 9)"))
                 }

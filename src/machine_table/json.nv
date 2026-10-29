@@ -18,9 +18,9 @@ export const MACHINE_FORMAT = "machine/2"
 
 /// The version of the language Alula of the methodology that the tree follows (the key `alula_version`; the translator writes it in every tree). The key was named `table_format`
 /// before task 113 and `alula_version` before task 148; neither old name is accepted (the language is called Alula, there is no transition period).
-export const ALULA_VERSION = "0.27"
+export const ALULA_VERSION = "0.28"
 
-/// The version of a tree without the key `alula_version` in the form of the seam (`format` and `version`): 2.25. A tree with `kind` and without the key is of 0.27 (spec 6: the version that
+/// The version of a tree without the key `alula_version` in the form of the seam (`format` and `version`): 2.25. A tree with `kind` and without the key is of 0.28 (spec 6: the version that
 /// the program reads).
 const TREE_VERSION_ABSENT = "2.25"
 
@@ -30,13 +30,13 @@ const OLD_ROOT_KEYS = "с 0.27 — kind и revision: `\"format\": \"machine/2\"`
 /// The former name of the key of the version (the language was called Alula before 2.14): a tree that holds it is refused with its own message, not with "not in the schema".
 const FORMER_VERSION_KEY = "portolan_version" // guard-allow(legacy-name): the former key is named here to be refused
 
-/// The versions of the language that this package writes and names (`alula version`): one, 0.27. There is no transition period (the word of the owner, 2026-10-20): the files of 2.26
-/// are migrated by the script `tools/migrate-alula-227.py` (task 244), a tree of 2.26 or of an older version is refused.
-export fn alula_versions() -> []str => ["0.27"]
+/// The versions of the language that this package writes and names (`alula version`): one, 0.28. There is no transition period (the word of the owner, 2026-10-20): the files of 0.27
+/// are migrated by the script `tools/migrate-alula-228.py` (task 253), a tree of 0.27 or of an older version is refused.
+export fn alula_versions() -> []str => ["0.28"]
 
-/// The versions whose tree the decoder takes: 0.27 and 2.25. The tree of 2.25 (with the old keys `format` and `version`) is read for the texts of the tests of the package that keep the
-/// form of 2.25 (the seam of 2.25, task 239); the files of the users and the samples are of 0.27.
-export fn alula_versions_read() -> []str => ["2.25", "0.27"]
+/// The versions whose tree the decoder takes: 0.28 and 2.25. The tree of 2.25 (with the old keys `format` and `version`) is read for the texts of the tests of the package that keep the
+/// form of 2.25 (the seam of 2.25, task 239); the files of the users and the samples are of 0.28.
+export fn alula_versions_read() -> []str => ["2.25", "0.28"]
 
 fn le(path str, message str) -> LoadError => { path, message }
 
@@ -694,8 +694,9 @@ fn party_kind_of(word str, path str) -> Result[PartyKind, LoadError] {
         "human" => Ok(HumanParty)
         "enhanced" => Ok(EnhancedParty)
         "gatekeeper" => Ok(GatekeeperParty)
+        "free_input" => Ok(FreeInputParty)
         "machine" => Ok(MachineParty)
-        _ => Err(le(path, "the kind of a party must be agent, human, enhanced, gatekeeper or machine, got ${word}"))
+        _ => Err(le(path, "the kind of a party must be agent, human, enhanced, gatekeeper, free_input or machine, got ${word}"))
     }
 }
 
@@ -724,15 +725,22 @@ fn dec_signals_or_empty(o JsonObject, key str, defs TypeDefs, path str) -> Resul
     dec_signals(v, defs, "${path}.${key}")
 }
 
-// The `разбор` of a party: {"primitive": "name", "type": "T"} (a key `role` is not in the tree since 2.24: one function per role, AL-131).
-fn dec_parse(o JsonObject, defs TypeDefs, path str) -> Result[ParseDef, LoadError] {
-    j_only(o, ["primitive", "type"], path)?
+// The `разбор` of a party of 0.28: {"primitive": "name"} (a key `role` is not in the tree since 2.24: one function per role, AL-131; the type of the result comes from the declaration
+// of the function, the tree holds it not — 0.28). A tree of the seam of 2.25 keeps the type after `->`: {"primitive": "name", "type": "T"}.
+fn dec_parse(o JsonObject, defs TypeDefs, path str, modern bool) -> Result[ParseDef, LoadError] {
+    if modern && j_has(o, "type") { return Err(le("${path}.type", "0.28: the parse holds no type; the type of the result comes from the declaration of the function (the column `разбор` names the function only)")) }
+    if !modern {
+        j_only(o, ["primitive", "type"], path)?
+        ro primitive225 = j_need_str(o, "primitive", path)?
+        ro result225 = j_type(o, "type", defs, path)?
+        return Ok(ParseDef { primitive: primitive225, result: Some(result225) })
+    }
+    j_only(o, ["primitive"], path)?
     ro primitive = j_need_str(o, "primitive", path)?
-    ro result = j_type(o, "type", defs, path)?
-    Ok(ParseDef { primitive, result })
+    Ok(ParseDef { primitive, result: None })
 }
 
-fn dec_parties(root JsonObject, defs TypeDefs) -> Result[[]PartyDef, LoadError] {
+fn dec_parties(root JsonObject, defs TypeDefs, modern bool) -> Result[[]PartyDef, LoadError] {
     ro items = j_arr_or_empty(root, "parties", "$")?
     mut out = []PartyDef.new()
     mut i = 0
@@ -759,7 +767,7 @@ fn dec_parties(root JsonObject, defs TypeDefs) -> Result[[]PartyDef, LoadError] 
         mut result_spec = []TypeSpec.new()
         if j_has(o, "result") { result_spec.push(j_type(o, "result", defs, p)?) }
         mut parse = []ParseDef.new()
-        if j_has(o, "parse") { parse.push(dec_parse(j_need_obj(o, "parse", p)?, defs, "${p}.parse")?) }
+        if j_has(o, "parse") { parse.push(dec_parse(j_need_obj(o, "parse", p)?, defs, "${p}.parse", modern)?) }
         ro counter = j_str_or(o, "counter", "", p)?
         out.push(PartyDef { name, id, kind, profile, signals, progress, setting, nested, input_spec, input_fields, callee_types, result_spec, parse, counter })
         i += 1
@@ -1170,7 +1178,7 @@ fn dec_machine(root JsonObject) -> Result[MachineDef, LoadError] {
     } else {
         language_version = j_str_or(root, "alula_version", ALULA_VERSION, "$")?
         if !alula_versions().contains(language_version) {
-            return Err(le("$.alula_version", "the alula_version must be ${ALULA_VERSION} (the version of the language of the methodology; there is no transition period: a file of 2.26 is migrated by tools/migrate-alula-227.py), got ${language_version}"))
+            return Err(le("$.alula_version", "the alula_version must be ${ALULA_VERSION} (the version of the language of the methodology; there is no transition period: a file of 0.27 is migrated by tools/migrate-alula-228.py, of 2.26 — by tools/migrate-alula-227.py), got ${language_version}"))
         }
         if j_has(root, "format") { return Err(le("$.format", OLD_ROOT_KEYS)) }
         if j_has(root, "version") { return Err(le("$.version", OLD_ROOT_KEYS)) }
@@ -1185,7 +1193,7 @@ fn dec_machine(root JsonObject) -> Result[MachineDef, LoadError] {
     ro params = dec_params(root, types)?
     ro input = dec_input(root, types)?
     ro declared = dec_data(root, types)?
-    ro parties = dec_parties(root, types)?
+    ro parties = dec_parties(root, types, language_version != TREE_VERSION_ABSENT)?
     ro data = data_with_counters(declared, parties, language_version)?
     ro request_limit = j_expr_opt(root, "request_limit", "$")?
     ro signals = dec_signals_or_empty(root, "signals", types, "$")?

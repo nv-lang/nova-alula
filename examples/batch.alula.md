@@ -2,7 +2,7 @@
 
 - machine: Batch
 - revision: 1
-- alula_version: 0.27
+- alula_version: 0.28
 - language: en
 
 A set of nested calls (spec 4.2, `set:`; the party of the kind `machine`): one request to the machine `callee` for every name of the input `names`, no more than `LIMIT` at once (`Request limit`). The answers
@@ -38,10 +38,10 @@ type Job { name str, attempt int>=0 }
 
 ## Parties
 
-| name | id | kind | profile | signals | counter |
-|---|---|---|---|---|---|
-| job | — | machine callee | "job:" + party | — | jobs[*].attempt |
-| enhanced | enhanced | enhanced(result GateOutcome) | — | continue { human_word str, author str, source str }, halt | enhanced_attempt |
+| name | id | kind | setting | parse | profile | signals | counter |
+|---|---|---|---|---|---|---|---|
+| job | — | machine callee | — | — | "job:" + party | — | jobs[*].attempt |
+| enhanced | enhanced | enhanced(result GateOutcome) | — | — | — | continue { human_word str, author str, source str }, halt | enhanced_attempt |
 
 - Request limit: LIMIT
 
@@ -49,7 +49,7 @@ type Job { name str, attempt int>=0 }
 
 ### Pause
 - File: libs/pause.en.alula.md
-- Hash: 429adaba4cec
+- Hash: 042bcf5854f5
 
 | parameter | value |
 |---|---|
@@ -61,7 +61,7 @@ type Job { name str, attempt int>=0 }
 
 ## States
 
-Initial state: Prepare
+- Initial state: Prepare
 
 ### Prepare — operation
 
@@ -77,7 +77,8 @@ Initial state: Prepare
 | else |  | Jobs |
 
 ### Jobs — appeal
-- Party: job; set: names
+- Party: job
+- Set: names
 - Request:
 
 | request_field | expression |
@@ -87,8 +88,8 @@ Initial state: Prepare
 
 | Event | Condition | Actions | To |
 |---|---|---|---|
-| response(result) |  | answered += [party]; journal("job_answered", party: party, answer: result.answer) | Join |
-| failure(reason) |  | lost += [party]; journal("job_lost", party: party, code: text(reason)) | Join |
+| response(result) |  | answered += [party]<br>journal("job_answered", party: party, answer: result.answer) | Join |
+| failure(reason) |  | lost += [party]<br>journal("job_lost", party: party, code: text(reason)) | Join |
 
 ### Join — fork
 
