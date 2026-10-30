@@ -1,0 +1,87 @@
+{
+  "status": "project-model-not-runtime",
+  "planned_alula_release": "0.29.0-alpha.1",
+  "provenance": {
+    "service_design": "e7769b0599bd6bef85cf070be6ca2e043af123f9",
+    "service_status": "locally accepted narrow specialization; not merged into this package and not imported by this task",
+    "package_base": "4224563"
+  },
+  "profiles": {
+    "call": {
+      "contract": {
+        "request": {"type": "T", "required": true},
+        "result": {"type": "R", "required": true},
+        "progress": {"type": "P", "required": false, "terminal": false},
+        "counter": {"type": "Counter", "required": false}
+      },
+      "lifecycle": {"initial": "prepared", "states": ["prepared", "sent", "accepted", "applied", "withdrawn", "failed", "expired"], "transitions": [{"from": "prepared", "to": "sent"}, {"from": "sent", "to": "accepted"}, {"from": "accepted", "to": "applied"}, {"from": "prepared", "to": "withdrawn"}, {"from": "sent", "to": "withdrawn"}, {"from": "accepted", "to": "failed"}, {"from": "accepted", "to": "expired"}], "terminal": ["applied", "withdrawn", "failed", "expired"]},
+      "correlation": {"keys": ["instance_id", "party_id", "request_id"], "is_authority": false},
+      "binding": {"allowed": ["host_provider"], "identity_source": "host"},
+      "rights": {"authority_source": "host_permissions", "binding_name_grants_authority": false},
+      "policy": {"allowed": ["timeout", "retry", "declared_progress", "narrow_call"], "forbidden": ["implicit_compensation"]},
+      "operations": {"withdrawal": "stop_waiting", "cancel": "request_stop", "compensation": "domain_operation"},
+      "recovery": {"retry_is_new_request": true, "effect_idempotency_required": true, "child_identity_preserved": false}
+    },
+    "decision": {
+      "contract": {
+        "opening_id": {"type": "OpeningId", "required": true},
+        "subject": {"type": "T", "required": true},
+        "admissibility": {"type": "Admissibility", "required": true},
+        "candidate": {"type": "Choice", "required": true},
+        "principal": {"type": "PrincipalId", "required": true},
+        "selected_version": {"type": "Version", "required": true},
+        "applied_version": {"type": "Version", "required": true}
+      },
+      "lifecycle": {"initial": "opened", "states": ["opened", "candidates", "selected", "committed", "withdrawn", "superseded"], "transitions": [{"from": "opened", "to": "candidates"}, {"from": "candidates", "to": "selected"}, {"from": "candidates", "to": "superseded"}, {"from": "selected", "to": "committed"}, {"from": "selected", "to": "superseded"}, {"from": "opened", "to": "withdrawn"}, {"from": "candidates", "to": "withdrawn"}, {"from": "selected", "to": "withdrawn"}], "terminal": ["committed", "withdrawn", "superseded"], "supersede_from": ["candidates", "selected"]},
+      "correlation": {"keys": ["opening_id", "subject_id", "principal_id", "version"], "one_opening_per_logical_decision": true, "ui_sessions_share_principal": true, "is_authority": false},
+      "binding": {"allowed": ["human_principal", "policy_authorized_agent", "setting_resolved_principal"], "identity_source": "authenticated_principal"},
+      "rights": {"authority_source": "authenticated_principal_and_policy", "binding_name_grants_authority": false},
+      "policy": {"allowed": ["admissibility", "human_priority_before_commit", "kind_specific_gate"], "required": ["human_priority_before_commit"], "forbidden": []},
+      "commit": {"requires_version_match": true, "stale_selected_version": "reject", "arbitration": "human_priority_before_commit", "atomic": true},
+      "operations": {"withdrawal": "close_uncommitted_opening", "cancel": "request_execution_stop", "compensation": "separate_domain_operation"},
+      "recovery": {"opening_durable": true, "candidates_durable": true, "selection_durable": true, "version_durable": true}
+    },
+    "managed-call": {
+      "contract": {"input": {"type": "T", "required": true}, "result": {"type": "R", "required": true}, "child_id": {"type": "ChildId", "required": true}},
+      "lifecycle": {"initial": "created", "states": ["created", "running", "paused", "completed", "failed", "cancelled"], "transitions": [{"from": "created", "to": "running"}, {"from": "running", "to": "paused"}, {"from": "running", "to": "completed"}, {"from": "running", "to": "failed"}, {"from": "running", "to": "cancelled"}, {"from": "paused", "to": "running"}, {"from": "paused", "to": "completed"}, {"from": "paused", "to": "failed"}, {"from": "paused", "to": "cancelled"}], "terminal": ["completed", "failed", "cancelled"]},
+      "correlation": {"keys": ["parent_instance_id", "request_id", "child_id"], "is_authority": false},
+      "binding": {"allowed": ["compatible_child_machine"], "identity_source": "host_registry"},
+      "rights": {"authority_source": "declared_child_controls", "binding_name_grants_authority": false},
+      "policy": {"allowed": ["typed_input_result_compatibility", "declared_child_control"], "forbidden": ["implicit_timeout_on_pause"]},
+      "operations": {"withdrawal": "withdraw_parent_wait", "cancel": "send_child_cancel", "compensation": "separate_domain_operation"},
+      "recovery": {"child_identity_preserved": true, "result_durable": true, "restart_creates_new_child": false, "pause_is_timeout": false}
+    },
+    "input-only": {
+      "contract": {"signal": {"type": "DeclaredSignal", "required": true}, "fields": {"type": "DeclaredFields", "required": true}},
+      "lifecycle": {"initial": "received", "states": ["received", "accepted", "rejected"], "transitions": [{"from": "received", "to": "accepted"}, {"from": "received", "to": "rejected"}], "terminal": ["accepted", "rejected"]},
+      "correlation": {"keys": ["instance_id", "active_state", "signal_name"], "request_id_required": false, "is_authority": false},
+      "binding": {"allowed": ["human_input_endpoint"], "identity_source": "authenticated_principal"},
+      "rights": {"authority_source": "declared_signal_and_state", "binding_name_grants_authority": false},
+      "policy": {"allowed": ["active_state_admissibility", "declared_signal_fields"], "forbidden": ["deferred_delivery", "synthetic_request"]},
+      "admissibility": {"requires_active_state": true, "late_input": "reject", "deferred_delivery": false},
+      "operations": {"withdrawal": "withdraw_unaccepted_input", "cancel": "not_applicable_without_execution", "compensation": "not_applicable_without_domain_effect"},
+      "recovery": {"accepted_event_journaled": true, "rejected_input_replayed_later": false}
+    }
+  },
+  "kinds": {
+    "agent": {"profile": "call", "types": {"request": "T", "result": "R", "progress": "P"}, "bindings": ["host_provider"], "policy": ["timeout", "retry", "declared_progress"], "rights_source": "host_permissions", "runtime_status": "implemented_existing"},
+    "human": {"profile": "decision", "types": {"subject": "T", "candidate": "Choice", "principal": "PrincipalId", "selected_version": "Version"}, "bindings": ["human_principal"], "policy": ["admissibility", "human_priority_before_commit", "kind_specific_gate"], "rights_source": "authenticated_principal_and_policy", "runtime_status": "gate_signals_only"},
+    "enhanced": {"profile": "decision", "types": {"subject": "T", "candidate": "Choice", "principal": "PrincipalId", "selected_version": "Version"}, "bindings": ["human_principal", "policy_authorized_agent"], "policy": ["admissibility", "human_priority_before_commit", "kind_specific_gate"], "rights_source": "authenticated_principal_and_policy", "runtime_status": "gate_constraints_existing"},
+    "gatekeeper": {"profile": "decision", "types": {"subject": "T", "candidate": "Choice", "principal": "PrincipalId", "selected_version": "Version"}, "bindings": ["setting_resolved_principal"], "policy": ["admissibility", "human_priority_before_commit", "kind_specific_gate"], "rights_source": "authenticated_principal_and_policy", "runtime_status": "setting_resolution_existing"},
+    "machine": {"profile": "managed-call", "types": {"input": "T", "result": "R", "child_id": "ChildId"}, "bindings": ["compatible_child_machine"], "policy": ["typed_input_result_compatibility", "declared_child_control"], "rights_source": "declared_child_controls", "runtime_status": "nested_runner_existing"},
+    "free_input": {"profile": "input-only", "types": {"signal": "DeclaredSignal", "fields": "DeclaredFields"}, "bindings": ["human_input_endpoint"], "policy": ["active_state_admissibility", "declared_signal_fields"], "rights_source": "declared_signal_and_state", "runtime_status": "signal_input_existing"},
+    "service": {"profile": "call", "types": {"request": "T", "result": "R", "counter": "Counter"}, "bindings": ["host_provider"], "policy": ["narrow_call"], "rights_source": "host_permissions", "runtime_status": "not_implemented", "required_types": ["result", "counter"], "forbidden_features": ["signals", "progress", "streaming", "subscriptions", "profile_override"]}
+  },
+  "shared_integration_codec": {
+    "planned_reference": "../spec/alula-value-codec.md",
+    "status": "planned_dependency_not_yet_published",
+    "covers": ["typed_values", "encoding", "canonicalization", "requests", "responses", "signals", "external_functions"],
+    "single_source": true,
+    "duplicate_codec_here": false,
+    "requires_json": false,
+    "requires_network": false,
+    "requires_durable_inbox_for_each_binding": false,
+    "event_envelope_and_receipts": "specialized_event_protocol_not_generic_codec_lifecycle",
+    "event_protocol_planned_reference": "../spec/alula-event-protocol.md"
+  }
+}
