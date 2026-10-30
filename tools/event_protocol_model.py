@@ -1,4 +1,4 @@
-"""Small in-memory executable model for spec/event-protocol.md.
+"""Small in-memory executable model for spec/alula-event-protocol.md.
 
 This models receipt/admission/commit rules only. It is not durable storage,
 the production codec, an authorization system, or a runtime conformance test.
@@ -8,13 +8,15 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
+import math
 from pathlib import Path
 import re
+import struct
 from typing import Any
 
 
 EventKey = tuple[str, str, str, str]  # tenant, instance, trusted producer, event
-SPEC = Path(__file__).resolve().parents[1] / "spec" / "event-protocol.md"
+SPEC = Path(__file__).resolve().parents[1] / "spec" / "alula-event-protocol.md"
 TERMINAL = {"applied", "rejected", "superseded", "cancelled"}
 ALLOWED_KINDS = {"party.signal", "machine.control", "request.reply", "request.failure"}
 
@@ -30,11 +32,17 @@ def transitions_from_spec(path: Path = SPEC) -> set[tuple[str, str, str]]:
 
 
 def _freeze(value: Any) -> Any:
-    """Canonical structural fingerprint; object member order is insignificant."""
+    """Model a typed digest for already-decoded values, not a production codec."""
     if isinstance(value, dict):
         return tuple((key, _freeze(value[key])) for key in sorted(value))
     if isinstance(value, (list, tuple)):
         return tuple(_freeze(item) for item in value)
+    if type(value) is float:
+        if math.isnan(value):
+            return ("float", "NaN")
+        if math.isinf(value):
+            return ("float", "+Inf" if value > 0 else "-Inf")
+        return ("float", struct.pack(">d", value))
     return (type(value).__name__, value)
 
 

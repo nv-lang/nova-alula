@@ -95,7 +95,8 @@ RUNTIME_STATUS = {
 }
 SERVICE_FORBIDDEN = {"signals", "progress", "streaming", "subscriptions", "profile_override"}
 CODEC_SCOPES = {"typed_values", "encoding", "canonicalization", "requests", "responses", "signals", "external_functions"}
-CODEC_FIELDS = {"planned_reference", "status", "covers", "single_source", "duplicate_codec_here", "requires_json", "requires_network", "requires_durable_inbox_for_each_binding", "event_envelope_and_receipts", "event_protocol_planned_reference"}
+CODEC_STATUS = "available_project_spec_not_runtime"
+CODEC_FIELDS = {"reference", "status", "covers", "single_source", "duplicate_codec_here", "requires_json", "requires_network", "requires_durable_inbox_for_each_binding", "event_envelope_and_receipts", "event_protocol_reference"}
 PROFILE_KEYS = {
     "call": {"contract", "lifecycle", "correlation", "binding", "rights", "policy", "operations", "recovery"},
     "decision": {"contract", "lifecycle", "correlation", "binding", "rights", "policy", "commit", "operations", "recovery"},
@@ -267,10 +268,10 @@ def validate(model):
         errors.append("kinds.service.policy:progress_policy_forbidden")
 
     codec = model.get("shared_integration_codec", {})
-    if set(codec) != CODEC_FIELDS or codec.get("planned_reference") != "../spec/alula-value-codec.md" or codec.get("event_protocol_planned_reference") != "../spec/alula-event-protocol.md" or codec.get("status") != "planned_dependency_not_yet_published":
+    if set(codec) != CODEC_FIELDS or codec.get("reference") != "../spec/alula-value-codec.md" or codec.get("event_protocol_reference") != "../spec/alula-event-protocol.md" or codec.get("status") != CODEC_STATUS:
         errors.append("shared_integration_codec:coordination_fields_invalid")
-    if (ROOT / "spec/alula-value-codec.md").exists() or (ROOT / "spec/alula-event-protocol.md").exists():
-        errors.append("shared_integration_codec:planned_paths_exist_update_dependency_status_before_integration")
+    if not (ROOT / "spec/alula-value-codec.md").is_file() or not (ROOT / "spec/alula-event-protocol.md").is_file():
+        errors.append("shared_integration_codec:referenced_specs_must_exist")
     if set(codec.get("covers", [])) != CODEC_SCOPES or codec.get("single_source") is not True or codec.get("duplicate_codec_here") is not False:
         errors.append("shared_integration_codec:single_common_source_scope_invalid")
     if any(codec.get(field) is not False for field in ("requires_json", "requires_network", "requires_durable_inbox_for_each_binding")):
