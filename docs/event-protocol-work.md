@@ -1,0 +1,45 @@
+# Первый этап контракта событий
+
+- Владелец, 2026-10-30, чат: «по рекомендации, супер быстро» после согласования с потребителем и независимым вторым мнением.
+- T = 25 минут. Принято, когда: контракт и таблица статусов однозначны; исполняемые проверки модели подтверждают типизированный приём, дедупликацию, два окна человеческого приоритета, сохранение состояния, конфликт перед commit и неизменность терминальных исходов.
+- База: принятая 0.28.0, `c040a9b`; отдельная ветка `feature/event-protocol-contract`. Локальный сервис `e7769b0` не переносится; runtime и потребитель не меняются, публикация не разрешена.
+- Результат этапа — опытный контракт и модель проверки, не production backend, не экспорт manifest компилятором, не сетевые адаптеры и не сертификация текущего движка.
+
+## Кандидат и доказательства
+
+- Кандидат: `spec/event-protocol.md`, `tools/event_protocol_model.py`, `tools/test_event_protocol.py`. Модель читает fenced-таблицу переходов из спецификации; она in-memory и не моделирует долговечность настоящей БД/WAL, полный codec, права, bindings или внешний dispatch.
+- Подхвачены обе переданные untracked-копии без удаления исходников. `docs/event-protocol-work.md` — эта запись; исходные файлы передачи сохранены в своём дереве.
+- В контракте закреплены отдельно `contract_id` (manifest вместе с codec) и `artifact_id`, их pin на экземпляр, qualified signal и object `data`; доверенные tenant/producer, dedup и tombstone; разница `queued`/`accepted`/`applied`; терминальные состояния; сериализованная граница admission/commit и проверка версий inbox/gate; request semantics внешнего JSON-RPC; граница модели и production-проб.
+- Неразрешённый кандидат владельцу: точное представление `f64` и правила канонических байтов, записанные в разделе 3 `spec/event-protocol.md`. Переданное второе мнение и консультация поддерживали семантическое ядро, но не утверждали именно эти конкретизации. До отдельного решения они явно помечены открытыми и не дают основания заявлять межреализационную совместимость codec.
+- Диагноз про неверный runtime reply оставлен как вывод по старому SHA из передачи; актуальная runtime-проба не выполнена. Профиль не объявлен реализованным или допущенным к production.
+
+## Проверки
+
+| DoD | Проба | Результат |
+|---|---|---|
+| Таблица статусов — единый источник | `python -m unittest discover -s tools -p 'test_event_protocol.py' -v`; `test_contract_status_table_is_model_source` | переходы читаются из таблицы; проверка прошла |
+| Типизированный qualified signal; reject до очереди | тот же запуск; `test_valid_qualified_typed_signal_and_commit`, `test_wrong_type_unknown_qualification_and_extra_fields_reject_before_queue` | положительный и отрицательные исходы прошли |
+| Pin идентичности, доверенный dedup, конфликт и актуальный receipt | тот же запуск; `test_instance_pins_contract_and_artifact`, `test_trusted_producer_scopes_dedup`, `test_dedup_returns_current_receipt_and_payload_conflict_is_rejected` | проверки прошли |
+| Человеческий приоритет в двух окнах; commit race; терминальность; retention | тот же запуск; `test_human_before_agent_admission_blocks_late_agent`, `test_human_replaces_accepted_agent_before_commit`, `test_human_after_commit_is_rejected_without_rollback`, `test_queued_human_decision_blocks_agent_commit_even_with_current_versions`, `test_second_human_decision_for_same_opening_is_rejected_without_replacing_first`, `test_second_human_decision_after_apply_is_rejected`, `test_wrong_gate_arguments_are_checked_before_mutating_any_operation`, `test_inbox_change_invalidates_stale_commit_snapshot`, `test_rejected_queued_and_cancelled_receipts_are_terminal`, `test_retention_expires_receipt_but_tombstone_blocks_reuse` | проверки прошли |
+| Обратная проба версии inbox | временная мутация только в процессе: обёртка `Instance.apply` подменяет ожидаемую версию текущей; запуск только `test_inbox_change_invalidates_stale_commit_snapshot` | ожидаемо красный: `AssertionError: ValueError not raised`; мутация не сохранялась. После возврата штатной реализации полный набор зелёный |
+| Полный набор модели | `python -m unittest discover -s tools -p 'test_event_protocol.py' -v` | 21 tests, 21 passed, 0 skipped после трёх раундов исправлений по независимой проверке |
+| Пакетные тесты языка относительно базы | инвентаризация `Get-ChildItem src -Recurse -File -Filter '*_test.nv'` | 147 файлов в базе; не менялись. Выполнить пакетные тесты нельзя: `nova --version` сообщает, что команда отсутствует. Следовательно, количество выполненных пакетных тестов — 0 и это ограничение среды, а не изменение набора |
+| Scan secrets / credentials / machine paths / PII | `Select-String -Path spec/event-protocol.md,tools/event_protocol_model.py,tools/test_event_protocol.py,docs/event-protocol-work.md -Pattern '(?i)(password|passwd|secret|api[_-]?key|bearer\s|token\s*[:=]|credential|[A-Z]:\\|\\\\[^\\]+\\[^\\]+|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})'` | совпадения только на слово `credentials` в нормативном смысле; секретов, абсолютных путей машины и персональных адресов нет |
+
+### Открытые решения
+
+1. Утвердить либо заменить предложенное битовое строковое кодирование `f64` и точные правила канонизации JSON, прежде чем называть codec межреализационным.
+2. В production-спецификации определить происхождение/проверку `artifact_id`, численные retention/лимиты и подтверждённую транзакционную/восстановительную модель. Первый этап оставляет их как требования реализации, а не притворяется реализованной гарантией.
+
+## Повторная проверка после замечаний
+
+Независимый проверяющий отклонил `7f52eae` по трём воспроизводимым дефектам, `a74611b` — по двум соседним, `d2b99b5` — по одному локальному дефекту валидации связи ворот. Исправления и отдельные регрессии:
+
+1. Весь путь `submit` → `pending` → `admit` → `apply` теперь индексируется полным `(tenant, instance_id, trusted producer_id, event_id)`. `test_trusted_producer_scopes_dedup` создаёт один `event_id` у двух producers и проверяет, что оба события отдельно проходят admission и apply.
+2. Перед commit проверяются queued human events, способные заменить решение в тех же воротах; `test_queued_human_decision_blocks_agent_commit_even_with_current_versions` показывает, что свежие inbox/gate versions не позволяют обойти уже ожидающее человеческое решение.
+3. Admission сохраняет gate-link в состоянии модели. `test_gate_link_is_mandatory_at_apply` показывает, что пропуск `gate_id` не применяет событие и не закрывает ворота, а повтор с сохранённым gate-link может завершиться.
+4. `submit` валидирует и хранит отдельный deep snapshot; `pending`, `state`, `receipts` и публично возвращаемые receipts не выдают mutable aliases внутреннего состояния. `test_submit_pending_state_and_returned_values_are_detached_snapshots` мутирует исходный вложенный payload, snapshots и возвращённые объекты, затем доказывает, что apply использует прежние типизированные данные и состояние не меняется через чужую ссылку.
+5. `human` не может вытеснить уже выбранное решение другого `human` для того же opening. Второй queued event получает `rejected`/`stale_human_decision`, первое accepted сохраняется; после apply новое решение отвергается как gate closed. Это не расширяет разрешённый `agent` → `human` supersede. Проверки: `test_second_human_decision_for_same_opening_is_rejected_without_replacing_first`, `test_second_human_decision_after_apply_is_rejected`.
+6. `admit`, `human_priority` и `apply` сначала сверяют переданный `gate_id` с сохранённой связью события; только затем читают/меняют ворота. Чужой закрытый, открытый и отсутствующий gate ID, а также пропущенный ID не меняют receipt, pending, selection, state или версии. `test_wrong_gate_arguments_are_checked_before_mutating_any_operation` проверяет все три операции и варианты mismatch.
+
+Предыдущие результаты 15/15, 17/17 и 20/20 относятся к отклонённым SHA и не считаются приёмкой. Для каждого blocker выполнен process-only reverse-probe: (1) схлопывание `pending` на `event_id` делает `test_trusted_producer_scopes_dedup` красным (ключ не полный); (2) обход barrier для queued human делает `test_queued_human_decision_blocks_agent_commit_even_with_current_versions` красным (`ValueError not raised`); (3) подстановка сохранённого gate-link делает `test_gate_link_is_mandatory_at_apply` красным (`ValueError not raised`); (4) shallow alias исходного события делает `test_submit_pending_state_and_returned_values_are_detached_snapshots` красным из-за применения изменённого payload; (5) прежнее human→human supersede делает `test_second_human_decision_for_same_opening_is_rejected_without_replacing_first` красным (первое решение вытеснено); (6) прежняя проверка `closed` по чужому gate до relation-check делает `test_wrong_gate_arguments_are_checked_before_mutating_any_operation` красным (правильный pending терминально отклоняется). Мутации не сохранялись. После всех probes полный штатный набор — 21 passed, 0 skipped.
