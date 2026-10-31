@@ -186,7 +186,7 @@ class Instance:
     actors: dict[EventKey, str] = field(default_factory=dict)
     gate_links: dict[EventKey, str] = field(default_factory=dict)
     committed_events: set[EventKey] = field(default_factory=set)
-    active: bool = True
+    _completed: bool = False
     signal_specs: dict[tuple[str, str, str], dict[str, type]] = field(default_factory=dict)
     human_choices: set[str] = field(default_factory=set)
     tombstones: set[EventKey] = field(default_factory=set)
@@ -205,12 +205,19 @@ class Instance:
         return opening
 
     @property
+    def active(self) -> bool:
+        """Read-only projection of the irreversible instance completion state."""
+        return not self._completed
+
+    @property
     def selected(self) -> dict[str, EventKey]:
         """Read-only projection; each opening remains the sole selection source."""
         return {opening_id: opening.selected_candidate_id for opening_id, opening in self.gates.items()
                 if isinstance(opening, Opening) and opening.selected_candidate_id is not None}
 
     def open_decision(self, opening_id: str, *, subject: Any, admissibility: Any) -> Opening:
+        if not self.active:
+            raise ValueError("instance is completed")
         if not opening_id or opening_id in self.gates:
             raise ValueError("opening id must be new and nonempty")
         opening = Opening(opening_id, copy.deepcopy(subject), copy.deepcopy(admissibility))
@@ -231,23 +238,27 @@ class Instance:
 
     def snapshot(self) -> dict[str, Any]:
         names = ("gates", "_state", "inbox_version", "seq", "_receipts", "fingerprints", "_pending",
-                 "actors", "gate_links", "committed_events", "active", "signal_specs",
+                 "actors", "gate_links", "committed_events", "signal_specs",
                  "human_choices", "tombstones", "outbox_intents")
         return {"format": "event-model-snapshot/1", "instance_id": self.instance_id,
                 "contract_id": self.contract_id, "artifact_id": self.artifact_id,
+                "completed": self._completed,
                 **{name: copy.deepcopy(getattr(self, name)) for name in names}}
 
     @classmethod
     def restore(cls, snapshot: dict[str, Any]) -> "Instance":
         required = {"format", "instance_id", "contract_id", "artifact_id", "gates", "_state", "inbox_version",
                     "seq", "_receipts", "fingerprints", "_pending", "actors", "gate_links",
-                    "committed_events", "active", "signal_specs", "human_choices", "tombstones", "outbox_intents"}
+                    "committed_events", "completed", "signal_specs", "human_choices", "tombstones", "outbox_intents"}
         if set(snapshot) != required or snapshot["format"] != "event-model-snapshot/1":
             raise ValueError("invalid event model snapshot")
         result = cls(snapshot["instance_id"], snapshot["contract_id"], snapshot["artifact_id"],
                      gates=copy.deepcopy(snapshot["gates"]))
-        for name in required - {"format", "instance_id", "contract_id", "artifact_id", "gates"}:
+        for name in required - {"format", "instance_id", "contract_id", "artifact_id", "gates", "completed"}:
             setattr(result, name, copy.deepcopy(snapshot[name]))
+        if not isinstance(snapshot["completed"], bool):
+            raise ValueError("invalid snapshot completion state")
+        result._completed = snapshot["completed"]
         result.assert_pinned(snapshot["instance_id"], snapshot["contract_id"], snapshot["artifact_id"])
         return result
 
@@ -256,7 +267,7 @@ class Instance:
         if self._pending or any(isinstance(opening, Opening) and opening.status == "open"
                                 for opening in self.gates.values()):
             raise ValueError("instance has pending work or open openings")
-        self.active = False
+        self._completed = True
 
     def _key(self, tenant: str, producer_id: str, event_id: str) -> EventKey:
         if not tenant or not producer_id:
@@ -292,6 +303,8 @@ class Instance:
             return copy.deepcopy(self._receipts[key])
         if key in self.tombstones:
             raise ValueError("status_gone: event id cannot be reused")
+        if not self.active:
+            raise ValueError("instance is completed")
         if snapshot["event_kind"] == "party.signal":
             if not all(isinstance(snapshot.get(name), str) and snapshot[name] for name in ("party", "signal")):
                 raise ValueError("party.signal requires qualified party and signal")
@@ -311,6 +324,8 @@ class Instance:
         return copy.deepcopy(receipt)
 
     def transition(self, receipt: Receipt, operation: str, status: str, *, code: str | None = None, replaced_by: str | None = None) -> None:
+        if not self.active:
+            raise ValueError("instance is completed")
         if receipt.status in TERMINAL:
             raise ValueError("terminal receipt is immutable")
         if (receipt.status, operation, status) not in TRANSITIONS:
@@ -321,6 +336,8 @@ class Instance:
         receipt.replaced_by = replaced_by
 
     def admit(self, key: EventKey, *, valid: bool = True, decision: str | None = None, gate_id: str | None = None) -> Receipt:
+        if not self.active:
+            raise ValueError("instance is completed")
         requested_gate_id = gate_id
         receipt = self._receipt(key)
         if receipt.status != "queued":
@@ -392,6 +409,8 @@ class Instance:
 
     def apply(self, key: EventKey, *, expected_inbox_version: int | None = None, expected_selection_version: int | None = None, gate_id: str | None = None) -> Receipt:
         """Commit on an isolated copy; publish the new snapshot only on full success."""
+        if not self.active:
+            raise ValueError("instance is completed")
         prepared = Instance.restore(self.snapshot())
         result = prepared._apply_in_place(
             key, expected_inbox_version=expected_inbox_version,
@@ -462,6 +481,8 @@ class Instance:
 
     def human_priority(self, gate_id: str, key: EventKey) -> Receipt:
         """Admit a queued human decision and atomically supersede an uncommitted choice."""
+        if not self.active:
+            raise ValueError("instance is completed")
         receipt = self._receipt(key)
         if receipt.status != "queued" or self.actors[key] != "human":
             raise ValueError("human priority requires a queued human event")
@@ -479,6 +500,8 @@ class Instance:
         return self.admit(key)
 
     def cancel(self, key: EventKey) -> Receipt:
+        if not self.active:
+            raise ValueError("instance is completed")
         receipt = self._receipt(key)
         if receipt.status in TERMINAL:
             raise ValueError("terminal receipt is immutable")
@@ -499,6 +522,8 @@ class Instance:
         return copy.deepcopy(receipt)
 
     def withdraw_opening(self, opening_id: str) -> Opening:
+        if not self.active:
+            raise ValueError("instance is completed")
         opening = self._opening(opening_id)
         if opening.status != "open":
             raise ValueError("only open openings may be withdrawn")

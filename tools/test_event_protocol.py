@@ -38,6 +38,14 @@ class EventProtocolModelTests(unittest.TestCase):
     def submit(self, event_id: str, *, producer: str = "producer-a", actor: str = "agent", **kwargs):
         return self.machine.submit("tenant-a", producer, self.event(event_id, **kwargs), actor=actor)
 
+    def completed_instance(self) -> Instance:
+        self.submit("completed-event", gate_id="gate-1")
+        key = self.key("completed-event")
+        self.machine.admit(key, decision="done")
+        self.machine.apply(key, expected_inbox_version=1, expected_selection_version=1, gate_id="gate-1")
+        self.machine.complete()
+        return self.machine
+
     def test_contract_status_table_is_model_source(self):
         self.assertEqual(
             transitions_from_spec(),
@@ -208,6 +216,88 @@ class EventProtocolModelTests(unittest.TestCase):
         self.machine.complete()
         self.machine.expire_completed("tenant-a", "producer-a", "agent-a")
         self.assertEqual(self.machine.status("tenant-a", "producer-a", "agent-a"), "status_gone")
+
+    def test_completed_instance_blocks_new_submit_without_mutation(self):
+        machine = Instance.restore(self.completed_instance().snapshot())
+        before = machine.snapshot()
+        with self.assertRaisesRegex(ValueError, "instance is completed"):
+            machine.submit("tenant-a", "producer-a", self.event("new-event"))
+        self.assertEqual(machine.snapshot(), before)
+
+    def test_completed_instance_blocks_new_opening_without_mutation(self):
+        machine = Instance.restore(self.completed_instance().snapshot())
+        before = machine.snapshot()
+        with self.assertRaisesRegex(ValueError, "instance is completed"):
+            machine.open_decision("gate-9", subject="item", admissibility={})
+        self.assertEqual(machine.snapshot(), before)
+
+    def test_completed_restore_allows_dedup_replay_but_not_new_or_conflicting_event(self):
+        machine = Instance.restore(self.completed_instance().snapshot())
+        before = machine.snapshot()
+        replay = machine.submit("tenant-a", "producer-a", self.event("completed-event", gate_id="gate-1"))
+        self.assertEqual(replay.status, "applied")
+        self.assertEqual(machine.snapshot(), before)
+        self.assertEqual(machine.status("tenant-a", "producer-a", "completed-event").status, "applied")
+        self.assertEqual(machine.snapshot(), before)
+        with self.assertRaisesRegex(ValueError, "event_id_conflict"):
+            machine.submit("tenant-a", "producer-a", self.event("completed-event", data={"ok": False}, gate_id="gate-1"))
+        self.assertEqual(machine.snapshot(), before)
+        with self.assertRaisesRegex(ValueError, "instance is completed"):
+            machine.submit("tenant-a", "producer-a", self.event("after-restore"))
+        self.assertEqual(machine.snapshot(), before)
+
+    def test_completed_instance_blocks_admit_without_mutation(self):
+        machine = Instance.restore(self.completed_instance().snapshot())
+        before = machine.snapshot()
+        with self.assertRaisesRegex(ValueError, "instance is completed"):
+            machine.admit(self.key("missing"))
+        self.assertEqual(machine.snapshot(), before)
+
+    def test_completed_instance_blocks_apply_without_mutation(self):
+        machine = Instance.restore(self.completed_instance().snapshot())
+        before = machine.snapshot()
+        with self.assertRaisesRegex(ValueError, "instance is completed"):
+            machine.apply(self.key("missing"), expected_inbox_version=machine.inbox_version)
+        self.assertEqual(machine.snapshot(), before)
+
+    def test_completed_instance_blocks_cancel_without_mutation(self):
+        machine = Instance.restore(self.completed_instance().snapshot())
+        before = machine.snapshot()
+        with self.assertRaisesRegex(ValueError, "instance is completed"):
+            machine.cancel(self.key("missing"))
+        self.assertEqual(machine.snapshot(), before)
+
+    def test_completed_instance_blocks_human_priority_without_mutation(self):
+        machine = Instance.restore(self.completed_instance().snapshot())
+        before = machine.snapshot()
+        with self.assertRaisesRegex(ValueError, "instance is completed"):
+            machine.human_priority("gate-1", self.key("missing"))
+        self.assertEqual(machine.snapshot(), before)
+
+    def test_completed_instance_blocks_withdraw_without_mutation(self):
+        machine = Instance.restore(self.completed_instance().snapshot())
+        before = machine.snapshot()
+        with self.assertRaisesRegex(ValueError, "instance is completed"):
+            machine.withdraw_opening("gate-1")
+        self.assertEqual(machine.snapshot(), before)
+
+    def test_completed_flag_cannot_be_reversed_through_public_active_attribute(self):
+        machine = Instance.restore(self.completed_instance().snapshot())
+        before = machine.snapshot()
+        with self.assertRaises(AttributeError):
+            machine.active = True
+        self.assertEqual(machine.snapshot(), before)
+        with self.assertRaisesRegex(ValueError, "instance is completed"):
+            machine.submit("tenant-a", "producer-a", self.event("after-flag"))
+        self.assertEqual(machine.snapshot(), before)
+
+    def test_completed_instance_blocks_direct_receipt_transition_without_mutation(self):
+        machine = Instance.restore(self.completed_instance().snapshot())
+        key = self.key("completed-event")
+        before = machine.snapshot()
+        with self.assertRaisesRegex(ValueError, "instance is completed"):
+            machine.transition(machine._receipt(key), "cancel", "cancelled")
+        self.assertEqual(machine.snapshot(), before)
 
     def test_superseded_candidate_rejected_even_with_current_version_without_mutation(self):
         self.submit("agent", gate_id="gate-1")
