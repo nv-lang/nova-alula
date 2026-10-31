@@ -27,19 +27,20 @@
         "opening_id": {"type": "OpeningId", "required": true},
         "subject": {"type": "T", "required": true},
         "admissibility": {"type": "Admissibility", "required": true},
-        "candidate": {"type": "Choice", "required": true},
-        "principal": {"type": "PrincipalId", "required": true},
-        "selected_version": {"type": "Version", "required": true},
-        "applied_version": {"type": "Version", "required": true}
+        "candidates": {"type": "CandidateMap", "required": true},
+        "selected_candidate_id": {"type": "CandidateId", "required": false},
+        "selection_version": {"type": "Version", "required": true},
+        "applied_version": {"type": "Version", "required": false}
       },
-      "lifecycle": {"initial": "opened", "states": ["opened", "candidates", "selected", "committed", "withdrawn", "superseded"], "transitions": [{"from": "opened", "to": "candidates"}, {"from": "candidates", "to": "selected"}, {"from": "candidates", "to": "superseded"}, {"from": "selected", "to": "committed"}, {"from": "selected", "to": "superseded"}, {"from": "opened", "to": "withdrawn"}, {"from": "candidates", "to": "withdrawn"}, {"from": "selected", "to": "withdrawn"}], "terminal": ["committed", "withdrawn", "superseded"], "supersede_from": ["candidates", "selected"]},
+      "lifecycle": {"initial": "open", "states": ["open", "committed", "withdrawn"], "transitions": [{"from": "open", "to": "committed"}, {"from": "open", "to": "withdrawn"}], "terminal": ["committed", "withdrawn"]},
+      "candidate": {"contract": {"candidate_id": {"type": "CandidateId", "required": true}, "opening_id": {"type": "OpeningId", "required": true}, "event_id": {"type": "EventId", "required": true}, "sender": {"type": "PrincipalId", "required": true}, "role": {"type": "DecisionRole", "required": true}, "decision": {"type": "Choice", "required": true}, "selected_version": {"type": "Version", "required": false}, "applied_version": {"type": "Version", "required": false}}, "lifecycle": {"initial": "proposed", "states": ["proposed", "selected", "superseded", "applied", "withdrawn"], "transitions": [{"from": "proposed", "to": "selected"}, {"from": "proposed", "to": "withdrawn"}, {"from": "selected", "to": "superseded"}, {"from": "selected", "to": "applied"}, {"from": "selected", "to": "withdrawn"}], "terminal": ["superseded", "applied", "withdrawn"]}, "supersede_from": ["selected"]},
       "correlation": {"keys": ["opening_id", "subject_id", "principal_id", "version"], "one_opening_per_logical_decision": true, "ui_sessions_share_principal": true, "is_authority": false},
       "binding": {"allowed": ["human_principal", "policy_authorized_agent", "setting_resolved_principal"], "identity_source": "authenticated_principal"},
       "rights": {"authority_source": "authenticated_principal_and_policy", "binding_name_grants_authority": false},
       "policy": {"allowed": ["admissibility", "human_priority_before_commit", "kind_specific_gate"], "required": ["human_priority_before_commit"], "forbidden": []},
-      "commit": {"requires_version_match": true, "stale_selected_version": "reject", "arbitration": "human_priority_before_commit", "atomic": true},
+      "commit": {"expected_version_argument": "selection_version", "requires_selected_candidate_match": true, "applied_version": "successful_commit_only", "requires_version_match": true, "stale_selected_version": "reject_without_mutation", "arbitration": "human_priority_before_commit", "atomic": true},
       "operations": {"withdrawal": "close_uncommitted_opening", "cancel": "request_execution_stop", "compensation": "separate_domain_operation"},
-      "recovery": {"opening_durable": true, "candidates_durable": true, "selection_durable": true, "version_durable": true}
+      "recovery": {"opening_durable": true, "candidates_durable": true, "selection_durable": true, "version_durable": true, "receipt_queue_dedup_and_intents_durable": true}
     },
     "managed-call": {
       "contract": {"input": {"type": "T", "required": true}, "result": {"type": "R", "required": true}, "child_id": {"type": "ChildId", "required": true}},

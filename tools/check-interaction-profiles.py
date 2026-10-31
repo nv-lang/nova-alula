@@ -19,9 +19,9 @@ PROFILE_FIELDS = {
     "call": {"request": ("T", True), "result": ("R", True), "progress": ("P", False), "counter": ("Counter", False)},
     "decision": {
         "opening_id": ("OpeningId", True), "subject": ("T", True),
-        "admissibility": ("Admissibility", True), "candidate": ("Choice", True),
-        "principal": ("PrincipalId", True), "selected_version": ("Version", True),
-        "applied_version": ("Version", True),
+        "admissibility": ("Admissibility", True), "candidates": ("CandidateMap", True),
+        "selected_candidate_id": ("CandidateId", False), "selection_version": ("Version", True),
+        "applied_version": ("Version", False),
     },
     "managed-call": {"input": ("T", True), "result": ("R", True), "child_id": ("ChildId", True)},
     "input-only": {"signal": ("DeclaredSignal", True), "fields": ("DeclaredFields", True)},
@@ -72,15 +72,10 @@ CORRELATION_KEYS = {
 }
 LIFECYCLE_STATES = {
     "call": ({"prepared", "sent", "accepted", "applied", "withdrawn", "failed", "expired"}, {"applied", "withdrawn", "failed", "expired"}, "prepared"),
-    "decision": ({"opened", "candidates", "selected", "committed", "withdrawn", "superseded"}, {"committed", "withdrawn", "superseded"}, "opened"),
+    "decision": ({"open", "committed", "withdrawn"}, {"committed", "withdrawn"}, "open"),
+    "decision-candidate": ({"proposed", "selected", "superseded", "applied", "withdrawn"}, {"superseded", "applied", "withdrawn"}, "proposed"),
     "managed-call": ({"created", "running", "paused", "completed", "failed", "cancelled"}, {"completed", "failed", "cancelled"}, "created"),
     "input-only": ({"received", "accepted", "rejected"}, {"accepted", "rejected"}, "received"),
-}
-LIFECYCLE_EDGES = {
-    "call": {("prepared", "sent"), ("sent", "accepted"), ("accepted", "applied"), ("prepared", "withdrawn"), ("sent", "withdrawn"), ("accepted", "failed"), ("accepted", "expired")},
-    "decision": {("opened", "candidates"), ("candidates", "selected"), ("candidates", "superseded"), ("selected", "committed"), ("selected", "superseded"), ("opened", "withdrawn"), ("candidates", "withdrawn"), ("selected", "withdrawn")},
-    "managed-call": {("created", "running"), ("running", "paused"), ("running", "completed"), ("running", "failed"), ("running", "cancelled"), ("paused", "running"), ("paused", "completed"), ("paused", "failed"), ("paused", "cancelled")},
-    "input-only": {("received", "accepted"), ("received", "rejected")},
 }
 OPERATIONS = {
     "call": {"withdrawal": "stop_waiting", "cancel": "request_stop", "compensation": "domain_operation"},
@@ -99,7 +94,7 @@ CODEC_STATUS = "available_project_spec_not_runtime"
 CODEC_FIELDS = {"reference", "status", "covers", "single_source", "duplicate_codec_here", "requires_json", "requires_network", "requires_durable_inbox_for_each_binding", "event_envelope_and_receipts", "event_protocol_reference"}
 PROFILE_KEYS = {
     "call": {"contract", "lifecycle", "correlation", "binding", "rights", "policy", "operations", "recovery"},
-    "decision": {"contract", "lifecycle", "correlation", "binding", "rights", "policy", "commit", "operations", "recovery"},
+    "decision": {"contract", "lifecycle", "candidate", "correlation", "binding", "rights", "policy", "commit", "operations", "recovery"},
     "managed-call": {"contract", "lifecycle", "correlation", "binding", "rights", "policy", "operations", "recovery"},
     "input-only": {"contract", "lifecycle", "correlation", "binding", "rights", "policy", "admissibility", "operations", "recovery"},
 }
@@ -130,8 +125,8 @@ def validate_graph(name, lifecycle):
         if source in terminal:
             errors.append(f"profiles.{name}.lifecycle:terminal_state_has_outgoing_transition")
         parsed.add((source, target))
-    if parsed != LIFECYCLE_EDGES[name]:
-        errors.append(f"profiles.{name}.lifecycle:transition_graph_incomplete_or_invalid")
+    if len(parsed) != len(edges):
+        errors.append(f"profiles.{name}.lifecycle:duplicate_transition")
     reachable = {initial}
     changed = True
     while changed:
@@ -197,11 +192,17 @@ def validate(model):
             errors.append(f"profiles.{name}.operations:withdrawal_cancel_compensation_invalid")
 
     decision = profiles.get("decision", {})
+    errors.extend(validate_graph("decision-candidate", decision.get("candidate", {}).get("lifecycle", {})))
     contract = decision.get("contract", {})
     if contract.get("subject", {}).get("required") is not True:
         errors.append("profiles.decision.contract.subject:must_be_required")
     commit = decision.get("commit", {})
-    if commit.get("requires_version_match") is not True or commit.get("stale_selected_version") != "reject" or commit.get("atomic") is not True:
+    if (commit.get("expected_version_argument") != "selection_version"
+            or commit.get("requires_selected_candidate_match") is not True
+            or commit.get("applied_version") != "successful_commit_only"
+            or commit.get("requires_version_match") is not True
+            or commit.get("stale_selected_version") != "reject_without_mutation"
+            or commit.get("atomic") is not True):
         errors.append("profiles.decision.commit:stale_selection_must_be_rejected_atomically")
     if commit.get("arbitration") != "human_priority_before_commit":
         errors.append("profiles.decision.commit:human_priority_required")
@@ -210,10 +211,40 @@ def validate(model):
     corr = decision.get("correlation", {})
     if corr.get("one_opening_per_logical_decision") is not True or corr.get("ui_sessions_share_principal") is not True:
         errors.append("profiles.decision.correlation:one_opening_per_principal_required")
-    if "committed" in decision.get("lifecycle", {}).get("supersede_from", []):
-        errors.append("profiles.decision.lifecycle:committed_must_not_be_supersedable")
-    if set(decision.get("lifecycle", {}).get("supersede_from", [])) != {"candidates", "selected"}:
-        errors.append("profiles.decision.lifecycle:supersede_source_set_invalid")
+    opening = decision.get("lifecycle", {})
+    candidate = decision.get("candidate", {})
+    if set(opening.get("states", [])) != {"open", "committed", "withdrawn"} or set(opening.get("terminal", [])) != {"committed", "withdrawn"}:
+        errors.append("profiles.decision.lifecycle:opening_states_invalid")
+    if set(candidate.get("lifecycle", {}).get("supersede_from", candidate.get("supersede_from", []))) != {"selected"}:
+        errors.append("profiles.decision.candidate:supersede_source_invalid")
+    candidate_lifecycle = candidate.get("lifecycle", {})
+    if (set(candidate_lifecycle.get("states", [])) != {"proposed", "selected", "superseded", "applied", "withdrawn"}
+            or set(candidate_lifecycle.get("terminal", [])) != {"superseded", "applied", "withdrawn"}
+            or candidate_lifecycle.get("initial") != "proposed"):
+        errors.append("profiles.decision.candidate:candidate_lifecycle_invalid")
+    if "superseded" not in candidate_lifecycle.get("states", []):
+        errors.append("profiles.decision.candidate:superseded_state_missing")
+    candidate_edges = candidate_lifecycle.get("transitions", [])
+    if len({(edge.get("from"), edge.get("to")) for edge in candidate_edges if isinstance(edge, dict)}) != len(candidate_edges):
+        errors.append("profiles.decision.candidate:duplicate_transition")
+    if any(not isinstance(edge, dict) or set(edge) != {"from", "to"}
+           or edge.get("from") not in candidate_lifecycle.get("states", [])
+           or edge.get("to") not in candidate_lifecycle.get("states", [])
+           or edge.get("from") in candidate_lifecycle.get("terminal", []) for edge in candidate_edges):
+        errors.append("profiles.decision.candidate:invalid_transition")
+    opening_edges = {(edge.get("from"), edge.get("to")) for edge in opening.get("transitions", []) if isinstance(edge, dict)}
+    if opening_edges != {("open", "committed"), ("open", "withdrawn")}:
+        errors.append("profiles.decision.lifecycle:opening_transition_invalid")
+    candidate_contract = candidate.get("contract", {})
+    candidate_types = {"candidate_id": "CandidateId", "opening_id": "OpeningId", "event_id": "EventId",
+                       "sender": "PrincipalId", "role": "DecisionRole", "decision": "Choice",
+                       "selected_version": "Version", "applied_version": "Version"}
+    if set(candidate_contract) != set(candidate_types) or any(
+            candidate_contract.get(name, {}).get("type") != value
+            or candidate_contract.get(name, {}).get("required") is not required
+            for name, value, required in ((name, value, name not in {"selected_version", "applied_version"})
+                                          for name, value in candidate_types.items())):
+        errors.append("profiles.decision.candidate:candidate_contract_invalid")
     recovery = decision.get("recovery", {})
     if any(recovery.get(field) is not True for field in ("opening_durable", "candidates_durable", "selection_durable", "version_durable")):
         errors.append("profiles.decision.recovery:opening_candidates_selection_and_version_must_be_durable")
@@ -334,7 +365,7 @@ def main():
         errors = validate(mutant)
         check(f"reverse {label}", any(expected in error for error in errors), f"expected {expected}; got {errors}")
 
-    reverse("principal type Id is not PrincipalId", lambda m: m["profiles"]["decision"]["contract"]["principal"].update(type="Id"), "type_or_required_invalid")
+    reverse("candidate sender type Id is not PrincipalId", lambda m: m["profiles"]["decision"]["candidate"]["contract"]["sender"].update(type="Id"), "candidate_contract_invalid")
     reverse("human cannot bind an agent", lambda m: m["kinds"]["human"].update(bindings=["policy_authorized_agent"]), "kind_specific_binding_invalid")
     reverse("gatekeeper cannot bind a human directly", lambda m: m["kinds"]["gatekeeper"].update(bindings=["human_principal"]), "kind_specific_binding_invalid")
     reverse("service progress field cannot be hidden", lambda m: m["kinds"]["service"]["types"].update(progress="P"), "exact_typed_contract_invalid")
@@ -345,6 +376,7 @@ def main():
     reverse("decision subject must be required", lambda m: m["profiles"]["decision"]["contract"]["subject"].update(required=False), "subject:must_be_required")
     reverse("decision graph cannot be empty", lambda m: m["profiles"]["decision"]["lifecycle"].update(transitions=[]), "transition_graph_empty")
     reverse("transition endpoint must exist", lambda m: m["profiles"]["decision"]["lifecycle"]["transitions"][0].update(to="missing"), "transition_endpoint_unknown")
+    reverse("candidate graph rejects duplicate rows", lambda m: m["profiles"]["decision"]["candidate"]["lifecycle"]["transitions"].append(copy.deepcopy(m["profiles"]["decision"]["candidate"]["lifecycle"]["transitions"][0])), "duplicate_transition")
     reverse("compatibility duplicate cannot override constraints", lambda m: (m["kinds"]["human"].update(bindings=["policy_authorized_agent"]), m.update(compatibility={"kind_bindings_must_be_subset_of_profile_bindings": False})), "top_level_fields_invalid")
     reverse("human priority remains required", lambda m: (m["profiles"]["decision"]["policy"].update(required=[]), m["kinds"]["human"].update(policy=["admissibility", "kind_specific_gate"])), "kind_specific_policy_invalid")
     reverse("managed pause is not timeout", lambda m: m["profiles"]["managed-call"]["recovery"].update(pause_is_timeout=True), "pause_must_be_false")
@@ -360,7 +392,7 @@ def main():
     reverse("input-only requires active state", lambda m: m["profiles"]["input-only"]["admissibility"].update(requires_active_state=False, late_input="accept", deferred_delivery=True), "active_state_and_late_rejection_required")
     reverse("service streaming forbidden", lambda m: m["kinds"]["service"].update(enabled_features=["streaming"]), "enabled_features:must_be_empty")
     reverse("binding name grants no authority", lambda m: m["profiles"]["decision"]["rights"].update(binding_name_grants_authority=True), "authority_must_not_come_from_binding_name")
-    reverse("committed cannot be superseded", lambda m: m["profiles"]["decision"]["lifecycle"].update(supersede_from=["candidates", "selected", "committed"]), "committed_must_not_be_supersedable")
+    reverse("supersede belongs to candidate", lambda m: m["profiles"]["decision"].update(candidate={**m["profiles"]["decision"]["candidate"], "supersede_from": ["proposed", "selected"]}), "supersede_source_invalid")
     reverse("withdrawal differs from cancel", lambda m: m["profiles"]["decision"]["operations"].update(withdrawal="request_execution_stop"), "withdrawal_cancel_compensation_invalid")
     reverse("withdrawal differs from compensation", lambda m: m["profiles"]["decision"]["operations"].update(withdrawal="separate_domain_operation"), "withdrawal_cancel_compensation_invalid")
     reverse("cancel differs from compensation", lambda m: m["profiles"]["decision"]["operations"].update(cancel="separate_domain_operation"), "withdrawal_cancel_compensation_invalid")
