@@ -9,6 +9,7 @@ import tempfile
 import unittest
 
 from event_protocol_model import Instance, TERMINAL, decision_transitions, transitions_from_spec
+import event_protocol_model
 
 
 class EventProtocolModelTests(unittest.TestCase):
@@ -51,13 +52,29 @@ class EventProtocolModelTests(unittest.TestCase):
     def test_transition_table_rejects_malformed_and_duplicate_rows(self):
         header = "<!-- receipt-transitions -->\n| from | operation | to |\n|---|---|---|\n"
         footer = "\n<!-- /receipt-transitions -->\n"
-        for rows, message in (("| queued | ??? | accepted |", "unknown receipt transition"),
+        for rows, message in (("| queued | ??? | accepted |", "operation/result is invalid"),
                               ("| queued | admit | accepted |\n| queued | admit | accepted |", "duplicate receipt"),
                               ("| queued | admit | |", "malformed receipt")):
             with tempfile.TemporaryDirectory() as directory:
                 path = Path(directory) / "spec.md"
                 path.write_text(header + rows + footer, encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, message):
+                    transitions_from_spec(path)
+
+    def test_transition_parser_rejects_unframed_rows_and_impossible_operation_result(self):
+        prefix = "<!-- receipt-transitions -->\n| from | operation | to |\n|---|---|---|\n"
+        suffix = "\n<!-- /receipt-transitions -->\n"
+        cases = (
+            ("| none | submit | queued |\nqueued | explode | applied", "malformed receipt transition row"),
+            ("| none | submit | queued |\n| queued | explode | applied |", "operation/result is invalid"),
+            ("| queued | admit | applied |", "operation/result is invalid"),
+            ("| queued | admit | accepted", "malformed receipt transition row"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "spec.md"
+            for rows, reason in cases:
+                path.write_text(prefix + rows + suffix, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, reason):
                     transitions_from_spec(path)
 
     def test_decision_graph_loader_rejects_duplicate_and_unreachable_edges(self):
@@ -148,6 +165,49 @@ class EventProtocolModelTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "only accepted"):
             replayed.apply(key, expected_inbox_version=1, expected_selection_version=version, gate_id="gate-1")
         self.assertEqual(replayed.snapshot(), committed)
+
+    def test_apply_fault_during_queued_cleanup_preserves_entire_snapshot(self):
+        self.submit("agent-a", gate_id="gate-1")
+        key_a = self.key("agent-a")
+        self.machine.admit(key_a, decision="first")
+        self.submit("agent-b", gate_id="gate-1")
+        before = self.machine.snapshot()
+        forbidden_transition = ("queued", "reject", "rejected")
+        event_protocol_model.TRANSITIONS.remove(forbidden_transition)
+        try:
+            with self.assertRaisesRegex(ValueError, "transition not allowed: queued --reject--> rejected"):
+                self.machine.apply(key_a, expected_inbox_version=self.machine.inbox_version,
+                                   expected_selection_version=1, gate_id="gate-1")
+            self.assertEqual(self.machine.snapshot(), before)
+        finally:
+            event_protocol_model.TRANSITIONS.add(forbidden_transition)
+
+    def test_retention_rejects_active_instance_before_withdrawal(self):
+        self.submit("agent-a", gate_id="gate-1")
+        key_a = self.key("agent-a")
+        self.machine.admit(key_a, decision="agent")
+        self.submit("human-h", actor="human", gate_id="gate-1")
+        self.machine.human_priority("gate-1", self.key("human-h"))
+        before = self.machine.snapshot()
+        with self.assertRaisesRegex(ValueError, "instance is active"):
+            self.machine.expire_completed("tenant-a", "producer-a", "agent-a")
+        self.assertEqual(self.machine.snapshot(), before)
+        self.machine.withdraw_opening("gate-1")
+        self.assertEqual(self.machine.gates["gate-1"].status, "withdrawn")
+
+    def test_retention_allowed_only_after_instance_completion(self):
+        self.submit("agent-a", gate_id="gate-1")
+        agent_key = self.key("agent-a")
+        self.machine.admit(agent_key, decision="agent")
+        self.submit("human-h", actor="human", gate_id="gate-1")
+        human_key = self.key("human-h")
+        self.machine.human_priority("gate-1", human_key)
+        version = self.machine.gates["gate-1"].selection_version
+        self.machine.apply(human_key, expected_inbox_version=self.machine.inbox_version,
+                           expected_selection_version=version, gate_id="gate-1")
+        self.machine.complete()
+        self.machine.expire_completed("tenant-a", "producer-a", "agent-a")
+        self.assertEqual(self.machine.status("tenant-a", "producer-a", "agent-a"), "status_gone")
 
     def test_superseded_candidate_rejected_even_with_current_version_without_mutation(self):
         self.submit("agent", gate_id="gate-1")
@@ -455,6 +515,8 @@ class EventProtocolModelTests(unittest.TestCase):
     def test_retention_expires_receipt_but_tombstone_blocks_reuse(self):
         self.submit("e1")
         self.machine.admit(self.key("e1"), valid=False)
+        self.machine.withdraw_opening("gate-1")
+        self.machine.complete()
         self.machine.expire_completed("tenant-a", "producer-a", "e1")
         self.assertEqual(self.machine.status("tenant-a", "producer-a", "e1"), "status_gone")
         with self.assertRaisesRegex(ValueError, "status_gone"):

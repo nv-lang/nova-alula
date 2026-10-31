@@ -30,20 +30,44 @@ def transitions_from_spec(path: Path = SPEC) -> set[tuple[str, str, str]]:
     if not match:
         raise ValueError("receipt transition table markers missing")
     rows = []
+    header_seen = False
+    separator_seen = False
+    semantic_result = {
+        "submit": {("none", "queued")},
+        "admit": {("queued", "accepted")},
+        "reject": {("queued", "rejected")},
+        "cancel": {("queued", "cancelled"), ("accepted", "cancelled")},
+        "apply": {("accepted", "applied")},
+        "replace": {("accepted", "superseded")},
+    }
     for line in match.group(1).splitlines():
-        if not line.strip().startswith("|") or re.fullmatch(r"\|\s*:?-+:?\s*\|\s*:?-+:?\s*\|\s*:?-+:?\s*\|", line.strip()):
+        stripped = line.strip()
+        if not stripped:
             continue
-        cells = tuple(cell.strip() for cell in line.strip().strip("|").split("|"))
+        if not stripped.startswith("|") or not stripped.endswith("|"):
+            raise ValueError(f"malformed receipt transition row: {line}")
+        cells = tuple(cell.strip() for cell in stripped[1:-1].split("|"))
+        if len(cells) == 3 and all(re.fullmatch(r":?-{3,}:?", cell) for cell in cells):
+            if not header_seen or rows or separator_seen:
+                raise ValueError("misplaced or duplicate receipt transition separator")
+            separator_seen = True
+            continue
         if cells == ("from", "operation", "to"):
+            if header_seen or rows:
+                raise ValueError("misplaced or duplicate receipt transition header")
+            header_seen = True
             continue
         if len(cells) != 3 or not all(cells):
             raise ValueError(f"malformed receipt transition row: {line}")
+        if not header_seen:
+            raise ValueError("receipt transition header is missing")
+        if not separator_seen:
+            raise ValueError("receipt transition separator is missing")
+        source, operation, target = cells
+        if operation not in semantic_result or (source, target) not in semantic_result[operation]:
+            raise ValueError(f"receipt transition operation/result is invalid: {cells}")
         rows.append(cells)
-    valid = ({"none", "queued", "accepted"}, {"submit", "admit", "reject", "cancel", "apply", "replace"},
-             {"queued", "accepted", "rejected", "cancelled", "applied", "superseded"})
-    if any(value not in allowed for row in rows for value, allowed in zip(row, valid)):
-        raise ValueError("unknown receipt transition value")
-    if not rows or len(rows) != len(set(rows)):
+    if not header_seen or not separator_seen or not rows or len(rows) != len(set(rows)):
         raise ValueError("empty or duplicate receipt transition row")
     return set(rows)
 
@@ -227,6 +251,13 @@ class Instance:
         result.assert_pinned(snapshot["instance_id"], snapshot["contract_id"], snapshot["artifact_id"])
         return result
 
+    def complete(self) -> None:
+        """Mark model completion only after pending work and openings are terminal."""
+        if self._pending or any(isinstance(opening, Opening) and opening.status == "open"
+                                for opening in self.gates.values()):
+            raise ValueError("instance has pending work or open openings")
+        self.active = False
+
     def _key(self, tenant: str, producer_id: str, event_id: str) -> EventKey:
         if not tenant or not producer_id:
             raise ValueError("trusted tenant and producer_id are required")
@@ -360,6 +391,16 @@ class Instance:
             self._opening(gate_id).selected_candidate_id = None
 
     def apply(self, key: EventKey, *, expected_inbox_version: int | None = None, expected_selection_version: int | None = None, gate_id: str | None = None) -> Receipt:
+        """Commit on an isolated copy; publish the new snapshot only on full success."""
+        prepared = Instance.restore(self.snapshot())
+        result = prepared._apply_in_place(
+            key, expected_inbox_version=expected_inbox_version,
+            expected_selection_version=expected_selection_version, gate_id=gate_id)
+        for name in self.__dataclass_fields__:
+            setattr(self, name, getattr(prepared, name))
+        return result
+
+    def _apply_in_place(self, key: EventKey, *, expected_inbox_version: int | None = None, expected_selection_version: int | None = None, gate_id: str | None = None) -> Receipt:
         receipt = self._receipt(key)
         if receipt.status != "accepted":
             raise ValueError("only accepted events can apply")
@@ -493,6 +534,9 @@ class Instance:
 
     def expire_completed(self, tenant: str, producer_id: str, event_id: str) -> None:
         """Drop receipt data while retaining a non-reusable event-id tombstone."""
+        if self.active or any(isinstance(opening, Opening) and opening.status == "open"
+                              for opening in self.gates.values()):
+            raise ValueError("instance is active or has open openings")
         key = self._key(tenant, producer_id, event_id)
         receipt = self._receipts.get(key)
         if receipt is None or receipt.status not in TERMINAL:
