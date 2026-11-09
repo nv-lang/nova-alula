@@ -4,7 +4,7 @@ module alula.machine_run
 
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
-import alula.machine.{Value, Expr, Binding, Scope, DefTable, DefFn, Registry, TextType, BoolType, check_value}
+import alula.machine.{Value, Expr, Binding, Scope, DefTable, DefFn, Registry, TextType, BoolType, check_value, normalize_at}
 import alula.machine.{Null, Int, Text, List, RecordField, eval_defs, make_record, error_text, NoHost, call, name_ref, bin, lambda1, expr_json}
 import alula.machine_table.{MachineDef, ParamDef, load_machine, issue_text, find_state, find_party}
 
@@ -96,7 +96,7 @@ export fn alula_machine_with(def MachineDef, registry Registry, overrides []Proj
             Ok(u) => ()
             Err(x) => return Err("the constant ${c.name}: ${x.path} ${x.message}")
         }
-        globals = with_binding(globals, c.name, v)
+        globals = with_binding(globals, c.name, normalize_at(c.spec, v, def.types))
     }
     for p in def.params {
         mut given = false
@@ -118,7 +118,7 @@ export fn alula_machine_with(def MachineDef, registry Registry, overrides []Proj
             Ok(u) => ()
             Err(x) => return Err("the parameter ${p.name}: ${x.path} ${x.message}")
         }
-        globals = with_binding(globals, p.name, v)
+        globals = with_binding(globals, p.name, normalize_at(p.spec, v, def.types))
     }
     ro table = base_table(def, registry, globals)
     // a machine with an input has its data made at the start; an initial value that reads the input cannot be evaluated before (it is evaluated then, and may fail then)
@@ -194,7 +194,7 @@ fn initial_data_of(def MachineDef, table DefTable, input Value, lenient bool) ->
                 match eval_global(e, globals, table) {
                     Ok(v) => {
                         match check_value(d.spec, v, def.types) {
-                            Ok(u) => fields.push(RecordField { name: d.name, value: v })
+                            Ok(u) => fields.push(RecordField { name: d.name, value: normalize_at(d.spec, v, def.types) })
                             Err(x) => {
                                 if !early { return Err("the initial value of ${d.name}: ${x.path} ${x.message}") }
                                 fields.push(RecordField { name: d.name, value: Null })

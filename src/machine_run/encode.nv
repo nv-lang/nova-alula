@@ -174,12 +174,15 @@ fn enc_json(v Value, defs TypeDefs) -> str {
             }
             "{${enc_string(name)}:${enc_object(enc_case_fields(defs, type_name, name, fields), defs)}}"
         }
+        SomeV(inner) => enc_json(inner.inner, defs)
     }
 }
 
-/// The text of a datum in `все_данные`: a scalar by its rule, the rest as compact JSON.
+/// The text of a datum in `все_данные`: a scalar by its rule, the rest as compact JSON. A present optional shows as
+/// the value itself (task 146: the journal and the text of a value unwrap the `SomeV`).
 fn datum_line(v Value, defs TypeDefs) -> str {
     match v {
+        SomeV(b) => datum_line(b.inner, defs)
         Bool(b) => if b { "yes" } else { "no" }
         Variant { type_name, name, fields } => {
             if fields.len() == 0 && is_enum_type(defs, type_name) { return enc_word(defs, type_name, name) }

@@ -315,6 +315,7 @@ fn binary(op BinOp, left Expr, right Expr, mut env Env, mut host PrimitiveHost, 
             ro l = part(left, "left", env, host, depth)?
             match l {
                 Null => part(right, "right", env, host, depth)
+                SomeV(inner) => Ok(inner.inner)
                 _ => Ok(l)
             }
         }
@@ -643,7 +644,7 @@ fn eval_macro(name str, args []Expr, mut env Env, mut host PrimitiveHost, depth 
     }
     // first_where
     for x in items {
-        if predicate(lam, x, "args[1]", env, host, depth)? { return Ok(x) }
+        if predicate(lam, x, "args[1]", env, host, depth)? { return Ok(SomeV(SomeBox { inner: x })) }
     }
     Ok(Null)
 }
@@ -823,6 +824,7 @@ fn eval_plain(name str, v []Value) -> Result[Value, EvalError] {
         }
         "require" => match v[0] {
             Null => refuse(Unreachable, "a required value is absent")
+            SomeV(inner) => Ok(inner.inner)
             _ => Ok(v[0])
         }
         "remove" => match v[0] {
@@ -863,7 +865,7 @@ fn eval_plain(name str, v []Value) -> Result[Value, EvalError] {
         }
         "text_to_time" => match v[0] {
             Text(s) => match text_to_time(s) {
-                Some(ms) => Ok(Int(ms))
+                Some(ms) => Ok(SomeV(SomeBox { inner: Int(ms) }))
                 None => Ok(Null)
             }
             _ => wrong_at("args[0]", "text", v[0])
@@ -895,7 +897,7 @@ fn call_def(d DefFn, args []Expr, mut env Env, mut host PrimitiveHost, depth int
             Ok(u) => ()
             Err(x) => return Err(at(flaw(TypeMismatch, "the argument ${p} of ${d.name}: ${x.path} ${x.message}"), "args[${i}]"))
         }
-        names.push(Binding { name: p, value: values[i] })
+        names.push(Binding { name: p, value: normalize_at(d.specs[i], values[i], env.table.types) })
         i += 1
     }
     mut sub = Env { names, steps: env.steps, table: env.table }
@@ -904,7 +906,7 @@ fn call_def(d DefFn, args []Expr, mut env Env, mut host PrimitiveHost, depth int
     match r {
         Ok(v) => {
             match check_value(d.result, v, env.table.types) {
-                Ok(u) => Ok(v)
+                Ok(u) => Ok(normalize_at(d.result, v, env.table.types))
                 Err(x) => refuse(TypeMismatch, "the result of ${d.name}: ${x.path} ${x.message}")
             }
         }
@@ -921,7 +923,12 @@ fn call_host(name str, values []Value, mut env Env, mut host PrimitiveHost) -> R
         }
         ro r = host.call_primitive(name, values)?
         match check_call_result(env.table.registry, env.table.types, name, r) {
-            Ok(u) => return Ok(r)
+            Ok(u) => {
+                match find_primitive(env.table.registry, name) {
+                    Some(p) => return Ok(normalize_at(p.result, r, env.table.types))
+                    None => return Ok(r)
+                }
+            }
             Err(x) => return refuse(TypeMismatch, "the result of ${name}: ${x.path} ${x.message}")
         }
     }

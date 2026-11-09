@@ -2449,7 +2449,7 @@ fn check_edits_state(mut cx Checker, st StateDef, path str) -> () {
 // result — the type of the value of the answer is the result of the declaration of the function (`answer_spec_of`). One function per role: there is no second parameter and no literal of a role.
 fn check_party_parse(mut cx Checker, pt PartyDef, path str) -> () {
     if pt.parse.len() == 0 { return }
-    if pt.kind != MachineParty { cx_issue(cx, "${path}.parse", "only a party of the kind machine has a parse") }
+    if pt.kind != MachineParty && pt.kind != AgentParty { cx_issue(cx, "${path}.parse", "only a party of the kind machine or agent has a parse") }
     ro pr = pt.parse[0]
     match find_primitive(cx.registry, pr.primitive) {
         None => cx_issue(cx, "${path}.parse.primitive", "the primitive ${pr.primitive} is not registered")
@@ -2458,7 +2458,12 @@ fn check_party_parse(mut cx Checker, pt PartyDef, path str) -> () {
             if p.params.len() != 1 {
                 cx_issue(cx, "${path}.parse.primitive", "the parse ${pr.primitive} takes ${p.params.len()} parameters: it takes the answer only (one function per role, AL-131)")
             } else {
-                if pt.result_spec.len() > 0 && spec_text(p.params[0].spec) != spec_text(pt.result_spec[0]) {
+                if pt.kind == AgentParty {
+                    // AL-153: the parse of an agent takes the original text of the answer, not the typed result
+                    if spec_text(p.params[0].spec) != spec_text(TextType) {
+                        cx_issue(cx, "${path}.parse.primitive", "the first parameter of the parse ${pr.primitive} of an agent is ${spec_text(p.params[0].spec)}: the parse of an agent takes the text of the answer (text)")
+                    }
+                } else if pt.result_spec.len() > 0 && spec_text(p.params[0].spec) != spec_text(pt.result_spec[0]) {
                     cx_issue(cx, "${path}.parse.primitive", "the first parameter of the parse ${pr.primitive} is ${spec_text(p.params[0].spec)}, the result of the party is ${spec_text(pt.result_spec[0])}")
                 }
                 // a tree of the seam of 2.25 keeps the type after `->` of the parse: it must be the result of the declaration (a tree of 0.28 holds no type)

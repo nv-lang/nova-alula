@@ -29,6 +29,7 @@ fn opened_at(m AlulaMachine, at int) -> Out {
 fn text_of(v Value) -> str {
     match v {
         Text(s) => s
+        SomeV(b) => text_of(b.inner) // task 146: an optional datum holds a present value wrapped
         _ => "?"
     }
 }
@@ -145,8 +146,9 @@ test "v25 input optional given" {
     ro m = input_optional()
     ro full = run1(m, m.initial(), start_with("{\"session\":\"a\",\"note\":\"n\",\"level\":2}"))
     assert(full.state.name == "Wait")
-    assert(datum_json(full.state, "note") == "\"n\"")
-    assert(datum_json(full.state, "level") == "2")
+    // task 146: a present optional is `SomeV` inside the engine and `{"$some": v}` on the snapshot wire
+    assert(datum_json(full.state, "note") == "{\"$some\":\"n\"}")
+    assert(datum_json(full.state, "level") == "{\"$some\":2}")
     ro explicit = run1(m, m.initial(), start_with("{\"session\":\"a\",\"note\":null}"))
     assert(explicit.state.name == "Wait")
     assert(datum_json(explicit.state, "note") == "null")

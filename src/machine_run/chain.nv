@@ -4,8 +4,8 @@ module alula.machine_run
 import std.text
 import std.encoding.json.{Json, JsonValue, JsonObject}
 import alula.engine.{Incoming, EventKind, Environment, Transition, SendOrder, CancelOrder, FailCode, JournalParam, journal_event, param, Go, Stay}
-import alula.machine.{Value, Null, Int, Bool, Text, List, Record, record_get, RecordField, Binding, PrimitiveHost, PrimitiveFailed, TypeSpec, TypeDefs, RecordType, OptionalType, Lit, check_call_args, value_json, value_to_json, value_from_json, make_record, check_value, enum_value, spec_text, find_primitive}
-import alula.machine_table.{StateDef, Goto, PartyDef, MachineDef, LValue, KeyStep, FieldStep, MachineParty, find_state, find_party, find_data}
+import alula.machine.{Value, Null, Int, Bool, Text, List, Record, record_get, RecordField, Binding, PrimitiveHost, PrimitiveFailed, TypeSpec, TypeDefs, RecordType, OptionalType, Lit, check_call_args, value_json, value_to_json, value_from_json, make_record, check_value, normalize_at, decode_typed, enum_value, spec_text, find_primitive}
+import alula.machine_table.{StateDef, Goto, PartyDef, MachineDef, LValue, KeyStep, FieldStep, MachineParty, AgentParty, find_state, find_party, find_data}
 import alula.machine_table.{ToState}
 
 // ---- the request of an appeal ------------------------------------------------------------------------------------------------
@@ -350,6 +350,11 @@ fn enter_end(mut ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[(), Fau
 fn previous_state(ctx Ctx) -> Result[str, Fault] {
     match data_get(ctx.data, "previous") {
         Text(s) => Ok(s)
+        // task 146: the datum is `?State`; a present value is held wrapped
+        SomeV(b) => match b.inner {
+            Text(s) => Ok(s)
+            _ => Err(defect_fault("no_previous", "the datum previous is empty"))
+        }
         _ => Err(defect_fault("no_previous", "the datum previous is empty"))
     }
 }
@@ -364,6 +369,14 @@ fn take_goto(mut ctx Ctx, next Goto) -> Result[Goto, Fault] {
                 Text(s) => {
                     ctx.data = data_put(ctx.data, "preparation_return", Null)
                     Ok(Goto { target: ToState(s), restart: next.restart })
+                }
+                // task 146: the datum is an optional; a present value is held wrapped
+                SomeV(b) => match b.inner {
+                    Text(s) => {
+                        ctx.data = data_put(ctx.data, "preparation_return", Null)
+                        Ok(Goto { target: ToState(s), restart: next.restart })
+                    }
+                    _ => Err(defect_fault("no_preparation_return", "the datum preparation_return is empty: the preparation of the executor writes it before the gates"))
                 }
                 _ => Err(defect_fault("no_preparation_return", "the datum preparation_return is empty: the preparation of the executor writes it before the gates"))
             }
@@ -538,7 +551,7 @@ fn read_input(mut ctx Ctx, text str, mut host PrimitiveHost) -> Option[Value] {
                     return None
                 }
             }
-            fields.push(RecordField { name: f.name, value: v })
+            fields.push(RecordField { name: f.name, value: normalize_at(f.spec, v, def.types) })
         }
     }
     Some(make_record("Input", fields))
@@ -692,8 +705,23 @@ fn apply_parse(ctx Ctx, party PartyDef, mut host PrimitiveHost) -> Result[Parsed
             }
             match spec {
                 Some(s) => {
+                    if party.kind == AgentParty {
+                        // the transport of the parse of an agent is a text (AL-153): not a text is a defect of
+                        // the host; the text is read by the external codec — a refusal is an answer not by the
+                        // form (rule 18); the result `строка` is the text itself
+                        return match v {
+                            Text(t) => match s {
+                                TextType => Ok(ParsedOk(Text(t)))
+                                _ => match decode_typed(t, s, ctx.def.types) {
+                                    Ok(x) => Ok(ParsedOk(x))
+                                    Err(e) => Ok(ParsedBad("${e.path}: ${e.reason}"))
+                                }
+                            }
+                            _ => Err(defect_fault("type_mismatch", "the parse ${pr.primitive} of an agent party answered not with a text"))
+                        }
+                    }
                     match check_value(s, v, ctx.def.types) {
-                        Ok(u) => Ok(ParsedOk(v))
+                        Ok(u) => Ok(ParsedOk(normalize_at(s, v, ctx.def.types)))
                         Err(x) => Err(defect_fault("type_mismatch", "the value of the parse ${pr.primitive} is not of the type ${spec_text(s)}: ${x.path} ${x.message}"))
                     }
                 }

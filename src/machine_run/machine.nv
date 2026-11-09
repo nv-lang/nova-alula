@@ -6,7 +6,7 @@ import std.encoding.json.{Json, JsonValue, JsonObject}
 import std.identifiers.uuid.{Uuid}
 import std.testing.handlers as th
 import alula.engine.{Incoming, Environment, Transition}
-import alula.machine.{Value, Null, Text, EvalError, PrimitiveFailed, value_to_json, value_from_json}
+import alula.machine.{Value, Null, Text, EvalError, PrimitiveFailed, FieldDef, value_to_json, value_from_json, normalize_record_fields}
 import alula.machine_table.{find_state}
 
 /// ScriptedHost: the default host of the primitives of a machine (`PrimitiveHost`). The stamp `at` of the event it was made for is the seed of `new_id` (the time itself is read as `event.at`, AL-134,
@@ -105,11 +105,13 @@ export fn AlulaMachine @decode_state(text str) -> Option[AlulaState] {
         None => return None
     }
     ro input = match value_from_json(input_json) {
-        Ok(v) => v
+        Ok(v) => normalize_record_fields(@def.input.fields, v, @def.types)
         Err(m) => return None
     }
+    mut data_specs = []FieldDef.new()
+    for d in @def.data { data_specs.push(FieldDef { name: d.name, spec: d.spec }) }
     ro data = match value_from_json(data_json) {
-        Ok(v) => v
+        Ok(v) => normalize_record_fields(data_specs, v, @def.types)
         Err(m) => return None
     }
     mut taken = []str.new()

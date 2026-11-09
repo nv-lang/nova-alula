@@ -25,8 +25,8 @@ import std.encoding.json.{Json}
 import std.encoding.json.{JsonValue, JsonObject}
 import alula.engine.{Incoming, SendOrder, CancelOrder, SignalOrder, Conclusion, FailCode, JournalParam, JournalEvent, journal_event, param}
 import alula.machine.{Value, Null, Int, Text, List, Dict, DictEntry, RecordField, Binding, Scope, DefTable, Expr, TypeSpec, PrimitiveHost, EvalError, Binary, Add}
-import alula.machine.{eval_defs, kind_word, make_record, make_tuple, enum_value, value_text, value_json, value_to_json, value_compare, parse_value, value_from_json, record_get, dict_get, check_value, FieldDef, TypeDefs, check_call_args, check_call_result, has_tail, Lit}
-import alula.machine_table.{MachineDef, TableRow, EventPat, Action, LValue, PathStep, NamedExpr, Bind, SignalDef, PartyDef, MachineParty}
+import alula.machine.{eval_defs, kind_word, make_record, make_tuple, enum_value, value_text, value_json, value_to_json, value_compare, parse_value, value_from_json, record_get, dict_get, check_value, normalize_at, decode_typed, FieldDef, TypeDefs, check_call_args, check_call_result, has_tail, Lit}
+import alula.machine_table.{MachineDef, TableRow, EventPat, Action, LValue, PathStep, NamedExpr, Bind, SignalDef, PartyDef, MachineParty, AgentParty}
 import alula.machine_table.{find_state, find_party, find_data}
 
 /// The longest chain of transitions in one step (a loop of forks that never ends is a defect of the table).
@@ -228,7 +228,7 @@ fn field_from_text(spec TypeSpec, input str, defs TypeDefs) -> Result[Value, str
         _ => { v = parse_value(input)? }
     }
     match check_value(spec, v, defs) {
-        Ok(u) => Ok(v)
+        Ok(u) => Ok(normalize_at(spec, v, defs))
         Err(x) => Err("${x.path} ${x.message}")
     }
 }
@@ -267,7 +267,7 @@ fn decode_fields(fields []FieldDef, input str, defs TypeDefs) -> Result[[]Record
             Ok(u) => ()
             Err(x) => return Err("${f.name}: ${x.path} ${x.message}")
         }
-        out.push(RecordField { name: f.name, value: v })
+        out.push(RecordField { name: f.name, value: normalize_at(f.spec, v, defs) })
     }
     Ok(out)
 }
@@ -300,10 +300,17 @@ type EventRead enum
     | ReadMalformed
     | ReadReady(EventVal)
 
+// The value of an answer. A party `machine` answers on the internal wire (the tags of K0, parse_value); a party
+// `agent` answers with a text read by the external codec (AL-153) — the answer of a result `строка` is the text
+// itself, and a party with a parse keeps the raw text here: the parse takes the original text first (rule 14)
+// and the codec reads the text the parse returns (apply_parse). A text that does not read is None (the event is
+// malformed, rule 18); the machine wire is byte-for-byte as before.
 fn answer_value(def MachineDef, state_party str, input str) -> Option[Value] {
     ro pi = find_party(def, state_party)
     if pi < 0 || def.parties[pi].result_spec.len() == 0 { return Some(Text(input)) }
-    match def.parties[pi].result_spec[0] {
+    ro party = def.parties[pi]
+    if party.kind == AgentParty { return agent_answer_value(party, def, input) }
+    match party.result_spec[0] {
         TextType => Some(Text(input))
         TextSet(words) => Some(Text(input))
         IdType => Some(Text(input))
@@ -311,12 +318,25 @@ fn answer_value(def MachineDef, state_party str, input str) -> Option[Value] {
             match parse_value(input) {
                 Ok(v) => {
                     match check_value(spec, v, def.types) {
-                        Ok(u) => Some(v)
+                        Ok(u) => Some(normalize_at(spec, v, def.types))
                         Err(x) => None
                     }
                 }
                 Err(m) => None
             }
+        }
+    }
+}
+
+// The answer of a party `agent` (AL-153): the original text read by the external codec — with a parse the raw
+// text stays for the parse; without it the codec reads by the type of the result (`строка` takes the text as is).
+fn agent_answer_value(party PartyDef, def MachineDef, input str) -> Option[Value] {
+    if party.parse.len() > 0 { return Some(Text(input)) }
+    match party.result_spec[0] {
+        TextType => Some(Text(input))
+        spec => match decode_typed(input, spec, def.types) {
+            Ok(v) => Some(v)
+            Err(e) => None
         }
     }
 }
@@ -527,7 +547,7 @@ fn write_target(mut ctx Ctx, target LValue, v Value, mut host PrimitiveHost) -> 
         Ok(u) => ()
         Err(x) => return Err(reason_fault("bound_violation"))
     }
-    ctx.data = data_put(ctx.data, target.root, next)
+    ctx.data = data_put(ctx.data, target.root, normalize_at(ctx.def.data[at].spec, next, ctx.def.types))
     Ok(())
 }
 

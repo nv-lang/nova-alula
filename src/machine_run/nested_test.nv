@@ -122,7 +122,7 @@ test "nr pass stop" {
     assert(signals_text(stopped.signals) == "callee-1:stop")
     assert(summary(stopped.orders) == "log:human_stop(author=ann;source=console;event=e-1),save")
     assert(datum_json(stopped.state, "open_requests") == "[\"callee-1\"]")
-    assert(datum_json(stopped.state, "previous") == "\"Call\"")
+    assert(datum_json(stopped.state, "previous") == "{\"$some\":\"Call\"}") // task 146: a present optional on the wire
 }
 
 test "nr continue no resend" {

@@ -309,10 +309,10 @@ fn party_row_in(r TxEntry, mut cx TxCx, with_parts bool) -> Result[TxPartyRow, T
     } else if r.cells[3].text != "—" && r.cells[3].text != "" {
         return Err(tx_err(r.line, r.cells[3].col, "structure", "столбец `${kw(cx.words, "column", "setting")}` — только у вида `${kw(cx.words, "kind_party", "gatekeeper")}`; у стороны вида `${k.kind}` здесь `—`"))
     }
-    // the column `разбор` (0.28): only at the kind `machine` — the name of the parse function without brackets; the type of its result comes from the declaration of the function (the check compares, section 10)
+    // the column `разбор` (0.28; at the kind `agent` since AL-153, task 146): the name of the parse function without brackets; the type of its result comes from the declaration of the function (the check compares, section 10)
     if r.cells[4].text != "—" && r.cells[4].text != "" {
-        if k.kind != "machine" {
-            return Err(tx_err(r.line, r.cells[4].col, "structure", "столбец `${kw(cx.words, "column", "parse")}` — только у вида `${kw(cx.words, "kind_party", "machine")}`; у стороны вида `${k.kind}` здесь `—`"))
+        if k.kind != "machine" && k.kind != "agent" {
+            return Err(tx_err(r.line, r.cells[4].col, "structure", "столбец `${kw(cx.words, "column", "parse")}` — у видов `${kw(cx.words, "kind_party", "machine")}` и `${kw(cx.words, "kind_party", "agent")}`; у стороны вида `${k.kind}` здесь `—`"))
         }
         mut pp = cell_p(r.cells[4], r.line)?
         ro f = p_tok(pp)

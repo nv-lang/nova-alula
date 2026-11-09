@@ -39,14 +39,14 @@ fn has_row(rows []TxWord, kind str, key str) -> bool {
 
 test "wt table shape" {
     ro rows = method_rows()
-    assert(rows.len() == 221)
+    assert(rows.len() == 225)
     for k in all_kinds() { assert(kind_count(rows, k) > 0) }
     for r in rows {
         assert(all_kinds().contains(r.kind))
         assert(r.ru != "" && r.en != "")
     }
     assert(kind_count(rows, "operator") == 11)
-    assert(kind_count(rows, "catalog") == 28)
+    assert(kind_count(rows, "catalog") == 29)
 }
 
 test "wt table unique" {
@@ -81,7 +81,7 @@ test "wt the former product layer is in the layer of 2.25" {
 
 test "wt all rows loaded" {
     // the table of 0.27 and the layer of 2.25 (the seam of task 195, with the former product layer since task 197 and the former words of 2.26 since task 244)
-    assert(words_rows().len() == 221 + 38)
+    assert(words_rows().len() == 225 + 38)
 }
 
 test "wt the layer of 2.25 holds only the words that 2.26 removed" {

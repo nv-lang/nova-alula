@@ -482,3 +482,169 @@ test "js from json" {
     }
     assert(value_to_json(Int(3)).to_str() == "3")
 }
+
+// ---- the external codec (task 146, AL-153): a text read into a typed value; the fixtures are tdefs() of types_test.nv ----
+
+fn dtflaw(text str, spec TypeSpec) -> str {
+    match decode_typed(text, spec, tdefs()) {
+        Ok(v) => "ok"
+        Err(e) => "${e.path}: ${e.reason}"
+    }
+}
+
+fn dtval(text str, spec TypeSpec) -> Value {
+    match decode_typed(text, spec, tdefs()) {
+        Ok(v) => v
+        Err(e) => panic("${e.path}: ${e.reason}")
+    }
+}
+
+test "dt int" {
+    assert(value_equal(dtval("5", IntType), Int(5)))
+    assert(value_equal(dtval("-5", IntType), Int(-5)))
+    assert(value_equal(dtval("9223372036854775807", IntType), Int(9223372036854775807)))
+    assert(value_equal(dtval("-9223372036854775808", IntType), Int(0 - 9223372036854775807 - 1)))
+    assert(dtflaw("9223372036854775808", IntType) == "$: the number is out of the range of int")
+    assert(dtflaw("1.5", IntType) == "$: an int is a JSON number without a fraction and without an exponent")
+    assert(dtflaw("1e3", IntType) == "$: an int is a JSON number without a fraction and without an exponent")
+    assert(dtflaw("-9223372036854775809", IntType) == "$: an int is a JSON number without a fraction and without an exponent")
+    assert(dtflaw("\"5\"", IntType) == "$: expected an int, got a string")
+}
+
+test "dt int bound" {
+    assert(value_equal(dtval("0", IntMin(0)), Int(0)))
+    assert(dtflaw("-1", IntMin(0)) == "$: -1 is less than the bound 0")
+}
+
+test "dt float" {
+    assert(value_equal(dtval("5", FloatType), Float(5.0)))
+    assert(value_equal(dtval("2.5", FloatType), Float(2.5)))
+    assert(value_equal(dtval("1e3", FloatType), Float(1000.0)))
+    assert(value_equal(dtval("9223372036854775808", FloatType), Float(9223372036854775808.0)))
+    ro z = dtval("-0.0", FloatType)
+    match z {
+        Float(x) => {
+            assert(x == 0.0)
+            assert(1.0 / x < 0.0)
+        }
+        _ => assert(false)
+    }
+    ro p = dtval("0.0", FloatType)
+    match p {
+        Float(x) => assert(1.0 / x > 0.0)
+        _ => assert(false)
+    }
+    assert(dtflaw("\"x\"", FloatType) == "$: expected a float, got a string")
+    assert(dtflaw("true", FloatType) == "$: expected a float, got a boolean")
+}
+
+test "dt scalars" {
+    assert(value_equal(dtval("\"x\"", TextType), Text("x")))
+    assert(dtflaw("1", TextType) == "$: expected a text, got a number")
+    assert(value_equal(dtval("true", BoolType), Bool(true)))
+    assert(dtflaw("1", BoolType) == "$: expected a boolean, got a number")
+    assert(value_equal(dtval("null", NothingType), Null))
+    assert(dtflaw("0", NothingType) == "$: expected null, got a number")
+    assert(value_equal(dtval("\"a\"", TextSet(["a", "b"])), Text("a")))
+    assert(dtflaw("\"c\"", TextSet(["a", "b"])) == "$: \"c\" is not in \"a\" | \"b\"")
+    assert(value_equal(dtval("\"3f6f1e2c-4a5b-4c6d-8e7f-9a0b1c2d3e4f\"", IdType), Text("3f6f1e2c-4a5b-4c6d-8e7f-9a0b1c2d3e4f")))
+    assert(dtflaw("\"x\"", IdType) == "$: \"x\" is not an id (8-4-4-4-12 lower case hexadecimal digits)")
+}
+
+test "dt optional" {
+    ro opt = OptionalType(TextType)
+    assert(value_equal(dtval("{\"none\":true}", opt), Null))
+    assert(value_equal(dtval("{\"some\":\"a\"}", opt), SomeV(SomeBox { inner: Text("a") })))
+    assert(dtflaw("{\"some\":null}", opt) == "$.some: expected a text, got null")
+    assert(dtflaw("{}", opt) == "$: an optional is {\"none\": true} or {\"some\": <value>}")
+    assert(dtflaw("{\"none\":false}", opt) == "$: the \"none\" of an optional is true")
+    assert(dtflaw("{\"none\":true,\"some\":1}", opt) == "$: an optional is {\"none\": true} or {\"some\": <value>}")
+    assert(dtflaw("null", opt) == "$: expected an optional object, got null")
+}
+
+test "dt optional three forms" {
+    // ??text: none, a present none and a present value stay distinct after the decode and after the internal encode
+    ro opt = OptionalType(OptionalType(TextType))
+    ro n = dtval("{\"none\":true}", opt)
+    ro sn = dtval("{\"some\":{\"none\":true}}", opt)
+    ro ss = dtval("{\"some\":{\"some\":\"a\"}}", opt)
+    assert(value_equal(n, Null))
+    assert(value_equal(sn, SomeV(SomeBox { inner: Null })))
+    assert(value_equal(ss, SomeV(SomeBox { inner: SomeV(SomeBox { inner: Text("a") }) })))
+    assert(!value_equal(n, sn))
+    assert(!value_equal(n, ss))
+    assert(!value_equal(sn, ss))
+    assert(value_json(n) == "null")
+    assert(value_json(sn) == "{\"$some\":null}")
+    assert(value_json(ss) == "{\"$some\":{\"$some\":\"a\"}}")
+}
+
+test "dt record" {
+    ro spec = RecordType("Finding")
+    ro good = "{\"evidence\":\"x\",\"repeat\":true,\"note\":{\"none\":true}}"
+    assert(value_equal(dtval(good, spec), make_record("Finding", [vf("evidence", Text("x")), vf("repeat", Bool(true)), vf("note", Null)])))
+    assert(dtflaw("{\"evidence\":\"x\",\"repeat\":true}", spec) == "$: the field \"note\" of Finding is absent")
+    assert(dtflaw("{\"evidence\":\"x\",\"repeat\":true,\"note\":{\"none\":true},\"zzz\":1}", spec) == "$: the field \"zzz\" is not declared in Finding")
+    assert(dtflaw("{\"evidence\":1,\"repeat\":true,\"note\":{\"none\":true}}", spec) == "$.evidence: expected a text, got a number")
+    assert(dtflaw("[]", spec) == "$: expected the record Finding, got an array")
+}
+
+test "dt variant" {
+    ro spec = VariantType("Outcome")
+    assert(value_equal(dtval("{\"case\":\"Done\",\"fields\":{\"text\":{\"some\":\"t\"},\"count\":3}}", spec),
+        make_variant("Outcome", "Done", [tv("text", SomeV(SomeBox { inner: Text("t") })), tv("count", Int(3))])))
+    assert(value_equal(dtval("{\"case\":\"Refused\",\"fields\":{}}", spec), enum_value("Outcome", "Refused")))
+    assert(dtflaw("{\"case\":\"Done\"}", spec) == "$: a variant with fields is {\"case\": <name>, \"fields\": { ... }}")
+    assert(dtflaw("{\"case\":\"Nope\",\"fields\":{}}", spec) == "$: \"Nope\" is not a case of Outcome")
+    assert(dtflaw("{\"case\":\"Done\",\"fields\":{\"text\":{\"none\":true},\"count\":3,\"zzz\":1}}", spec) == "$: the field \"zzz\" is not declared in Outcome")
+    assert(dtflaw("{\"case\":\"Done\",\"fields\":{\"text\":{\"none\":true}}}", spec) == "$: the field \"count\" of Outcome is absent")
+    assert(dtflaw("{\"case\":\"Done\",\"fields\":{\"text\":{\"none\":true},\"count\":3}}", VariantType("Nope")) == "$: the variant type Nope is not declared")
+}
+
+test "dt enum" {
+    ro spec = VariantType("Severity")
+    assert(value_equal(dtval("\"Critical\"", spec), enum_value("Severity", "Critical")))
+    assert(dtflaw("\"Nope\"", spec) == "$: \"Nope\" is not a value of Severity")
+    assert(dtflaw("{\"case\":\"Critical\",\"fields\":{}}", spec) == "$: expected a value of Severity, got an object")
+}
+
+test "dt enum words" {
+    // the word of P-7 names the value when the enum declares it
+    ro mood = VariantDef { name: "Mood", cases: [CaseDef { name: "Glad", fields: []FieldDef.new() }, CaseDef { name: "Sad", fields: []FieldDef.new() }], values: [EnumValue { name: "Glad", value: "glad" }, EnumValue { name: "Sad", value: "sad" }] }
+    ro defs = TypeDefs { records: []RecordDef.new(), variants: [mood] }
+    match decode_typed("\"glad\"", VariantType("Mood"), defs) {
+        Ok(v) => assert(value_equal(v, enum_value("Mood", "Glad")))
+        Err(e) => assert(false)
+    }
+    match decode_typed("\"Glad\"", VariantType("Mood"), defs) {
+        Ok(v) => assert(false)
+        Err(e) => assert(e.reason == "\"Glad\" is not a value of Mood")
+    }
+}
+
+test "dt list tuple" {
+    assert(value_equal(dtval("[1,2]", ListType(IntType)), List([Int(1), Int(2)])))
+    assert(dtflaw("[1,\"x\"]", ListType(IntType)) == "$[1]: expected an int, got a string")
+    assert(value_equal(dtval("[1,\"a\"]", TupleType([IntType, TextType])), make_tuple([Int(1), Text("a")])))
+    assert(dtflaw("[1]", TupleType([IntType, TextType])) == "$: expected a tuple of 2 items, got 1")
+}
+
+test "dt dict" {
+    ro spec = DictType { key: TextType, value: IntType }
+    assert(value_equal(dtval("[[\"a\",1],[\"b\",2]]", spec), make_dict([ve(Text("a"), Int(1)), ve(Text("b"), Int(2))])))
+    assert(dtflaw("[[\"a\",1],[\"a\",2]]", spec) == "$[1]: the key of the dict is repeated")
+    assert(dtflaw("[[\"a\"]]", spec) == "$[0]: a pair of a dict is [key, value]")
+    assert(dtflaw("{\"a\":1}", spec) == "$: expected an array of pairs, got an object")
+}
+
+test "dt full dict" {
+    ro spec = FullDictType { key: VariantType("Severity"), value: IntType }
+    assert(value_equal(dtval("[[\"Critical\",1],[\"Desirable\",2]]", spec),
+        make_dict([ve(enum_value("Severity", "Critical"), Int(1)), ve(enum_value("Severity", "Desirable"), Int(2))])))
+    assert(dtflaw("[[\"Critical\",1]]", spec) == "$: the full dict has no key Desirable")
+}
+
+test "dt not json" {
+    assert(dtflaw("not json", TextType) == "$: not valid JSON")
+    assert(dtflaw("{\"evidence\":\"x\",\"evidence\":\"y\",\"repeat\":true,\"note\":{\"none\":true}}", RecordType("Finding")) == "$: the key \"evidence\" is repeated")
+}

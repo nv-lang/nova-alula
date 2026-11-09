@@ -28,6 +28,7 @@
 //   {"$record":"Name","fields":{"field":value, ...}}           a record
 //   {"$variant":"Type","name":"Case","fields":{...}}           a variant or an enum value (`fields` is left out when empty)
 //   {"$float":"NaN"|"Infinity"|"-Infinity"}                    a float that is not finite
+//   {"$some": value}                                           a present optional (a task of 146): {"$some": null} is a present none, not none
 module alula.machine
 
 import std.encoding.json.{Json, JsonValue, JsonObject}
@@ -42,7 +43,17 @@ export type DictEntry { key Value, value Value }
 ///  - Dict keeps its entries in the order of insertion, without a repeated key (the order of a dict is the order of the record:
 ///    a write to an existing key keeps the place, a new key goes to the end);
 ///  - Record keeps its fields sorted by the name;
-///  - Variant is a case of a sum type or of an enum (`fields` empty): `type_name` is the type, `name` the case.
+///  - Variant is a case of a sum type or of an enum (`fields` empty): `type_name` is the type, `name` the case;
+///  - SomeV is a present value of an optional `?T` (task 146): none is `Null`, a present none is `SomeV` of `Null`,
+///    a present value `v` is `SomeV` of `v`. The writers at typed optional positions wrap; a bare value where a `?T`
+///    is expected reads as present (the legacy form: old snapshots, events and wires hold it), the check of a type
+///    accepts it. The payload goes through `SomeBox`: a DIRECT `SomeV(Value)` misfires the sum-lift of Oracle
+///    0.1.2 AND of the official 0.1.3 (checked 2026-11-10: the same minimal A/B repro is red on both; the repro,
+///    the generated C and the version evidence are in the task folder of 146, the defect goes to the compiler
+///    queue 221.1). Removal condition: an official Oracle whose release notes fix the sum-lift of a bare value
+///    into a self-recursive variant, with the repro of the task folder green on it — then `SomeV(Value)` directly.
+export type SomeBox { inner Value }
+
 export type Value enum
     | Null
     | Bool(bool)
@@ -53,6 +64,7 @@ export type Value enum
     | Dict([]DictEntry)
     | Record { name str, fields []RecordField }
     | Variant { type_name str, name str, fields []RecordField }
+    | SomeV(SomeBox)
 
 const MAX_VALUE_DEPTH = 64
 
@@ -173,6 +185,7 @@ export fn kind_name(v Value) -> str {
         Dict(entries) => "dict"
         Record { name, fields } => "record"
         Variant { type_name, name, fields } => "variant"
+        SomeV(v) => "some"
     }
 }
 
@@ -189,6 +202,7 @@ fn rank(v Value) -> int {
         Dict(entries) => 6
         Record { name, fields } => 7
         Variant { type_name, name, fields } => 8
+        SomeV(v) => 9
     }
 }
 
@@ -291,6 +305,10 @@ export fn value_compare(a Value, b Value) -> int {
                 if cn != 0 { return cn }
                 compare_fields(fields, other_fields)
             }
+            _ => 0
+        }
+        SomeV(x) => match b {
+            SomeV(y) => value_compare(x.inner, y.inner)
             _ => 0
         }
     }
@@ -437,6 +455,7 @@ export fn value_text(v Value) -> Option[str] {
         Dict(entries) => None
         Record { name, fields } => None
         Variant { type_name, name, fields } => if fields.len() == 0 { Some(code_word(name)) } else { None }
+        SomeV(v) => value_text(v.inner)
     }
 }
 
@@ -529,6 +548,7 @@ export fn value_to_json(v Value) -> JsonValue {
             if fields.len() > 0 { put(o, "fields", fields_json(fields)) }
             JsonValue.object(o)
         }
+        SomeV(v) => tagged("$some", value_to_json(v.inner))
     }
 }
 
@@ -690,6 +710,17 @@ fn decode_tagged(o JsonObject, path str, depth int) -> Result[Value, str] {
             return fail(path, "a variant is {\"$variant\": type, \"name\": case, \"fields\": {...}}")
         }
         return decode_variant_tag(o, path, depth)
+    }
+    if o.contains("$some") {
+        if o.len() != 1 { return fail(path, "the tag $some stands alone") }
+        ro inner = match o.get("$some") {
+            Some(x) => x
+            None => return fail(path, "the tag $some stands alone")
+        }
+        match decode(inner, "${path}.$some", depth + 1) {
+            Ok(v) => return Ok(SomeV(SomeBox { inner: v }))
+            Err(e) => return Err(e)
+        }
     }
     fail(path, "unknown tag")
 }

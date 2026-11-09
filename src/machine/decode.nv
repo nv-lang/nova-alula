@@ -1,0 +1,303 @@
+// decode.nv - task 146 (AL-153, AL-155): the external codec. The answer of a party `agent` and the library
+// function `decode` read a TEXT into a typed Value (the spec, section 1 "the codec of the answer of the party
+// agent" and section 12): records are objects by the JSON names, a variant is `{"case", "fields"}`, an optional
+// is `{"none": true}` / `{"some": v}` with full nesting, an int is a JSON number without a fraction or an
+// exponent strictly in the i64 range, a float is a finite JSON number. No coercion; the type check precedes
+// canonicalization; a repeated key of an object is refused by the JSON parser itself (DuplicateKey).
+// The refusal carries the path of the place (`$.findings[2].severity`) and the reason; it is invalid data of
+// the caller (a response not by the form, rule 18; `Rejected` of `decode`), never a defect of the host.
+module alula.machine
+
+import std.encoding.json.{Json, JsonValue, JsonObject, ParseJsonError}
+
+/// DecodeFlaw: the text does not read into the type; `path` is where (`$` is the root).
+export type DecodeFlaw { path str, reason str }
+
+fn flaw(path str, reason str) -> DecodeFlaw => { path, reason }
+
+// The JSON kind of a value, for "expected X, got Y".
+fn json_kind(j JsonValue) -> str {
+    if j.is_null() { return "null" }
+    if j.is_bool() { return "a boolean" }
+    if j.is_num() { return "a number" }
+    if j.is_str() { return "a string" }
+    if j.is_array() { return "an array" }
+    "an object"
+}
+
+fn wrong(expected str, j JsonValue, path str) -> DecodeFlaw =>
+    flaw(path, "expected ${expected}, got ${json_kind(j)}")
+
+/// Read the text into a value of the type; the first mismatch is the refusal with its path.
+export fn decode_typed(text str, spec TypeSpec, defs TypeDefs) -> Result[Value, DecodeFlaw] {
+    match Json.parse(text) {
+        Ok(j) => decode_at(spec, j, defs, "$")
+        Err(e) => Err(parse_flaw(e))
+    }
+}
+
+fn parse_flaw(e ParseJsonError) -> DecodeFlaw {
+    match e {
+        ParseJsonError.DuplicateKey { line, col, key } => flaw("$", "the key \"${key}\" is repeated")
+        _ => flaw("$", "not valid JSON")
+    }
+}
+
+// The parser gives Int only to a literal without a fraction and an exponent that fits i64; a wider integral
+// literal is U64 (out of the range of int), a literal with a fraction or an exponent is F64 (std encoding/json).
+fn decode_int(j JsonValue, path str) -> Result[int, DecodeFlaw] {
+    match j.int() {
+        Some(n) => return Ok(n)
+        None => ()
+    }
+    match j.u64() {
+        Some(n) => return Err(flaw(path, "the number is out of the range of int"))
+        None => ()
+    }
+    if j.is_num() { return Err(flaw(path, "an int is a JSON number without a fraction and without an exponent")) }
+    Err(wrong("an int", j, path))
+}
+
+fn decode_fields_of(def RecordDef, o JsonObject, defs TypeDefs, path str) -> Result[[]RecordField, DecodeFlaw] {
+    for key in o.keys() {
+        mut known = false
+        for f in def.fields {
+            if f.name == key { known = true }
+        }
+        if !known { return Err(flaw(path, "the field \"${key}\" is not declared in ${def.name}")) }
+    }
+    mut fields = []RecordField.new()
+    for f in def.fields {
+        match o.get(f.name) {
+            Some(v) => match decode_at(f.spec, v, defs, "${path}.${f.name}") {
+                Ok(x) => fields.push(RecordField { name: f.name, value: x })
+                Err(e) => return Err(e)
+            }
+            None => return Err(flaw(path, "the field \"${f.name}\" of ${def.name} is absent"))
+        }
+    }
+    Ok(fields)
+}
+
+fn decode_record(def RecordDef, o JsonObject, defs TypeDefs, path str) -> Result[Value, DecodeFlaw] {
+    match decode_fields_of(def, o, defs, path) {
+        Ok(fields) => Ok(make_record(def.name, fields))
+        Err(e) => Err(e)
+    }
+}
+
+// The case of an enum that the string names: its word (P-7) when it has one, else its JSON name.
+fn enum_case_of(def VariantDef, s str, defs TypeDefs) -> Option[str] {
+    for c in def.cases {
+        match enum_word(defs, def.name, c.name) {
+            Some(w) => { if s == w { return Some(c.name) } }
+            None => { if s == c.name { return Some(c.name) } }
+        }
+    }
+    None
+}
+
+fn variant_shape(path str) -> DecodeFlaw =>
+    flaw(path, "a variant with fields is {\"case\": <name>, \"fields\": { ... }}")
+
+fn decode_variant(def VariantDef, o JsonObject, defs TypeDefs, path str) -> Result[Value, DecodeFlaw] {
+    if o.len() != 2 || !o.contains("case") || !o.contains("fields") { return Err(variant_shape(path)) }
+    ro case_name = match text_of(o, "case") {
+        Some(s) => s
+        None => return Err(flaw("${path}.case", "the name of a case is a string"))
+    }
+    for c in def.cases {
+        if c.name == case_name {
+            ro fo = match object_of(o, "fields") {
+                Some(x) => x
+                None => return Err(flaw("${path}.fields", "the fields of a case are an object"))
+            }
+            ro rec = RecordDef { name: def.name, fields: c.fields }
+            match decode_fields_of(rec, fo, defs, path) {
+                Ok(fields) => return Ok(make_variant(def.name, case_name, fields))
+                Err(e) => return Err(e)
+            }
+        }
+    }
+    Err(flaw(path, "\"${case_name}\" is not a case of ${def.name}"))
+}
+
+fn optional_shape(path str) -> DecodeFlaw =>
+    flaw(path, "an optional is {\"none\": true} or {\"some\": <value>}")
+
+fn decode_optional(inner TypeSpec, o JsonObject, defs TypeDefs, path str) -> Result[Value, DecodeFlaw] {
+    if o.len() != 1 { return Err(optional_shape(path)) }
+    match o.get("none") {
+        Some(b) => match b.bool() {
+            Some(yes) => if yes { Ok(Null) } else { Err(flaw(path, "the \"none\" of an optional is true")) }
+            None => Err(flaw(path, "the \"none\" of an optional is true"))
+        }
+        None => match o.get("some") {
+            Some(v) => match decode_at(inner, v, defs, "${path}.some") {
+                Ok(x) => Ok(SomeV(SomeBox { inner: x }))
+                Err(e) => Err(e)
+            }
+            None => Err(optional_shape(path))
+        }
+    }
+}
+
+fn decode_pairs(key TypeSpec, value TypeSpec, items []JsonValue, defs TypeDefs, path str) -> Result[[]DictEntry, DecodeFlaw] {
+    mut entries = []DictEntry.new()
+    mut i = 0
+    for it in items {
+        match it.array() {
+            Some(pair) => {
+                if pair.len() != 2 { return Err(flaw("${path}[${i}]", "a pair of a dict is [key, value]")) }
+                ro k = match decode_at(key, pair[0], defs, "${path}[${i}]") {
+                    Ok(x) => x
+                    Err(e) => return Err(e)
+                }
+                ro v = match decode_at(value, pair[1], defs, "${path}[${i}]") {
+                    Ok(x) => x
+                    Err(e) => return Err(e)
+                }
+                if dict_find(entries, k) >= 0 { return Err(flaw("${path}[${i}]", "the key of the dict is repeated")) }
+                entries.push(DictEntry { key: k, value: v })
+            }
+            None => return Err(wrong("a pair [key, value]", it, "${path}[${i}]"))
+        }
+        i += 1
+    }
+    Ok(entries)
+}
+
+fn decode_full_dict(name str, value TypeSpec, items []JsonValue, defs TypeDefs, path str) -> Result[Value, DecodeFlaw] {
+    match find_variant(defs, name) {
+        Some(def) => {
+            if !is_enum_type(defs, name) { return Err(flaw(path, "the key of a full dict must be an enum")) }
+            match decode_pairs(VariantType(name), value, items, defs, path) {
+                Ok(entries) => {
+                    for c in def.cases {
+                        if dict_find(entries, enum_value(name, c.name)) < 0 {
+                            return Err(flaw(path, "the full dict has no key ${c.name}"))
+                        }
+                    }
+                    Ok(Dict(entries))
+                }
+                Err(e) => Err(e)
+            }
+        }
+        None => Err(flaw(path, "the variant type ${name} is not declared"))
+    }
+}
+
+fn decode_at(spec TypeSpec, j JsonValue, defs TypeDefs, path str) -> Result[Value, DecodeFlaw] {
+    match spec {
+        IntType => match decode_int(j, path) {
+            Ok(n) => Ok(Int(n))
+            Err(e) => Err(e)
+        }
+        IntMin(bound) => match decode_int(j, path) {
+            Ok(n) => if n >= bound { Ok(Int(n)) } else { Err(flaw(path, "${n} is less than the bound ${bound}")) }
+            Err(e) => Err(e)
+        }
+        FloatType => match j.num() {
+            // the parser never makes a non-finite number from a JSON text, and it keeps the sign of a zero
+            Some(x) => Ok(Float(x))
+            None => Err(wrong("a float", j, path))
+        }
+        TextType => match j.str() {
+            Some(s) => Ok(Text(s))
+            None => Err(wrong("a text", j, path))
+        }
+        BoolType => match j.bool() {
+            Some(b) => Ok(Bool(b))
+            None => Err(wrong("a boolean", j, path))
+        }
+        NothingType => if j.is_null() { Ok(Null) } else { Err(wrong("null", j, path)) }
+        TextSet(words) => match j.str() {
+            Some(s) => {
+                for w in words {
+                    if w == s { return Ok(Text(s)) }
+                }
+                Err(flaw(path, "\"${s}\" is not in ${spec_text(spec)}"))
+            }
+            None => Err(wrong("a string of the set", j, path))
+        }
+        IdType => match j.str() {
+            Some(s) => if is_uuid(s) { Ok(Text(s)) } else { Err(flaw(path, "\"${s}\" is not an id (8-4-4-4-12 lower case hexadecimal digits)")) }
+            None => Err(wrong("an id", j, path))
+        }
+        OptionalType(inner) => match j.object() {
+            Some(o) => decode_optional(inner, o, defs, path)
+            None => Err(wrong("an optional object", j, path))
+        }
+        ListType(inner) => match j.array() {
+            Some(items) => {
+                mut out = []Value.new()
+                mut i = 0
+                for it in items {
+                    match decode_at(inner, it, defs, "${path}[${i}]") {
+                        Ok(x) => out.push(x)
+                        Err(e) => return Err(e)
+                    }
+                    i += 1
+                }
+                Ok(List(out))
+            }
+            None => Err(wrong("an array", j, path))
+        }
+        DictType { key, value } => match j.array() {
+            Some(items) => match decode_pairs(key, value, items, defs, path) {
+                Ok(entries) => Ok(Dict(entries))
+                Err(e) => Err(e)
+            }
+            None => Err(wrong("an array of pairs", j, path))
+        }
+        FullDictType { key, value } => match j.array() {
+            Some(items) => match key {
+                VariantType(name) => decode_full_dict(name, value, items, defs, path)
+                _ => Err(flaw(path, "the key of a full dict must be an enum"))
+            }
+            None => Err(wrong("an array of pairs", j, path))
+        }
+        TupleType(items) => match j.array() {
+            Some(arr) => {
+                if arr.len() != items.len() { return Err(flaw(path, "expected a tuple of ${items.len()} items, got ${arr.len()}")) }
+                mut out = []Value.new()
+                mut i = 0
+                for item in items {
+                    match decode_at(item, arr[i], defs, "${path}[${i}]") {
+                        Ok(x) => out.push(x)
+                        Err(e) => return Err(e)
+                    }
+                    i += 1
+                }
+                Ok(make_tuple(out))
+            }
+            None => Err(wrong("an array", j, path))
+        }
+        RecordType(name) => match j.object() {
+            Some(o) => match find_record(defs, name) {
+                Some(def) => decode_record(def, o, defs, path)
+                None => Err(flaw(path, "the record type ${name} is not declared"))
+            }
+            None => Err(wrong("the record ${name}", j, path))
+        }
+        VariantType(name) => match find_variant(defs, name) {
+            Some(def) => {
+                if is_enum_type(defs, name) {
+                    match j.str() {
+                        Some(s) => match enum_case_of(def, s, defs) {
+                            Some(case_name) => Ok(enum_value(name, case_name))
+                            None => Err(flaw(path, "\"${s}\" is not a value of ${name}"))
+                        }
+                        None => Err(wrong("a value of ${name}", j, path))
+                    }
+                } else {
+                    match j.object() {
+                        Some(o) => decode_variant(def, o, defs, path)
+                        None => Err(wrong("a variant object of ${name}", j, path))
+                    }
+                }
+            }
+            None => Err(flaw(path, "the variant type ${name} is not declared"))
+        }
+    }
+}

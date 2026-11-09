@@ -44,13 +44,13 @@ test "ev225 the argument of time_to_text is an int" {
 }
 
 test "ev225 text_to_time reads the record back" {
-    assert(eis(p225("1970-01-01T00:00:00Z"), Int(0)))
-    assert(eis(p225("2025-10-25T14:20:00Z"), Int(1761402000000)))
-    assert(eis(p225("2025-10-25T14:20:00.123Z"), Int(1761402000123)))
-    assert(eis(p225("1970-01-01T00:00:01.5Z"), Int(1500)))
-    assert(eis(p225("0001-01-01T00:00:00Z"), Int(-62135596800000)))
-    assert(eis(p225("9999-12-31T23:59:59.999Z"), Int(253402300799999)))
-    assert(eis(p225("2000-02-29T00:00:00Z"), Int(951782400000)))
+    assert(eis(p225("1970-01-01T00:00:00Z"), SomeV(SomeBox { inner: Int(0) })))
+    assert(eis(p225("2025-10-25T14:20:00Z"), SomeV(SomeBox { inner: Int(1761402000000) })))
+    assert(eis(p225("2025-10-25T14:20:00.123Z"), SomeV(SomeBox { inner: Int(1761402000123) })))
+    assert(eis(p225("1970-01-01T00:00:01.5Z"), SomeV(SomeBox { inner: Int(1500) })))
+    assert(eis(p225("0001-01-01T00:00:00Z"), SomeV(SomeBox { inner: Int(-62135596800000) })))
+    assert(eis(p225("9999-12-31T23:59:59.999Z"), SomeV(SomeBox { inner: Int(253402300799999) })))
+    assert(eis(p225("2000-02-29T00:00:00Z"), SomeV(SomeBox { inner: Int(951782400000) })))
 }
 
 test "ev225 a text of another record is none" {
@@ -81,7 +81,7 @@ test "ev225 time_to_text and text_to_time are inverse over a span of days" {
     while n < 400 {
         match eval(t225(ms), empty_scope()) {
             Ok(v) => match v {
-                Text(s) => assert(eis(p225(s), Int(ms)))
+                Text(s) => assert(eis(p225(s), SomeV(SomeBox { inner: Int(ms) })))
                 _ => assert(false)
             }
             Err(x) => assert(false)

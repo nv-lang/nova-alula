@@ -313,6 +313,7 @@ fn check_at(spec TypeSpec, v Value, defs TypeDefs, path str) -> Result[(), TypeC
         }
         OptionalType(inner) => match v {
             Null => Ok(())
+            SomeV(item) => check_at(inner, item.inner, defs, path)
             _ => check_at(inner, v, defs, path)
         }
         ListType(inner) => match v {
@@ -351,3 +352,106 @@ fn check_at(spec TypeSpec, v Value, defs TypeDefs, path str) -> Result[(), TypeC
 
 /// Check a value against a type; the first mismatch is the error with its path.
 export fn check_value(spec TypeSpec, v Value, defs TypeDefs) -> Result[(), TypeCheckError] => check_at(spec, v, defs, "$")
+
+// The fields of a record, of a tuple or of a case with the bare optionals wrapped, each by its declared spec.
+fn normalize_fields(declared []FieldDef, fields []RecordField, defs TypeDefs) -> []RecordField {
+    mut out = []RecordField.new()
+    for f in fields {
+        mut value = f.value
+        for d in declared {
+            if d.name == f.name { value = normalize_at(d.spec, f.value, defs) }
+        }
+        out.push(RecordField { name: f.name, value })
+    }
+    out
+}
+
+/// The fields of a record value normalized by the declared specs (the input of a machine or its data at a restore of a snapshot).
+export fn normalize_record_fields(declared []FieldDef, v Value, defs TypeDefs) -> Value {
+    match v {
+        Record { name, fields } => Record { name, fields: normalize_fields(declared, fields, defs) }
+        _ => v.clone()
+    }
+}
+
+/// Normalize a value at a type (task 146): a bare value where a `?T` is expected becomes `SomeV(v)` — the legacy
+/// reading "a bare value is present" made structural, so that none, a present none and a present value stay distinct
+/// inside the engine; a `Null` stays `Null` (none). Recurses into lists, dicts, tuples, records and variants; a value
+/// that does not match its spec is returned as it is (the verdict is the work of `check_value`, not of this pass).
+/// Called at the typed boundaries: the input and the initial data of a machine, the answer of a party, the result of
+/// a host call, a restored snapshot.
+export fn normalize_at(spec TypeSpec, v Value, defs TypeDefs) -> Value {
+    match spec {
+        OptionalType(inner) => match v {
+            Null => Null
+            SomeV(item) => SomeV(SomeBox { inner: normalize_at(inner, item.inner, defs) })
+            _ => SomeV(SomeBox { inner: normalize_at(inner, v, defs) })
+        }
+        ListType(inner) => match v {
+            List(items) => {
+                mut out = []Value.new()
+                for item in items { out.push(normalize_at(inner, item, defs)) }
+                List(out)
+            }
+            _ => v.clone()
+        }
+        DictType { key, value } => normalize_dict(value, v, defs)
+        FullDictType { key, value } => normalize_dict(value, v, defs)
+        TupleType(items) => match v {
+            Record { name, fields } => {
+                if name != "" || fields.len() != items.len() { return v.clone() }
+                mut out = []Value.new()
+                mut i = 0
+                for item in items {
+                    match record_get(fields, "${i}") {
+                        Some(value) => out.push(normalize_at(item, value, defs))
+                        None => return v.clone()
+                    }
+                    i += 1
+                }
+                make_tuple(out)
+            }
+            _ => v.clone()
+        }
+        RecordType(name) => match v {
+            Record { name: actual, fields } => {
+                if actual != name { return v.clone() }
+                match find_record(defs, name) {
+                    Some(def) => Record { name: actual, fields: normalize_fields(def.fields, fields, defs) }
+                    None => v.clone()
+                }
+            }
+            _ => v.clone()
+        }
+        VariantType(name) => match v {
+            Variant { type_name, name: case_name, fields } => {
+                if type_name != name { return v.clone() }
+                match find_variant(defs, name) {
+                    Some(def) => {
+                        for c in def.cases {
+                            if c.name == case_name {
+                                return Variant { type_name, name: case_name, fields: normalize_fields(c.fields, fields, defs) }
+                            }
+                        }
+                        v.clone()
+                    }
+                    None => v.clone()
+                }
+            }
+            _ => v.clone()
+        }
+        _ => v.clone()
+    }
+}
+
+// The entries of a dict with the values (and the keys) normalized by their specs.
+fn normalize_dict(value_spec TypeSpec, v Value, defs TypeDefs) -> Value {
+    match v {
+        Dict(entries) => {
+            mut out = []DictEntry.new()
+            for e in entries { out.push(DictEntry { key: e.key, value: normalize_at(value_spec, e.value, defs) }) }
+            Dict(out)
+        }
+        _ => v.clone()
+    }
+}

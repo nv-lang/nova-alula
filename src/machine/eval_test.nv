@@ -390,7 +390,7 @@ test "mc any all" {
     assert(eis_in(ec("any", [er("xs"), big]), Bool(true)))
     assert(eis_in(ec("all", [er("xs"), big]), Bool(false)))
     assert(eis_in(ec("count", [er("xs"), big]), Int(2)))
-    assert(eis_in(ec("first_where", [er("xs"), big]), Int(4)))
+    assert(eis_in(ec("first_where", [er("xs"), big]), SomeV(SomeBox { inner: Int(4) })))
     assert(eis_in(ec("first_where", [er("xs"), lambda1("v", en(Gt, er("v"), ei(9)))]), Null))
     assert(eis(ec("any", [eint_list([]), big]), Bool(false)))
     assert(eis(ec("all", [eint_list([]), big]), Bool(true)))
@@ -406,7 +406,7 @@ test "mc early stop" {
 
 test "mc first stop" {
     ro xs = eint_list([1, 0])
-    assert(eis(ec("first_where", [xs, lambda1("v", en(Eq, en(Div, ei(10), er("v")), ei(10)))]), Int(1)))
+    assert(eis(ec("first_where", [xs, lambda1("v", en(Eq, en(Div, ei(10), er("v")), ei(10)))]), SomeV(SomeBox { inner: Int(1) })))
 }
 
 test "mc fold" {

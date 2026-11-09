@@ -72,7 +72,8 @@ test "v213 required input absent is missing" {
 test "v213 optional input given" {
     ro m = opt13()
     ro r = run1(m, m.initial(), start_with("{\"session\":\"a\",\"note\":\"n\"}"))
-    assert(datum_json(r.state, "note") == "\"n\"")
+    // task 146: a present optional is `{"$some": v}` on the snapshot wire
+    assert(datum_json(r.state, "note") == "{\"$some\":\"n\"}")
 }
 
 test "v213 optional input null is none" {
