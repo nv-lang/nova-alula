@@ -4,7 +4,7 @@
 module alula.machine_run
 
 import std.text
-import alula.machine.{Value, Null, Bool, Text, RecordField, make_record, enum_value, value_json, Registry, Primitive, ParamSpec, RecordType, Volatile, BoolType, register}
+import alula.machine.{Value, Null, Bool, Text, RecordField, make_record, enum_value, value_json, Registry, Primitive, ParamSpec, RecordType, Volatile, BoolType, TextType, register}
 import alula.engine.{Incoming, EventKind}
 import alula.examples.{sample_registry}
 
@@ -402,4 +402,81 @@ test "nr failure not parsed" {
     ro r = run1(m, st, failed("c-1", "Timeout"))
     assert(r.state.name == "Done")
     assert(datum_json(r.state, "got") == "\"timeout\"")
+}
+
+// ---- the parse of a party `agent` (AL-153, the symmetry of `machine`) ------------------------------------------------------------------------------
+
+// The twin of the fixer with an agent party: the same record Out, but the party is an agent - the answer
+// arrives as a text, the parse of an agent takes the original text and returns a text of the external codec
+// (a record is an object by the JSON names), and the engine decodes it by the declared result.
+
+fn asker() -> str => `{"format":"machine/2","machine":"Asker","version":"1","types":{"records":[{"name":"Out","fields":[{"name":"answer","type":"text"}]}]},"data":[{"name":"proposal","type":"text","initial":{"expr":{"op":"lit","value":"v0"}}},{"name":"open_requests","type":"[]text","initial":{"expr":{"op":"list","items":[]}},"writes":"mechanics"},{"name":"a_attempt","type":"int>=0","initial":{"expr":{"op":"lit","value":0}},"monotonic":true,"writes":"mechanics"},{"name":"got","type":"text","initial":{"expr":{"op":"lit","value":""}}}],"parties":[{"name":"a","id":"a","kind":"agent","result":"Out","parse":{"primitive":"parse_reply","type":"Out"},"counter":"a_attempt"}],"primitives":[{"name":"parse_reply","params":[{"name":"reply","type":"text"}],"result":"Out","class":"volatile"}],"initial":"Ask","states":[{"name":"Ask","kind":"appeal","party":"a","form_returns":1,"rows":[{"n":1,"event":{"kind":"answer","bind":"o"},"actions":[{"do":"assign","target":"got","value":{"op":"field","of":{"op":"name","name":"o"},"name":"answer"}}],"to":"Done"},{"n":2,"event":{"kind":"failure","bind":"why"},"actions":[{"do":"assign","target":"got","value":{"op":"call","fn":"text","args":[{"op":"name","name":"why"}]}}],"to":"Done"}]},{"name":"Done","kind":"end","reads":["got"]}],"ends":{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"name","name":"got"}}}]}}`
+
+// The registry of the asker: the parse of an agent takes the text of the answer and gives the record Out.
+fn asker_registry() -> Registry {
+    mut reg = sample_registry()
+    ro reply = ParamSpec { name: "reply", spec: TextType, tail: false }
+    ro parse = Primitive { name: "parse_reply", params: [reply], result: RecordType("Out"), class: Volatile, reads: []str.new(), writes: []str.new() }
+    ro _first = register(reg, parse)
+    reg
+}
+
+fn asker_with(replies []ScriptedReply) -> AlulaMachine {
+    match load_alula_machine(asker(), asker_registry()) {
+        Ok(m) => with_replies(m, replies)
+        Err(e) => panic("the asker does not load: ${e}")
+    }
+}
+
+// The answer of the parse of an agent: a text of the external codec (a record by the JSON names).
+fn agent_codec_out(answer str) -> Value => Text("{\"answer\":\"${answer}\"}")
+
+test "nr agent parse takes the text" {
+    // the symmetry of `machine`: the parse of the agent returns a text of the external codec, the engine decodes it by the declared result and the machine sees the value
+    ro m = asker_with([{ name: "parse_reply", value: agent_codec_out("fixed") }])
+    ro st = run1(m, m.initial(), signal_in("start", "")).state
+    ro r = run1(m, st, answered("a-1", "the raw answer of the agent"))
+    assert(r.state.name == "Done")
+    assert(datum_json(r.state, "got") == "\"fixed\"")
+    assert(summary(r.orders) == "finish:answer:fixed,save")
+}
+
+test "nr agent parse bad text is a form return" {
+    // the text the parse returns does not read into Out: an answer not by the form, not a defect of the host; the refusal carries the path and the reason
+    ro m = asker_with([{ name: "parse_reply", value: Text("{\"answer\": 7}") }])
+    ro st = run1(m, m.initial(), signal_in("start", "")).state
+    ro r = run1(m, st, answered("a-1", "raw"))
+    assert(r.state.name == "Ask")
+    assert(summary(r.orders) == "log:form_returned(party=a;returns=1;request=a-1),send:a:{},0,save" || summary(r.orders).contains("form_returned"))
+    ro once = r.state
+    ro again = run1(m, once, answered("a-2", "raw"))
+    assert(again.state.name == "Done")
+    assert(datum_json(again.state, "got") == "\"form_not_fixed\"")
+}
+
+test "nr agent parse not a text is a defect" {
+    // the host of an agent must answer a text: a record value is a defect of the host, the machine takes no value
+    ro m = asker_with([{ name: "parse_reply", value: out_value("p") }])
+    ro st = run1(m, m.initial(), signal_in("start", "")).state
+    ro r = run1(m, st, answered("a-1", "raw"))
+    assert(summary(r.orders).starts_with("log:machine_defect(kind=type_mismatch"))
+}
+
+test "nr agent without parse reads the codec" {
+    // a party `agent` without a parse: the original text of the answer is read by the external codec by the type of the result
+    ro def_text = asker().replace(",\"parse\":{\"primitive\":\"parse_reply\",\"type\":\"Out\"}", "").replace(",\"form_returns\":1", "")
+    mut reg = asker_registry()
+    match load_alula_machine(def_text, reg) {
+        Ok(m) => {
+            ro mm = with_replies(m, []ScriptedReply.new())
+            ro st = run1(mm, mm.initial(), signal_in("start", "")).state
+            ro r = run1(mm, st, answered("a-1", "{\"answer\":\"direct\"}"))
+            assert(r.state.name == "Done")
+            assert(datum_json(r.state, "got") == "\"direct\"")
+            ro bad = run1(mm, st, answered("a-2", "{\"answer\": true}"))
+            assert(bad.state.name == "Ask")
+            assert(summary(bad.orders).contains("event_malformed"))
+        }
+        Err(e) => panic("the asker without a parse does not load: ${e}")
+    }
 }
