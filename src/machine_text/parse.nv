@@ -587,6 +587,13 @@ fn ty_parse(mut p TxP, mut cx TxCx) -> Result[str, TranslateError] {
         return Ok(if full { "full {${key}: ${value}}" } else { "{${key}: ${value}}" })
     }
     if p_eat_kw(p, words, "type", "JournalEvent") { return Ok("JournalEvent") }
+    // the built-in decode outcome (AL-155, section 7a): `DecodeOutcome(<inner>)`, the only type whose brackets are part of the name; the inner type in parentheses
+    if p_eat_kw(p, words, "type", "DecodeOutcome") {
+        p_expect(p, "(")?
+        ro inner = ty_under(p, cx)?
+        p_expect(p, ")")?
+        return Ok("DecodeOutcome(${inner})")
+    }
     p_adv(p)
     Ok(tr_type_name(cx, t))
 }

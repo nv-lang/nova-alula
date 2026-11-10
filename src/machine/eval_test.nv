@@ -69,6 +69,40 @@ fn EHost mut @call_primitive(name str, args []Value) -> Result[Value, EvalError]
 
 fn esev(name str) -> Expr => VariantLit { type_name: "Severity", name, fields: []FieldExpr.new() }
 
+// The catalog function `декодировать` (AL-155, section 12): the text is read by the external codec into the type
+// the elaborator derived at the place of the call; the refusal is a value, not an error of the machine.
+fn edec(text Expr, spec str) -> Expr => decode(text, spec)
+
+test "ev decode" {
+    // a valid text of the external codec reads into the type and gives the accepted case
+    assert(eis(edec(lit_text("7"), "int"), make_decode_ok(Int(7))))
+    assert(eis(edec(lit_text("true"), "bool"), make_decode_ok(Bool(true))))
+    assert(eis(edec(lit_text("\"hello\""), "text"), make_decode_ok(Text("hello"))))
+    // the refusal carries the path and the reason of the codec (AL-153): a type mismatch, a bad JSON, a repeated key
+    assert(eis(edec(lit_text("true"), "int"), make_decode_reject("$", "expected an int, got a boolean")))
+    assert(eis(edec(lit_text("[1,"), "[]int"), make_decode_reject("$", "not valid JSON")))
+    // the path of a nested refusal is the path of the place: a bad element of a list
+    assert(eis(edec(lit_text("[1,true]"), "[]int"), make_decode_reject("$[1]", "expected an int, got a boolean")))
+    // a nested optional inner type: the none and the present forms are both accepted, the bare value is not
+    assert(eis(edec(lit_text("{\"none\":true}"), "?text"), make_decode_ok(Null)))
+    assert(eis(edec(lit_text("{\"some\":\"x\"}"), "?text"), make_decode_ok(SomeV(SomeBox { inner: Text("x") }))))
+    assert(eis(edec(lit_text("\"bare\""), "?text"), make_decode_reject("$", "expected an optional object, got a string")))
+    // the outer optional of the decode result itself is the work of the machine, not of the codec
+    assert(eis(edec(lit_text("{\"some\":{\"some\":\"x\"}}"), "??text"), make_decode_ok(SomeV(SomeBox { inner: SomeV(SomeBox { inner: Text("x") }) }))))
+    // a not-a-text argument is an error of the evaluator, not a refusal
+    ro not_text = edec(lit_int(5), "int")
+    match ev_plain(not_text) {
+        Ok(v) => panic("an int argument must not decode")
+        Err(x) => assert(x.kind == TypeMismatch && x.path.contains("text"))
+    }
+    // a type that does not read is unreachable: the check of the table has already taken it
+    ro bad_type = edec(lit_text("7"), "no_such_type")
+    match ev_plain(bad_type) {
+        Ok(v) => panic("a type that does not read must not decode")
+        Err(x) => assert(x.kind == Unreachable)
+    }
+}
+
 test "ev lit name" {
     assert(eis(ei(7), Int(7)))
     assert(eis(lit_text("я"), Text("я")))

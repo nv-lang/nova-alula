@@ -13,7 +13,7 @@ import std.text
 import std.unicode.{GeneralCategory}
 import alula.machine.{Expr, TypeDefs, FieldDef, Bind, DefFn, Registry, Position, check_expr_positions, check_call_position, find_primitive, primitive_names, has_tail, class_word, journal_find}
 import alula.machine.{ConditionPos, InputPos, ProfilePos, ForkEntryPos, OperationEntryPos, EndEntryPos, AcceptPos, ActionPos}
-import alula.machine.{Pure, Volatile, Acting, Value, Text, TypeSpec, TextSet, IdType, OptionalType, VariantType, RecordType, IntType, FloatType, TextType, BoolType, spec_text, is_uuid}
+import alula.machine.{Pure, Volatile, Acting, Value, Text, TypeSpec, TextSet, IdType, OptionalType, VariantType, RecordType, IntType, FloatType, TextType, BoolType, DecodeOutcomeType, spec_text, is_uuid, parse_spec}
 
 // ---- the places of expressions ------------------------------------------------------------------------------------------
 
@@ -144,6 +144,7 @@ fn kids(e Expr) -> []Expr {
         Binary { op, left, right } => [left, right]
         Not(x) => [x]
         Negate(x) => [x]
+        Decode { text, spec } => [text]
     }
 }
 
@@ -1997,6 +1998,10 @@ fn expr_spec(def MachineDef, e Expr) -> Option[TypeSpec] {
             Text(s) => Some(TextType)
             Bool(b) => Some(BoolType)
             _ => None
+        }
+        Decode { text, spec } => match parse_spec(spec, def.types) {
+            Ok(want_spec) => Some(DecodeOutcomeType(want_spec))
+            Err(m) => None
         }
         VariantLit { type_name, name, fields } => Some(VariantType(type_name))
         RecordLit { type_name, fields } => Some(RecordType(type_name))

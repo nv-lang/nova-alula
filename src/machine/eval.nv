@@ -1063,6 +1063,22 @@ fn ev(e Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, E
                 _ => wrong("number", v)
             }
         }
+        Decode { text, spec } => {
+            // the catalog function decode (AL-155, section 12): the text is read by the external codec of an
+            // agent answer (AL-153) into the type the elaborator derived at the place of the call; a text that
+            // does not read is the refused case Rejected { path, reason }, never an error of the machine
+            ro v = part(text, "text", env, host, depth)?
+            match v {
+                Text(s) => match parse_spec(spec, env.table.types) {
+                    Ok(want_spec) => match decode_typed(s, want_spec, env.table.types) {
+                        Ok(x) => Ok(make_decode_ok(normalize_at(want_spec, x, env.table.types)))
+                        Err(e) => Ok(make_decode_reject(e.path, e.reason))
+                    }
+                    Err(m) => Err(at(flaw(Unreachable, "the type ${spec} of the decode does not read: ${m}"), "type"))
+                }
+                _ => wrong_at("text", "text", v)
+            }
+        }
     }
 }
 

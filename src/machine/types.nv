@@ -26,6 +26,7 @@ export type TypeSpec enum
     | TupleType([]TypeSpec)
     | RecordType(str)
     | VariantType(str)
+    | DecodeOutcomeType(TypeSpec)
 
 /// FieldDef: a field of a record or of a case of a variant.
 export type FieldDef { name str, spec TypeSpec }
@@ -115,6 +116,7 @@ export fn spec_text(spec TypeSpec) -> str {
         }
         RecordType(name) => name
         VariantType(name) => name
+        DecodeOutcomeType(inner) => "DecodeOutcome(${wrapped_text(inner)})"
     }
 }
 
@@ -347,6 +349,34 @@ fn check_at(spec TypeSpec, v Value, defs TypeDefs, path str) -> Result[(), TypeC
         TupleType(items) => check_tuple(items, v, defs, path)
         RecordType(name) => check_record(name, v, defs, path)
         VariantType(name) => check_variant(name, v, defs, path)
+        DecodeOutcomeType(inner) => match v {
+            Variant { type_name, name: case_name, fields } => {
+                if type_name != "DecodeOutcome" { return mismatch(spec, v, path) }
+                if case_name == "Accepted" {
+                    match record_get(fields, "value") {
+                        Some(value) => check_at(inner, value, defs, "${path}.value")
+                        None => type_error(path, "the case Accepted of the decode outcome has no field value")
+                    }
+                } else if case_name == "Rejected" {
+                    for want_field in ["path", "reason"] {
+                        match record_get(fields, want_field) {
+                            Some(value) => match check_at(TextType, value, defs, "${path}.${want_field}") {
+                                Ok(u) => ()
+                                Err(e) => return Err(e)
+                            }
+                            None => return type_error(path, "the case Rejected of the decode outcome has no field ${want_field}")
+                        }
+                    }
+                    for f in fields {
+                        if f.name != "path" && f.name != "reason" { return type_error(path, "the field ${f.name} is not in the case Rejected of the decode outcome") }
+                    }
+                    Ok(())
+                } else {
+                    type_error(path, "the decode outcome has no case ${case_name}")
+                }
+            }
+            _ => mismatch(spec, v, path)
+        }
     }
 }
 
@@ -420,6 +450,20 @@ export fn normalize_at(spec TypeSpec, v Value, defs TypeDefs) -> Value {
                     Some(def) => Record { name: actual, fields: normalize_fields(def.fields, fields, defs) }
                     None => v.clone()
                 }
+            }
+            _ => v.clone()
+        }
+        DecodeOutcomeType(inner) => match v {
+            Variant { type_name, name: case_name, fields } => {
+                if type_name != "DecodeOutcome" { return v.clone() }
+                if case_name != "Accepted" { return v.clone() }
+                mut out = []RecordField.new()
+                for f in fields {
+                    mut value = f.value
+                    if f.name == "value" { value = normalize_at(inner, f.value, defs) }
+                    out.push(RecordField { name: f.name, value })
+                }
+                Variant { type_name, name: case_name, fields: out }
             }
             _ => v.clone()
         }

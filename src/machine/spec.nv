@@ -172,6 +172,13 @@ fn sr_type(mut r SpecReader, defs TypeDefs) -> Result[TypeSpec, str] {
     }
     ro name = sr_ident(r)
     if name == "" { return sr_fail(r, "a type is expected") }
+    if name == "DecodeOutcome" {
+        // the built-in decode outcome (AL-155, section 7a): `DecodeOutcome(<inner type>)`, the inner type in parentheses
+        if !sr_eat(r, "(") { return sr_fail(r, "'(' is expected after 'DecodeOutcome'") }
+        ro inner = sr_type(r, defs)?
+        if !sr_eat(r, ")") { return sr_fail(r, "')' is expected in the decode outcome type") }
+        return Ok(DecodeOutcomeType(inner))
+    }
     if name == "full" {
         if !sr_eat(r, "{") { return sr_fail(r, "'{' is expected after 'full'") }
         ro key = sr_type(r, defs)?

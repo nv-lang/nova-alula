@@ -105,6 +105,20 @@ fn el_map_parts(t str) -> (str, str) {
 
 fn el_is_list(t str) -> bool => el_list_elem(t) != ""
 
+// The inner type of the expected type of a decode call: `DecodeOutcome(X)` gives `X` (also under `?`, the optional
+// decode outcome); "" when the place expects another form or nothing at all (AL-155, section 12: the type parameter
+// is inferred from the expected type of the place of the call).
+fn el_decode_param(want str) -> str {
+    mut base = want
+    if base.starts_with("?") { base = base[1..] }
+    ro prefix = "DecodeOutcome("
+    if !base.starts_with(prefix) || !base.ends_with(")") { return "" }
+    ro inner = base[prefix.byte_len()..base.byte_len() - 1]
+    if inner == "" { return "" }
+    // a set of literals keeps its parentheses; a nested form is a valid inner type as it is
+    inner
+}
+
 fn el_is_map(t str) -> bool {
     ro (k, v) = el_map_parts(t)
     k != "" && v != ""
@@ -481,6 +495,18 @@ fn el_expr(ty ElTypes, j TxJ, op str, want str, locals []TxPair, mut errs []ElEr
         ro f = el_str(j, "fn")
         ro args = el_items(j, "args")
         mut out = []TxJ.new()
+        if f == "decode" && args.len() == 1 {
+            // the catalog function `декодировать` (AL-155, section 12): the type parameter comes from the expected
+            // type of the place of the call - `DecodeOutcome(X)` gives T = X; a place with no expected type, or of
+            // another form, is the error "the type of the decode does not infer" (section 10)
+            ro inner = el_decode_param(want)
+            if inner == "" {
+                errs.push(ElErr { line: el_num(j, "line"), col: el_num(j, "col"), message: if want == "" { "the type of the decode does not infer: the place has no expected type (a `let` without a type); it expects DecodeOutcome(<type>)" } else { "the type of the decode does not infer: the place expects ${want}, not DecodeOutcome(<type>)" } })
+            }
+            mut pairs = [kv("op", js("decode")), kv("type", js(inner))]
+            pairs.push(kv("text", el_value(ty, args[0], "text", locals, errs)))
+            return TxObj(pairs)
+        }
         if f == "fold" && args.len() == 3 {
             // the start value and the result of the lambda are the type of the result of the call
             ro xs_type = el_type_of(ty, args[0], locals)

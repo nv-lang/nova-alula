@@ -211,6 +211,17 @@ fn rn_ty_read(cx RnCx, mut t RnTy) -> str {
     }
     ro name = t.text[t.pos..j]
     t.pos = j
+    if name == "DecodeOutcome" {
+        // the built-in decode outcome (AL-155): `DecodeOutcome(<inner>)` renders with the word of the language and the inner type in brackets
+        rn_ty_ws(t)
+        if rn_ty_eat(t, '(') {
+            ro inner = rn_ty_read(cx, t)
+            rn_ty_ws(t)
+            rn_ty_eat(t, ')')
+            return "${rn_kw(cx, "type", "DecodeOutcome")}(${inner})"
+        }
+        return rn_kw(cx, "type", "DecodeOutcome")
+    }
     if name == "int" {
         if rn_ty_is(t, ">=") {
             t.pos += 2
@@ -548,6 +559,14 @@ fn rn_expr(mut cx RnCx, v RJ, locals []str) -> str {
     }
     if op == "call" { return rn_call(cx, v, locals) }
     if op == "primitive_call" { return rn_prim_call(cx, rj_gstr(v, "name"), rj_garr(v, "args"), rj_garr(v, "named"), locals) }
+    if op == "decode" {
+        // the catalog function `декодировать` (AL-155): the type node comes from the expected type of the place, the call renders with its one argument
+        ro text = match rj_get(v, "text") {
+            Some(x) => rn_sub(cx, x, locals, 10)
+            None => "none"
+        }
+        return "${rn_kw(cx, "catalog", "decode")}(${text})"
+    }
     if op == "not" {
         ro inner = match rj_get(v, "operand") {
             Some(x) => rn_sub(cx, x, locals, 8)

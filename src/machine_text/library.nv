@@ -1347,6 +1347,15 @@ fn contract_register(mut cx TxCx) -> () {
         if !pair_has(cx.env.cases, word) { pair_add(cx.env.cases, word, code) }
         pair_add(cx.env.case_types, word, "FailCode")
     }
+    // the built-in decode outcome (AL-155, section 7а): `ИсходДекодирования(T)` and its two forms - `Принято { значение T }` and `Отказ { путь, причина }`
+    ro decode_word = kw(cx.words, "type", "DecodeOutcome")
+    if !pair_has(cx.env.types, decode_word) { pair_add(cx.env.types, decode_word, "DecodeOutcome") }
+    ro accepted_word = kw(cx.words, "enum_value", "Accepted")
+    ro rejected_word = kw(cx.words, "enum_value", "Rejected")
+    if !pair_has(cx.env.cases, accepted_word) { pair_add(cx.env.cases, accepted_word, "Accepted") }
+    if !pair_has(cx.env.cases, rejected_word) { pair_add(cx.env.cases, rejected_word, "Rejected") }
+    pair_add(cx.env.case_types, accepted_word, "DecodeOutcome")
+    pair_add(cx.env.case_types, rejected_word, "DecodeOutcome")
     for en in contract_data_names() {
         ro word = kw(cx.words, "readable", en)
         if !pair_has(cx.env.globals, word) { pair_add(cx.env.globals, word, en) }
@@ -1396,6 +1405,7 @@ fn contract_data_check(entries []TxEntry, sec TxSection, mut cx TxCx) -> () {
 fn lib_types_contract(entries []TxEntry, sec TxSection, mut cx TxCx) -> () {
     ro type_word = kw(cx.words, "decl", "type")
     ro fail_word = kw(cx.words, "type", "FailCode")
+    ro decode_word = kw(cx.words, "type", "DecodeOutcome")
     mut i = sec.first
     while i < sec.last {
         ro e = entries[i]
@@ -1405,6 +1415,12 @@ fn lib_types_contract(entries []TxEntry, sec TxSection, mut cx TxCx) -> () {
                 ro rest = t["${type_word} ${fail_word}".byte_len()..]
                 if rest == "" || rest.starts_with(" ") || rest.starts_with("{") {
                     note(cx, tx_err(e.line, e.indent + 1, "name", "тип `${fail_word}` объявлен в библиотеке `контракт` (вшита в язык, подключается неявно, раздел 7а): объявлять его не нужно, имя занято; свои коды продукт добавляет своей библиотекой"))
+                }
+            }
+            if t.starts_with("${type_word} ${decode_word}") {
+                ro rest = t["${type_word} ${decode_word}".byte_len()..]
+                if rest == "" || rest.starts_with(" ") || rest.starts_with("(") {
+                    note(cx, tx_err(e.line, e.indent + 1, "name", "тип `${decode_word}` объявлен в библиотеке `контракт` (вшита в язык, подключается неявно, раздел 7а, AL-155): объявлять его не нужно, имя занято; форму записи даёт функция каталога `декодировать`"))
                 }
             }
         }

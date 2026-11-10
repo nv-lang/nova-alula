@@ -223,6 +223,52 @@ test "v226 a section of one dash is an error: an empty section is not written" {
     assert(says226(t226_with("## Состояния\n", "## Константы\n\n—\n\n## Состояния\n"), "пустой раздел не пишется"))
 }
 
+// ---- the decode outcome and the catalog function декодировать (AL-155) ----------------------------------------------
+
+// The decode datum (the optional decode outcome) appended to the data section of the base fixture (AL-155).
+fn t226_decode_data() -> str => tiny226_text().replace("## Стороны", "| разбор | ?ИсходДекодирования(число) | пусто | — |\n\n## Стороны")
+
+test "v226 the decode outcome type reads in the data column" {
+    assert(first226(t226_decode_data()) == "ok")
+    ro j = json226(t226_decode_data())
+    assert(j.contains("\"name\":\"parsing\",\"type\":\"?DecodeOutcome(int)\""))
+}
+
+test "v226 the assignment to a datum infers the type of the decode" {
+    // the place expects ?DecodeOutcome(int), so T is int: the node carries the derived type
+    ro text = t226_decode_data().replace("остановка = \"a\"", "разбор = декодировать(\"7\")")
+    assert(first226(text) == "ok")
+    ro j = json226(text)
+    assert(j.contains("\"op\":\"decode\",\"type\":\"int\""))
+}
+
+test "v226 the field of a constructor infers the type of the decode" {
+    // the field of the record ZamerProbe expects DecodeOutcome(int); the datum is optional so its initial is empty
+    ro base = t226_decode_data().replace("## Данные", "## Типы\n\n```\nтип ZamerProbe { итог ИсходДекодирования(число) }\n```\n\n## Данные").replace("## Стороны", "| замер | ?ZamerProbe | пусто | — |\n\n## Стороны")
+    ro text = base.replace("журнал(\"turn_counted\")", "замер = ZamerProbe { итог: декодировать(\"7\") }")
+    assert(first226(text) == "ok")
+    assert(json226(text).contains("\"op\":\"decode\",\"type\":\"int\""))
+}
+
+test "v226 the argument of a function of the file infers the type of the decode" {
+    // the parameter of the definition take(x DecodeOutcome(int)) gives the want at the call site
+    ro base = t226_decode_data().replace("## Состояния", "## Функции\n\n```\nфункция взять(x ИсходДекодирования(число)) -> число => 1\n```\n\n## Состояния")
+    ro called = base.replace("журнал(\"turn_counted\")", "число_ходов = взять(декодировать(\"7\"))")
+    assert(first226(called) == "ok")
+    assert(json226(called).contains("\"op\":\"decode\",\"type\":\"int\""))
+}
+
+test "v226 a decode call without an expected type is an error of the check" {
+    assert(says226(t226_with("число_ходов >= 4", "декодировать(\"{}\")"), "the type of the decode does not infer"))
+}
+
+// the kept original test (the declaration refusal) follows
+test "v226 the type of the decode outcome is taken: a declaration is an error" {
+    // the built-in `ИсходДекодирования` is declared by the library `контракт` (AL-155, section 7а): the name is taken
+    ro text = t226_with("## Данные\n", "## Типы\n\n```\nтип ИсходДекодирования перечисление\n  | Принято\n```\n\n## Данные\n")
+    assert(says226(text, "объявлен в библиотеке"))
+}
+
 // ---- a file of 2.25 is read as before (the seam until stream 4) -----------------------------------------------------------------------------------
 
 test "v226 a file of 2.25 is read in the former form" {

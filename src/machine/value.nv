@@ -173,6 +173,13 @@ export fn make_variant(type_name str, name str, fields []RecordField) -> Value =
 /// A value of an enum: a case without fields.
 export fn enum_value(type_name str, name str) -> Value => Variant { type_name, name, fields: []RecordField.new() }
 
+/// The successful case of the decode outcome (AL-155, section 7a): `Accepted { value }`.
+export fn make_decode_ok(value Value) -> Value => make_variant("DecodeOutcome", "Accepted", [RecordField { name: "value", value }])
+
+/// The refused case of the decode outcome: `Rejected { path, reason }`.
+export fn make_decode_reject(path str, reason str) -> Value =>
+    make_variant("DecodeOutcome", "Rejected", [RecordField { name: "path", value: Text(path) }, RecordField { name: "reason", value: Text(reason) }])
+
 /// The name of the kind of a value, for the text of an error: null, bool, int, float, text, list, dict, record, variant.
 export fn kind_name(v Value) -> str {
     match v {

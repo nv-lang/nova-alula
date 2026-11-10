@@ -189,6 +189,9 @@ fn decode_full_dict(name str, value TypeSpec, items []JsonValue, defs TypeDefs, 
 
 fn decode_at(spec TypeSpec, j JsonValue, defs TypeDefs, path str) -> Result[Value, DecodeFlaw] {
     match spec {
+        // the decode outcome itself is not read by the external codec (AL-155): its value comes from the catalog
+        // function `декодировать` only, the nested `DecodeOutcome(DecodeOutcome(T))` is a refusal with a clear reason
+        DecodeOutcomeType(inner) => Err(flaw(path, "the decode outcome is not a type the external codec reads; the type parameter of the decode must be the inner type, not another decode outcome"))
         IntType => match decode_int(j, path) {
             Ok(n) => Ok(Int(n))
             Err(e) => Err(e)

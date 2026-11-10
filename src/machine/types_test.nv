@@ -72,6 +72,37 @@ test "ty optional" {
     assert(!tok(IntType, Null))
 }
 
+test "ty decode outcome" {
+    // the built-in `DecodeOutcome(T)` (AL-155, section 7a): the serialization, the parse and the check of both cases
+    assert(spec_text(DecodeOutcomeType(IntType)) == "DecodeOutcome(int)")
+    assert(spec_text(DecodeOutcomeType(OptionalType(TextType))) == "DecodeOutcome(?text)")
+    assert(spec_text(DecodeOutcomeType(DecodeOutcomeType(BoolType))) == "DecodeOutcome(DecodeOutcome(bool))")
+    match parse_spec("DecodeOutcome(int)", empty_type_defs()) {
+        Ok(s) => assert(spec_text(s) == "DecodeOutcome(int)")
+        Err(m) => panic("the type does not parse: ${m}")
+    }
+    match parse_spec("DecodeOutcome(?text)", empty_type_defs()) {
+        Ok(s) => assert(spec_text(s) == "DecodeOutcome(?text)")
+        Err(m) => panic("the optional inner type does not parse: ${m}")
+    }
+    match parse_spec("DecodeOutcome(no_such_type)", empty_type_defs()) {
+        Ok(s) => panic("an undeclared inner type must not parse")
+        Err(m) => assert(m.contains("is not declared"))
+    }
+    // the accepted case: the value of the field `value` is checked against T; the refused case takes any T
+    assert(tok(DecodeOutcomeType(IntType), make_decode_ok(Int(5))))
+    assert(!tok(DecodeOutcomeType(IntType), make_decode_ok(Text("5"))))
+    assert(tmsg(DecodeOutcomeType(IntType), make_decode_ok(Text("5"))).contains("expected int, got text"))
+    assert(tok(DecodeOutcomeType(IntType), make_decode_reject("$.a[1]", "expected an int, got a boolean")))
+    assert(!tok(DecodeOutcomeType(IntType), enum_value("DecodeOutcome", "Nope")))
+    assert(tmsg(DecodeOutcomeType(IntType), enum_value("Severity", "Critical")).contains("expected DecodeOutcome(int)"))
+    // the inner type is fully checked: a nested optional accepts the present and the none forms
+    assert(tok(DecodeOutcomeType(OptionalType(TextType)), make_decode_ok(Null)))
+    ro present = make_decode_ok(SomeV(SomeBox { inner: Text("x") }))
+    assert(tok(DecodeOutcomeType(OptionalType(TextType)), present))
+    assert(!tok(DecodeOutcomeType(OptionalType(TextType)), make_decode_ok(Int(1))))
+}
+
 test "ty list" {
     ro spec = ListType(IntType)
     assert(tok(spec, List([]Value.new())))
