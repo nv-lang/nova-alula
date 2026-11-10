@@ -727,6 +727,13 @@ fn ex_if(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
     ro a = ex_block(p, cx, sc)?
     if !p_is_kw(p, cx.words, "expr", "else") { return Err(p_fail(p, "ожидается `${kw(cx.words, "expr", "else")}`: у условного выражения ветка `${kw(cx.words, "expr", "else")}` обязательна (AL-71)")) }
     p_adv(p)
+    // AL-157: `иначе если …` is the shorthand of the nested `иначе { если … }` - exactly the same tree, the
+    // order of the checks and the laziness of the unselected branches are not changed; the innermost `если`
+    // keeps its own mandatory `иначе`, so the chain always ends with a final else branch
+    if p_is_kw(p, cx.words, "expr", "if") {
+        ro nested = ex_if(p, cx, sc)?
+        return Ok(x_if(cond, a, nested))
+    }
     if !p_is(p, "{") { return Err(p_fail(p, "после `${kw(cx.words, "expr", "else")}` ожидается блок `{ … }` (AL-71)")) }
     ro b = ex_block(p, cx, sc)?
     Ok(x_if(cond, a, b))

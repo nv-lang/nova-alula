@@ -76,6 +76,23 @@ fn edec(text Expr, spec str) -> Expr => decode(text, spec)
 // The explicit optional constructor (AL-156): `?x` wraps x in exactly one Some layer, the former ones are kept.
 fn eopt(e Expr) -> Expr => some_of(e)
 
+test "ev else-if chain equals the nested if (AL-157)" {
+    // the shorthand parses to the same nested tree, so the evaluation, the order of the checks and the laziness are identical
+    ro chain = if_else(en(Gt, name_ref("x"), ei(3)), lit_int(1), if_else(en(Eq, name_ref("x"), ei(3)), lit_int(2), lit_int(3)))
+    ro nested = if_else(en(Gt, name_ref("x"), ei(3)), lit_int(1), if_else(en(Eq, name_ref("x"), ei(3)), lit_int(2), lit_int(3)))
+    match eval(chain, escope()) {
+        Ok(v) => assert(value_equal(v, Int(1)))
+        Err(x) => panic("the chain must evaluate: ${kind_word(x.kind)}@${x.path}")
+    }
+    match eval(nested, escope()) {
+        Ok(v) => assert(value_equal(v, Int(1)))
+        Err(x) => panic("the nested form must evaluate: ${kind_word(x.kind)}@${x.path}")
+    }
+    // the laziness: the unselected branch is not evaluated
+    assert(eis_in(if_else(en(Gt, name_ref("x"), ei(0)), lit_int(7), edivzero()), Int(7)))
+}
+
+
 test "ev some" {
     // the explicit optional constructor: a bare value becomes present, no former layer is taken off
     assert(eis(eopt(lit_int(5)), SomeV(SomeBox { inner: Int(5) })))

@@ -285,6 +285,28 @@ test "v226 the explicit optional constructor ?expr reads and wraps (AL-156)" {
 }
 
 
+// ---- the else-if chain (AL-157) ----------------------------------------------------------------------------------------------
+
+test "v226 the else-if chain is the shorthand of the nested if (AL-157)" {
+    // `иначе если` parses to the same nested if tree as the explicit `иначе { если … }`; the chain ends with a final else
+    ro nested = t226_with("остановка = \"a\"", "остановка = если число_ходов >= 4 то { \"b\" } иначе { \"c\" }")
+    assert(first226(nested) == "ok")
+    ro chained = t226_with("остановка = \"a\"", "остановка = если число_ходов >= 4 то { \"b\" } иначе если число_ходов == 3 то { \"d\" } иначе { \"c\" }")
+    assert(first226(chained) == "ok")
+    // the same tree: the else branch of the outer if holds the nested if
+    ro j1 = json226(nested)
+    ro j2 = json226(chained)
+    assert(j1.contains("\"op\":\"if\"") && j2.contains("\"op\":\"if\""))
+    assert(j2.contains("\"op\":\"if\""))
+    assert(j2.contains("\"op\":\"if\",\"left\"") || j2.contains("\"else\":{\"op\":\"if\"") || j2.contains("\"else\":{\"$if\""))
+}
+
+test "v226 the else-if chain without the final else is an error (AL-157: AL-71 is not weakened)" {
+    // the innermost `если` keeps its own mandatory `иначе`: a chain that does not end with a final else is refused
+    assert(says226(t226_with("остановка = \"a\"", "остановка = если число_ходов >= 4 то { \"b\" } иначе если число_ходов == 3 то { \"d\" }"), "иначе"))
+}
+
+
 // ---- a file of 2.25 is read as before (the seam until stream 4) -----------------------------------------------------------------------------------
 
 test "v226 a file of 2.25 is read in the former form" {
