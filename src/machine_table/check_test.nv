@@ -97,6 +97,33 @@ test "red ends not exhausted" {
     assert(says(twice, "not exclusive"))
 }
 
+test "red optional compared with a bare value" {
+    // AL-154 (0.29): an optional datum is compared explicitly — `has(maybe) and require(maybe) == <value>` —
+    // and that explicit form covers the optional datum in the ends like `stop == <value>` covers stop.
+    ro maybe_type = jstr("?(\"a\" | \"b\")")
+    ro opt = `,{"name":"maybe","type":${maybe_type},"initial":{"expr":${jl("null")}}}`
+    ro has_maybe = jcall("has", jn("maybe"))
+    ro require_maybe = jcall("require", jn("maybe"))
+    ro when_a = jb("and", has_maybe, jb("==", require_maybe, jl(jstr("a"))))
+    ro when_b = jb("and", has_maybe, jb("==", require_maybe, jl(jstr("b"))))
+    ro done = `{"state":"Finished","n":1,"when":${jl("true")},"answer":{"kind":"answer","value":${jn("n")}}}`
+    ro ra = `{"state":"Stopped","n":1,"when":${when_a},"answer":{"kind":"refusal","code":${jfc("StoppedByHuman")},"text":${jl(jstr("stopped"))}}}`
+    ro rb = `{"state":"Stopped","n":2,"when":${when_b},"answer":{"kind":"refusal","code":${jfc("NoResult")},"text":${jl(jstr("b"))}}}`
+    ro explicit = tiny_with(opt, "", tiny_wait_rows(), "${done},${ra},${rb}").replace("\"reads\":[\"stop\"]", "\"reads\":[\"stop\",\"maybe\"]")
+    assert(ok_text(explicit))
+    // `maybe == "a"` — the optional is compared with a bare value
+    ro bare_right = explicit.replace(jb("==", require_maybe, jl(jstr("a"))), jb("==", jn("maybe"), jl(jstr("a"))))
+    assert(says(bare_right, "an optional (?T) is compared with a bare value"))
+    // the bare value on the left
+    ro bare_left = explicit.replace(jb("==", require_maybe, jl(jstr("b"))), jb("==", jl(jstr("b")), jn("maybe")))
+    assert(says(bare_left, "an optional (?T) is compared with a bare value"))
+    // an ordinal comparison does not unwrap the nesting either
+    ro ordinal = explicit.replace(jb("==", require_maybe, jl(jstr("b"))), jb("!=", jn("maybe"), jl(jstr("b"))))
+    assert(says(ordinal, "an optional (?T) is compared with a bare value"))
+    // the explicit form itself raises no issue: only the bare comparisons are red
+    assert(!says(explicit, "an optional (?T) is compared with a bare value"))
+}
+
 test "names" {
     assert(says(tiny().replace("\"machine\":\"Tiny\"", "\"machine\":\"1Tiny\""), "latin identifier"))
     assert(says(tiny().replace("\"name\":\"Decide\"", "\"name\":\"Wait\""), "declared twice"))

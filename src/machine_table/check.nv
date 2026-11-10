@@ -13,7 +13,7 @@ import std.text
 import std.unicode.{GeneralCategory}
 import alula.machine.{Expr, TypeDefs, FieldDef, Bind, DefFn, Registry, Position, check_expr_positions, check_call_position, find_primitive, primitive_names, has_tail, class_word, journal_find}
 import alula.machine.{ConditionPos, InputPos, ProfilePos, ForkEntryPos, OperationEntryPos, EndEntryPos, AcceptPos, ActionPos}
-import alula.machine.{Pure, Volatile, Acting, Value, Text, TypeSpec, TextSet, IdType, OptionalType, VariantType, spec_text, is_uuid}
+import alula.machine.{Pure, Volatile, Acting, Value, Text, TypeSpec, TextSet, IdType, OptionalType, VariantType, RecordType, IntType, FloatType, TextType, BoolType, spec_text, is_uuid}
 
 // ---- the places of expressions ------------------------------------------------------------------------------------------
 
@@ -1882,6 +1882,11 @@ fn cover_of(e Expr) -> Cover {
                 }
                 return Cover { ok: false, always: false, field: "", values: []str.new() }
             }
+            // AL-154 (0.29): the explicit comparison of an optional — `has(d) and require(d) == <value>` — covers d = <value>
+            if op == And {
+                ro explicit = require_eq_cover(left, right)
+                if explicit.ok { return explicit }
+            }
             if op == Eq {
                 match left {
                     Name(n) => {
@@ -1927,6 +1932,175 @@ fn closed_values(def MachineDef, spec TypeSpec) -> Option[[]str] {
             return None
         }
         _ => None
+    }
+}
+
+// The cover of `require(d) == <value>` guarded by `has(d)` (AL-154): the same values as `d == <value>` for an
+// optional datum d. The guard comes first (the norm of 0.29: first the presence, then the content).
+fn require_eq_cover(guard Expr, probe Expr) -> Cover {
+    match guard {
+        CallFn { name, args } => {
+            if name != "has" || args.len() != 1 { return Cover { ok: false, always: false, field: "", values: []str.new() } }
+            match args[0] {
+                Name(d) => {
+                    match probe {
+                        Binary { op, left, right } => {
+                            if op != Eq { return Cover { ok: false, always: false, field: "", values: []str.new() } }
+                            match left {
+                                CallFn { name: rname, args: rargs } => {
+                                    if rname != "require" || rargs.len() != 1 { return Cover { ok: false, always: false, field: "", values: []str.new() } }
+                                    match rargs[0] {
+                                        Name(rd) => {
+                                            if rd != d { return Cover { ok: false, always: false, field: "", values: []str.new() } }
+                                            match right {
+                                                Lit(v) => {
+                                                    match v {
+                                                        Text(w) => return Cover { ok: true, always: false, field: d, values: [w] }
+                                                        _ => ()
+                                                    }
+                                                }
+                                                VariantLit { type_name, name: case_name, fields } => {
+                                                    if fields.len() == 0 { return Cover { ok: true, always: false, field: d, values: ["${type_name}.${case_name}"] } }
+                                                }
+                                                _ => ()
+                                            }
+                                        }
+                                        _ => ()
+                                    }
+                                }
+                                _ => ()
+                            }
+                        }
+                        _ => ()
+                    }
+                }
+                _ => ()
+            }
+        }
+        _ => ()
+    }
+    Cover { ok: false, always: false, field: "", values: []str.new() }
+}
+
+// ---- the strict equality of the optionals (AL-154, 0.29) ----------------------------------------------------------------
+
+// The type of an expression where it is known without a full derivation: a literal, a variant or a record
+// literal, a datum, a constant, a parameter, an input field; `require` and `??` unwrap an optional, the
+// comparisons and `and`/`or`/`not` are a bool. None = not known (a binding of a pattern, a call of the host or
+// of the catalog): no issue is raised then. There is no shadowing (section 10), so a name resolves to at most
+// one declaration.
+fn expr_spec(def MachineDef, e Expr) -> Option[TypeSpec] {
+    match e {
+        Lit(v) => match v {
+            Int(n) => Some(IntType)
+            Float(x) => Some(FloatType)
+            Text(s) => Some(TextType)
+            Bool(b) => Some(BoolType)
+            _ => None
+        }
+        VariantLit { type_name, name, fields } => Some(VariantType(type_name))
+        RecordLit { type_name, fields } => Some(RecordType(type_name))
+        Name(n) => {
+            ro at = find_data(def, n)
+            if at >= 0 { return Some(def.data[at].spec) }
+            for c in def.constants {
+                if c.name == n { return Some(c.spec) }
+            }
+            for p in def.params {
+                if p.name == n { return Some(p.spec) }
+            }
+            if def.input.present {
+                for f in def.input.fields {
+                    if f.name == n { return Some(f.spec) }
+                }
+            }
+            None
+        }
+        FieldOf { target, name } => {
+            match expr_spec(def, target) {
+                Some(RecordType(record_name)) => {
+                    for r in def.types.records {
+                        if r.name == record_name {
+                            for f in r.fields {
+                                if f.name == name { return Some(f.spec) }
+                            }
+                        }
+                    }
+                    None
+                }
+                _ => None
+            }
+        }
+        CallFn { name, args } => {
+            if name == "require" && args.len() == 1 {
+                match expr_spec(def, args[0]) {
+                    Some(OptionalType(inner)) => return Some(inner)
+                    _ => ()
+                }
+            }
+            if name == "has" { return Some(BoolType) }
+            None
+        }
+        Binary { op, left, right } => match op {
+            Coalesce => match expr_spec(def, left) {
+                Some(OptionalType(inner)) => {
+                    match expr_spec(def, right) {
+                        Some(r) => Some(r)
+                        None => Some(inner)
+                    }
+                }
+                other => other
+            }
+            And | Or | Eq | Ne | Lt | Le | Gt | Ge => Some(BoolType)
+            _ => None
+        }
+        Not(x) => Some(BoolType)
+        _ => None
+    }
+}
+
+fn is_optional_spec(s Option[TypeSpec]) -> bool {
+    match s {
+        Some(OptionalType(inner)) => true
+        _ => false
+    }
+}
+
+// Known and NOT an optional (an unknown type raises no issue).
+fn is_bare_spec(s Option[TypeSpec]) -> bool {
+    match s {
+        Some(sp) => match sp {
+            OptionalType(inner) => false
+            _ => true
+        }
+        None => false
+    }
+}
+
+// AL-154 (0.29): an optional is compared explicitly — first `has(x)`, then `require(x) == <value>`; a
+// comparison of a `?T` with a bare `T` is an error of the check, not a silent `false`; the ordinal comparisons
+// do not unwrap the nesting. An unknown side (a binding, a call of the host) raises no issue.
+fn check_optional_comparison(mut cx Checker, path str, e Expr) -> () {
+    match e {
+        Binary { op, left, right } => {
+            if op == Eq || op == Ne || op == Lt || op == Le || op == Gt || op == Ge {
+                ro ls = expr_spec(cx.def, left)
+                ro rs = expr_spec(cx.def, right)
+                if (is_optional_spec(ls) && is_bare_spec(rs)) || (is_optional_spec(rs) && is_bare_spec(ls)) {
+                    cx_issue(cx, path, "an optional (?T) is compared with a bare value; since 0.29 (AL-154) the comparison is explicit: has(x) and require(x) == <value>, the absence of a value is its own branch")
+                }
+            }
+        }
+        _ => ()
+    }
+    for k in kids(e) {
+        check_optional_comparison(cx, path, k)
+    }
+}
+
+fn check_optional_equality(mut cx Checker) -> () {
+    for s in cx.sites {
+        check_optional_comparison(cx, s.place, s.expr)
     }
 }
 
@@ -2906,6 +3080,7 @@ export fn check_machine(def MachineDef, registry Registry) -> []LoadError {
     check_events(cx)
     check_forks(cx)
     collect_sites(cx)
+    check_optional_equality(cx)
     check_reads(cx)
     check_all_writes(cx)
     check_engine_writes(cx)

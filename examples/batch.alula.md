@@ -115,5 +115,5 @@ type Job { name str, attempt int>=0 }
 |---|---|---|
 | Done | true | Response(length(answered)) |
 | Errored | true | Refusal(FailCode.NoResult, "a defect of the batch") |
-| Halted | Pause.reason == PauseReason.Halted | Refusal(FailCode.StoppedByHuman, "pause_halt") |
-| Halted | Pause.reason == PauseReason.Cancelled | Refusal(FailCode.Cancelled, "cancel_request") |
+| Halted | has(Pause.reason) and require(Pause.reason) == PauseReason.Halted | Refusal(FailCode.StoppedByHuman, "pause_halt") |
+| Halted | has(Pause.reason) and require(Pause.reason) == PauseReason.Cancelled | Refusal(FailCode.Cancelled, "cancel_request") |

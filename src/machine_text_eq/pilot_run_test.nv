@@ -25,15 +25,17 @@ fn start_input() -> str {
     "{\"agent_request\":${request}}"
 }
 
+// The answer of the agent party in the external codec (task 146, AL-153): records are objects by the JSON
+// names, a variant is {"case","fields"}, an optional is {"none":true}/{"some":v}; no bare values and no tags.
 fn usage_json() -> str {
-    ro model = "{\"$record\":\"AgentModel\",\"fields\":{\"id\":\"m1\",\"provider\":\"p\",\"variant\":null}}"
-    ro tokens = "{\"$record\":\"TokenUsage\",\"fields\":{\"input\":10,\"output\":5,\"reasoning\":null,\"cache_read\":null,\"cache_write\":null}}"
-    "{\"$record\":\"TransportUsage\",\"fields\":{\"model\":${model},\"tokens\":${tokens},\"cost\":null,\"context_used\":null,\"request_started\":5}}"
+    ro model = "{\"id\":\"m1\",\"provider\":\"p\",\"variant\":{\"none\":true}}"
+    ro tokens = "{\"input\":{\"some\":10},\"output\":{\"some\":5},\"reasoning\":{\"none\":true},\"cache_read\":{\"none\":true},\"cache_write\":{\"none\":true}}"
+    "{\"model\":${model},\"tokens\":${tokens},\"cost\":{\"none\":true},\"context_used\":{\"none\":true},\"request_started\":5}"
 }
 
-fn finished_json() -> str => "{\"$variant\":\"TurnResult\",\"name\":\"Finished\",\"fields\":{\"text\":\"hello\",\"artifact\":null,\"usage\":${usage_json()}}}"
+fn finished_json() -> str => "{\"case\":\"Finished\",\"fields\":{\"text\":{\"some\":\"hello\"},\"artifact\":{\"none\":true},\"usage\":${usage_json()}}}"
 
-fn transient_json() -> str => "{\"$variant\":\"TurnResult\",\"name\":\"TransientError\",\"fields\":{}}"
+fn transient_json() -> str => "{\"case\":\"TransientError\",\"fields\":{}}"
 
 fn event_of(kind EventKind, name str, request Option[str], input str, at int) -> Incoming => {
     id: "e-${at}", trace: "t-1", step: 2, kind, name, request, input, at

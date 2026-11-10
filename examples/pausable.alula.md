@@ -75,5 +75,5 @@ in again, with a new request; `halt` ends the machine with its own reason `Pause
 | Done | true | Response(require(reply)) |
 | Errored | true | Refusal(FailCode.NoResult, "a defect of the machine") |
 | Halted | stop_reason == "failed" | Refusal(FailCode.NoResult, stop_reason) |
-| Halted | Pause.reason == PauseReason.Halted | Refusal(FailCode.StoppedByHuman, "pause_halt") |
-| Halted | Pause.reason == PauseReason.Cancelled | Refusal(FailCode.Cancelled, "cancel_request") |
+| Halted | has(Pause.reason) and require(Pause.reason) == PauseReason.Halted | Refusal(FailCode.StoppedByHuman, "pause_halt") |
+| Halted | has(Pause.reason) and require(Pause.reason) == PauseReason.Cancelled | Refusal(FailCode.Cancelled, "cancel_request") |

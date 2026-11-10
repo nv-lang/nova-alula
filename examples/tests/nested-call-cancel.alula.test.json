@@ -74,7 +74,12 @@
           "in failure"
         ],
         "data": {
-          "reason": {"$variant": "PauseReason", "name": "Cancelled"},
+          "reason": {
+            "$some": {
+              "$variant": "PauseReason",
+              "name": "Cancelled"
+            }
+          },
           "open_requests": []
         }
       },
@@ -87,7 +92,12 @@
             "agent-1"
           ],
           "data": {
-            "reason": {"$variant": "PauseReason", "name": "Cancelled"}
+            "reason": {
+              "$some": {
+                "$variant": "PauseReason",
+                "name": "Cancelled"
+              }
+            }
           }
         }
       }
