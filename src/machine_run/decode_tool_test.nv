@@ -1,0 +1,53 @@
+module alula.machine_run
+
+import alula.machine.{Text, Primitive, ParamSpec, TextType, Volatile, register}
+import alula.examples.{sample_registry}
+
+fn decode_tool_machine() -> str => `{
+  "format":"machine/2","machine":"DecodeTool","version":"1",
+  "types":{"records":[{"name":"Out","fields":[{"name":"answer","type":"text"}]}]},
+  "data":[{"name":"got","type":"text","initial":{"expr":{"op":"lit","value":""}}}],
+  "primitives":[{"name":"parse_reply","params":[],"result":"text","class":"volatile"}],
+  "initial":"Decode",
+  "states":[
+    {"name":"Decode","kind":"operation","rows":[{"n":1,"event":{"kind":"now"},"actions":[
+      {"do":"assign","target":"got","value":{"op":"match",
+        "on":{"op":"decode","type":"Out","text":{"op":"primitive_call","name":"parse_reply","args":[]}},
+        "arms":[
+          {"patterns":[{"kind":"case","name":"Accepted","bind":{"value":"result"}}],
+           "body":{"op":"field","of":{"op":"name","name":"result"},"name":"answer"}},
+          {"patterns":[{"kind":"case","name":"Rejected","bind":{"path":"path"}}],
+           "body":{"op":"name","name":"path"}}
+        ]}}
+    ],"to":"Done"}]},
+    {"name":"Done","kind":"end","reads":["got"]}
+  ],
+  "ends":{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},
+    "answer":{"kind":"answer","value":{"op":"name","name":"got"}}}]}
+}`
+
+fn run_decode_tool(reply str) -> Out {
+    mut reg = sample_registry()
+    ro _registered = register(reg, Primitive { name: "parse_reply", params: []ParamSpec.new(), result: TextType, class: Volatile, reads: []str.new(), writes: []str.new() })
+    match load_alula_machine(decode_tool_machine(), reg) {
+        Ok(machine) => {
+            ro m = with_replies(machine, [{ name: "parse_reply", value: Text(reply) }])
+            run1(m, m.initial(), signal_in("start", ""))
+        }
+        Err(e) => panic("the decode tool machine does not load: ${e}")
+    }
+}
+
+test "AL-155 machine consumes a decoded record from an external tool" {
+    ro r = run_decode_tool("{\"answer\":\"from tool\"}")
+    assert(r.moved && r.state.name == "Done")
+    assert(datum_json(r.state, "got") == "\"from tool\"")
+    assert(summary(r.orders) == "finish:answer:from tool,save")
+}
+
+test "AL-155 machine handles a refused record from an external tool" {
+    ro r = run_decode_tool("{\"answer\":7}")
+    assert(r.moved && r.state.name == "Done")
+    assert(datum_json(r.state, "got") == "\"$.answer\"")
+    assert(summary(r.orders) == "finish:answer:$.answer,save")
+}
