@@ -105,6 +105,20 @@ fn el_map_parts(t str) -> (str, str) {
 
 fn el_is_list(t str) -> bool => el_list_elem(t) != ""
 
+fn el_is_null(j TxJ) -> bool {
+    // the tree of a null literal: {"op":"lit","value":null} (the JSON null as TxNull, not a text, not a number)
+    if el_str(j, "op") != "lit" { return false }
+    match el_get(j, "value") {
+        Some(v) => match v {
+            TxStr(s) => s == "null"
+            TxNull => true
+            _ => false
+        }
+        None => true
+    }
+}
+
+
 // The inner type of the expected type of a decode call: `DecodeOutcome(X)` gives `X` (also under `?`, the optional
 // decode outcome); "" when the place expects another form or nothing at all (AL-155, section 12: the type parameter
 // is inferred from the expected type of the place of the call).
@@ -206,6 +220,15 @@ fn el_type_of(ty ElTypes, j TxJ, locals []TxPair) -> str {
         if bt.starts_with("?") { bt = bt[1..] }
         if bt == "" { return "" }
         return el_lookup(ty, "${bt}.${name}")
+    }
+    if op == "some" {
+        // the explicit optional constructor (AL-156): the type of `?x` is the type of x with one optional layer
+        ro inner = el_type_of(ty, match el_get(j, "operand") {
+            Some(x) => x
+            None => TxNull
+        }, locals)
+        if inner == "" { return "" }
+        "?${inner}"
     }
     if op == "index" {
         ro base = match el_get(j, "of") {
@@ -491,7 +514,20 @@ fn el_expr(ty ElTypes, j TxJ, op str, want str, locals []TxPair, mut errs []ElEr
         ro rw = if for_plus { want } else { lt }
         return x_bin(op, el_value(ty, lx, lw, locals, errs), el_value(ty, rx, rw, locals, errs))
     }
-    if op == "call" {
+    if op == "some" {
+        // the explicit optional constructor (AL-156): the inner value keeps the expected type without the optional wrapper; the empty ?пусто at a place with no expected type is an error
+        ro inner_want = if want.starts_with("?") { want[1..] } else { want }
+        ro operand = match el_get(j, "operand") {
+            Some(x) => x
+            None => TxNull
+        }
+        ro inner = el_value(ty, operand, inner_want, locals, errs)
+        if want == "" && el_is_null(operand) {
+            errs.push(ElErr { line: el_num(j, "line"), col: el_num(j, "col"), message: "the empty ?пусто without an expected type (AL-156): the type is known at a datum, a field, a parameter, a constant, an argument of a function, the left side of an assignment, the result of a function, a branch; otherwise the type is written explicitly (a datum with a type) or a value of another kind" })
+        }
+        return jobj([kv("op", js("some")), kv("operand", inner)])
+    }
+        if op == "call" {
         ro f = el_str(j, "fn")
         ro args = el_items(j, "args")
         mut out = []TxJ.new()

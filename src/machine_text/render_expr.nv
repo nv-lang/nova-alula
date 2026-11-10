@@ -270,6 +270,7 @@ fn rn_prec(v RJ) -> int {
     if op == "*" || op == "/" || op == "%" { return 7 }
     if op == "not" { return 8 }
     if op == "neg" { return 8 }
+    if op == "some" { return 8 }
     if op == "if" || op == "match" || op == "lambda" { return 0 }
     if op == "call" && rj_gstr(v, "fn") == "range" && rj_garr(v, "args").len() == 2 { return 0 }
     if op == "lit" {
@@ -566,6 +567,14 @@ fn rn_expr(mut cx RnCx, v RJ, locals []str) -> str {
             None => "none"
         }
         return "${rn_kw(cx, "catalog", "decode")}(${text})"
+    }
+    if op == "some" {
+        // the explicit optional constructor (AL-156): `?x` renders with the question mark and its operand
+        ro inner = match rj_get(v, "operand") {
+            Some(x) => rn_sub(cx, x, locals, 9)
+            None => "none"
+        }
+        return "?${inner}"
     }
     if op == "not" {
         ro inner = match rj_get(v, "operand") {

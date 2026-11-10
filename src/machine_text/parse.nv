@@ -1025,6 +1025,14 @@ fn ex_unary(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
         ro inner = ex_unary(p, cx, sc)?
         return Ok(x_un("not", inner))
     }
+    // AL-156: `?x` is the explicit constructor of exactly one optional layer - it wraps without unwrapping
+    // (`?a` where a is already an optional gives `? ?a`, the former layers are kept); `?x.field` is `?(x.field)`
+    // (the prefix binds tighter than the postfix); the token `??` is the coalesce and is not touched.
+    if p_is(p, "?") && !t_is(p_ahead(p, 1), "?") {
+        p_adv(p)
+        ro inner = ex_unary(p, cx, sc)?
+        return Ok(x_un("some", inner))
+    }
     if p_is(p, "-") {
         p_adv(p)
         ro t = p_tok(p)

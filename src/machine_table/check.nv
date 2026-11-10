@@ -145,6 +145,7 @@ fn kids(e Expr) -> []Expr {
         Not(x) => [x]
         Negate(x) => [x]
         Decode { text, spec } => [text]
+        SomeExpr(x) => [x]
     }
 }
 
@@ -2002,6 +2003,10 @@ fn expr_spec(def MachineDef, e Expr) -> Option[TypeSpec] {
         Decode { text, spec } => match parse_spec(spec, def.types) {
             Ok(want_spec) => Some(DecodeOutcomeType(want_spec))
             Err(m) => None
+        }
+        SomeExpr(x) => match expr_spec(def, x) {
+            Some(t) => Some(OptionalType(t))
+            None => None
         }
         VariantLit { type_name, name, fields } => Some(VariantType(type_name))
         RecordLit { type_name, fields } => Some(RecordType(type_name))

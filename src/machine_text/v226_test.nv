@@ -269,6 +269,22 @@ test "v226 the type of the decode outcome is taken: a declaration is an error" {
     assert(says226(text, "объявлен в библиотеке"))
 }
 
+// ---- the explicit optional constructor ?expr (AL-156) ------------------------------------------------------------------------------------------
+
+test "v226 the explicit optional constructor ?expr reads and wraps (AL-156)" {
+    // ?x wraps exactly one optional layer: the tree carries the op some; ?x.field is ?(x.field)
+    ro with_row = t226_decode_data().replace("остановка = \"a\"", "разбор = ?декодировать(\"7\")")
+    assert(first226(with_row) == "ok")
+    ro j = json226(with_row)
+    assert(j.contains("\"op\":\"some\",\"operand\":{\"op\":\"decode"))
+    // the strict equality with ?rhs is a valid way to compare an optional (AL-154: alongside has/require)
+    ro eq = t226_with("число_ходов >= 4", "?(число_ходов + 1) == ?5")
+    assert(first226(eq) == "ok")
+    // the bare ?пусто without an expected type is an error (AL-156: the layer needs a type)
+    assert(says226(t226_with("число_ходов >= 4", "?пусто"), "without an expected type"))
+}
+
+
 // ---- a file of 2.25 is read as before (the seam until stream 4) -----------------------------------------------------------------------------------
 
 test "v226 a file of 2.25 is read in the former form" {

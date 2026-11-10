@@ -90,6 +90,7 @@ export type Expr enum
     | Not(Expr)
     | Negate(Expr)
     | Decode { text Expr, spec str }
+    | SomeExpr(Expr)
 
 /// ExprError: the tree is not an expression; `path` is where (`$.args[1].body`).
 export type ExprError { path str, message str }
@@ -115,6 +116,7 @@ export fn bin(op BinOp, left Expr, right Expr) -> Expr => Binary { op, left, rig
 export fn if_else(cond Expr, then_branch Expr, else_branch Expr) -> Expr => IfElse { cond, then_branch, else_branch }
 export fn let_in(name str, value Expr, body Expr) -> Expr => LetIn { name, value, body }
 export fn decode(text Expr, spec str) -> Expr => Decode { text, spec }
+export fn some_of(x Expr) -> Expr => SomeExpr(x)
 export fn field_expr(name str, value Expr) -> FieldExpr => { name, value }
 export fn arm(patterns []Pattern, guard Option[Expr], body Expr) -> MatchArm => { patterns, guard: guard_list(guard), body }
 
@@ -181,6 +183,7 @@ export fn expr_depth(e Expr) -> int {
         Not(x) => 1 + expr_depth(x)
         Negate(x) => 1 + expr_depth(x)
         Decode { text, spec } => 1 + expr_depth(text)
+        SomeExpr(x) => 1 + expr_depth(x)
     }
 }
 
@@ -257,6 +260,7 @@ fn children(e Expr) -> []ExprChild {
         Not(x) => [kid("operand", x)]
         Negate(x) => [kid("operand", x)]
         Decode { text, spec } => [kid("text", text)]
+        SomeExpr(x) => [kid("operand", x)]
     }
 }
 
@@ -483,6 +487,11 @@ export fn expr_to_json(e Expr) -> JsonValue {
             mut o = node("decode")
             put(o, "text", expr_to_json(text))
             put(o, "type", JsonValue.str(spec))
+            JsonValue.object(o)
+        }
+        SomeExpr(x) => {
+            mut o = node("some")
+            put(o, "operand", expr_to_json(x))
             JsonValue.object(o)
         }
     }
@@ -791,6 +800,10 @@ fn dec_op(op str, o JsonObject, path str, depth int) -> Result[Expr, ExprError] 
             ro text = need_expr(o, "text", path, depth)?
             ro spec = need_text(o, "type", path)?
             Ok(Decode { text, spec })
+        }
+        "some" => {
+            ro x = need_expr(o, "operand", path, depth)?
+            Ok(some_of(x))
         }
         _ => match op_from_symbol(op) {
             Some(bin_op) => dec_binary(bin_op, o, path, depth)

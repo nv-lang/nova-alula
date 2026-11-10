@@ -1079,6 +1079,12 @@ fn ev(e Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, E
                 _ => wrong_at("text", "text", v)
             }
         }
+        SomeExpr(x) => {
+            // the explicit optional constructor (AL-156): `?x` wraps x in exactly one Some layer without
+            // taking the former ones off - a bare value becomes present, an optional becomes a double optional
+            ro v = part(x, "operand", env, host, depth)?
+            Ok(SomeV(SomeBox { inner: v }))
+        }
     }
 }
 
