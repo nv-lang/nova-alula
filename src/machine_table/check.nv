@@ -222,6 +222,9 @@ fn call_nodes(e Expr, path str, mut out []CallSeen) -> () {
 type CallSeen { place str, name str, count int }
 
 // `if` inside a branch of another `if` (format 3.3): the path of the inner one, or "".
+// AL-157 (0.29): the exception is the chain along the else branch - the else branch of an if may itself be an if
+// (the shorthand `else if` or the expanded one-expression block `else { if … }`; the tree is the same); the chain
+// keeps its own rule: its then branch and anything deeper are still checked, the other nesting stays forbidden.
 fn nested_if(e Expr, inside bool, path str) -> str {
     match e {
         IfElse { cond, then_branch, else_branch } => {
@@ -230,7 +233,10 @@ fn nested_if(e Expr, inside bool, path str) -> str {
             if from_cond != "" { return from_cond }
             ro from_then = nested_if(then_branch, true, "${path}.then")
             if from_then != "" { return from_then }
-            nested_if(else_branch, true, "${path}.else")
+            match else_branch {
+                IfElse { cond: c2, then_branch: t2, else_branch: e2 } => nested_if(else_branch, false, "${path}.else")
+                _ => nested_if(else_branch, true, "${path}.else")
+            }
         }
         _ => {
             mut i = 0

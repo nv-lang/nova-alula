@@ -188,6 +188,18 @@ test "expression rules" {
     assert(says(tiny_rows(wait_rows_with(nested)), "does not nest in a branch"))
     assert(ok_text(tiny_rows(wait_rows_with(jprimless_if(jl("1"))))))
     assert(says(tiny_rows(wait_rows_with(jn("zzz"))), "the name zzz is not a datum"))
+    // AL-157: the chain along the else branch - the else branch is itself an if (the shorthand and the expanded
+    // one-expression block give the same tree) - is allowed; the chain of three keeps the same rule
+    ro chain = `{"op":"if","cond":${jl("true")},"then":${jl("0")},"else":{"op":"if","cond":${jl("true")},"then":${jl("1")},"else":${jl("2")}}}`
+    assert(ok_text(tiny_rows(wait_rows_with(chain))))
+    ro chain3 = `{"op":"if","cond":${jl("true")},"then":${jl("0")},"else":{"op":"if","cond":${jl("true")},"then":${jl("1")},"else":{"op":"if","cond":${jl("true")},"then":${jl("2")},"else":${jl("3")}}}}`
+    assert(ok_text(tiny_rows(wait_rows_with(chain3))))
+    // the inner if of the chain keeps its own rule: an if in its THEN branch is still forbidden
+    ro chain_bad_inner = `{"op":"if","cond":${jl("true")},"then":${jl("0")},"else":{"op":"if","cond":${jl("true")},"then":${jprimless_if(jl("9"))},"else":${jl("2")}}}`
+    assert(says(tiny_rows(wait_rows_with(chain_bad_inner)), "does not nest in a branch"))
+    // an if deeper inside the else branch (not the chain form: inside a let body) stays forbidden
+    ro deep_else = `{"op":"if","cond":${jl("true")},"then":${jl("0")},"else":{"op":"let","name":"x","value":${jl("5")},"body":${jprimless_if(jl("9"))}}}`
+    assert(says(tiny_rows(wait_rows_with(deep_else)), "does not nest in a branch"))
 }
 
 fn jprimless_if(inner str) -> str {
