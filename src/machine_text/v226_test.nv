@@ -269,6 +269,30 @@ test "v226 the type of the decode outcome is taken: a declaration is an error" {
     assert(says226(text, "объявлен в библиотеке"))
 }
 
+// ---- the decode inside a parse-like function and the bare let negative (AL-155) ----------------------------
+
+// The parse-like path of the customer: the function of the file takes the decode outcome, matches its two
+// forms through the ordinary mechanisms of the language and gives the logical result or the controlled
+// fallback that reads the refusal; the machine calls it with the decode at the argument place.
+test "v226 the decode inside a function of the file gives the result or the controlled refusal (AL-155)" {
+    // the parse-like path of the customer: the function of the file matches the two forms of the decode
+    // outcome through the ordinary mechanisms and gives the logical result or the controlled fallback
+    ro base = t226_decode_data().replace("## Состояния\n", "## Функции\n\n```\nфункция взять(d ИсходДекодирования(число)) -> число => выбор d { Принято { значение } => значение, Отказ { путь } => 0 - 1 }\n```\n\n## Состояния\n")
+    ro ok = base.replace("журнал(\"turn_counted\")", "число_ходов = взять(декодировать(\"7\"))")
+    assert(first226(ok) == "ok")
+    ro j = json226(ok)
+    assert(j.contains("\"op\":\"decode\",\"type\":\"int"))
+    assert(j.contains("\"op\":\"match"))
+    assert(j.contains("\"name\":\"Accepted"))
+    assert(j.contains("\"name\":\"Rejected"))
+}
+
+test "v226 the bare let without a type is the error of the decode (AL-155)" {
+    // the source negative: let x = decode(t) with no expected type around it, not through a condition cell
+    assert(says226(t226_with("журнал(\"turn_counted\")", "пусть x = декодировать(\"7\")"), "the type of the decode does not infer"))
+}
+
+
 // ---- the explicit optional constructor ?expr (AL-156) ------------------------------------------------------------------------------------------
 
 test "v226 the explicit optional constructor ?expr reads and wraps (AL-156)" {

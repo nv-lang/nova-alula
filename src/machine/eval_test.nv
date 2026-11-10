@@ -116,6 +116,40 @@ test "ev some" {
     assert(eis(en(Eq, eopt(lit_int(5)), lit_int(5)), Bool(false)))
 }
 
+test "ev decode fields are reachable (AL-155, section 7a)" {
+    // the value of the decode outcome is an ordinary variant: its fields are read by the ordinary mechanisms
+    match ev_plain(edec(lit_text("7"), "int")) {
+        Ok(v) => match v {
+            Variant { type_name, name, fields } => {
+                assert(type_name == "DecodeOutcome" && name == "Accepted")
+                match record_get(fields, "value") {
+                    Some(x) => assert(value_equal(x, Int(7)))
+                    None => panic("the field value is absent")
+                }
+            }
+            _ => panic("the decode outcome is a variant")
+        }
+        Err(x) => panic("the decode must not fail: ${kind_word(x.kind)}@${x.path}")
+    }
+    match ev_plain(edec(lit_text("true"), "int")) {
+        Ok(v) => match v {
+            Variant { type_name, name, fields } => {
+                assert(type_name == "DecodeOutcome" && name == "Rejected")
+                match record_get(fields, "path") {
+                    Some(p) => assert(value_equal(p, Text("$")))
+                    None => panic("the field path is absent")
+                }
+                match record_get(fields, "reason") {
+                    Some(r) => assert(value_equal(r, Text("expected an int, got a boolean")))
+                    None => panic("the field reason is absent")
+                }
+            }
+            _ => panic("the refused outcome is a variant")
+        }
+        Err(x) => panic("the refusal must not fail: ${kind_word(x.kind)}@${x.path}")
+    }
+}
+
 test "ev decode" {
     // a valid text of the external codec reads into the type and gives the accepted case
     assert(eis(edec(lit_text("7"), "int"), make_decode_ok(Int(7))))

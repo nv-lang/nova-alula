@@ -1356,6 +1356,14 @@ fn contract_register(mut cx TxCx) -> () {
     if !pair_has(cx.env.cases, rejected_word) { pair_add(cx.env.cases, rejected_word, "Rejected") }
     pair_add(cx.env.case_types, accepted_word, "DecodeOutcome")
     pair_add(cx.env.case_types, rejected_word, "DecodeOutcome")
+    // the fields of the two forms (AL-155, section 7а): `Принято { значение }` and `Отказ { путь, причина }` -
+    // registered under the owner forms so that a literal or a pattern finds their JSON names
+    ro value_word = kw(cx.words, "column", "value")
+    ro path_word = kw(cx.words, "readable", "path")
+    ro reason_word = kw(cx.words, "readable", "reason")
+    pair_add(cx.env.fields, "${accepted_word}.${value_word}", "value")
+    pair_add(cx.env.fields, "${rejected_word}.${path_word}", "path")
+    pair_add(cx.env.fields, "${rejected_word}.${reason_word}", "reason")
     for en in contract_data_names() {
         ro word = kw(cx.words, "readable", en)
         if !pair_has(cx.env.globals, word) { pair_add(cx.env.globals, word, en) }
