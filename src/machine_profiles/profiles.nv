@@ -1,0 +1,252 @@
+// profiles.nv - the interaction profiles of the parties as the CODE of the package (the epic 0.29
+// result C, R3). The model and the checked matrix are spec/alula-interaction-profiles.json (the
+// executor of the checks is tools/check-interaction-profiles.py); this module carries the same
+// correspondences into the compiler and the host border, so that the check of a party and the check
+// of its BINDING speak of one and the same profile. The profile does not replace the kind: a machine
+// declares the kind it declares (spec 1); the profile names the lifecycle and the allowed bindings
+// of the next implementation stages (docs/interaction-profiles.md: "это не новая норма языка").
+//
+// What is here:
+//  - `profile_of_kind`: agent -> call, human/enhanced/gatekeeper -> decision, machine ->
+//    managed-call, free_input -> input-only; the locally accepted kind `service` is NOT a kind of
+//    the package (the model: "not_implemented", "не переносится в среду исполнения"): a party or a
+//    binding of that name is refused with the reason;
+//  - `binding_kinds_of_profile`: the binding kinds the profile allows (host_provider for call;
+//    human_principal, policy_authorized_agent for decision; compatible_child_machine for
+//    managed-call; human_input_endpoint for input-only);
+//  - `check_party_profile`: the CONTRACT of the profile over the declaration of the party — the
+//    parts the kind must and must not have (a result for call and managed-call, none for input-only;
+//    a counter for decision; the signals of the gates only for decision) — beside the checks of the
+//    table (check.nv) that keep their place; a disagreement of the two would be caught by the tests
+//    over the examples;
+//  - `check_party_bindings`: the party declarations against the BINDINGS of the host — every
+//    declared party is bound by an allowed binding kind of its profile, nothing else is bound, and
+//    the NAME of a binding carries no authority (a setting_resolved_principal binding does not
+//    become a host_provider by a name: the setting of a gatekeeper resolves the PRINCIPAL, it does
+//    not bind the machine to an executor of its own).
+
+module alula.machine_profiles
+
+import alula.machine_table.{PartyDef, PartyKind, AgentParty, HumanParty, EnhancedParty, GatekeeperParty, FreeInputParty, MachineParty, party_kind_word}
+
+/// ProfileProblem: a refusal of the profile check, with the path of the party and the reason.
+export type ProfileProblem { path str, message str }
+
+/// The word of the party kind, or "" when the word names no kind of the package (the model: the
+/// locally accepted `service` is not a kind here — a binding of that word is refused).
+export fn party_kind_of_word(word str) -> Option[PartyKind] {
+    if word == "agent" { return Some(AgentParty) }
+    if word == "human" { return Some(HumanParty) }
+    if word == "enhanced" { return Some(EnhancedParty) }
+    if word == "gatekeeper" { return Some(GatekeeperParty) }
+    if word == "free_input" { return Some(FreeInputParty) }
+    if word == "machine" { return Some(MachineParty) }
+    None
+}
+
+/// The profile of the kind (the matrix `kinds` of the model): "call", "decision", "managed-call",
+/// "input-only".
+export fn profile_of_kind(kind PartyKind) -> str {
+    match kind {
+        AgentParty => "call"
+        HumanParty => "decision"
+        EnhancedParty => "decision"
+        GatekeeperParty => "decision"
+        MachineParty => "managed-call"
+        FreeInputParty => "input-only"
+    }
+}
+
+/// Does the kind send requests (the same word as the check of the table uses: a result is declared).
+export fn sends_requests(kind PartyKind) -> bool {
+    match kind {
+        AgentParty => true
+        MachineParty => true
+        _ => false
+    }
+}
+
+/// The binding kinds the profile allows (the matrix `kinds.bindings` of the model). The binding kind
+/// names the ROLE of the binder, not the authority: the host grants what a binding may do, and a
+/// name by itself grants nothing.
+export fn binding_kinds_of_profile(profile str) -> []str {
+    if profile == "call" { return ["host_provider"] }
+    if profile == "decision" { return ["human_principal", "policy_authorized_agent", "setting_resolved_principal"] }
+    if profile == "managed-call" { return ["compatible_child_machine"] }
+    if profile == "input-only" { return ["human_input_endpoint"] }
+    []str.new()
+}
+
+/// The kinds that may bind through the binding kind (the inverse of the matrix: which kinds list the
+/// binding among theirs). `host_provider` serves `call` (agent); the decision kinds list
+/// `human_principal` (human, enhanced), `policy_authorized_agent` (enhanced) and
+/// `setting_resolved_principal` (gatekeeper); `compatible_child_machine` serves machine;
+/// `human_input_endpoint` serves free_input.
+export fn kinds_of_binding(binding str) -> []PartyKind {
+    if binding == "host_provider" { return [AgentParty] }
+    if binding == "human_principal" { return [HumanParty, EnhancedParty] }
+    if binding == "policy_authorized_agent" { return [EnhancedParty] }
+    if binding == "setting_resolved_principal" { return [GatekeeperParty] }
+    if binding == "compatible_child_machine" { return [MachineParty] }
+    if binding == "human_input_endpoint" { return [FreeInputParty] }
+    []PartyKind.new()
+}
+
+/// The direct binding of the kind (what the host binds a party of the kind with, in the common case:
+/// the one binding the matrix names first for the profile of the kind).
+export fn default_binding_of_kind(kind PartyKind) -> str {
+    match kind {
+        AgentParty => "host_provider"
+        HumanParty => "human_principal"
+        EnhancedParty => "human_principal"
+        GatekeeperParty => "setting_resolved_principal"
+        MachineParty => "compatible_child_machine"
+        FreeInputParty => "human_input_endpoint"
+    }
+}
+
+// ---- the contract of the profile over the declaration ---------------------------------------------------
+
+/// `check_party_profile`: the parts the party must and must not have by its profile. The check of
+/// the table (check.nv, `check_parties`) keeps its own form checks; this one speaks the words of the
+/// profile, so the machine border and the host border name one and the same thing. A disagreement
+/// between the two checks would surface in the tests over the examples (every example party passes
+/// both).
+export fn check_party_profile(pt PartyDef, path str) -> []ProfileProblem {
+    mut out = []ProfileProblem.new()
+    ro profile = profile_of_kind(pt.kind)
+    // call, managed-call: a typed result is the contract
+    if sends_requests(pt.kind) && pt.result_spec.len() == 0 {
+        out.push(ProfileProblem { path: "${path}.result", message: "the profile ${profile} of the party ${pt.name} needs the type of its result (the kind ${party_kind_word(pt.kind)} answers a typed request)" })
+    }
+    // input-only: no result, no answer rows
+    if pt.kind == FreeInputParty && pt.result_spec.len() > 0 {
+        out.push(ProfileProblem { path: "${path}.result", message: "the profile input-only of the party ${pt.name} takes no result (a free input only sends its declared signal)" })
+    }
+    // decision: the counter of the gates (the human decides by a signal of the gate)
+    if profile == "decision" && pt.counter == "" {
+        out.push(ProfileProblem { path: "${path}.counter", message: "the profile decision of the party ${pt.name} needs the counter of its gate (rule 15)" })
+    }
+    // input-only has no counter
+    if pt.kind == FreeInputParty && pt.counter != "" {
+        out.push(ProfileProblem { path: "${path}.counter", message: "the profile input-only of the party ${pt.name} takes no counter" })
+    }
+    // the signals are of the gates (the profile decision) and of a free input (the declared signal
+    // IS the contract of input-only); a call and a managed-call take none
+    if !profile_of_kind_gate(pt.kind) && pt.kind != FreeInputParty && pt.signals.len() > 0 {
+        out.push(ProfileProblem { path: "${path}.signals", message: "the signals of a party are the signals of a gate (the profile decision) or the declared signal of a free input; the profile ${profile} of the party ${pt.name} takes none" })
+    }
+    // progress parts are only for the call that declares them
+    if profile != "call" && pt.progress.len() > 0 {
+        out.push(ProfileProblem { path: "${path}.progress", message: "the progress parts are of the profile call that declares them; the profile ${profile} of the party ${pt.name} takes none" })
+    }
+    // managed-call names the child machine
+    if pt.kind == MachineParty && pt.nested == "" {
+        out.push(ProfileProblem { path: "${path}.nested", message: "the profile managed-call of the party ${pt.name} names the child machine" })
+    }
+    if pt.kind != MachineParty && pt.nested != "" {
+        out.push(ProfileProblem { path: "${path}.nested", message: "only the profile managed-call names a child machine" })
+    }
+    out
+}
+
+fn profile_of_kind_gate(kind PartyKind) -> bool {
+    match kind {
+        HumanParty => true
+        EnhancedParty => true
+        GatekeeperParty => true
+        _ => false
+    }
+}
+
+// ---- the party declarations against the bindings of the host --------------------------------------------
+
+/// PartyBinding: what the host bound — the name of the party, the binding kind (one of
+/// `binding_kinds_of_profile`), and the target the host chose (the name of a provider, a principal,
+/// a child machine, an endpoint; the TARGET IS OF THE HOST and grants nothing by its name).
+export type PartyBinding { party str, binding str, target str }
+
+/// `check_party_bindings`: the declarations of the parties of a machine against the bindings of the
+/// host. The refusals of the card C, each with its exact reason:
+///  - a declared party with no binding: "the party <name> of the profile <profile> is not bound";
+///  - a binding of a party the machine does not declare: "the host binds the party <name> that the machine does not declare";
+///  - a binding of a kind the profile does not allow: "the binding <binding> of the party <name> is not of its profile <profile> (allowed: ...)";
+///  - a binding named with a word that is no kind of the package (the model: `service` is a local
+///    kind of another project, not carried into this runtime): "the binding <word> names no kind of the package";
+///  - the name of a binding carries no authority: a binding kind outside the profile of the party is
+///    refused even when its target names a provider of the host — the setting of a gatekeeper
+///    resolves the principal, it does not make the gate an executor of the machine.
+export fn check_party_bindings(parties []PartyDef, bindings []PartyBinding) -> []ProfileProblem {
+    mut out = []ProfileProblem.new()
+    // every declared party is bound, by an allowed binding kind
+    for pt in parties {
+        mut bound = false
+        for b in bindings {
+            if b.party != pt.name { continue }
+            ro profile = profile_of_kind(pt.kind)
+            mut allowed = false
+            for a in binding_kinds_of_profile(profile) {
+                if a == b.binding { allowed = true }
+            }
+            if !allowed {
+                ro allowed_words = join_words(binding_kinds_of_profile(profile))
+                out.push(ProfileProblem { path: "$.parties", message: "the binding ${b.binding} of the party ${pt.name} is not of its profile ${profile} (allowed: ${allowed_words}); the name of the binding grants no authority outside the profile" })
+            }
+            bound = true
+        }
+        if !bound {
+            out.push(ProfileProblem { path: "$.parties", message: "the party ${pt.name} of the profile ${profile_of_kind(pt.kind)} is not bound (the host binds it by ${default_binding_of_kind(pt.kind)})" })
+        }
+    }
+    // nothing else is bound: a binding of an undeclared party is an extra capability
+    for b in bindings {
+        mut declared = false
+        for pt in parties {
+            if pt.name == b.party { declared = true }
+        }
+        if !declared {
+            out.push(ProfileProblem { path: "$.parties", message: "the host binds the party ${b.party} that the machine does not declare (an extra capability is refused)" })
+        }
+        // a binding kind that names no kind of the package (the model: service is local, not carried)
+        if b.binding == "service" || party_kind_of_word(b.binding) == None && is_kind_word(b.binding) {
+            out.push(ProfileProblem { path: "$.parties", message: "the binding ${b.binding} names no binding kind of the package (the local kind service of another project is not carried into this runtime)" })
+        }
+    }
+    out
+}
+
+fn is_kind_word(word str) -> bool {
+    for k in ["agent", "human", "enhanced", "gatekeeper", "free_input", "machine", "service"] {
+        if word == k { return true }
+    }
+    false
+}
+
+fn join_words(words []str) -> str {
+    mut out = ""
+    mut first = true
+    for w in words {
+        if !first { out = "${out}, " }
+        out = "${out}${w}"
+        first = false
+    }
+    out
+}
+
+/// `default_bindings`: the bindings of the parties of a machine as the test host makes them (every
+/// declared party with its default binding kind, the target being the name of the party): the common
+/// case of a host that accepts every declared party.
+export fn default_bindings(parties []PartyDef) -> []PartyBinding {
+    mut out = []PartyBinding.new()
+    for pt in parties {
+        out.push(PartyBinding { party: pt.name, binding: default_binding_of_kind(pt.kind), target: pt.name })
+    }
+    out
+}
+
+/// `check_no_service`: the word `service` is not a kind of the package (the matrix: not_implemented,
+/// not carried); a party or a binding of that word is refused where the word arrives.
+export fn check_no_service(word str, path str) -> []ProfileProblem {
+    if word != "service" { return []ProfileProblem.new() }
+    []ProfileProblem.new() + [ProfileProblem { path, message: "the word service names no kind of the package (a local kind of another project, not carried into this runtime; the model interaction-profiles: not_implemented)" }]
+}

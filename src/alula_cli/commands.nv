@@ -10,6 +10,7 @@ import alula.machine_table.{load_machine, parse_machine, issue_text}
 import alula.machine_text.{translate_report_with, translate_checked_with, TranslateReport, error_text, render_summary, render_machine_libs, library_registry, is_library_text, library_paths, library_twin_path, tree_library_paths}
 import alula.machine_run.{AlulaMachine, NestedRegistry, check_registry, run_nested_test, load_alula_machine, parse_test, test_problem, run_test, run_ok, report_text}
 import alula.machine_manifest.{manifest_of, contract_id, artifact_id}
+import alula.machine_profiles.{check_party_profile}
 import alula.machine_typed.{canonical_json_text}
 import std.encoding.json.{Json}
 import alula.machine_table.{MachineParty}
@@ -221,8 +222,41 @@ fn json_issue_lines(text str, file str, no_check bool, registry Registry) -> []s
     lines
 }
 
+
+// The profile line of `alula check`: the parties of the translated machine against the interaction
+// profiles (machine_profiles). Empty when the machine has no profile problem (or when the checks of
+// the table spoke first: the profile check runs only over a machine that passed them).
+fn check_profiles_after(text str, file str, no_check bool, registry Registry, libs []NamedText) -> str {
+    if no_check { return "" }
+    if is_json_file(file) { return "" }
+    ro report = translated(text, false, registry, libs)
+    if report.errors.len() > 0 { return "" }
+    match load_machine(report.json, registry) {
+        Err(_) => return ""
+        Ok(def) => {
+            // the seam of 2.25 keeps its own forms (a human without a counter): the profiles speak
+            // of the parties of 0.29
+            if def.alula_version != "0.29" { return "" }
+            mut out = []str.new()
+            mut i = 0
+            for pt in def.parties {
+                for problem in check_party_profile(pt, "$.parties[${i}]") {
+                    out.push("${file}:1:1: profiles: ${problem.path}: ${problem.message}")
+                }
+                i += 1
+            }
+            if out.len() == 0 { return "" }
+            return lines_text(out)
+        }
+    }
+}
+
 /// `alula check`: a file of Alula (the translation with the checks of the table) or a JSON tree (the decoding with the checks).
 export fn check_command(text str, file str, no_check bool, registry Registry, libs []NamedText) -> CmdResult {
+    // the interaction profiles of the parties (the epic 0.29 result C): after the checks of the table
+    // the parties are checked against their profiles; a refusal is an error at 1:1 like the others
+    ro with_profiles = check_profiles_after(text, file, no_check, registry, libs)
+    if with_profiles != "" { return done("", with_profiles, 1) }
     if is_json_file(file) {
         ro problems = json_issue_lines(text, file, no_check, registry)
         if problems.len() == 0 { return done(ok_line(0), "", 0) }

@@ -1,0 +1,196 @@
+// profiles_test.nv - the tests of the interaction profiles at the machine border (the epic 0.29
+// result C). The positives walk every kind of the package; the negatives are the refusals of the
+// card C, each with its exact reason.
+
+module alula.machine_profiles
+
+import alula.machine.{FieldDef, TextType, TypeSpec, VariantType, Expr}
+import alula.machine_table.{PartyDef, SignalDef, AgentParty, HumanParty, EnhancedParty, GatekeeperParty, FreeInputParty, MachineParty, ParseDef}
+
+// ---- the parties of the tests --------------------------------------------------------------------------
+
+fn party_of(kind PartyKind, name str, with_result bool, with_counter bool, with_signals bool, nested str) -> PartyDef {
+    mut result = []TypeSpec.new()
+    if with_result { result.push(VariantType("Outcome")) }
+    mut counter = ""
+    if with_counter { counter = "attempt" }
+    mut signals = []SignalDef.new()
+    if with_signals { signals.push(SignalDef { name: "resolve", fields: []FieldDef.new() }) }
+    PartyDef {
+        name, id: name, kind,
+        profile: []Expr.new(),
+        signals, progress: []SignalDef.new(),
+        setting: "", nested,
+        input_spec: []TypeSpec.new(), input_fields: []FieldDef.new(),
+        callee_types: []str.new(), result_spec: result,
+        parse: []ParseDef.new(), counter,
+    }
+}
+
+// every kind of the package, in its full declared form
+fn full_parties() -> []PartyDef {
+    mut out = []PartyDef.new()
+    out.push(party_of(AgentParty, "agent", true, true, false, ""))
+    out.push(party_of(HumanParty, "human", false, true, true, ""))
+    out.push(party_of(EnhancedParty, "enhanced", false, true, true, ""))
+    out.push(party_of(GatekeeperParty, "gate", false, true, true, ""))
+    out.push(party_of(MachineParty, "child", true, true, false, "callee"))
+    out.push(party_of(FreeInputParty, "user", false, false, false, ""))
+    out
+}
+
+// ---- the positives --------------------------------------------------------------------------------------
+
+test "pf the matrix of the kinds" {
+    assert(profile_of_kind(AgentParty) == "call")
+    assert(profile_of_kind(HumanParty) == "decision")
+    assert(profile_of_kind(EnhancedParty) == "decision")
+    assert(profile_of_kind(GatekeeperParty) == "decision")
+    assert(profile_of_kind(MachineParty) == "managed-call")
+    assert(profile_of_kind(FreeInputParty) == "input-only")
+    // every kind has a profile and at least one binding kind; the direct binding is among them
+    for k in [AgentParty, HumanParty, EnhancedParty, GatekeeperParty, MachineParty, FreeInputParty] {
+        ro profile = profile_of_kind(k)
+        assert(profile != "")
+        assert(binding_kinds_of_profile(profile).len() > 0)
+        mut among = false
+        for b in binding_kinds_of_profile(profile) {
+            if b == default_binding_of_kind(k) { among = true }
+        }
+        assert(among)
+    }
+    // the inverse agrees: every kind of a binding lists it
+    for b in ["host_provider", "human_principal", "policy_authorized_agent", "setting_resolved_principal", "compatible_child_machine", "human_input_endpoint"] {
+        mut any = false
+        for k in kinds_of_binding(b) {
+            mut among = false
+            for a in binding_kinds_of_profile(profile_of_kind(k)) {
+                if a == b { among = true }
+            }
+            assert(among)
+            any = true
+        }
+        assert(any)
+    }
+}
+
+test "pf every full party passes its profile" {
+    for pt in full_parties() {
+        ro problems = check_party_profile(pt, "$.parties[0]")
+        if problems.len() > 0 { panic("the party ${pt.name}: ${problems[0].message}") }
+    }
+    // and the default bindings of the same parties pass the border
+    ro parties = full_parties()
+    ro problems = check_party_bindings(parties, default_bindings(parties))
+    assert(problems.len() == 0)
+}
+
+// ---- the negatives of the card C ------------------------------------------------------------------------
+
+test "pf a call without a result" {
+    ro pt = party_of(AgentParty, "agent", false, true, false, "")
+    ro problems = check_party_profile(pt, "$.parties[0]")
+    assert(problems.len() == 1)
+    assert(problems[0].message == "the profile call of the party agent needs the type of its result (the kind agent answers a typed request)")
+}
+
+test "pf an input-only with a result or a counter" {
+    ro with_result = party_of(FreeInputParty, "user", true, false, false, "")
+    ro a = check_party_profile(with_result, "$.parties[0]")
+    assert(a.len() == 1)
+    assert(a[0].message == "the profile input-only of the party user takes no result (a free input only sends its declared signal)")
+    ro with_counter = party_of(FreeInputParty, "user", false, true, false, "")
+    ro b = check_party_profile(with_counter, "$.parties[0]")
+    assert(b.len() == 1)
+    assert(b[0].message == "the profile input-only of the party user takes no counter")
+}
+
+test "pf a decision without a counter" {
+    ro pt = party_of(HumanParty, "human", false, false, true, "")
+    ro problems = check_party_profile(pt, "$.parties[0]")
+    assert(problems.len() == 1)
+    assert(problems[0].message == "the profile decision of the party human needs the counter of its gate (rule 15)")
+}
+
+test "pf signals and progress outside their profiles" {
+    // the signals of the gates on a call party
+    ro agent = party_of(AgentParty, "agent", true, true, true, "")
+    ro a = check_party_profile(agent, "$.parties[0]")
+    assert(a.len() == 1)
+    assert(a[0].message == "the signals of a party are the signals of a gate (the profile decision) or the declared signal of a free input; the profile call of the party agent takes none")
+    // the progress parts on a decision party
+    mut human = party_of(HumanParty, "human", false, true, true, "")
+    human.progress = [SignalDef { name: "part", fields: []FieldDef.new() }]
+    ro b = check_party_profile(human, "$.parties[0]")
+    assert(b.len() == 1)
+    assert(b[0].message == "the progress parts are of the profile call that declares them; the profile decision of the party human takes none")
+}
+
+test "pf a managed-call without a child; another kind with one" {
+    ro no_child = party_of(MachineParty, "child", true, true, false, "")
+    ro a = check_party_profile(no_child, "$.parties[0]")
+    assert(a.len() == 1)
+    assert(a[0].message == "the profile managed-call of the party child names the child machine")
+    ro stray = party_of(AgentParty, "agent", true, true, false, "callee")
+    ro b = check_party_profile(stray, "$.parties[0]")
+    assert(b.len() == 1)
+    assert(b[0].message == "only the profile managed-call names a child machine")
+}
+
+test "pb a declared party without a binding" {
+    ro parties = [party_of(AgentParty, "agent", true, true, false, "")]
+    ro problems = check_party_bindings(parties, []PartyBinding.new())
+    assert(problems.len() == 1)
+    assert(problems[0].message == "the party agent of the profile call is not bound (the host binds it by host_provider)")
+}
+
+test "pb a binding of an undeclared party (an extra capability)" {
+    ro parties = [party_of(AgentParty, "agent", true, true, false, "")]
+    ro problems = check_party_bindings(parties, [
+        PartyBinding { party: "agent", binding: "host_provider", target: "provider_a" },
+        PartyBinding { party: "secretary", binding: "host_provider", target: "provider_b" },
+    ])
+    assert(problems.len() == 1)
+    assert(problems[0].message == "the host binds the party secretary that the machine does not declare (an extra capability is refused)")
+}
+
+test "pb a binding outside the profile grants nothing by its name" {
+    // a gate bound as a host provider: the setting of the gate resolves the principal, it does not
+    // make the gate an executor of the machine — the name of the binding carries no authority
+    ro parties = [party_of(GatekeeperParty, "gate", false, true, true, "")]
+    ro problems = check_party_bindings(parties, [PartyBinding { party: "gate", binding: "host_provider", target: "the_real_provider" }])
+    assert(problems.len() == 1)
+    assert(problems[0].message == "the binding host_provider of the party gate is not of its profile decision (allowed: human_principal, policy_authorized_agent, setting_resolved_principal); the name of the binding grants no authority outside the profile")
+    // an input endpoint bound as a child machine: the same refusal
+    ro input_parties = [party_of(FreeInputParty, "user", false, false, false, "")]
+    ro b = check_party_bindings(input_parties, [PartyBinding { party: "user", binding: "compatible_child_machine", target: "callee" }])
+    assert(b.len() == 1)
+    assert(b[0].message.contains("is not of its profile input-only (allowed: human_input_endpoint)"))
+}
+
+test "pb the word service names no kind of the package" {
+    ro problems = check_no_service("service", "$.parties[0].kind")
+    assert(problems.len() == 1)
+    assert(problems[0].message == "the word service names no kind of the package (a local kind of another project, not carried into this runtime; the model interaction-profiles: not_implemented)")
+    assert(check_no_service("agent", "$").len() == 0)
+    // a binding named with a kind word is refused at the border
+    ro parties = [party_of(AgentParty, "agent", true, true, false, "")]
+    ro b = check_party_bindings(parties, [PartyBinding { party: "agent", binding: "service", target: "x" }])
+    // service is not of the profile call either, and it names no binding kind: both are named
+    mut saw_kind = false
+    for p in b {
+        if p.message.contains("names no binding kind of the package") { saw_kind = true }
+    }
+    assert(saw_kind)
+}
+
+test "pb the kinds of the words" {
+    assert(party_kind_of_word("agent").is_some())
+    assert(party_kind_of_word("human").is_some())
+    assert(party_kind_of_word("enhanced").is_some())
+    assert(party_kind_of_word("gatekeeper").is_some())
+    assert(party_kind_of_word("free_input").is_some())
+    assert(party_kind_of_word("machine").is_some())
+    assert(party_kind_of_word("service") == None)
+    assert(party_kind_of_word("robot") == None)
+}
