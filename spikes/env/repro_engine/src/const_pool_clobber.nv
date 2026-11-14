@@ -1,0 +1,28 @@
+module repro_engine.const_pool_clobber
+
+import repro_engine.const_pool_clobber_def.{Recl, make, parse}
+
+// Oracle 0.1.0, item 129 (a working sample, PASS; the defect is NOT REDUCED, as in leak_ab): in the
+// machine unit (src/machine, the merged compilation unit of 20+ files) a match-bound text
+// (`ro text = match typed_json_encode(...) { Ok(t) => t, Err(_) => "" }`) compared DIRECTLY with an
+// escaped string literal flips the generated C of ANOTHER peer file (value_test.nv): `fields[0].name`
+// over a []RecordField is emitted as a cast to the struct of a DIFFERENT two-field record
+// (Nova_DictEntry), and the C does not build. Binding the literal to a `ro` before the comparison
+// avoids it (the dodge is applied in src/machine/typed_test.nv). This two-file repro compiles and
+// runs on 0.1.0, so the clobber needs the bigger unit; see the survey item 129 for the bisect.
+// Expected: PASS (both tests). Actual on 0.1.0: PASS (not reduced). On 0.1.4: PASS.
+
+test "indexed member access over a record list" {
+    ro fields = make()
+    assert(fields[0].name == "a")
+    assert(fields[0].tag == "x")
+}
+
+test "match-bound text compared with an escaped literal" {
+    ro text = match parse(true) { Ok(t) => t, Err(_) => "" }
+    // the shape probed against the machine unit (there it flips the C of value_test.nv on 0.1.0);
+    // in this two-file repro the comparison compiles and runs, so the sample asserts the true value
+    // and stays green: the defect is NOT REDUCED
+    // assert(text == "{\"case\":\"Some\",\"fields\":{\"x\":{\"some\":\"42\"}}}")
+    assert(text == "y")
+}

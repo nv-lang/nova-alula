@@ -1,0 +1,586 @@
+// typed_test.nv - the tests of the typed value contract (typed.nv) against the FIXED vectors of the
+// contract (spec/alula-value-codec.md, "Контрольные векторы"): the bytes and the digests are literals
+// here, the tested code does not derive them. The extra f64 digests were computed once by the model
+// `tools/typed_value_codec.py` (one-off SHA-256 over hand-set bytes, 2026-11-14) and are literals too.
+
+module alula.machine_typed
+
+import alula.machine.{Value, Null, Bool, Int, Float, Text, List, Dict, DictEntry, RecordField, SomeV, SomeBox, make_record, make_dict, make_tuple, make_variant, enum_value, value_equal, value_json}
+
+// The one-line builders of the fields (the vf and the ve of the value tests are peers of alula.machine
+// and are not importable from a sibling module).
+fn vf(name str, value Value) -> RecordField => { name, value }
+
+fn ve(key Value, value Value) -> DictEntry => { key, value }
+
+// ---- helpers -----------------------------------------------------------------------------------------
+
+fn th_bytes(v Value, schema Value, decls Value) -> str {
+    match typed_bytes(v, schema, decls) {
+        Ok(bs) => bytes_hex(bs)
+        Err(m) => "ERR: ${m}"
+    }
+}
+
+fn th_digest(v Value, schema Value, decls Value) -> str {
+    match typed_digest(v, schema, decls) {
+        Ok(d) => d
+        Err(m) => "ERR: ${m}"
+    }
+}
+
+fn th_json(v Value, schema Value, decls Value) -> str {
+    match typed_json_encode(v, schema, decls) {
+        Ok(t) => t
+        Err(m) => "ERR: ${m}"
+    }
+}
+
+fn th_read(text str, schema Value, decls Value) -> str {
+    match typed_json_decode(text, schema, decls) {
+        Ok(v) => value_json(v)
+        Err(m) => "ERR: ${m}"
+    }
+}
+
+// the declarations of the vectors: pkg.A and pkg.B (records with the one field x), pkg.V1 (the case
+// Some with the one optional field), pkg.Mode (the fieldless enum A, B)
+fn th_decls() -> Value {
+    mut x_field = []DictEntry.new()
+    x_field.push(ve(Text("x"), Dict(optional_entry("i64"))))
+    mut a_fields = []DictEntry.new()
+    a_fields.push(ve(Text("x"), Text("i64")))
+    mut decls = []DictEntry.new()
+    decls.push(ve(Text("pkg.A"), Dict(rec_kind(a_fields))))
+    decls.push(ve(Text("pkg.B"), Dict(rec_kind(a_fields))))
+    mut v1_cases = []DictEntry.new()
+    v1_cases.push(ve(Text("Some"), Dict(x_field)))
+    decls.push(ve(Text("pkg.V1"), Dict(var_kind(v1_cases))))
+    mut mode_cases = []DictEntry.new()
+    mode_cases.push(ve(Text("A"), Dict([]DictEntry.new())))
+    mode_cases.push(ve(Text("B"), Dict([]DictEntry.new())))
+    decls.push(ve(Text("pkg.Mode"), Dict(var_kind(mode_cases))))
+    Dict(decls)
+}
+
+fn rec_kind(fields []DictEntry) -> []DictEntry {
+    mut out = []DictEntry.new()
+    out.push(ve(Text("kind"), Text("record")))
+    out.push(ve(Text("fields"), Dict(fields)))
+    out
+}
+
+fn var_kind(cases []DictEntry) -> []DictEntry {
+    mut out = []DictEntry.new()
+    out.push(ve(Text("kind"), Text("variant")))
+    out.push(ve(Text("cases"), Dict(cases)))
+    out
+}
+
+fn optional_entry(inner str) -> []DictEntry {
+    mut out = []DictEntry.new()
+    out.push(ve(Text("optional"), Text(inner)))
+    out
+}
+
+fn one_entry(key str, value Value) -> Value {
+    mut out = []DictEntry.new()
+    out.push(ve(Text(key), value))
+    Dict(out)
+}
+
+fn list_schema(inner Value) -> Value => one_entry("list", inner)
+fn opt_schema(inner Value) -> Value => one_entry("optional", inner)
+
+fn tuple_schema(a Value, b Value) -> Value {
+    mut items = []Value.new()
+    items.push(a)
+    items.push(b)
+    one_entry("tuple", List(items))
+}
+
+fn map_schema(k Value, v Value) -> Value {
+    mut items = []Value.new()
+    items.push(k)
+    items.push(v)
+    one_entry("map", List(items))
+}
+
+fn fullmap_schema(enum_name str, v Value) -> Value {
+    mut items = []Value.new()
+    items.push(Text(enum_name))
+    items.push(v)
+    one_entry("full_map", List(items))
+}
+
+fn intmin_schema(bound str) -> Value => one_entry("int_min", Text(bound))
+
+fn literalset_schema(a str, b str) -> Value {
+    mut words = []Value.new()
+    words.push(Text(a))
+    words.push(Text(b))
+    one_entry("literal_set", List(words))
+}
+
+// ---- the fixed vectors --------------------------------------------------------------------------------
+
+test "tv null" {
+    ro d = th_digest(Null, Text("null"), th_decls())
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w1 = "sha256:ea86c4d25a8869b9d585b0b8ea94c8bde13675774d82d9ede17af430b10d42aa"
+    assert(d == w1)
+    assert(th_bytes(Null, Text("null"), th_decls()) == "4e")
+    assert(th_json(Null, Text("null"), th_decls()) == "null")
+    assert(th_read("null", Text("null"), th_decls()) == "null")
+}
+
+test "tv bool" {
+    ro d = th_digest(Bool(true), Text("bool"), th_decls())
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w2 = "sha256:9efe53517fd0b46dfb21dbd5f6552dfb6f02174c453789aa545a45b37a318803"
+    assert(d == w2)
+    assert(th_bytes(Bool(true), Text("bool"), th_decls()) == "4201")
+    assert(th_bytes(Bool(false), Text("bool"), th_decls()) == "4200")
+}
+
+test "tv i64" {
+    ro d = th_digest(Int(1), Text("i64"), th_decls())
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w3 = "sha256:f126d51495c11d6233a6a018928a1ad62a344de07eaaf9775ffd3888135fae4e"
+    assert(d == w3)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w4 = "490000000000000001"
+    assert(th_bytes(Int(1), Text("i64"), th_decls()) == w4)
+    // the wire of an i64 is the canonical decimal STRING, not a JSON number
+    assert(th_json(Int(1), Text("i64"), th_decls()) == "\"1\"")
+    assert(th_read("\"1\"", Text("i64"), th_decls()) == "1")
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w5 = "-9223372036854775808"
+    assert(th_read("\"-9223372036854775808\"", Text("i64"), th_decls()) == w5)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w6 = "498000000000000000"
+    assert(th_bytes(Int(0 - 9223372036854775807 - 1), Text("i64"), th_decls()) == w6)
+    // the most negative is a legal i64 (the bytes were asserted above)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w7 = "ERR: i64 string outside signed 64-bit range"
+    assert(th_read("\"9223372036854775808\"", Text("i64"), th_decls()) == w7)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w8 = "ERR: expected canonical decimal i64 string"
+    assert(th_read("\"+1\"", Text("i64"), th_decls()) == w8)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w9 = "ERR: expected canonical decimal i64 string"
+    assert(th_read("\"-0\"", Text("i64"), th_decls()) == w9)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w10 = "ERR: expected canonical decimal i64 string"
+    assert(th_read("\"007\"", Text("i64"), th_decls()) == w10)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w11 = "ERR: expected canonical decimal i64 string"
+    assert(th_read("1", Text("i64"), th_decls()) == w11)
+}
+
+test "tv str" {
+    ro d = th_digest(Text("1"), Text("str"), th_decls())
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w12 = "sha256:8546005a741bdb09df588b4daa0ebf0abe3f81d1fd53fae393c5f254d52f72d8"
+    assert(d == w12)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w13 = "53000000000000000131"
+    assert(th_bytes(Text("1"), Text("str"), th_decls()) == w13)
+    // the short escapes and the lower case \\u00xx, `/` is not escaped
+    assert(th_json(Text("a\"b\\c\nd"), Text("str"), th_decls()) == "\"a\\\"b\\\\c\\nd\"")
+    assert(th_json(Text("a/b"), Text("str"), th_decls()) == "\"a/b\"")
+    assert(th_json(Text("a\u{1}b"), Text("str"), th_decls()) == "\"a\\u0001b\"")
+    assert(th_read("\"привет\"", Text("str"), th_decls()) == "\"привет\"")
+}
+
+test "tv list" {
+    ro schema = list_schema(Text("i64"))
+    ro d = th_digest(List([Int(1)]), schema, th_decls())
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w14 = "sha256:6de946c6f9fc52edb75bc7df8d2fdffd2d86396b6d0e230b313aa2466eb157bc"
+    assert(d == w14)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w15 = "4c000000000000000522693634220000000000000001490000000000000001"
+    assert(th_bytes(List([Int(1)]), schema, th_decls()) == w15)
+    // the descriptor is carried even by an EMPTY list
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w16 = "4c000000000000000522693634220000000000000000"
+    assert(th_bytes(List([]Value.new()), schema, th_decls()) == w16)
+}
+
+test "tv tuple" {
+    ro schema = tuple_schema(Text("i64"), Text("str"))
+    ro v = make_tuple([Int(1), Text("a")])
+    ro d = th_digest(v, schema, th_decls())
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w17 = "sha256:c728f34ab735bff907988def54b8fa023f8cca810972ad7f555b899d23e5fc80"
+    assert(d == w17)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w18 = "54000000000000000d5b22693634222c22737472225d000000000000000249000000000000000153000000000000000161"
+    assert(th_bytes(v, schema, th_decls()) == w18)
+    assert(th_json(v, schema, th_decls()) == "[\"1\",\"a\"]")
+    assert(th_read("[\"1\",\"a\"]", schema, th_decls()) == "{\"$tuple\":[1,\"a\"]}")
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w19 = "ERR: expected a tuple of 2 items"
+    assert(th_read("[1]", schema, th_decls()) == w19)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w20 = "ERR: expected a tuple of 2 items"
+    assert(th_read("[1,\"a\",\"b\"]", schema, th_decls()) == w20)
+}
+
+test "tv optional" {
+    ro schema = opt_schema(Text("i64"))
+    ro none = th_digest(Null, schema, th_decls())
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w21 = "sha256:43326dc8abcac04352fec30ffd178ada5827e428c26186ce3a748b4ceb9c13f1"
+    assert(none == w21)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w22 = "4f0000000000000005226936342200"
+    assert(th_bytes(Null, schema, th_decls()) == w22)
+    ro some = th_digest(SomeV(SomeBox { inner: Int(1) }), schema, th_decls())
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w23 = "sha256:eb12a5ad84315deba619ff967a352897e68fc09947f9d0b618d85c961d513d63"
+    assert(some == w23)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w24 = "4f0000000000000005226936342201490000000000000001"
+    assert(th_bytes(SomeV(SomeBox { inner: Int(1) }), schema, th_decls()) == w24)
+    assert(th_json(Null, schema, th_decls()) == "{\"none\":true}")
+    assert(th_json(SomeV(SomeBox { inner: Int(1) }), schema, th_decls()) == "{\"some\":\"1\"}")
+    assert(th_read("{\"none\":true}", schema, th_decls()) == "null")
+    assert(th_read("{\"some\":\"1\"}", schema, th_decls()) == "{\"$some\":1}")
+    assert(th_read("{\"some\":1,\"none\":true}", schema, th_decls()) == "ERR: an optional is {\"none\": true} or {\"some\": <value>}")
+    assert(th_read("{\"none\":1}", schema, th_decls()) == "ERR: the \"none\" of an optional is true")
+    // a bare value at an optional position is NOT coerced (the contract: no coercion)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w25 = "ERR: optional uses none/some wrapper"
+    assert(th_bytes(Int(1), schema, th_decls()) == w25)
+    // ??T: the three forms are distinct over the full JSON roundtrip
+    ro deep = opt_schema(opt_schema(Text("i64")))
+    assert(th_read("{\"some\":{\"none\":true}}", deep, th_decls()) == "{\"$some\":null}")
+    assert(th_read("{\"some\":{\"some\":\"1\"}}", deep, th_decls()) == "{\"$some\":{\"$some\":1}}")
+    ro sn = match typed_json_decode("{\"some\":{\"none\":true}}", deep, th_decls()) { Ok(v) => v, Err(_) => Null }
+    assert(th_digest(sn, deep, th_decls()) != th_digest(Null, deep, th_decls()))
+}
+
+test "tv record" {
+    ro schema = one_entry("record", Text("pkg.A"))
+    ro v = make_record("pkg.A", [vf("x", Int(1))])
+    ro d = th_digest(v, schema, th_decls())
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w26 = "sha256:c18a00bd335b1c2e769edd475e6a6b2f1715b4833156619fcf15f65c89aa1fd0"
+    assert(d == w26)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w27 = "520000000000000005706b672e410000000000000001000000000000000178490000000000000001"
+    assert(th_bytes(v, schema, th_decls()) == w27)
+    // the same shape under another declared name is another digest
+    ro vb = make_record("pkg.B", [vf("x", Int(1))])
+    ro db = th_digest(vb, one_entry("record", Text("pkg.B")), th_decls())
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w28 = "sha256:f2f0376516c294c44bfa493b13cc45d8baeb5997a9e58da182b173a16fda17e1"
+    assert(db == w28)
+    assert(th_json(v, schema, th_decls()) == "{\"x\":\"1\"}")
+    assert(th_read("{\"x\":\"1\"}", schema, th_decls()) == "{\"$record\":\"pkg.A\",\"fields\":{\"x\":1}}")
+    assert(th_read("{\"x\":\"1\",\"y\":2}", schema, th_decls()) == "ERR: the field \"y\" is not declared in pkg.A")
+    assert(th_read("{}", schema, th_decls()) == "ERR: the field \"x\" of pkg.A is absent")
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w29 = "ERR: the record value is not of the declared type pkg.A"
+    assert(th_bytes(make_record("pkg.B", [vf("x", Int(1))]), schema, th_decls()) == w29)
+}
+
+test "tv f64 vectors" {
+    ro schema = Text("f64")
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w30 = "4600000000000000042d302e30"
+    assert(th_bytes(Float(-0.0), schema, th_decls()) == w30)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w31 = "sha256:e2fcecc4e56d14a2049e1797484760e3364868f950c5bb1ac17d7831cf648704"
+    assert(th_digest(Float(-0.0), schema, th_decls()) == w31)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w32 = "460000000000000003302e30"
+    assert(th_bytes(Float(0.0), schema, th_decls()) == w32)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w33 = "sha256:2b80404fb011ead8ae5cb9545a2a89a1b1f1f48455b1529c7700d9b9249ee516"
+    assert(th_digest(Float(0.0), schema, th_decls()) == w33)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w34 = "sha256:fe4460b654e3b3d2c376686bc5de8263df70332f22a23237bb4a468a0c2e4ae8"
+    assert(th_digest(Float(f64.from_bits(0x7ff8000000000000 as u64)), schema, th_decls()) == w34)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w35 = "sha256:d611988263ab0d000d5648b694c66436b82edd3e6e31d8fae810a408a6142be5"
+    assert(th_digest(Float(f64.from_bits(0x7ff0000000000000 as u64)), schema, th_decls()) == w35)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w36 = "sha256:f3f40eaf25087768bf640b3970c98daad123b3db2ea24c509df6876d835fd19b"
+    assert(th_digest(Float(f64.from_bits(0xfff0000000000000 as u64)), schema, th_decls()) == w36)
+    // a NaN with a payload collapses to the same digest (the payload is discarded)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w37 = "sha256:fe4460b654e3b3d2c376686bc5de8263df70332f22a23237bb4a468a0c2e4ae8"
+    assert(th_digest(Float(f64.from_bits(0x7ff8000dead00001 as u64)), schema, th_decls()) == w37)
+}
+
+test "tv f64 canonical tokens" {
+    // the literals are from the model tools/typed_value_codec.py (one-off, 2026-11-14)
+    ro schema = Text("f64")
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w38 = "460000000000000003322e35"
+    assert(th_bytes(Float(2.5), schema, th_decls()) == w38)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w39 = "sha256:22223d91d246b2cff04caf2ed1595db9c7be9e1216b93f391cde14c95a6248ae"
+    assert(th_digest(Float(2.5), schema, th_decls()) == w39)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w40 = "sha256:63e84db867efbe60a77f29aca779d0aee5cc1af693cc9e3b0887dfa8cf18ed61"
+    assert(th_digest(Float(0 - 2.5), schema, th_decls()) == w40)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w41 = "sha256:4cd12cc6caac438c5dad92183ae15d08a0c8f808906231fb12fbfd45cbb10a49"
+    assert(th_digest(Float(0.1), schema, th_decls()) == w41)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w42 = "sha256:9685c5917aae723c014d84a49057ff213929f843286324dec07ee12ee7a94ae8"
+    assert(th_digest(Float(123456789.0), schema, th_decls()) == w42)
+    // the notation thresholds: fixed for -6 <= e < 21, scientific outside
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w43 = "sha256:910a96b932af667877528f2b692bae1e5c0e401a36ca88eeec659f2a816e6ea8"
+    assert(th_digest(Float(1.5e20), schema, th_decls()) == w43)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w44 = "sha256:91b53418045466a832f865cc919ece1ea96186bab6700300ee7c35cdceda6f20"
+    assert(th_digest(Float(1e-7), schema, th_decls()) == w44)
+    // the bounds of the domain of binary64: the subnormal and the maximum finite, decoded EXACTLY
+    // from the JSON text (the digest pins the binary64, not a near value)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w45 = "sha256:18d803f94ce7373e94edddb84c9a3a8bc798d6e5cbf066b6f9acc71bc5c3b4e7"
+    assert(th_digest(Float(5e-324), schema, th_decls()) == w45)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w46 = "sha256:276f965ec47f9b2371684ea874ba719562095ebc1423f45b97857638b66ce0fc"
+    assert(th_digest(Float(1.7976931348623157e308), schema, th_decls()) == w46)
+    ro sub = match typed_json_decode("5e-324", schema, th_decls()) { Ok(v) => v, Err(_) => Null }
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w47 = "sha256:18d803f94ce7373e94edddb84c9a3a8bc798d6e5cbf066b6f9acc71bc5c3b4e7"
+    assert(th_digest(sub, schema, th_decls()) == w47)
+    ro top = match typed_json_decode("1.7976931348623157e308", schema, th_decls()) { Ok(v) => v, Err(_) => Null }
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w48 = "sha256:276f965ec47f9b2371684ea874ba719562095ebc1423f45b97857638b66ce0fc"
+    assert(th_digest(top, schema, th_decls()) == w48)
+    // a JSON decimal that is near but not equal (the next representable below the maximum) is refused
+    // by the digest of a DIFFERENT value, not silently rounded into it
+    ro near = match typed_json_decode("1.7976931348623155e308", schema, th_decls()) { Ok(v) => v, Err(_) => Null }
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w49 = "sha256:276f965ec47f9b2371684ea874ba719562095ebc1423f45b97857638b66ce0fc"
+    assert(th_digest(near, schema, th_decls()) != w49)
+    // the JSON form keeps the sign of a zero and reads back to the same binary64
+    assert(th_json(Float(-0.0), schema, th_decls()) == "-0.0")
+    ro back = match typed_json_decode("-0.0", schema, th_decls()) { Ok(v) => v, Err(_) => Null }
+    match back {
+        Float(x) => assert(1.0 / x < 0.0)
+        _ => assert(false)
+    }
+    // the $float tag roundtrip
+    assert(th_json(Float(f64.from_bits(0x7ff8000000000000 as u64)), schema, th_decls()) == "{\"$float\":\"NaN\"}")
+    assert(th_json(Float(f64.from_bits(0x7ff0000000000000 as u64)), schema, th_decls()) == "{\"$float\":\"Infinity\"}")
+    assert(th_json(Float(f64.from_bits(0xfff0000000000000 as u64)), schema, th_decls()) == "{\"$float\":\"-Infinity\"}")
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w50 = "4600000000000000034e614e"
+    assert(th_bytes(match typed_json_decode("{\"$float\":\"NaN\"}", schema, th_decls()) { Ok(v) => v, Err(_) => Null }, schema, th_decls()) == w50)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w51 = "ERR: expected a float"
+    assert(th_read("{\"$float\":\"pi\"}", schema, th_decls()) == w51)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w52 = "ERR: expected a float"
+    assert(th_read("{\"$float\":1}", schema, th_decls()) == w52)
+    // 1e999 does not become a non-finite: the parser refuses the text
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w53 = "ERR: not valid JSON"
+    assert(th_read("1e999", schema, th_decls()) == w53)
+}
+
+test "tv int_min and literal_set" {
+    ro bound = intmin_schema("1")
+    ro d = th_digest(Int(1), bound, th_decls())
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w54 = "sha256:c2fefc80109beb5c07151a390e0d325484b8947615fe5265b42b4ab89a360d3c"
+    assert(d == w54)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w55 = "4a000000000000000f7b22696e745f6d696e223a2231227d0000000000000001"
+    assert(th_bytes(Int(1), bound, th_decls()) == w55)
+    assert(th_json(Int(1), bound, th_decls()) == "\"1\"")
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w56 = "ERR: value outside bounded i64"
+    assert(th_bytes(Int(0), bound, th_decls()) == w56)
+    ro words = literalset_schema("a", "b")
+    ro dw = th_digest(Text("a"), words, th_decls())
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w57 = "sha256:722ddc641d5492aa837b80fc1c785dc05039b4d77fbb4247feb8f49f203d6de5"
+    assert(dw == w57)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w58 = "4300000000000000197b226c69746572616c5f736574223a5b2261222c2262225d7d000000000000000161"
+    assert(th_bytes(Text("a"), words, th_decls()) == w58)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w59 = "ERR: value outside literal set"
+    assert(th_bytes(Text("c"), words, th_decls()) == w59)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w60 = "ERR: value outside literal set"
+    assert(th_read("\"c\"", words, th_decls()) == w60)
+    // the descriptor of the bound and of the set is inside the bytes (the 0f and the 19 lengths above)
+}
+
+test "tv map and full_map" {
+    ro schema = map_schema(Text("str"), Text("i64"))
+    ro v = make_dict([ve(Text("a"), Int(1))])
+    ro d = th_digest(v, schema, th_decls())
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w61 = "sha256:94c94f53b028c8150506f07afe04ed57faac5184062ec865b55bc07749e3caee"
+    assert(d == w61)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w62 = "4d00000000000000052273747222000000000000000522693634220000000000000001000000000000000a530000000000000001610000000000000009490000000000000001"
+    assert(th_bytes(v, schema, th_decls()) == w62)
+    assert(th_json(v, schema, th_decls()) == "[[\"a\",\"1\"]]")
+    // a repeated key never enters a Value dict (the builder takes the last value); the refusal of the
+    // wire belongs to the decode of the pairs
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w63 = "ERR: the key of the map is repeated"
+    assert(th_read("[[\"a\",\"1\"],[\"a\",\"2\"]]", schema, th_decls()) == w63)
+    // the pairs are sorted by the canonical key bytes, whatever the order of the record
+    ro two = th_digest(make_dict([ve(Text("a"), Int(1)), ve(Text("b"), Int(2))]), schema, th_decls())
+    ro reordered = th_digest(make_dict([ve(Text("b"), Int(2)), ve(Text("a"), Int(1))]), schema, th_decls())
+    assert(reordered == two)
+    // full_map: every case exactly once, sorted by the key bytes
+    ro fm = fullmap_schema("pkg.Mode", Text("str"))
+    ro fv = make_dict([DictEntry { key: enum_value("pkg.Mode", "A"), value: Text("a") }, DictEntry { key: enum_value("pkg.Mode", "B"), value: Text("b") }])
+    ro fd = th_digest(fv, fm, th_decls())
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w64 = "sha256:5fcc7efd21a9b158818eaf8aa50e8cf6c46c298eb20ed28d113a7c7cba68a823"
+    assert(fd == w64)
+    ro freordered = make_dict([DictEntry { key: enum_value("pkg.Mode", "B"), value: Text("b") }, DictEntry { key: enum_value("pkg.Mode", "A"), value: Text("a") }])
+    assert(th_digest(freordered, fm, th_decls()) == fd)
+    ro partial = make_dict([DictEntry { key: enum_value("pkg.Mode", "A"), value: Text("a") }])
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w65 = "ERR: full_map must contain all enum cases"
+    assert(th_bytes(partial, fm, th_decls()) == w65)
+    assert(th_json(fv, fm, th_decls()) == "[[{\"case\":\"A\",\"fields\":{}},\"a\"],[{\"case\":\"B\",\"fields\":{}},\"b\"]]")
+}
+
+test "tv variant" {
+    ro schema = one_entry("variant", Text("pkg.V1"))
+    ro v = make_variant("pkg.V1", "Some", [vf("x", Null)])
+    ro d = th_digest(v, schema, th_decls())
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w66 = "sha256:0d08faee15cc92ab8267c0e48e5626adb0d32d3e1249393244bcf6d954c5d0f7"
+    assert(d == w66)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w67 = "560000000000000006706b672e56310000000000000004536f6d6500000000000000010000000000000001784f0000000000000005226936342200"
+    assert(th_bytes(v, schema, th_decls()) == w67)
+    assert(th_json(v, schema, th_decls()) == "{\"case\":\"Some\",\"fields\":{\"x\":{\"none\":true}}}")
+    assert(th_read("{\"case\":\"Some\",\"fields\":{\"x\":{\"none\":true}}}", schema, th_decls()) == "{\"$variant\":\"pkg.V1\",\"name\":\"Some\",\"fields\":{\"x\":null}}")
+    assert(th_read("{\"case\":\"Nope\",\"fields\":{}}", schema, th_decls()) == "ERR: \"Nope\" is not a case of pkg.V1")
+    // a fieldless case travels as {"case": C, "fields": {}}
+    ro mode = one_entry("variant", Text("pkg.Mode"))
+    ro av = enum_value("pkg.Mode", "A")
+    assert(th_json(av, mode, th_decls()) == "{\"case\":\"A\",\"fields\":{}}")
+    assert(th_read("{\"case\":\"B\",\"fields\":{}}", mode, th_decls()) == "{\"$variant\":\"pkg.Mode\",\"name\":\"B\"}")
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w68 = "560000000000000008706b672e4d6f64650000000000000001410000000000000000"
+    assert(th_bytes(av, mode, th_decls()) == w68)
+}
+
+// ---- the alias, the recursion, and the negatives of the validation -------------------------------------
+
+test "tv alias" {
+    // the alias wraps: Y + text(name) + blob(base bytes)
+    mut decls = []DictEntry.new()
+    decls.push(ve(Text("pkg.I"), alias_decl(Text("i64"))))
+    ro dv = Dict(decls)
+    ro schema = named_entry("pkg.I")
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w69 = "590000000000000005706b672e490000000000000009490000000000000001"
+    assert(th_bytes(Int(1), schema, dv) == w69)
+    assert(th_json(Int(1), schema, dv) == "\"1\"")
+    // the cycle of aliases is refused
+    mut cyc = []DictEntry.new()
+    cyc.push(ve(Text("pkg.X"), alias_decl(named_entry("pkg.Y"))))
+    cyc.push(ve(Text("pkg.Y"), alias_decl(named_entry("pkg.X"))))
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w70 = "ERR: malformed or recursive alias"
+    assert(th_bytes(Int(1), named_entry("pkg.X"), Dict(cyc)) == w70)
+}
+
+test "tv recursive declarations" {
+    // the recursion of records by name is allowed; the empty list of the recursive field is validated first
+    mut fields = []DictEntry.new()
+    fields.push(ve(Text("next"), opt_schema(one_entry("record", Text("pkg.N")))))
+    fields.push(ve(Text("tag"), Text("str")))
+    mut decls = []DictEntry.new()
+    decls.push(ve(Text("pkg.N"), Dict(rec_kind(fields))))
+    ro dv = Dict(decls)
+    ro schema = one_entry("record", Text("pkg.N"))
+    ro leaf = make_record("pkg.N", [vf("tag", Text("end")), vf("next", Null)])
+    assert(th_json(leaf, schema, dv) == "{\"next\":{\"none\":true},\"tag\":\"end\"}")
+    ro back = match typed_json_decode("{\"next\":{\"none\":true},\"tag\":\"end\"}", schema, dv) { Ok(v) => v, Err(_) => Null }
+    assert(value_equal(back, leaf))
+}
+
+test "tv validation negatives" {
+    // the descriptor and the declarations are checked BEFORE the value (an empty list and none included)
+    ro decls = th_decls()
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w71 = "ERR: unknown primitive"
+    assert(th_bytes(Int(1), Text("i64x"), decls) == w71)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w72 = "ERR: unknown schema constructor"
+    assert(th_bytes(Int(1), one_entry("nope", Text("i64")), decls) == w72)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w73 = "ERR: malformed schema descriptor"
+    assert(th_bytes(List([]Value.new()), one_entry("tuple", Text("i64")), decls) == w73)
+    mut one = []Value.new()
+    one.push(Text("i64"))
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w74 = "ERR: tuple descriptor must have at least two ordered types"
+    assert(th_bytes(List([]Value.new()), one_entry("tuple", List(one)), decls) == w74)
+    mut words = []Value.new()
+    words.push(Text("b"))
+    words.push(Text("a"))
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w75 = "ERR: literal_set values must be unique and sorted"
+    assert(th_bytes(Text("a"), one_entry("literal_set", List(words)), decls) == w75)
+    // the unknown declared name, the mismatched kind
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w76 = "ERR: unknown or mismatched declared type"
+    assert(th_bytes(Int(1), one_entry("record", Text("pkg.Nope")), decls) == w76)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w77 = "ERR: unknown or mismatched declared type"
+    assert(th_bytes(Int(1), one_entry("variant", Text("pkg.A")), decls) == w77)
+    // full_map over a variant with fields, over a record
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w78 = "ERR: full_map key type must be a non-empty fieldless variant"
+    assert(th_bytes(Null, fullmap_schema("pkg.V1", Text("str")), decls) == w78)
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w79 = "ERR: full_map key type must be a non-empty fieldless variant"
+    assert(th_bytes(Null, fullmap_schema("pkg.A", Text("str")), decls) == w79)
+    // a value is read only after the schema passes: an empty optional of a BAD schema is still refused
+    // ORACLE-WORKAROUND(129): the literal bound to a `ro` before the comparison (const_pool_clobber)
+    ro w80 = "ERR: unknown primitive"
+    assert(th_bytes(Null, opt_schema(Text("i64x")), decls) == w80)
+}
+
+test "tv json roundtrip compound" {
+    // encode -> decode -> digest is stable on a compound value
+    ro schema = one_entry("variant", Text("pkg.V1"))
+    ro v = make_variant("pkg.V1", "Some", [vf("x", SomeV(SomeBox { inner: Int(42) }))])
+    ro text = match typed_json_encode(v, schema, th_decls()) { Ok(t) => t, Err(_) => "" }
+    // ORACLE-WORKAROUND(129): the whole contract lives in its OWN unit (a sibling module) because in
+    // the merged machine unit an escaped literal compared against a match-bound text flipped the
+    // generated C of the peer value_test.nv (fields[0].name cast to Nova_DictEntry, CC-FAIL on 0.1.0);
+    // the small unit builds and runs green on 0.1.0 AND on 0.1.4; repro_engine const_pool_clobber
+    // (the two-file repro does not reduce it)
+    ro want = "{\"case\":\"Some\",\"fields\":{\"x\":{\"some\":\"42\"}}}"
+    assert(text == want)
+    ro back = match typed_json_decode(text, schema, th_decls()) { Ok(x) => x, Err(_) => Null }
+    assert(value_equal(back, v))
+    assert(th_digest(back, schema, th_decls()) == th_digest(v, schema, th_decls()))
+}
+
+// ---- the declarations of the alias for the tests -------------------------------------------------------
+
+fn alias_decl(t Value) -> Value {
+    mut out = []DictEntry.new()
+    out.push(ve(Text("kind"), Text("alias")))
+    out.push(ve(Text("type"), t))
+    Dict(out)
+}
+
+fn named_entry(name str) -> Value => one_entry("named", Text(name))

@@ -1,0 +1,28 @@
+module repro_engine.fixarr_to_vec_arg_boxed
+
+// The B side of the A/B pair (survey item 128): the bytes of the fixed [32]u8 are copied out by
+// index into a fresh []u8 before the call. Expected PASS on 0.1.0 and on 0.1.4.
+
+import std.crypto.sha256.{Sha256}
+
+fn hex_of(data []u8) -> str {
+    ro table = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f"]
+    mut out = ""
+    for b in data { out = "${out}${table[(b >> 4) as int]}${table[(b & 15) as int]}" }
+    out
+}
+
+fn bytes_of(digest [32]u8) -> []u8 {
+    mut out = []u8.new()
+    mut i = 0
+    while i < 32 { out.push(digest[i]); i += 1 }
+    out
+}
+
+fn main() {
+    mut data = []u8.new()
+    for c in "alula-value-digest".chars() { data.push(c as u8) }
+    data.push(0 as u8)
+    data.push(0x4e as u8)
+    println("null digest = ${hex_of(bytes_of(Sha256.hash(data)))}")
+}

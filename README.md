@@ -54,6 +54,7 @@ One folder under `src/` is one module `alula.<folder>` and one unit of tests (Or
 | Module | What it is |
 |---|---|
 | `alula.engine` | the state machine engine: `Machine[S]`, `Engine`, the effects `Journal`, `Store`, `Link`, the journal line and the snapshot, in-memory handlers ([README](src/engine/README.md)) |
+| `alula.machine_typed` | the general typed value contract of the integration (spec 017): the descriptors, the typed JSON, the canonical bytes and the digest of a value; the fixed vectors of the contract ([README](src/machine_typed/README.md)) |
 | `alula.machine` | the core of the machines: the dynamic `Value`, the types, the tree of an expression, the pure evaluator, the registry of the primitives of the host and the table of the journal codes (the language names two primitives and 35 codes, a host gives the rest as data: `registry.md`, `journal.md`), and the schemas `schema/` compiled in ([README](src/machine/README.md)) |
 | `alula.examples` | tests only: the examples (`examples/`: 15 machines as JSON, 10 as tables, 66 tests, `registry.md`, `journal.md`) and the registry of the samples of the specification, embedded into the tests |
 | `alula.machine_table` | the model of a machine, the decoder of the tree `machine/2`, the type syntax, the checks of a table |

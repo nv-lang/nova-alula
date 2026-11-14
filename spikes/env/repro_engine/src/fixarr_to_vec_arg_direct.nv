@@ -1,0 +1,25 @@
+module repro_engine.fixarr_to_vec_arg_direct
+
+// Oracle 0.1.0 AND 0.1.4, survey item 128 `fixarr_to_vec_arg`: the FIXED array returned by a std
+// function cannot be passed as the argument of a slice parameter. `Sha256.hash(data []u8) -> [32]u8`
+// handed straight into `hex_of(data []u8)` breaks the C: the fixed-array struct is passed where the
+// Vec pointer is expected. Expected: PASS (prints the digest). Actual on 0.1.0 and 0.1.4: CC-FAIL.
+// The A side of the A/B pair; the B side (boxed.nv, the copy by index) is green on both.
+
+import std.crypto.sha256.{Sha256}
+
+fn hex_of(data []u8) -> str {
+    ro table = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f"]
+    mut out = ""
+    for b in data { out = "${out}${table[(b >> 4) as int]}${table[(b & 15) as int]}" }
+    out
+}
+
+fn main() {
+    mut data = []u8.new()
+    for c in "alula-value-digest".chars() { data.push(c as u8) }
+    data.push(0 as u8)
+    data.push(0x4e as u8)
+    // the fixed [32]u8 result of Sha256.hash is passed DIRECTLY into the []u8 parameter
+    println("null digest = ${hex_of(Sha256.hash(data))}")
+}

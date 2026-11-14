@@ -1,0 +1,2189 @@
+// typed.nv - the general typed value contract of the integration (spec/alula-value-codec.md, task 017;
+// the runtime half is the remainder of the result A of the epic 0.29). The module is a SIBLING of
+// alula.machine (one folder is one module and one unit of tests; the contract gets its own unit, see the
+// survey item 129). The contract is a profile of its
+// own, kept apart from the language codec of the answer of a party `agent` (AL-153, decode.nv): there an
+// int is a JSON number and specials are refused; here (the contract) an i64 travels as a canonical
+// decimal JSON STRING and NaN/infinities travel in the `$float` tags. Both read records, variants and
+// optionals the same way. The narrowing of the language (finite f64, JSON-number ints) is declared by the
+// specification, not silent.
+//
+// Three artifacts over one domain, in the order the contract defines them:
+//  - `typed_validate(schema, declarations)` - the full table of declarations (alias/record/variant) and
+//    the root descriptor are resolved and checked BEFORE any value is read (empty containers and
+//    `none` included);
+//  - `typed_json_encode` / `typed_json_decode` - the typed JSON of the contract (the table "Типизированное
+//    представление"): records are objects by the declared fields, a variant is `{"case", "fields"}` with
+//    `fields: {}` for a fieldless case, an optional is `{"none": true}` / `{"some": v}` with full nesting,
+//    an i64 is a canonical decimal string, a finite f64 is a JSON number with the sign of a zero kept,
+//    NaN/±Inf are the `$float` tags, a map and a full_map are arrays of pairs;
+//  - `typed_bytes` / `typed_digest` - the schema-aware canonical bytes (the markers N B I J F S C U L T O
+//    M G R V Y, the u64 big-endian lengths, the descriptor carried by list/tuple/optional/map/full_map
+//    even when the container is empty or `none`) and the digest
+//    `sha256:hex(SHA-256(ASCII("alula-value-digest") || 00 || bytes))`.
+//
+// The reference of the semantics is the model `tools/typed_value_codec.py`; the fixed vectors of the
+// contract are asserted as literals in `typed_test.nv` (the tested code does not derive them).
+
+module alula.machine_typed
+
+import std.encoding.json.{Json, JsonValue, JsonObject}
+import std.crypto.sha256.{Sha256}
+import alula.machine.{Value, Null, Bool, Int, Float, Text, List, Dict, DictEntry, RecordField, SomeV, SomeBox, make_record, make_dict, make_tuple, make_variant, enum_value, value_equal, value_json, is_uuid}
+
+// The private comparisons of value.nv are one-liners; the contract module keeps its own copies
+// (a sibling module sees only the exports of alula.machine).
+fn cmp_int(a int, b int) -> int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    0
+}
+
+fn cmp_text(a str, b str) -> int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    0
+}
+
+// ---- small constants and byte helpers -----------------------------------------------------------------
+
+const I64_MAX = 9223372036854775807
+
+fn i64_min() -> int => 0 - I64_MAX - 1
+
+const TYPED_MAX_DEPTH = 64
+
+// One lower case hex digit (for the digest text and the `\u00xx` escapes), by its value 0..15.
+fn hex_char(n int) -> str {
+    if n < 10 { return "${n}" }
+    if n == 10 { return "a" }
+    if n == 11 { return "b" }
+    if n == 12 { return "c" }
+    if n == 13 { return "d" }
+    if n == 14 { return "e" }
+    "f"
+}
+
+fn u64_bytes(n int) -> []u8 {
+    mut out = []u8.new()
+    mut shift = 56
+    while shift >= 0 {
+        out.push(((n >> shift) & 0xFF) as u8)
+        shift -= 8
+    }
+    out
+}
+
+// Two's complement big-endian of a signed i64: the arithmetic shift keeps the sign, the mask takes the byte.
+fn i64_bytes(n int) -> []u8 {
+    mut out = []u8.new()
+    mut shift = 56
+    while shift >= 0 {
+        out.push(((n >> shift) & 0xFF) as u8)
+        shift -= 8
+    }
+    out
+}
+
+fn blob_of(data []u8) -> []u8 {
+    mut out = u64_bytes(data.len())
+    for b in data { out.push(b) }
+    out
+}
+
+fn text_blob(s str) -> []u8 => blob_of(s.bytes())
+
+fn cmp_bytes(a []u8, b []u8) -> int {
+    mut i = 0
+    while i < a.len() && i < b.len() {
+        if a[i] != b[i] { return cmp_int(a[i] as int, b[i] as int) }
+        i += 1
+    }
+    cmp_int(a.len(), b.len())
+}
+
+fn bytes_hex(data []u8) -> str {
+    mut out = ""
+    for b in data { out = "${out}${hex_char((b >> 4) as int)}${hex_char((b & 15) as int)}" }
+    out
+}
+
+// The 16 raw bytes of a canonical id (8-4-4-4-12 lower case hex, `is_uuid` of types.nv checked it already).
+fn id_bytes(s str) -> []u8 {
+    mut out = []u8.new()
+    ro bs = s.bytes()
+    mut i = 0
+    while i < bs.len() {
+        ro hi = hex_digit(bs[i])
+        ro lo = hex_digit(bs[i + 1])
+        out.push(((hi << 4) | lo) as u8)
+        i += 2
+    }
+    out
+}
+
+fn hex_digit(b u8) -> int {
+    if b >= 0x30 as u8 && b <= 0x39 as u8 { return b as int - 0x30 }
+    b as int - 0x57 // a..f lower case
+}
+
+// ---- text forms ---------------------------------------------------------------------------------------
+
+// A text holds only Unicode scalar values: in UTF-8 a surrogate can only appear as the WTF-8 encoding
+// ED A0..BF .., which the JSON parser may produce from a lone `\uD800..` escape. Such a text is refused.
+fn has_surrogate(s str) -> bool {
+    ro bs = s.bytes()
+    mut i = 0
+    while i + 1 < bs.len() {
+        if bs[i] == 0xED as u8 && bs[i + 1] >= 0xA0 as u8 && bs[i + 1] <= 0xBF as u8 { return true }
+        i += 1
+    }
+    false
+}
+
+// The JSON string literal of the contract: UTF-8 as it is (no ASCII escaping, `/` not escaped), the short
+// escapes for the six named controls, the lower case `\u00xx` for the other U+0000..U+001F.
+fn json_str_literal(s str) -> str {
+    mut out = "\""
+    for c in s.chars() {
+        ro one = "${c}"
+        ro bs = one.bytes()
+        ro b0 = bs[0]
+        if b0 == 0x22 as u8 { out = "${out}\\\"" }
+        else if b0 == 0x5c as u8 { out = "${out}\\\\" }
+        else if b0 == 0x08 as u8 { out = "${out}\\b" }
+        else if b0 == 0x0c as u8 { out = "${out}\\f" }
+        else if b0 == 0x0a as u8 { out = "${out}\\n" }
+        else if b0 == 0x0d as u8 { out = "${out}\\r" }
+        else if b0 == 0x09 as u8 { out = "${out}\\t" }
+        else if b0 < 0x20 as u8 {
+            out = "${out}\\u00${hex_char((b0 >> 4) as int)}${hex_char((b0 & 15) as int)}"
+        } else {
+            out = "${out}${one}"
+        }
+    }
+    "${out}\""
+}
+
+// ---- canonical f64 ------------------------------------------------------------------------------------
+
+// The ASCII token of the contract ("Canonical f64"): `NaN`, `Infinity`, `-Infinity`, `-0.0` / `0.0`; a
+// finite non-zero number is the shortest round-tripping decimal, fixed notation for the decimal exponent
+// of the first significant digit in -6 <= e < 21, scientific otherwise (one digit before the point, the
+// explicit sign of the order, a leading `-` only for the sign of the value). The shortest digits come
+// from `f64.to_str()`; only the notation is re-framed here. The tie-break (nearest, then even) is the
+// property of the shortest algorithm of the runtime and is pinned by the vectors of the contract.
+fn canonical_f64_text(x f64) -> str {
+    if x.is_nan() { return "NaN" }
+    if x.is_infinite() { return if x < 0.0 { "-Infinity" } else { "Infinity" } }
+    if x == 0.0 { return if 1.0 / x < 0.0 { "-0.0" } else { "0.0" } }
+    ro raw = x.to_str()
+    mut body = raw
+    mut negative = false
+    if raw.starts_with("-") { negative = true; body = raw[1..] }
+    // mantissa and exponent
+    mut mantissa = body
+    mut exp10 = 0
+    match body.find("e") {
+        Some(at) => {
+            mantissa = body[..at]
+            mut tail = body[at + 1..]
+            mut exp_negative = false
+            if tail.starts_with("-") { exp_negative = true; tail = tail[1..] }
+            else if tail.starts_with("+") { tail = tail[1..] }
+            mut e = 0
+            for c in tail.chars() { e = e * 10 + cf64_digit(c) }
+            exp10 = if exp_negative { 0 - e } else { e }
+        }
+        None => ()
+    }
+    mut whole = mantissa
+    mut frac = ""
+    match mantissa.find(".") {
+        Some(at) => {
+            whole = mantissa[..at]
+            frac = mantissa[at + 1..]
+        }
+        None => ()
+    }
+    // value = 0.<digits> * 10^point over the significant digits without leading and trailing zeros
+    mut all = "${whole}${frac}"
+    mut leading = 0
+    while all.starts_with("0") { all = all[1..]; leading += 1 }
+    mut point = whole.byte_len() + exp10 - leading
+    while all.byte_len() > 1 && all.ends_with("0") { all = all[..all.byte_len() - 1] }
+    if all == "" { all = "0" }
+    ro e = point - 1
+    mut out = ""
+    if e >= -6 && e < 21 {
+        if point <= 0 {
+            out = "0."
+            mut z = 0
+            while z < 0 - point { out = "${out}0"; z += 1 }
+            out = "${out}${all}"
+        } else if point >= all.byte_len() {
+            out = all
+            mut z = point - all.byte_len()
+            while z > 0 { out = "${out}0"; z -= 1 }
+            out = "${out}.0"
+        } else {
+            out = "${all[..point]}.${all[point..]}"
+        }
+    } else {
+        if all.byte_len() > 1 { out = "${all[0..1]}.${all[1..]}" } else { out = "${all}.0" }
+        ro mag = if e < 0 { 0 - e } else { e }
+        out = "${out}e${if e < 0 { "-" } else { "+" }}${mag}"
+    }
+    if negative { return "-${out}" }
+    out
+}
+
+fn cf64_digit(c char) -> int {
+    if c < '0' || c > '9' { return 0 }
+    c as int - 0x30
+}
+
+// ---- canonical JSON of a descriptor -------------------------------------------------------------------
+
+// The compact canonical JSON bytes of a descriptor or of a declaration: object keys sorted by the
+// Unicode code point of the name, arrays in their order, no spaces, floats refused (a descriptor has
+// none), depth bounded as the values are.
+fn canonical_json(v Value, depth int) -> Result[str, str] {
+    if depth > TYPED_MAX_DEPTH { return Err("too deep") }
+    match v {
+        Null => Ok("null")
+        Bool(b) => Ok(if b { "true" } else { "false" })
+        Int(n) => Ok("${n}")
+        Float(_) => Err("a float is not a JSON form of the contract")
+        Text(s) => {
+            if has_surrogate(s) { return Err("a text holds only Unicode scalar values") }
+            Ok(json_str_literal(s))
+        }
+        List(items) => {
+            mut out = "["
+            mut first = true
+            for item in items {
+                if !first { out = "${out}," }
+                match canonical_json(item, depth + 1) {
+                    Ok(t) => { out = "${out}${t}" }
+                    Err(e) => return Err(e)
+                }
+                first = false
+            }
+            Ok("${out}]")
+        }
+        Dict(entries) => {
+            // the keys must be texts; they are sorted by the code point (the byte order of UTF-8)
+            mut keys = []str.new()
+            for e in entries {
+                match e.key {
+                    Text(k) => keys.push(k)
+                    _ => return Err("the keys of the canonical JSON are texts")
+                }
+            }
+            sort_strs(keys)
+            mut out = "{"
+            mut first = true
+            for k in keys {
+                if !first { out = "${out}," }
+                match entry_of(entries, k) {
+                    Some(value) => {
+                        match canonical_json(value, depth + 1) {
+                            Ok(t) => { out = "${out}${json_str_literal(k)}:${t}" }
+                            Err(e) => return Err(e)
+                        }
+                    }
+                    None => return Err("the key of the canonical JSON is lost")
+                }
+                first = false
+            }
+            Ok("${out}}")
+        }
+        _ => Err("the form is not a JSON form of the contract")
+    }
+}
+
+fn sort_strs(mut items []str) -> () {
+    mut i = 1
+    while i < items.len() {
+        mut j = i
+        while j > 0 && cmp_text(items[j - 1], items[j]) > 0 {
+            ro tmp = items[j - 1]
+            items[j - 1] = items[j]
+            items[j] = tmp
+            j -= 1
+        }
+        i += 1
+    }
+}
+
+// ---- values of the Value world ------------------------------------------------------------------------
+
+fn v_text(v Value) -> Option[str] => match v { Text(s) => Some(s), _ => None }
+
+fn v_int(v Value) -> Option[int] => match v { Int(n) => Some(n), _ => None }
+
+fn v_entries(v Value) -> Option[[]DictEntry] => match v { Dict(e) => Some(e), _ => None }
+
+fn entry_of(entries []DictEntry, key str) -> Option[Value] {
+    for e in entries {
+        match e.key {
+            Text(k) => { if k == key { return Some(e.value) } }
+            _ => ()
+        }
+    }
+    None
+}
+
+// The keys of a Dict value as texts, or the first non-text key for the message.
+fn text_keys(entries []DictEntry) -> Result[[]str, str] {
+    mut keys = []str.new()
+    for e in entries {
+        match e.key {
+            Text(k) => keys.push(k)
+            _ => return Err("the keys of the declaration are texts")
+        }
+    }
+    Ok(keys)
+}
+
+fn is_scalar_text(s str) -> bool => s.byte_len() > 0 && !has_surrogate(s)
+
+// A qualified name: segments `[A-Za-z_][A-Za-z0-9_]*` joined by `.`.
+fn is_qualified_name(s str) -> bool {
+    if s.byte_len() == 0 { return false }
+    mut segment_start = true
+    for c in s.chars() {
+        ro one = "${c}"
+        ro digit = one >= "0" && one <= "9"
+        ro lower = one >= "a" && one <= "z"
+        ro upper = one >= "A" && one <= "Z"
+        if segment_start {
+            if !(lower || upper || one == "_") { return false }
+            segment_start = false
+        } else if one == "." {
+            segment_start = true
+        } else if !(digit || lower || upper || one == "_") {
+            return false
+        }
+    }
+    !segment_start
+}
+
+// The canonical decimal of an i64: exactly `0`, or `-?[1-9][0-9]*` (no `+`, no leading zeros, no `-0`),
+// inside the signed 64-bit range. The accumulation is guarded before the multiplication, so no overflow
+// happens on the way.
+fn parse_i64_canonical(s str) -> Result[int, str] {
+    if s.byte_len() == 0 { return Err("expected canonical decimal i64 string") }
+    mut negative = false
+    mut digits = s
+    if s.starts_with("-") { negative = true; digits = s[1..] }
+    if digits == "0" {
+        if negative { return Err("expected canonical decimal i64 string") }
+        return Ok(0)
+    }
+    if digits.byte_len() == 0 || digits.starts_with("0") { return Err("expected canonical decimal i64 string") }
+    mut first = true
+    for c in digits.chars() {
+        if c < '0' || c > '9' { return Err("expected canonical decimal i64 string") }
+        if first && c == '0' { return Err("expected canonical decimal i64 string") }
+        first = false
+    }
+    // magnitude, guarded: acc <= (2^63 - or + 1 - d) / 10 before acc = acc * 10 + d
+    // the magnitude accumulates under the positive limit; the one legal case beyond it is the
+    // most negative value itself (9223372036854775808), handled before the multiply would overflow
+    mut acc = 0
+    mut is_min = false
+    for c in digits.chars() {
+        ro d = c as int - 0x30
+        if acc > (I64_MAX - d) / 10 {
+            if negative && acc == 922337203685477580 && d == 8 {
+                is_min = true
+                break
+            }
+            return Err("i64 string outside signed 64-bit range")
+        }
+        acc = acc * 10 + d
+    }
+    if is_min { return Ok(0 - I64_MAX - 1) }
+    Ok(if negative { 0 - acc } else { acc })
+}
+
+// ---- declarations and descriptors ---------------------------------------------------------------------
+
+// `typed_validate(schema, declarations)`: the whole table of declarations and the root descriptor are
+// resolved and checked before any value is read. The declarations are a dict of the qualified name to
+// `{"kind": "alias", "type": D}` / `{"kind": "record", "fields": {...}}` / `{"kind": "variant",
+// "cases": {...}}` with no other keys; a variant has at least one case; a tuple at least two types; a
+// literal_set at least two distinct sorted texts; an alias cycle is refused; the recursion of records
+// and variants by name is allowed.
+export fn typed_validate(schema Value, declarations Value) -> Result[bool, str] {
+    match v_entries(declarations) {
+        Some(entries) => {
+            mut seen = []str.new()
+            match text_keys(entries) {
+                Ok(_) => ()
+                Err(e) => return Err(e)
+            }
+            for e in entries {
+                match e.key {
+                    Text(name) => {
+                        if !is_qualified_name(name) { return Err("declared type name must be qualified ASCII identifiers") }
+                        match validate_declared(name, declarations, seen, []str.new()) {
+                            Ok(_) => ()
+                            Err(m) => return Err(m)
+                        }
+                    }
+                    _ => return Err("the keys of the declaration are texts")
+                }
+            }
+            validate_schema(schema, declarations, seen, []str.new())
+        }
+        None => Err("declarations must be a dict of text keys")
+    }
+}
+
+fn has_str(items []str, s str) -> bool {
+    for x in items { if x == s { return true } }
+    false
+}
+
+fn validate_declared(name str, declarations Value, mut seen []str, mut aliases []str) -> Result[bool, str] {
+    match entry_of_entries(declarations, name) {
+        None => return Err("missing or malformed declared type")
+        Some(decl) => match v_entries(decl) {
+            None => return Err("missing or malformed declared type")
+            Some(fields) => {
+                match entry_of(fields, "kind") {
+                    None => return Err("missing or malformed declared type")
+                    Some(k) => match v_text(k) {
+                        None => return Err("missing or malformed declared type")
+                        Some(kind) => {
+                            if kind == "alias" {
+                                if fields.len() != 2 || has_str(aliases, name) { return Err("malformed or recursive alias") }
+                                match entry_of(fields, "type") {
+                                    None => return Err("malformed or recursive alias")
+                                    Some(inner) => {
+                                        aliases.push(name)
+                                        ro r = validate_schema(inner, declarations, seen, aliases)
+                                        aliases.pop()
+                                        r
+                                    }
+                                }
+                            } else if kind == "record" {
+                                if has_str(seen, name) { return Ok(true) }
+                                seen.push(name)
+                                if fields.len() != 2 { return Err("record declaration must contain only fields") }
+                                match entry_of(fields, "fields") {
+                                    None => return Err("record declaration must contain only fields")
+                                    Some(f) => match v_entries(f) {
+                                        None => return Err("record declaration must contain only fields")
+                                        Some(fs) => {
+                                            match text_keys(fs) {
+                                                Ok(_) => ()
+                                                Err(m) => return Err(m)
+                                            }
+                                            for pair in fs {
+                                                match pair.key {
+                                                    Text(fname) => {
+                                                        if !is_scalar_text(fname) { return Err("name must be non-empty Unicode scalar text") }
+                                                        match validate_schema(pair.value, declarations, seen, []str.new()) {
+                                                            Ok(_) => ()
+                                                            Err(m) => return Err(m)
+                                                        }
+                                                    }
+                                                    _ => return Err("the keys of the declaration are texts")
+                                                }
+                                            }
+                                            Ok(true)
+                                        }
+                                    }
+                                }
+                            } else if kind == "variant" {
+                                if has_str(seen, name) { return Ok(true) }
+                                seen.push(name)
+                                if fields.len() != 2 { return Err("variant declaration must contain non-empty cases") }
+                                match entry_of(fields, "cases") {
+                                    None => return Err("variant declaration must contain non-empty cases")
+                                    Some(c) => match v_entries(c) {
+                                        None => return Err("variant declaration must contain non-empty cases")
+                                        Some(cs) => {
+                                            if cs.len() == 0 { return Err("variant declaration must contain non-empty cases") }
+                                            match text_keys(cs) {
+                                                Ok(_) => ()
+                                                Err(m) => return Err(m)
+                                            }
+                                            for pair in cs {
+                                                match pair.key {
+                                                    Text(cname) => {
+                                                        if !is_scalar_text(cname) { return Err("name must be non-empty Unicode scalar text") }
+                                                        match v_entries(pair.value) {
+                                                            None => return Err("variant case must map fields")
+                                                            Some(cfields) => {
+                                                                match text_keys(cfields) {
+                                                                    Ok(_) => ()
+                                                                    Err(m) => return Err(m)
+                                                                }
+                                                                for fp in cfields {
+                                                                    match fp.key {
+                                                                        Text(fname) => {
+                                                                            if !is_scalar_text(fname) { return Err("name must be non-empty Unicode scalar text") }
+                                                                            match validate_schema(fp.value, declarations, seen, []str.new()) {
+                                                                                Ok(_) => ()
+                                                                                Err(m) => return Err(m)
+                                                                            }
+                                                                        }
+                                                                        _ => return Err("the keys of the declaration are texts")
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    _ => return Err("the keys of the declaration are texts")
+                                                }
+                                            }
+                                            Ok(true)
+                                        }
+                                    }
+                                }
+                            } else {
+                                return Err("declared type kind must be record, variant, or alias")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn entry_of_entries(declarations Value, name str) -> Option[Value] {
+    match v_entries(declarations) {
+        None => None
+        Some(entries) => entry_of(entries, name)
+    }
+}
+
+fn is_primitive_name(s str) -> bool =>
+    s == "null" || s == "bool" || s == "i64" || s == "f64" || s == "str" || s == "id"
+
+fn validate_schema(schema Value, declarations Value, mut seen []str, mut aliases []str) -> Result[bool, str] {
+    match schema {
+        Text(s) => {
+            if !is_primitive_name(s) { return Err("unknown primitive") }
+            Ok(true)
+        }
+        Dict(entries) => {
+            if entries.len() != 1 { return Err("malformed schema descriptor") }
+            ro e = entries[0]
+            ro kind = match e.key {
+                Text(k) => k
+                _ => return Err("malformed schema descriptor")
+            }
+            if kind == "list" || kind == "optional" {
+                validate_schema(e.value, declarations, seen, aliases)
+            } else if kind == "tuple" {
+                match e.value {
+                    List(items) => {
+                        if items.len() < 2 { return Err("tuple descriptor must have at least two ordered types") }
+                        for item in items {
+                            match validate_schema(item, declarations, seen, aliases) {
+                                Ok(_) => ()
+                                Err(m) => return Err(m)
+                            }
+                        }
+                        Ok(true)
+                    }
+                    _ => Err("malformed schema descriptor")
+                }
+            } else if kind == "map" {
+                match e.value {
+                    List(items) => {
+                        if items.len() != 2 { return Err("map descriptor must have key and value type") }
+                        match validate_schema(items[0], declarations, seen, aliases) {
+                            Ok(_) => ()
+                            Err(m) => return Err(m)
+                        }
+                        validate_schema(items[1], declarations, seen, aliases)
+                    }
+                    _ => Err("malformed schema descriptor")
+                }
+            } else if kind == "int_min" {
+                match v_text(e.value) {
+                    None => Err("expected canonical decimal i64 string")
+                    Some(t) => match parse_i64_canonical(t) {
+                        Ok(_) => Ok(true)
+                        Err(m) => Err(m)
+                    }
+                }
+            } else if kind == "literal_set" {
+                match e.value {
+                    List(items) => {
+                        if items.len() < 2 { return Err("literal_set must contain at least two text values") }
+                        mut prev = ""
+                        mut i = 0
+                        for item in items {
+                            match v_text(item) {
+                                None => return Err("literal_set must contain at least two text values")
+                                Some(t) => {
+                                    if !is_scalar_text(t) { return Err("a text holds only Unicode scalar values") }
+                                    if i > 0 {
+                                        if cmp_text(prev, t) >= 0 { return Err("literal_set values must be unique and sorted") }
+                                    }
+                                    prev = t
+                                    i += 1
+                                }
+                            }
+                        }
+                        Ok(true)
+                    }
+                    _ => Err("literal_set must contain at least two text values")
+                }
+            } else if kind == "full_map" {
+                match e.value {
+                    List(items) => {
+                        if items.len() != 2 { return Err("full_map descriptor must contain enum name and value type") }
+                        match v_text(items[0]) {
+                            None => Err("full_map descriptor must contain enum name and value type")
+                            Some(name) => {
+                                if !is_qualified_name(name) { return Err("declared type name must be qualified ASCII identifiers") }
+                                match entry_of_entries(declarations, name) {
+                                    None => return Err("full_map key type must be a non-empty fieldless variant")
+                                    Some(decl) => match v_entries(decl) {
+                                        None => return Err("full_map key type must be a non-empty fieldless variant")
+                                        Some(df) => match entry_of(df, "kind") {
+                                            None => return Err("full_map key type must be a non-empty fieldless variant")
+                                            Some(k) => match v_text(k) {
+                                                None => Err("full_map key type must be a non-empty fieldless variant")
+                                                Some(kk) => {
+                                                    if kk != "variant" { return Err("full_map key type must be a non-empty fieldless variant") }
+                                                    match entry_of(df, "cases") {
+                                                        None => return Err("full_map key type must be a non-empty fieldless variant")
+                                                        Some(c) => match v_entries(c) {
+                                                            None => return Err("full_map key type must be a non-empty fieldless variant")
+                                                            Some(cs) => {
+                                                                if cs.len() == 0 { return Err("full_map key type must be a non-empty fieldless variant") }
+                                                                for pair in cs {
+                                                                    match v_entries(pair.value) {
+                                                                        None => return Err("full_map key type must be a non-empty fieldless variant")
+                                                                        Some(cf) => { if cf.len() != 0 { return Err("full_map key type must be a non-empty fieldless variant") } }
+                                                                        _ => return Err("full_map key type must be a non-empty fieldless variant")
+                                                                    }
+                                                                }
+                                                                match validate_declared(name, declarations, seen, aliases) {
+                                                                    Ok(_) => ()
+                                                                    Err(m) => return Err(m)
+                                                                }
+                                                                validate_schema(items[1], declarations, seen, aliases)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => Err("full_map descriptor must contain enum name and value type")
+                }
+            } else if kind == "record" || kind == "variant" || kind == "named" {
+                match v_text(e.value) {
+                    None => Err("declared type name must be qualified ASCII identifiers")
+                    Some(name) => {
+                        if !is_qualified_name(name) { return Err("declared type name must be qualified ASCII identifiers") }
+                        match entry_of_entries(declarations, name) {
+                            None => return Err("unknown or mismatched declared type")
+                            Some(decl) => match v_entries(decl) {
+                                None => return Err("unknown or mismatched declared type")
+                                Some(df) => match entry_of(df, "kind") {
+                                    None => return Err("unknown or mismatched declared type")
+                                    Some(k) => match v_text(k) {
+                                        None => Err("unknown or mismatched declared type")
+                                        Some(kk) => {
+                                            ro expected = if kind == "named" { "alias" } else { kind }
+                                            if kk != expected { return Err("unknown or mismatched declared type") }
+                                            validate_declared(name, declarations, seen, aliases)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                Err("unknown schema constructor")
+            }
+        }
+        _ => Err("malformed schema descriptor")
+    }
+}
+
+// ---- the canonical bytes of a value --------------------------------------------------------------------
+
+fn type_signature(schema Value) -> Result[[]u8, str] {
+    match canonical_json(schema, 0) {
+        Ok(t) => Ok(blob_of(t.bytes()))
+        Err(m) => Err(m)
+    }
+}
+
+fn v_list(v Value) -> Option[[]Value] => match v { List(items) => Some(items), _ => None }
+
+fn v_record(v Value) -> Option[[]RecordField] => match v { Record { name, fields } => Some(fields), _ => None }
+
+fn record_name(v Value) -> Option[str] => match v { Record { name, fields } => Some(name), _ => None }
+
+fn v_variant(v Value) -> Option[[]RecordField] => match v { Variant { type_name, name, fields } => Some(fields), _ => None }
+
+fn variant_type_name(v Value) -> Option[str] => match v { Variant { type_name, name, fields } => Some(type_name), _ => None }
+
+fn variant_case(v Value) -> Option[str] => match v { Variant { type_name, name, fields } => Some(name), _ => None }
+
+fn v_some(v Value) -> Option[Value] => match v { SomeV(box) => Some(box.inner), _ => None }
+
+fn is_tuple_value(v Value) -> bool {
+    match v {
+        List(_) => true
+        Record { name, fields } => name == ""
+        _ => false
+    }
+}
+
+// The positional fields `0`, `1`, ... of a tuple value, in their order.
+fn tuple_items(v Value) -> Result[[]Value, str] {
+    match v {
+        List(items) => Ok(items)
+        Record { name, fields } => {
+            if name != "" { return Err("expected fixed tuple") }
+            mut out = []Value.new()
+            mut want = 0
+            for f in fields {
+                if f.name != "${want}" { return Err("expected fixed tuple") }
+                out.push(f.value)
+                want += 1
+            }
+            Ok(out)
+        }
+        _ => Err("expected fixed tuple")
+    }
+}
+
+fn tuple_field_values(v Value) -> Result[[]RecordField, str] {
+    match v {
+        Record { name, fields } => {
+            if name != "" { return Err("expected fixed tuple") }
+            Ok(fields)
+        }
+        _ => Err("expected fixed tuple")
+    }
+}
+
+fn encode_typed_bytes(v Value, schema Value, declarations Value) -> Result[[]u8, str] {
+    match schema {
+        Text(s) => encode_primitive_bytes(v, s)
+        Dict(_) => encode_constructed_bytes(v, schema, declarations)
+        _ => Err("malformed schema descriptor")
+    }
+}
+
+fn encode_primitive_bytes(v Value, s str) -> Result[[]u8, str] {
+    if s == "null" {
+        match v {
+            Null => Ok([0x4e as u8])
+            _ => Err("expected null")
+        }
+    } else if s == "bool" {
+        match v {
+            Bool(b) => Ok([0x42 as u8, if b { 0x01 as u8 } else { 0x00 as u8 }])
+            _ => Err("expected bool")
+        }
+    } else if s == "i64" {
+        match v {
+            Int(n) => {
+                mut out = [0x49 as u8]
+                for b in i64_bytes(n) { out.push(b) }
+                Ok(out)
+            }
+            _ => Err("expected i64")
+        }
+    } else if s == "f64" {
+        match v {
+            Float(x) => Ok(blob_with_marker(0x46, canonical_f64_text(x).bytes()))
+            _ => Err("expected f64")
+        }
+    } else if s == "str" {
+        match v {
+            Text(t) => {
+                if has_surrogate(t) { return Err("a text holds only Unicode scalar values") }
+                mut out = [0x53 as u8]
+                for b in text_blob(t) { out.push(b) }
+                Ok(out)
+            }
+            _ => Err("expected str")
+        }
+    } else {
+        // id
+        match v {
+            Text(t) => {
+                if !is_uuid(t) { return Err("expected canonical id") }
+                mut out = [0x55 as u8]
+                for b in id_bytes(t) { out.push(b) }
+                Ok(out)
+            }
+            _ => Err("expected canonical id")
+        }
+    }
+}
+
+fn blob_with_marker(marker u8, data []u8) -> []u8 {
+    mut out = [marker]
+    for b in blob_of(data) { out.push(b) }
+    out
+}
+
+fn encode_constructed_bytes(v Value, schema Value, declarations Value) -> Result[[]u8, str] {
+    match v_entries(schema) {
+        None => return Err("malformed schema descriptor")
+        Some(entries) => {
+            if entries.len() != 1 { return Err("malformed schema descriptor") }
+            ro e = entries[0]
+            ro kind = match e.key {
+                Text(k) => k
+                _ => return Err("malformed schema descriptor")
+            }
+            if kind == "named" {
+                match v_text(e.value) {
+                    None => return Err("declared type name must be qualified ASCII identifiers")
+                    Some(name) => match entry_of_entries(declarations, name) {
+                        None => return Err("unknown or mismatched declared type")
+                        Some(decl) => match entry_of_dict(decl, "type") {
+                            None => return Err("unknown or mismatched declared type")
+                            Some(inner) => match encode_typed_bytes(v, inner, declarations) {
+                                Err(m) => Err(m)
+                                Ok(base) => {
+                                    mut out = [0x59 as u8] // Y
+                                    for b in text_blob(name) { out.push(b) }
+                                    for b in blob_of(base) { out.push(b) }
+                                    Ok(out)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if kind == "list" {
+                match v_list(v) {
+                    None => return Err("expected list")
+                    Some(items) => match type_signature(e.value) {
+                        Err(m) => Err(m)
+                        Ok(sig) => {
+                            mut out = [0x4c as u8] // L
+                            for b in sig { out.push(b) }
+                            for b in u64_bytes(items.len()) { out.push(b) }
+                            for item in items {
+                                match encode_typed_bytes(item, e.value, declarations) {
+                                    Ok(bs) => { for x in bs { out.push(x) } }
+                                    Err(m) => return Err(m)
+                                }
+                            }
+                            Ok(out)
+                        }
+                    }
+                }
+            } else if kind == "tuple" {
+                match e.value {
+                    List(schemas) => match tuple_items(v) {
+                        Err(m) => Err(m)
+                        Ok(items) => {
+                            if items.len() != schemas.len() { return Err("expected fixed tuple") }
+                            match type_signature(e.value) {
+                                Err(m) => Err(m)
+                                Ok(sig) => {
+                                    mut out = [0x54 as u8] // T
+                                    for b in sig { out.push(b) }
+                                    for b in u64_bytes(schemas.len()) { out.push(b) }
+                                    mut i = 0
+                                    while i < items.len() {
+                                        match encode_typed_bytes(items[i], schemas[i], declarations) {
+                                            Ok(bs) => { for x in bs { out.push(x) } }
+                                            Err(m) => return Err(m)
+                                        }
+                                        i += 1
+                                    }
+                                    Ok(out)
+                                }
+                            }
+                        }
+                    }
+                    _ => Err("malformed schema descriptor")
+                }
+            } else if kind == "optional" {
+                match type_signature(e.value) {
+                    Err(m) => Err(m)
+                    Ok(sig) => {
+                        mut out = [0x4f as u8] // O
+                        for b in sig { out.push(b) }
+                        match v {
+                            Null => {
+                                out.push(0x00 as u8)
+                                Ok(out)
+                            }
+                            _ => match v_some(v) {
+                                Some(inner) => {
+                                    out.push(0x01 as u8)
+                                    match encode_typed_bytes(inner, e.value, declarations) {
+                                        Ok(bs) => {
+                                            for x in bs { out.push(x) }
+                                            Ok(out)
+                                        }
+                                        Err(m) => Err(m)
+                                    }
+                                }
+                                None => Err("optional uses none/some wrapper")
+                            }
+                        }
+                    }
+                }
+            } else if kind == "map" {
+                match e.value {
+                    List(schemas) => match v_entries(v) {
+                        None => return Err("map is a list of pairs")
+                        Some(entries2) => {
+                            if schemas.len() != 2 { return Err("malformed schema descriptor") }
+                            mut pairs [][][]u8 = []
+                            for entry in entries2 {
+                                match encode_typed_bytes(entry.key, schemas[0], declarations) {
+                                    Err(m) => return Err(m)
+                                    Ok(kb) => match encode_typed_bytes(entry.value, schemas[1], declarations) {
+                                        Err(m) => return Err(m)
+                                        Ok(vb) => pairs.push(pair_bytes(kb, vb))
+                                    }
+                                }
+                            }
+                            sort_pairs(pairs)
+                            mut i = 1
+                            while i < pairs.len() {
+                                if cmp_bytes(pair_key(pairs[i - 1]), pair_key(pairs[i])) == 0 { return Err("duplicate typed map key") }
+                                i += 1
+                            }
+                            match type_signature(schemas[0]) {
+                                Err(m) => Err(m)
+                                Ok(sigK) => match type_signature(schemas[1]) {
+                                    Err(m) => Err(m)
+                                    Ok(sigV) => {
+                                        mut out = [0x4d as u8] // M
+                                        for b in sigK { out.push(b) }
+                                        for b in sigV { out.push(b) }
+                                        for b in u64_bytes(pairs.len()) { out.push(b) }
+                                        for p in pairs {
+                                            for b in blob_of(pair_key(p)) { out.push(b) }
+                                            for b in blob_of(pair_value(p)) { out.push(b) }
+                                        }
+                                        Ok(out)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => Err("malformed schema descriptor")
+                }
+            } else if kind == "int_min" {
+                ro bound = match v_text(e.value) {
+                    None => return Err("expected canonical decimal i64 string")
+                    Some(t) => match parse_i64_canonical(t) {
+                        Err(m) => return Err(m)
+                        Ok(n) => n
+                    }
+                }
+                match v {
+                    Int(n) => {
+                        if n < bound { return Err("value outside bounded i64") }
+                        match type_signature(schema) {
+                            Err(m) => Err(m)
+                            Ok(sig) => {
+                                mut out = [0x4a as u8] // J
+                                for b in sig { out.push(b) }
+                                for b in i64_bytes(n) { out.push(b) }
+                                Ok(out)
+                            }
+                        }
+                    }
+                    _ => Err("value outside bounded i64")
+                }
+            } else if kind == "literal_set" {
+                match e.value {
+                    List(words) => match v {
+                        Text(t) => {
+                            mut found = false
+                            for w in words {
+                                match v_text(w) {
+                                    Some(x) => { if x == t { found = true } }
+                                    None => ()
+                                }
+                            }
+                            if !found { return Err("value outside literal set") }
+                            match type_signature(schema) {
+                                Err(m) => Err(m)
+                                Ok(sig) => {
+                                    mut out = [0x43 as u8] // C
+                                    for b in sig { out.push(b) }
+                                    for b in text_blob(t) { out.push(b) }
+                                    Ok(out)
+                                }
+                            }
+                        }
+                        _ => Err("value outside literal set")
+                    }
+                    _ => Err("malformed schema descriptor")
+                }
+            } else if kind == "full_map" {
+                match e.value {
+                    List(args) => match v_entries(v) {
+                        None => return Err("full_map is a list of pairs")
+                        Some(dentries) => {
+                            if args.len() != 2 { return Err("malformed schema descriptor") }
+                            ro enum_name = match v_text(args[0]) {
+                                None => return Err("malformed schema descriptor")
+                                Some(n) => n
+                            }
+                            mut pairs [][][]u8 = []
+                            for entry in dentries {
+                                match variant_type_name(entry.key) {
+                                    None => return Err("full_map key must be a fieldless enum case")
+                                    Some(tn) => {
+                                        if tn != enum_name { return Err("full_map key must be a fieldless enum case") }
+                                        match variant_case(entry.key) {
+                                            None => return Err("full_map key must be a fieldless enum case")
+                                            Some(cn) => match v_variant(entry.key) {
+                                                None => return Err("full_map key must be a fieldless enum case")
+                                                Some(kf) => {
+                                                    if kf.len() != 0 { return Err("full_map key must be a fieldless enum case") }
+                                                    match encode_typed_bytes(entry.key, variant_schema(enum_name), declarations) {
+                                                        Err(m) => return Err(m)
+                                                        Ok(kb) => match encode_typed_bytes(entry.value, args[1], declarations) {
+                                                            Err(m) => return Err(m)
+                                                            Ok(vb) => pairs.push(pair_bytes(kb, vb))
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            // every case exactly once: the count of pairs equals the count of the cases and the keys are distinct
+                            match declared_case_count(declarations, enum_name) {
+                                Err(m) => return Err(m)
+                                Ok(count) => {
+                                    if pairs.len() != count { return Err("full_map must contain all enum cases") }
+                                }
+                            }
+                            sort_pairs(pairs)
+                            mut i = 1
+                            while i < pairs.len() {
+                                if cmp_bytes(pair_key(pairs[i - 1]), pair_key(pairs[i])) == 0 { return Err("full_map must contain each enum case exactly once") }
+                                i += 1
+                            }
+                            match type_signature(schema) {
+                                Err(m) => Err(m)
+                                Ok(sig) => {
+                                    mut out = [0x47 as u8] // G
+                                    for b in sig { out.push(b) }
+                                    for b in u64_bytes(pairs.len()) { out.push(b) }
+                                    for p in pairs {
+                                        for b in blob_of(p[0]) { out.push(b) }
+                                        for b in blob_of(p[1]) { out.push(b) }
+                                    }
+                                    Ok(out)
+                                }
+                            }
+                        }
+                    }
+                    _ => Err("malformed schema descriptor")
+                }
+            } else if kind == "record" {
+                match v_text(e.value) {
+                    None => return Err("declared type name must be qualified ASCII identifiers")
+                    Some(name) => encode_record_bytes(v, name, declarations)
+                }
+            } else if kind == "variant" {
+                match v_text(e.value) {
+                    None => return Err("declared type name must be qualified ASCII identifiers")
+                    Some(name) => encode_variant_bytes(v, name, declarations)
+                }
+            } else {
+                Err("unknown schema constructor")
+            }
+        }
+    }
+}
+
+fn variant_schema(name str) -> Value {
+    mut inner = []DictEntry.new()
+    inner.push(DictEntry { key: Text("variant"), value: Text(name) })
+    Dict(inner)
+}
+
+fn entry_of_dict(v Value, key str) -> Option[Value] {
+    match v_entries(v) {
+        None => None
+        Some(entries) => entry_of(entries, key)
+    }
+}
+
+fn declared_case_count(declarations Value, name str) -> Result[int, str] {
+    match entry_of_entries(declarations, name) {
+        None => Err("unknown or mismatched declared type")
+        Some(decl) => match entry_of_dict(decl, "cases") {
+            None => Err("unknown or mismatched declared type")
+            Some(c) => match v_entries(c) {
+                None => Err("unknown or mismatched declared type")
+                Some(cs) => Ok(cs.len())
+            }
+        }
+    }
+}
+
+fn pair_bytes(kb []u8, vb []u8) -> [][]u8 {
+    mut pair [][]u8 = []
+    pair.push(kb)
+    pair.push(vb)
+    pair
+}
+
+fn pair_key(p [][]u8) -> []u8 => p[0]
+
+fn pair_value(p [][]u8) -> []u8 => p[1]
+
+fn sort_pairs(mut pairs [][][]u8) -> () {
+    mut i = 1
+    while i < pairs.len() {
+        mut j = i
+        while j > 0 && cmp_bytes(pair_key(pairs[j - 1]), pair_key(pairs[j])) > 0 {
+            ro tmp = pairs[j - 1]
+            pairs[j - 1] = pairs[j]
+            pairs[j] = tmp
+            j -= 1
+        }
+        i += 1
+    }
+}
+
+fn encode_record_bytes(v Value, name str, declarations Value) -> Result[[]u8, str] {
+    match record_name(v) {
+        None => return Err("record fields do not match schema")
+        Some(vname) => {
+            if vname != name { return Err("the record value is not of the declared type ${name}") }
+            match v_record(v) {
+                None => return Err("record fields do not match schema")
+                Some(vfields) => match entry_of_entries(declarations, name) {
+                    None => return Err("unknown or mismatched declared type")
+                    Some(decl) => match entry_of_dict(decl, "fields") {
+                        None => return Err("record fields do not match schema")
+                        Some(f) => match v_entries(f) {
+                            None => return Err("record fields do not match schema")
+                            Some(df) => {
+                                // exactly the declared fields, each once
+                                if df.len() != vfields.len() { return Err("record fields do not match schema") }
+                                for pair in df {
+                                    match v_text(pair.key) {
+                                        None => return Err("record fields do not match schema")
+                                        Some(fname) => {
+                                            mut found = false
+                                            for vf in vfields {
+                                                if vf.name == fname { found = true }
+                                            }
+                                            if !found { return Err("record fields do not match schema") }
+                                        }
+                                        _ => return Err("record fields do not match schema")
+                                    }
+                                }
+                                for vf in vfields {
+                                    match entry_of(df, vf.name) {
+                                        None => return Err("record fields do not match schema")
+                                        Some(fschema) => () // presence checked; the schema is looked up again below
+                                    }
+                                }
+                                // fields sorted by the code point of the name
+                                mut names = []str.new()
+                                for vf in vfields { names.push(vf.name) }
+                                sort_strs(names)
+                                match field_schema_of(decl, names) {
+                                    Err(m) => Err(m)
+                                    Ok(schemas) => {
+                                        mut out = [0x52 as u8] // R
+                                        for b in text_blob(name) { out.push(b) }
+                                        for b in u64_bytes(names.len()) { out.push(b) }
+                                        mut i = 0
+                                        while i < names.len() {
+                                            for b in text_blob(names[i]) { out.push(b) }
+                                            match encode_typed_bytes(vfields_field(vfields, names[i]), schemas[i], declarations) {
+                                                Ok(bs) => { for x in bs { out.push(x) } }
+                                                Err(m) => return Err(m)
+                                            }
+                                            i += 1
+                                        }
+                                        Ok(out)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn vfields_field(fields []RecordField, name str) -> Value {
+    for f in fields { if f.name == name { return f.value } }
+    Null
+}
+
+fn field_schema_of(decl Value, names []str) -> Result[[]Value, str] {
+    match entry_of_dict(decl, "fields") {
+        None => Err("record fields do not match schema")
+        Some(f) => {
+            mut out = []Value.new()
+            for n in names {
+                match entry_of_dict(f, n) {
+                    None => return Err("record fields do not match schema")
+                    Some(s) => out.push(s)
+                }
+            }
+            Ok(out)
+        }
+    }
+}
+
+fn encode_variant_bytes(v Value, name str, declarations Value) -> Result[[]u8, str] {
+    match variant_type_name(v) {
+        None => return Err("variant uses case/fields")
+        Some(vname) => {
+            if vname != name { return Err("the variant value is not of the declared type ${name}") }
+            match variant_case(v) {
+                None => return Err("variant uses case/fields")
+                Some(vcase) => match v_variant(v) {
+                    None => return Err("variant uses case/fields")
+                    Some(vfields) => match entry_of_entries(declarations, name) {
+                        None => return Err("unknown or mismatched declared type")
+                        Some(decl) => match entry_of_dict(decl, "cases") {
+                            None => return Err("variant case/fields do not match schema")
+                            Some(c) => match entry_of_dict(c, vcase) {
+                                None => return Err("variant case/fields do not match schema")
+                                Some(cf) => match v_entries(cf) {
+                                    None => return Err("variant case/fields do not match schema")
+                                    Some(cfields) => {
+                                        if cfields.len() != vfields.len() { return Err("variant case/fields do not match schema") }
+                                        for pair in cfields {
+                                            match v_text(pair.key) {
+                                                None => return Err("variant case/fields do not match schema")
+                                                Some(fname) => {
+                                                    mut found = false
+                                                    for vf in vfields {
+                                                        if vf.name == fname { found = true }
+                                                    }
+                                                    if !found { return Err("variant case/fields do not match schema") }
+                                                }
+                                                _ => return Err("variant case/fields do not match schema")
+                                            }
+                                        }
+                                        mut names = []str.new()
+                                        for vf in vfields { names.push(vf.name) }
+                                        sort_strs(names)
+                                        match case_schema_of(c, vcase, names) {
+                                            Err(m) => Err(m)
+                                            Ok(schemas) => {
+                                                mut out = [0x56 as u8] // V
+                                                for b in text_blob(name) { out.push(b) }
+                                                for b in text_blob(vcase) { out.push(b) }
+                                                for b in u64_bytes(names.len()) { out.push(b) }
+                                                mut i = 0
+                                                while i < names.len() {
+                                                    for b in text_blob(names[i]) { out.push(b) }
+                                                    match encode_typed_bytes(vfields_field(vfields, names[i]), schemas[i], declarations) {
+                                                        Ok(bs) => { for x in bs { out.push(x) } }
+                                                        Err(m) => return Err(m)
+                                                    }
+                                                    i += 1
+                                                }
+                                                Ok(out)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn case_schema_of(cases Value, case str, names []str) -> Result[[]Value, str] {
+    match entry_of_dict(cases, case) {
+        None => Err("variant case/fields do not match schema")
+        Some(cf) => {
+            mut out = []Value.new()
+            for n in names {
+                match entry_of_dict(cf, n) {
+                    None => return Err("variant case/fields do not match schema")
+                    Some(s) => out.push(s)
+                }
+            }
+            Ok(out)
+        }
+    }
+}
+
+// `typed_bytes(value, schema, declarations)`: the schema is validated first, then the value is encoded
+// into the canonical bytes. The check precedes the canonicalization: no coercion.
+export fn typed_bytes(v Value, schema Value, declarations Value) -> Result[[]u8, str] {
+    match typed_validate(schema, declarations) {
+        Ok(_) => encode_typed_bytes(v, schema, declarations)
+        Err(m) => Err(m)
+    }
+}
+
+// ---- the digest ----------------------------------------------------------------------------------------
+
+// ORACLE-WORKAROUND(128): `Sha256.hash` returns the fixed `[32]u8`; a fixed array passed into a `[]u8`
+// parameter (or iterated by `for`) does not compile (the C passes the fixed-array struct where the Vec
+// pointer is expected; probe-a, 2026-11-14). The bytes are copied out by index.
+fn sha256_hex(data []u8) -> str {
+    ro digest = Sha256.hash(data)
+    mut out = []u8.new()
+    mut i = 0
+    while i < 32 { out.push(digest[i]); i += 1 }
+    bytes_hex(out)
+}
+
+// `typed_digest(value, schema, declarations)`: `sha256:` + 64 lower case hex digits of
+// SHA-256(ASCII("alula-value-digest") || 00 || typed bytes).
+export fn typed_digest(v Value, schema Value, declarations Value) -> Result[str, str] {
+    match typed_bytes(v, schema, declarations) {
+        Err(m) => Err(m)
+        Ok(bs) => {
+            mut data = []u8.new()
+            for c in "alula-value-digest".chars() { data.push(c as u8) }
+            data.push(0x00 as u8)
+            for b in bs { data.push(b) }
+            Ok("sha256:${sha256_hex(data)}")
+        }
+    }
+}
+
+// ---- the typed JSON of the contract --------------------------------------------------------------------
+
+fn f64_special_tag(x f64) -> Option[str] {
+    if x.is_nan() { return Some("{\"$float\":\"NaN\"}") }
+    if x.is_infinite() { return Some(if x < 0.0 { "{\"$float\":\"-Infinity\"}" } else { "{\"$float\":\"Infinity\"}" }) }
+    None
+}
+
+fn encode_primitive_json(v Value, s str) -> Result[str, str] {
+    if s == "null" {
+        match v {
+            Null => Ok("null")
+            _ => Err("expected null")
+        }
+    } else if s == "bool" {
+        match v {
+            Bool(b) => Ok(if b { "true" } else { "false" })
+            _ => Err("expected bool")
+        }
+    } else if s == "i64" {
+        match v {
+            Int(n) => Ok("\"${n}\"")
+            _ => Err("expected i64")
+        }
+    } else if s == "f64" {
+        match v {
+            Float(x) => match f64_special_tag(x) {
+                Some(tag) => Ok(tag)
+                None => Ok(canonical_f64_text(x))
+            }
+            _ => Err("expected f64")
+        }
+    } else if s == "str" {
+        match v {
+            Text(t) => {
+                if has_surrogate(t) { return Err("a text holds only Unicode scalar values") }
+                Ok(json_str_literal(t))
+            }
+            _ => Err("expected str")
+        }
+    } else {
+        match v {
+            Text(t) => {
+                if !is_uuid(t) { return Err("expected canonical id") }
+                Ok(json_str_literal(t))
+            }
+            _ => Err("expected canonical id")
+        }
+    }
+}
+
+fn encode_typed_json(v Value, schema Value, declarations Value) -> Result[str, str] {
+    match schema {
+        Text(s) => encode_primitive_json(v, s)
+        Dict(_) => encode_constructed_json(v, schema, declarations)
+        _ => Err("malformed schema descriptor")
+    }
+}
+
+fn encode_constructed_json(v Value, schema Value, declarations Value) -> Result[str, str] {
+    match v_entries(schema) {
+        None => return Err("malformed schema descriptor")
+        Some(entries) => {
+            if entries.len() != 1 { return Err("malformed schema descriptor") }
+            ro e = entries[0]
+            ro kind = match e.key {
+                Text(k) => k
+                _ => return Err("malformed schema descriptor")
+            }
+            if kind == "named" {
+                match v_text(e.value) {
+                    None => return Err("declared type name must be qualified ASCII identifiers")
+                    Some(name) => match entry_of_entries(declarations, name) {
+                        None => return Err("unknown or mismatched declared type")
+                        Some(decl) => match entry_of_dict(decl, "type") {
+                            None => return Err("unknown or mismatched declared type")
+                            Some(inner) => encode_typed_json(v, inner, declarations)
+                        }
+                    }
+                }
+            } else if kind == "list" {
+                match v_list(v) {
+                    None => return Err("expected list")
+                    Some(items) => {
+                        mut out = "["
+                        mut first = true
+                        for item in items {
+                            if !first { out = "${out}," }
+                            match encode_typed_json(item, e.value, declarations) {
+                                Ok(t) => { out = "${out}${t}" }
+                                Err(m) => return Err(m)
+                            }
+                            first = false
+                        }
+                        Ok("${out}]")
+                    }
+                }
+            } else if kind == "tuple" {
+                match e.value {
+                    List(schemas) => match tuple_items(v) {
+                        Err(m) => Err(m)
+                        Ok(items) => {
+                            if items.len() != schemas.len() { return Err("expected fixed tuple") }
+                            mut out = "["
+                            mut i = 0
+                            while i < items.len() {
+                                if i > 0 { out = "${out}," }
+                                match encode_typed_json(items[i], schemas[i], declarations) {
+                                    Ok(t) => { out = "${out}${t}" }
+                                    Err(m) => return Err(m)
+                                }
+                                i += 1
+                            }
+                            Ok("${out}]")
+                        }
+                    }
+                    _ => Err("malformed schema descriptor")
+                }
+            } else if kind == "optional" {
+                match v {
+                    Null => Ok("{\"none\":true}")
+                    _ => match v_some(v) {
+                        Some(inner) => match encode_typed_json(inner, e.value, declarations) {
+                            Err(m) => Err(m)
+                            Ok(t) => Ok("{\"some\":${t}}")
+                        }
+                        None => Err("optional uses none/some wrapper")
+                    }
+                }
+            } else if kind == "map" {
+                match e.value {
+                    List(schemas) => match v_entries(v) {
+                        None => return Err("map is a list of pairs")
+                        Some(dentries) => {
+                            if schemas.len() != 2 { return Err("malformed schema descriptor") }
+                            mut out = "["
+                            mut first = true
+                            for entry in dentries {
+                                if !first { out = "${out}," }
+                                match encode_typed_json(entry.key, schemas[0], declarations) {
+                                    Err(m) => return Err(m)
+                                    Ok(k) => match encode_typed_json(entry.value, schemas[1], declarations) {
+                                        Err(m) => return Err(m)
+                                        Ok(x) => { out = "${out}[${k},${x}]" }
+                                    }
+                                }
+                                first = false
+                            }
+                            Ok("${out}]")
+                        }
+                    }
+                    _ => Err("malformed schema descriptor")
+                }
+            } else if kind == "int_min" {
+                ro bound = match v_text(e.value) {
+                    None => return Err("expected canonical decimal i64 string")
+                    Some(t) => match parse_i64_canonical(t) {
+                        Err(m) => return Err(m)
+                        Ok(n) => n
+                    }
+                }
+                match v {
+                    Int(n) => {
+                        if n < bound { return Err("value outside bounded i64") }
+                        Ok("\"${n}\"")
+                    }
+                    _ => Err("value outside bounded i64")
+                }
+            } else if kind == "literal_set" {
+                match e.value {
+                    List(words) => match v {
+                        Text(t) => {
+                            mut found = false
+                            for w in words {
+                                match v_text(w) {
+                                    Some(x) => { if x == t { found = true } }
+                                    None => ()
+                                }
+                            }
+                            if !found { return Err("value outside literal set") }
+                            Ok(json_str_literal(t))
+                        }
+                        _ => Err("value outside literal set")
+                    }
+                    _ => Err("malformed schema descriptor")
+                }
+            } else if kind == "full_map" {
+                match e.value {
+                    List(args) => match v_entries(v) {
+                        None => return Err("full_map is a list of pairs")
+                        Some(dentries) => {
+                            if args.len() != 2 { return Err("malformed schema descriptor") }
+                            ro enum_name = match v_text(args[0]) {
+                                None => return Err("malformed schema descriptor")
+                                Some(n) => n
+                            }
+                            mut out = "["
+                            mut first = true
+                            for entry in dentries {
+                                if !first { out = "${out}," }
+                                match variant_type_name(entry.key) {
+                                    None => return Err("full_map key must be a fieldless enum case")
+                                    Some(tn) => {
+                                        if tn != enum_name { return Err("full_map key must be a fieldless enum case") }
+                                        match variant_case(entry.key) {
+                                            None => return Err("full_map key must be a fieldless enum case")
+                                            Some(cn) => match v_variant(entry.key) {
+                                                None => return Err("full_map key must be a fieldless enum case")
+                                                Some(kf) => {
+                                                    if kf.len() != 0 { return Err("full_map key must be a fieldless enum case") }
+                                                    match encode_typed_json(entry.value, args[1], declarations) {
+                                                        Err(m) => return Err(m)
+                                                        Ok(x) => { out = "${out}[{\"case\":\"${cn}\",\"fields\":{}},${x}]" }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                first = false
+                            }
+                            match declared_case_count(declarations, enum_name) {
+                                Err(m) => return Err(m)
+                                Ok(count) => {
+                                    if dentries.len() != count { return Err("full_map must contain all enum cases") }
+                                }
+                            }
+                            Ok("${out}]")
+                        }
+                    }
+                    _ => Err("malformed schema descriptor")
+                }
+            } else if kind == "record" {
+                match v_text(e.value) {
+                    None => return Err("declared type name must be qualified ASCII identifiers")
+                    Some(name) => encode_record_json(v, name, declarations)
+                }
+            } else if kind == "variant" {
+                match v_text(e.value) {
+                    None => return Err("declared type name must be qualified ASCII identifiers")
+                    Some(name) => encode_variant_json(v, name, declarations)
+                }
+            } else {
+                Err("unknown schema constructor")
+            }
+        }
+    }
+}
+
+fn encode_record_json(v Value, name str, declarations Value) -> Result[str, str] {
+    match record_name(v) {
+        None => return Err("record fields do not match schema")
+        Some(vname) => {
+            if vname != name { return Err("the record value is not of the declared type ${name}") }
+            match v_record(v) {
+                None => return Err("record fields do not match schema")
+                Some(vfields) => match entry_of_entries(declarations, name) {
+                    None => return Err("unknown or mismatched declared type")
+                    Some(decl) => match entry_of_dict(decl, "fields") {
+                        None => return Err("record fields do not match schema")
+                        Some(f) => match v_entries(f) {
+                            None => return Err("record fields do not match schema")
+                            Some(df) => {
+                                if df.len() != vfields.len() { return Err("record fields do not match schema") }
+                                for pair in df {
+                                    match v_text(pair.key) {
+                                        None => return Err("record fields do not match schema")
+                                        Some(fname) => {
+                                            mut found = false
+                                            for vf in vfields {
+                                                if vf.name == fname { found = true }
+                                            }
+                                            if !found { return Err("record fields do not match schema") }
+                                        }
+                                        _ => return Err("record fields do not match schema")
+                                    }
+                                }
+                                mut out = "{"
+                                mut first = true
+                                for vf in vfields {
+                                    if !first { out = "${out}," }
+                                    match entry_of_dict(f, vf.name) {
+                                        None => return Err("record fields do not match schema")
+                                        Some(fschema) => match encode_typed_json(vf.value, fschema, declarations) {
+                                            Err(m) => return Err(m)
+                                            Ok(t) => { out = "${out}${json_str_literal(vf.name)}:${t}" }
+                                        }
+                                    }
+                                    first = false
+                                }
+                                Ok("${out}}")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn encode_variant_json(v Value, name str, declarations Value) -> Result[str, str] {
+    match variant_type_name(v) {
+        None => return Err("variant uses case/fields")
+        Some(vname) => {
+            if vname != name { return Err("the variant value is not of the declared type ${name}") }
+            match variant_case(v) {
+                None => return Err("variant uses case/fields")
+                Some(vcase) => match v_variant(v) {
+                    None => return Err("variant uses case/fields")
+                    Some(vfields) => match entry_of_entries(declarations, name) {
+                        None => return Err("unknown or mismatched declared type")
+                        Some(decl) => match entry_of_dict(decl, "cases") {
+                            None => return Err("variant case/fields do not match schema")
+                            Some(c) => match entry_of_dict(c, vcase) {
+                                None => return Err("variant case/fields do not match schema")
+                                Some(cf) => match v_entries(cf) {
+                                    None => return Err("variant case/fields do not match schema")
+                                    Some(cfields) => {
+                                        if cfields.len() != vfields.len() { return Err("variant case/fields do not match schema") }
+                                        for pair in cfields {
+                                            match v_text(pair.key) {
+                                                None => return Err("variant case/fields do not match schema")
+                                                Some(fname) => {
+                                                    mut found = false
+                                                    for vf in vfields {
+                                                        if vf.name == fname { found = true }
+                                                    }
+                                                    if !found { return Err("variant case/fields do not match schema") }
+                                                }
+                                                _ => return Err("variant case/fields do not match schema")
+                                            }
+                                        }
+                                        mut out = "{\"case\":\"${vcase}\",\"fields\":{"
+                                        mut first = true
+                                        for vf in vfields {
+                                            if !first { out = "${out}," }
+                                            match entry_of_dict(cf, vf.name) {
+                                                None => return Err("variant case/fields do not match schema")
+                                                Some(fschema) => match encode_typed_json(vf.value, fschema, declarations) {
+                                                    Err(m) => return Err(m)
+                                                    Ok(t) => { out = "${out}${json_str_literal(vf.name)}:${t}" }
+                                                }
+                                            }
+                                            first = false
+                                        }
+                                        Ok("${out}}}")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// `typed_json_encode(value, schema, declarations)`: the schema is validated first; the typed JSON of the
+// contract is built (a record field is present exactly once, a fieldless case is `{"case": C, "fields": {}}`).
+export fn typed_json_encode(v Value, schema Value, declarations Value) -> Result[str, str] {
+    match typed_validate(schema, declarations) {
+        Ok(_) => encode_typed_json(v, schema, declarations)
+        Err(m) => Err(m)
+    }
+}
+
+// ---- the typed JSON decode -----------------------------------------------------------------------------
+
+fn json_object(j JsonValue) -> Option[JsonObject] => j.object()
+
+fn scalar_text_of(j JsonValue) -> Result[str, str] {
+    match j.str() {
+        None => Err("expected a string")
+        Some(s) => {
+            if has_surrogate(s) { return Err("a text holds only Unicode scalar values") }
+            Ok(s)
+        }
+    }
+}
+
+fn decode_typed_json(j JsonValue, schema Value, declarations Value) -> Result[Value, str] {
+    match schema {
+        Text(s) => decode_primitive_json(j, s)
+        Dict(_) => decode_constructed_json(j, schema, declarations)
+        _ => Err("malformed schema descriptor")
+    }
+}
+
+fn decode_primitive_json(j JsonValue, s str) -> Result[Value, str] {
+    if s == "null" {
+        if j.is_null() { return Ok(Null) }
+        Err("expected null")
+    } else if s == "bool" {
+        match j.bool() {
+            Some(b) => Ok(Bool(b))
+            None => Err("expected bool")
+        }
+    } else if s == "i64" {
+        match j.str() {
+            None => Err("expected canonical decimal i64 string")
+            Some(t) => match parse_i64_canonical(t) {
+                Ok(n) => Ok(Int(n))
+                Err(m) => Err(m)
+            }
+        }
+    } else if s == "f64" {
+        // a finite JSON number (the parser never makes a non-finite one from a text), or the `$float` tag
+        match j.object() {
+            Some(o) => {
+                if o.len() != 1 { return Err("expected a float") }
+                match o.get("$float") {
+                    None => return Err("expected a float")
+                    Some(tag) => match tag.str() {
+                        None => return Err("expected a float")
+                        Some(name) => {
+                            if name == "NaN" { return Ok(Float(f64.from_bits(0x7ff8000000000000 as u64))) }
+                            if name == "Infinity" { return Ok(Float(f64.from_bits(0x7ff0000000000000 as u64))) }
+                            if name == "-Infinity" { return Ok(Float(f64.from_bits(0xfff0000000000000 as u64))) }
+                            Err("expected a float")
+                        }
+                    }
+                }
+            }
+            None => match j.num() {
+                Some(x) => {
+                    if !x.is_finite() { return Err("expected a float") }
+                    Ok(Float(x))
+                }
+                None => Err("expected a float")
+            }
+        }
+    } else if s == "str" {
+        match scalar_text_of(j) {
+            Ok(t) => Ok(Text(t))
+            Err(m) => Err(m)
+        }
+    } else if s == "id" {
+        match j.str() {
+            None => Err("expected canonical id")
+            Some(t) => {
+                if !is_uuid(t) { return Err("expected canonical id") }
+                Ok(Text(t))
+            }
+        }
+    } else {
+        Err("unknown primitive")
+    }
+}
+
+fn json_keys(o JsonObject) -> []str {
+    mut out = []str.new()
+    for k in o.keys() { out.push(k) }
+    out
+}
+
+fn decode_constructed_json(j JsonValue, schema Value, declarations Value) -> Result[Value, str] {
+    match v_entries(schema) {
+        None => return Err("malformed schema descriptor")
+        Some(entries) => {
+            if entries.len() != 1 { return Err("malformed schema descriptor") }
+            ro e = entries[0]
+            ro kind = match e.key {
+                Text(k) => k
+                _ => return Err("malformed schema descriptor")
+            }
+            if kind == "named" {
+                match v_text(e.value) {
+                    None => return Err("declared type name must be qualified ASCII identifiers")
+                    Some(name) => match entry_of_entries(declarations, name) {
+                        None => return Err("unknown or mismatched declared type")
+                        Some(decl) => match entry_of_dict(decl, "type") {
+                            None => return Err("unknown or mismatched declared type")
+                            Some(inner) => decode_typed_json(j, inner, declarations)
+                        }
+                    }
+                }
+            } else if kind == "list" {
+                match j.array() {
+                    None => return Err("expected a list")
+                    Some(items) => {
+                        mut out = []Value.new()
+                        for item in items {
+                            match decode_typed_json(item, e.value, declarations) {
+                                Ok(v) => out.push(v)
+                                Err(m) => return Err(m)
+                            }
+                        }
+                        Ok(List(out))
+                    }
+                }
+            } else if kind == "tuple" {
+                match e.value {
+                    List(schemas) => match j.array() {
+                        None => return Err("expected a tuple")
+                        Some(items) => {
+                            if items.len() != schemas.len() { return Err("expected a tuple of ${schemas.len()} items") }
+                            mut out = []Value.new()
+                            mut i = 0
+                            while i < items.len() {
+                                match decode_typed_json(items[i], schemas[i], declarations) {
+                                    Ok(v) => out.push(v)
+                                    Err(m) => return Err(m)
+                                }
+                                i += 1
+                            }
+                            Ok(make_tuple(out))
+                        }
+                    }
+                    _ => Err("malformed schema descriptor")
+                }
+            } else if kind == "optional" {
+                match j.object() {
+                    None => return Err("an optional is {\"none\": true} or {\"some\": <value>}")
+                    Some(o) => {
+                        if o.len() != 1 { return Err("an optional is {\"none\": true} or {\"some\": <value>}") }
+                        ro keys = json_keys(o)
+                        if keys[0] == "none" {
+                            match o.get("none") {
+                                None => return Err("an optional is {\"none\": true} or {\"some\": <value>}")
+                                Some(flag) => match flag.bool() {
+                                    Some(true) => Ok(Null)
+                                    _ => Err("the \"none\" of an optional is true")
+                                }
+                            }
+                        } else if keys[0] == "some" {
+                            match o.get("some") {
+                                None => return Err("an optional is {\"none\": true} or {\"some\": <value>}")
+                                Some(inner) => match decode_typed_json(inner, e.value, declarations) {
+                                    Ok(v) => Ok(SomeV(SomeBox { inner: v }))
+                                    Err(m) => Err(m)
+                                }
+                            }
+                        } else {
+                            Err("an optional is {\"none\": true} or {\"some\": <value>}")
+                        }
+                    }
+                }
+            } else if kind == "map" {
+                match e.value {
+                    List(schemas) => match j.array() {
+                        None => return Err("expected an array of pairs")
+                        Some(items) => {
+                            if schemas.len() != 2 { return Err("malformed schema descriptor") }
+                            mut out = []DictEntry.new()
+                            for item in items {
+                                match item.array() {
+                                    None => return Err("a pair of a map is [key, value]")
+                                    Some(pair) => {
+                                        if pair.len() != 2 { return Err("a pair of a map is [key, value]") }
+                                        match decode_typed_json(pair[0], schemas[0], declarations) {
+                                            Err(m) => return Err(m)
+                                            Ok(k) => match decode_typed_json(pair[1], schemas[1], declarations) {
+                                                Err(m) => return Err(m)
+                                                Ok(x) => {
+                                                    for old in out {
+                                                        if value_equal(old.key, k) { return Err("the key of the map is repeated") }
+                                                    }
+                                                    out.push(DictEntry { key: k, value: x })
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Ok(make_dict(out))
+                        }
+                    }
+                    _ => Err("malformed schema descriptor")
+                }
+            } else if kind == "int_min" {
+                ro bound = match v_text(e.value) {
+                    None => return Err("expected canonical decimal i64 string")
+                    Some(t) => match parse_i64_canonical(t) {
+                        Err(m) => return Err(m)
+                        Ok(n) => n
+                    }
+                }
+                match j.str() {
+                    None => Err("expected canonical decimal i64 string")
+                    Some(t) => match parse_i64_canonical(t) {
+                        Ok(n) => {
+                            if n < bound { return Err("value outside bounded i64") }
+                            Ok(Int(n))
+                        }
+                        Err(m) => Err(m)
+                    }
+                }
+            } else if kind == "literal_set" {
+                match e.value {
+                    List(words) => match j.str() {
+                        None => return Err("expected a value of the literal set")
+                        Some(t) => {
+                            mut found = false
+                            for w in words {
+                                match v_text(w) {
+                                    Some(x) => { if x == t { found = true } }
+                                    None => ()
+                                }
+                            }
+                            if !found { return Err("value outside literal set") }
+                            Ok(Text(t))
+                        }
+                    }
+                    _ => Err("malformed schema descriptor")
+                }
+            } else if kind == "full_map" {
+                match e.value {
+                    List(args) => match j.array() {
+                        None => return Err("expected an array of pairs")
+                        Some(items) => {
+                            if args.len() != 2 { return Err("malformed schema descriptor") }
+                            ro enum_name = match v_text(args[0]) {
+                                None => return Err("malformed schema descriptor")
+                                Some(n) => n
+                            }
+                            mut out = []DictEntry.new()
+                            mut seen_cases = []str.new()
+                            for item in items {
+                                match item.array() {
+                                    None => return Err("a pair of a full map is [key, value]")
+                                    Some(pair) => {
+                                        if pair.len() != 2 { return Err("a pair of a full map is [key, value]") }
+                                        // the key is a fieldless case object {"case": C, "fields": {}}
+                                        match pair[0].object() {
+                                            None => return Err("full_map key must be a fieldless enum case")
+                                            Some(ko) => {
+                                                if ko.len() != 2 { return Err("full_map key must be a fieldless enum case") }
+                                                match ko.get("case") {
+                                                    None => return Err("full_map key must be a fieldless enum case")
+                                                    Some(cn) => match cn.str() {
+                                                        None => return Err("full_map key must be a fieldless enum case")
+                                                        Some(cname) => {
+                                                            if has_str(seen_cases, cname) { return Err("full_map must contain each enum case exactly once") }
+                                                            match ko.get("fields") {
+                                                                None => return Err("full_map key must be a fieldless enum case")
+                                                                Some(fl) => match fl.object() {
+                                                                    None => return Err("full_map key must be a fieldless enum case")
+                                                                    Some(fo) => {
+                                                                        if fo.len() != 0 { return Err("full_map key must be a fieldless enum case") }
+                                                                        match decode_case_value(enum_name, cname, declarations) {
+                                                                            Err(m) => return Err(m)
+                                                                            Ok(kv) => {
+                                                                                seen_cases.push(cname)
+                                                                                match decode_typed_json(pair[1], args[1], declarations) {
+                                                                                    Err(m) => return Err(m)
+                                                                                    Ok(x) => out.push(DictEntry { key: kv, value: x })
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            match declared_case_count(declarations, enum_name) {
+                                Err(m) => return Err(m)
+                                Ok(count) => {
+                                    if out.len() != count { return Err("full_map must contain all enum cases") }
+                                }
+                            }
+                            Ok(make_dict(out))
+                        }
+                    }
+                    _ => Err("malformed schema descriptor")
+                }
+            } else if kind == "record" {
+                match v_text(e.value) {
+                    None => return Err("declared type name must be qualified ASCII identifiers")
+                    Some(name) => decode_record_json(j, name, declarations)
+                }
+            } else if kind == "variant" {
+                match v_text(e.value) {
+                    None => return Err("declared type name must be qualified ASCII identifiers")
+                    Some(name) => decode_variant_json(j, name, declarations)
+                }
+            } else {
+                Err("unknown schema constructor")
+            }
+        }
+    }
+}
+
+fn decode_case_value(enum_name str, cname str, declarations Value) -> Result[Value, str] {
+    match entry_of_entries(declarations, enum_name) {
+        None => Err("unknown or mismatched declared type")
+        Some(decl) => match entry_of_dict(decl, "cases") {
+            None => Err("unknown or mismatched declared type")
+            Some(c) => match entry_of_dict(c, cname) {
+                None => Err("full_map key must be a fieldless enum case")
+                Some(cf) => match v_entries(cf) {
+                    None => Err("full_map key must be a fieldless enum case")
+                    Some(cfields) => {
+                        if cfields.len() != 0 { return Err("full_map key must be a fieldless enum case") }
+                        Ok(enum_value(enum_name, cname))
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn decode_record_json(j JsonValue, name str, declarations Value) -> Result[Value, str] {
+    match j.object() {
+        None => return Err("expected the record ${name}")
+        Some(o) => match entry_of_entries(declarations, name) {
+            None => return Err("unknown or mismatched declared type")
+            Some(decl) => match entry_of_dict(decl, "fields") {
+                None => return Err("record fields do not match schema")
+                Some(f) => match v_entries(f) {
+                    None => return Err("record fields do not match schema")
+                    Some(df) => {
+                        // no unknown key, no missing field
+                        for k in json_keys(o) {
+                            match entry_of(df, k) {
+                                None => return Err("the field \"${k}\" is not declared in ${name}")
+                                Some(_) => ()
+                            }
+                        }
+                        mut fields = []RecordField.new()
+                        for pair in df {
+                            match v_text(pair.key) {
+                                None => return Err("record fields do not match schema")
+                                Some(fname) => match o.get(fname) {
+                                    None => return Err("the field \"${fname}\" of ${name} is absent")
+                                    Some(jv) => match decode_typed_json(jv, pair.value, declarations) {
+                                        Ok(x) => fields.push(RecordField { name: fname, value: x })
+                                        Err(m) => return Err(m)
+                                    }
+                                }
+                            }
+                        }
+                        Ok(make_record(name, fields))
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn decode_variant_json(j JsonValue, name str, declarations Value) -> Result[Value, str] {
+    match j.object() {
+        None => return Err("a variant is {\"case\": <name>, \"fields\": { ... }}")
+        Some(o) => {
+            if o.len() != 2 { return Err("a variant is {\"case\": <name>, \"fields\": { ... }}") }
+            match o.get("case") {
+                None => return Err("a variant is {\"case\": <name>, \"fields\": { ... }}")
+                Some(cn) => match cn.str() {
+                    None => return Err("a variant is {\"case\": <name>, \"fields\": { ... }}")
+                    Some(cname) => match entry_of_entries(declarations, name) {
+                        None => return Err("unknown or mismatched declared type")
+                        Some(decl) => match entry_of_dict(decl, "cases") {
+                            None => return Err("variant case/fields do not match schema")
+                            Some(c) => match entry_of_dict(c, cname) {
+                                None => return Err("\"${cname}\" is not a case of ${name}")
+                                Some(cf) => match v_entries(cf) {
+                                    None => return Err("variant case/fields do not match schema")
+                                    Some(cfields) => match o.get("fields") {
+                                        None => return Err("a variant is {\"case\": <name>, \"fields\": { ... }}")
+                                        Some(fl) => match fl.object() {
+                                            None => return Err("variant case/fields do not match schema")
+                                            Some(fo) => {
+                                                for k in json_keys(fo) {
+                                                    match entry_of(cfields, k) {
+                                                        None => return Err("the field \"${k}\" is not declared in ${name}")
+                                                        Some(_) => ()
+                                                    }
+                                                }
+                                                mut fields = []RecordField.new()
+                                                for pair in cfields {
+                                                    match v_text(pair.key) {
+                                                        None => return Err("variant case/fields do not match schema")
+                                                        Some(fname) => match fo.get(fname) {
+                                                            None => return Err("the field \"${fname}\" of ${name} is absent")
+                                                            Some(jv) => match decode_typed_json(jv, pair.value, declarations) {
+                                                                Ok(x) => fields.push(RecordField { name: fname, value: x })
+                                                                Err(m) => return Err(m)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                Ok(make_variant(name, cname, fields))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// `typed_json_decode(text, schema, declarations)`: the schema is validated first; the text is parsed
+// strictly (a repeated key of an object is refused by the JSON parser), then read by the descriptor with
+// no coercion and no unknown or missing field.
+export fn typed_json_decode(text str, schema Value, declarations Value) -> Result[Value, str] {
+    match typed_validate(schema, declarations) {
+        Err(m) => return Err(m)
+        Ok(_) => match Json.parse(text) {
+            Err(_) => return Err("not valid JSON")
+            Ok(j) => decode_typed_json(j, schema, declarations)
+        }
+    }
+}

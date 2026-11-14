@@ -1,0 +1,17 @@
+module repro_engine.const_pool_clobber_def
+
+// The companion of const_pool_clobber: a record list whose elements are accessed by index in another
+// peer file of the same compilation unit.
+
+export type Recl { name str, tag str }
+
+export fn make() -> []Recl {
+    mut out = []Recl.new()
+    out.push(Recl { name: "a", tag: "x" })
+    out
+}
+
+export fn parse(flag bool) -> Result[str, str] {
+    if flag { return Ok("y") }
+    Err("no")
+}
