@@ -1,0 +1,24 @@
+{
+  "kind": "test",
+  "machine": "Echo",
+  "name": "epic 0.29 AC-D3: a rejected input of a free input does not reappear after a restore",
+  "start_at": 1000,
+  "steps": [
+    {"do": "feed", "event": {"kind": "start"}, "expect": {"state": "Idle"}},
+    {"do": "feed", "event": {"kind": "signal", "name": "message", "input": "one"}, "expect": {"state": "Idle", "data": {"messages": 1}}},
+    {
+      "do": "feed",
+      "event": {"kind": "signal", "name": "close"},
+      "expect": {"state": "Closed", "journal": [{"code": "closed_by_user", "params": {}}], "outcome": "answer:1", "data": {"stop_reason": "closed"}}
+    },
+    {
+      "do": "feed",
+      "event": {"kind": "signal", "name": "message", "input": "two"},
+      "expect": {"state": "Closed", "data": {"messages": 1}, "queue": [], "open": []}
+    },
+    {
+      "do": "restart",
+      "expect": {"state": "Closed", "outcome": "answer:1", "data": {"messages": 1, "stop_reason": "closed"}, "queue": [], "open": []}
+    }
+  ]
+}

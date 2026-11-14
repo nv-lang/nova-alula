@@ -229,6 +229,21 @@ export fn encode_snapshot[S, M Machine[S]](machine M, state EngineState[S]) -> S
     put(o, "final_text", JsonValue.str(state.final_text))
     put(o, "final_code", JsonValue.str(state.final_code))
     put(o, "final_step", JsonValue.int(state.final_step))
+    // the epic 0.29 result D: the pins and the admitted events travel with the snapshot (an empty
+    // contract_id means the instance is not pinned; a snapshot without the keys is an old one)
+    mut pins_o = JsonObject.new()
+    put(pins_o, "contract_id", JsonValue.str(state.pins.contract_id))
+    put(pins_o, "artifact_id", JsonValue.str(state.pins.artifact_id))
+    put(o, "pins", JsonValue.object(pins_o))
+    mut seen = []JsonValue.new()
+    for e in state.seen_events {
+        mut eo = JsonObject.new()
+        put(eo, "producer", JsonValue.str(e.producer))
+        put(eo, "event_id", JsonValue.str(e.event_id))
+        put(eo, "fingerprint", JsonValue.str(e.fingerprint))
+        seen.push(JsonValue.object(eo))
+    }
+    put(o, "seen_events", JsonValue.array(seen))
     { step: state.step, data: JsonValue.object(o).to_str() }
 }
 
@@ -252,7 +267,30 @@ fn engine_state_of[S](o JsonObject, snapshot_step int, state S) -> Option[Engine
     mut counters = []PartyCounter.new()
     for item in list_of(o, "counters")? { counters.push(counter_from_json(item)?) }
     if step != snapshot_step { return None }
-    ro restored EngineState[S] = { trace, step, event_counter, state, open_requests, closed, counters, final_kind, final_text, final_code, final_step }
+    // the pins and the admitted events of the result D: absent keys mean an old snapshot (not
+    // pinned, nothing admitted by a producer key)
+    mut pins = Pins { contract_id: "", artifact_id: "" }
+    if list_of(o, "seen_events").is_some() || o.get("pins").is_some() {
+        match o.get("pins") {
+            Some(p) => match p.object() {
+                Some(po) => {
+                    ro cid = text_of(po, "contract_id") ?? ""
+                    ro aid = text_of(po, "artifact_id") ?? ""
+                    pins = Pins { contract_id: cid, artifact_id: aid }
+                }
+                None => ()
+            }
+            None => ()
+        }
+    }
+    mut seen_events = []EventRecord.new()
+    if list_of(o, "seen_events").is_some() {
+        for item in list_of(o, "seen_events")? {
+            ro eo = item.object()?
+            seen_events.push(EventRecord { producer: text_of(eo, "producer")?, event_id: text_of(eo, "event_id")?, fingerprint: text_of(eo, "fingerprint")? })
+        }
+    }
+    ro restored EngineState[S] = { trace, step, event_counter, state, open_requests, closed, counters, final_kind, final_text, final_code, final_step, pins, seen_events }
     Some(restored)
 }
 

@@ -135,6 +135,33 @@ acknowledgement lost the event).
 
 Tests: after the request was opened; after the answer; between the commit and the send; the attempt counter; no snapshot.
 
+## The admission, the withdrawal and the pins (the epic 0.29 result D)
+
+Three runtime surfaces beside `on_arrival`:
+
+- `Engine.submit(event, producer, event_id, fingerprint)`: the admission of an event of a TRUSTED
+  producer (AC-D5). The dedup key is exactly `(producer, event_id)` — the tenant and the instance
+  are the engine itself; the delivery RPC id and the time are no part of it. The same key with the
+  same fingerprint is an idempotent duplicate (no second transition); the same key with another
+  fingerprint (a changed destination, correlation or typed data) is a conflict — refused, journaled,
+  nothing changed. The admitted keys travel with the snapshot, so the probes hold after a restore.
+- `Engine.withdraw(request)`: stop WAITING for the answer (AC-D1) — the request is closed for the
+  answers (a late reply is discarded and journaled, rule 17), the idle term stops counting; the
+  EXECUTION is not cancelled (a withdrawal proves no compensation; `order_cancel` of a machine row
+  stays the cancel of the protocol). The withdrawal is a step of its own with the line
+  `request_withdrawn`.
+- `start_engine_pinned` / `resume_engine_pinned` (AC-D4): the instance is pinned to the
+  `contract_id` and the `artifact_id` (the identities of `alula.machine_manifest`) for its whole
+  life; the pins travel with the snapshot, and a restore over a foreign contract or artifact is
+  REFUSED with the mismatch named — no fallback to "the last compatible build", an old instance is
+  not reinterpreted. A snapshot without pins (an old one) restores under any pins.
+
+Tests: `src/engine/admission_test.nv` (the probes AC-D1, AC-D4, AC-D5, on the engine);
+the probes AC-D2 and AC-D3 live with the machines that run them — `examples/tests/nested-call-restore-d2.alula.test.json`
+(a restore continues the same child instance and keeps its taken result) and
+`examples/tests/echo-restart-d3.alula.test.json` (a rejected input of a free input does not reappear
+after a restore).
+
 ## Writing another machine
 
 A machine is any type with the methods of `Machine[S]` (the match is structural, no `impl`); `S` is its typed state:

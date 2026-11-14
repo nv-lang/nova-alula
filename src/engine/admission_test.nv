@@ -1,0 +1,177 @@
+// admission_test.nv - the epic 0.29 result D, the runtime probes AC-D1, AC-D4 and AC-D5 on the
+// engine: the dedup admission of a trusted producer (`submit`), the withdrawal of a wait
+// (`withdraw`), the pins of an instance and the refusal of a foreign restore (`start_engine_pinned`,
+// `resume_engine_pinned`). The probes AC-D2 and AC-D3 (the nested machine and the free input) live
+// with the machines that run them (src/machine_run). The machine is the CallMachine of nested_test:
+// `ask` opens the request `callee-1`, a late answer to it is what the probes play with.
+
+module alula.engine
+
+fn ask_opened(mut world MemoryWorld) -> Engine[CallMachine, str] {
+    mut e = caller_begin(world)
+    caller_feed(e, world, "ask")
+    e
+}
+
+fn sub(mut e Engine[CallMachine, str], mut world MemoryWorld, producer str, event_id str, fingerprint str, event Incoming) -> AdmitEvent {
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        e.submit(event, producer, event_id, fingerprint)
+    }
+}
+
+fn asked_event() -> Incoming => Incoming.signal("ask", "")
+
+// ---- AC-D5: the dedup key is exactly (producer, event_id) ----------------------------------------------
+
+test "ad the same key and the same fingerprint is a duplicate, not a second transition" {
+    mut world = MemoryWorld.at(1000)
+    mut e = ask_opened(world)
+    ro step_before = e.engine_state.step
+    ro first = sub(e, world, "transport-a", "e-17", "ask|{}", asked_event())
+    assert(first.what == "applied")
+    ro second = sub(e, world, "transport-a", "e-17", "ask|{}", asked_event())
+    assert(second.what == "duplicate")
+    // no second transition: the step of the engine did not grow on the duplicate
+    assert(e.engine_state.step == step_before + 1)
+}
+
+test "ad the same key with another fingerprint is a conflict" {
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    ro first = sub(e, world, "transport-a", "e-17", "ask|{}", asked_event())
+    assert(first.what == "applied")
+    ro second = sub(e, world, "transport-a", "e-17", "ask|{\"changed\":1}", asked_event())
+    assert(second.what == "conflict")
+    // nothing changed: the machine sits where the first event left it
+    assert(e.engine_state.state == "waiting")
+}
+
+test "ad the same event_id of ANOTHER producer is a new event, not a duplicate" {
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    ro a = sub(e, world, "transport-a", "e-17", "ask|{}", asked_event())
+    assert(a.what == "applied")
+    // the producer is a part of the key: the same id of transport-b is NOT the event of transport-a
+    ro b = sub(e, world, "transport-b", "e-17", "ask|{}", asked_event())
+    assert(b.what == "applied")
+}
+
+test "ad the delivery id and the time are no part of the key" {
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    // the same logical event, another delivery envelope (the stamped id and time differ)
+    ro first = sub(e, world, "transport-a", "e-17", "ask|{}", Incoming.from_source("rpc-1", asked_event()))
+    ro second = sub(e, world, "transport-a", "e-17", "ask|{}", Incoming.from_source("rpc-999", asked_event()))
+    assert(first.what == "applied")
+    assert(second.what == "duplicate")
+}
+
+// ---- AC-D5 after a restore: the admitted keys travel with the snapshot ----------------------------------
+
+test "ad the dedup holds after a restore" {
+    mut world = MemoryWorld.at(1000)
+    mut e = ask_opened(world)
+    ro first = sub(e, world, "transport-a", "e-17", "ask|{}", asked_event())
+    assert(first.what == "applied")
+    mut again = caller_resumed(world)
+    ro second = sub(again, world, "transport-a", "e-17", "ask|{}", asked_event())
+    assert(second.what == "duplicate")
+    ro conflict = sub(again, world, "transport-a", "e-17", "ask|other", asked_event())
+    assert(conflict.what == "conflict")
+}
+
+// ---- AC-D1: progress keeps the request open; withdrawal stops the wait, not the execution ----------------
+
+test "ad a withdrawal closes the request for the answers and stops the term" {
+    mut world = MemoryWorld.at(1000)
+    mut e = ask_opened(world)
+    assert(e.engine_state.open_requests.len() == 1)
+    ro rid = e.engine_state.open_requests[0].id
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        ro done = e.withdraw(rid)
+        assert(done)
+        // the request is gone from the open ones and closed for the answers
+        assert(e.engine_state.open_requests.len() == 0)
+        // a late answer is discarded and journaled (rule 17): the machine stays where it was
+        e.on_arrival(Incoming.incoming(Answered, "answer", Some(rid), "\"late\""))
+    }
+    assert(e.engine_state.state == "waiting")
+    mut saw_discard = false
+    for entry in world.journal_entries() {
+        if entry.event.code == "request_withdrawn" { saw_discard = true }
+    }
+    assert(saw_discard)
+    // a second withdrawal of the same request finds nothing to close
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        assert(!e.withdraw(rid))
+    }
+}
+
+test "ad a withdrawal of an unknown request is refused" {
+    mut world = MemoryWorld.at(1000)
+    mut e = ask_opened(world)
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        assert(!e.withdraw("nope-1"))
+    }
+}
+
+// ---- AC-D4: the pins and the refusal of a foreign restore -----------------------------------------------
+
+fn pins_of(contract str, artifact str) -> Pins => { contract_id: contract, artifact_id: artifact }
+
+test "ad a pinned restore with the same pins passes, with a foreign one is refused" {
+    mut world = MemoryWorld.at(1000)
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        mut e = start_engine_pinned[str, CallMachine](caller(), "pinned-1", pins_of("sha256:c1", "sha256:a1"))
+        caller_feed(e, world, "ask")
+        // the same pins: the restore passes
+        match resume_engine_pinned[str, CallMachine](caller(), "pinned-1", pins_of("sha256:c1", "sha256:a1")) {
+            Ok(_) => ()
+            Err(m) => panic("the same pins are refused: ${m}")
+        }
+        // a foreign contract: refused, the snapshot stays as it is
+        match resume_engine_pinned[str, CallMachine](caller(), "pinned-1", pins_of("sha256:OTHER", "sha256:a1")) {
+            Ok(_) => panic("a foreign contract is accepted")
+            Err(m) => assert(m.contains("pinned to the contract sha256:c1"))
+        }
+        // a foreign artifact: refused the same way
+        match resume_engine_pinned[str, CallMachine](caller(), "pinned-1", pins_of("sha256:c1", "sha256:OTHER")) {
+            Ok(_) => panic("a foreign artifact is accepted")
+            Err(m) => assert(m.contains("pinned to the artifact sha256:a1"))
+        }
+    }
+}
+
+test "ad a snapshot without pins is restored under any pins (the old instance is not reinterpreted)" {
+    mut world = MemoryWorld.at(1000)
+    mut e = caller_begin(world)
+    caller_feed(e, world, "ask")
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        match resume_engine_pinned[str, CallMachine](caller(), "p-1", pins_of("sha256:whatever", "sha256:whatever")) {
+            Ok(_) => ()
+            Err(m) => panic("an unpinned snapshot is refused: ${m}")
+        }
+        match resume_engine_pinned[str, CallMachine](caller(), "no-such", pins_of("sha256:x", "sha256:x")) {
+            Ok(_) => panic("a missing snapshot is accepted")
+            Err(m) => assert(m == "no snapshot of no-such")
+        }
+    }
+}
+
+test "ad the pins and the seen keys travel in the snapshot" {
+    mut world = MemoryWorld.at(1000)
+    with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+        mut e = start_engine_pinned[str, CallMachine](caller(), "pinned-2", pins_of("sha256:c2", "sha256:a2"))
+        e.submit(asked_event(), "transport-a", "e-1", "ask|{}")
+    }
+    with Journal = memory_journal(world), Store = memory_store(world) {
+        ro snapshot = Store.load("pinned-2")
+        match snapshot {
+            Some(s) => {
+                assert(s.data.contains("\"contract_id\":\"sha256:c2\""))
+                assert(s.data.contains("\"event_id\":\"e-1\""))
+            }
+            None => panic("no snapshot")
+        }
+    }
+}

@@ -162,6 +162,93 @@ fn overtaken_lines(all []JournalEntry, trace str) -> []int {
     flags
 }
 
+// ---- the epic 0.29 result D: the admission of a trusted producer and the withdrawal of a wait ------
+
+/// AdmitEvent: what `submit` decided and did. `applied` — the event was new and the step ran;
+/// `duplicate` — the same (producer, event_id) with the same fingerprint was admitted before: the
+/// event is NOT applied again (idempotent delivery); `conflict` — the same key with ANOTHER
+/// fingerprint (or another request): refused, journaled, nothing changed.
+export type AdmitEvent { what str, fingerprint str }
+
+/// `Engine.submit`: the admission of an event of a trusted producer (AC-D5). The dedup key is
+/// exactly (producer, event_id) — the tenant and the instance are the engine itself; the delivery
+/// RPC id and the time of the delivery are no part of it. The fingerprint is the content the caller
+/// pins (the kind, the request, the input text); a change of the destination or of the correlation
+/// or of the typed data changes it, so a repeat with a changed content is a conflict, not a new
+/// event. The admitted key is written into the engine state (it travels with the snapshot), so the
+/// same probes hold after a restore.
+export fn Engine[M Machine[S], S] mut @submit(raw Incoming, producer str, event_id str, fingerprint str) Journal Store Time -> AdmitEvent {
+    for seen in @engine_state.seen_events {
+        if seen.producer == producer && seen.event_id == event_id {
+            if seen.fingerprint == fingerprint {
+                return AdmitEvent { what: "duplicate", fingerprint }
+            }
+            return AdmitEvent { what: "conflict", fingerprint }
+        }
+    }
+    // the record joins the state BEFORE the step: the commit of the step saves the snapshot with it
+    // (a step that dies takes no snapshot, so an unapplied admission does not survive it)
+    @engine_state.seen_events.push(EventRecord { producer, event_id, fingerprint })
+    @on_arrival(raw)
+    AdmitEvent { what: "applied", fingerprint }
+}
+
+/// `Engine.withdraw`: stop WAITING for the answer of the request (AC-D1): the request is closed for
+/// the answers (a late reply is discarded and journaled, rule 17), the idle term stops counting; the
+/// EXECUTION is not cancelled (a withdrawal does not prove a compensation — the caller asks the
+/// party to stop by its own means, `order_cancel` of a machine row is the cancel of the protocol).
+/// The withdrawal is a step of its own with its journal line.
+export fn Engine[M Machine[S], S] mut @withdraw(request str) Journal Store Time -> bool {
+    ro now = now_ms()
+    mut found = false
+    mut kept = []OpenRequest.new()
+    for r in @engine_state.open_requests {
+        if r.id == request { found = true } else { kept.push(r) }
+    }
+    if !found { return false }
+    @engine_state.open_requests = kept
+    @engine_state.closed.push(request)
+    ro step = @engine_state.step + 1
+    mut entries = []JournalEntry.new()
+    entries.push(entry_of(@engine_state.trace, step, "withdraw", request, now, journal_event("request_withdrawn", [param("request", request)])))
+    @commit(step, entries)
+    true
+}
+
+// The pins of a fresh engine (AC-D4): the caller pins the instance to the contract and the artifact
+// at the start; the snapshot carries them; a restore over other pins is refused.
+export fn start_engine_pinned[S, M Machine[S]](machine M, id str, pins Pins) Journal Store Time -> Engine[M, S] {
+    ro trace = "t${now_ms()}-${id}"
+    mut e = start_engine_in[S, M](machine, id, trace)
+    e.engine_state.pins = pins
+    // the first snapshot was written without the pins: write it again with them
+    mut entries = []JournalEntry.new()
+    entries.push(entry_of(trace, e.engine_state.step, "pin", "", now_ms(), journal_event("instance_pinned", [param("contract", pins.contract_id), param("artifact", pins.artifact_id)])))
+    e.commit(e.engine_state.step, entries)
+    e
+}
+
+/// `resume_engine_pinned`: restore over the pins (AC-D4). The refusal names the mismatch: a foreign
+/// contract or artifact does not fall back to "the last compatible build", the snapshot stays as it
+/// is and the old instance is not reinterpreted.
+export fn resume_engine_pinned[S, M Machine[S]](machine M, id str, pins Pins) Journal Store Time -> Result[Engine[M, S], str] {
+    match Store.load(id) {
+        None => Err("no snapshot of ${id}")
+        Some(snapshot) => match decode_snapshot[S, M](machine, snapshot) {
+            None => panic("the snapshot of ${id} is damaged")
+            Some(engine_state) => {
+                if engine_state.pins.contract_id != "" && engine_state.pins.contract_id != pins.contract_id {
+                    return Err("the snapshot of ${id} is pinned to the contract ${engine_state.pins.contract_id}, the caller names ${pins.contract_id}: the instance is not reinterpreted")
+                }
+                if engine_state.pins.artifact_id != "" && engine_state.pins.artifact_id != pins.artifact_id {
+                    return Err("the snapshot of ${id} is pinned to the artifact ${engine_state.pins.artifact_id}, the caller names ${pins.artifact_id}: the instance is not reinterpreted")
+                }
+                Ok(restart[S, M](machine, id, engine_state))
+            }
+        }
+    }
+}
+
 fn restart[S, M Machine[S]](machine M, id str, engine_state EngineState[S]) Journal Store Time -> Engine[M, S] {
     ro now = now_ms()
     mut sent = []str.new()

@@ -1,0 +1,129 @@
+{
+  "kind": "test",
+  "machine": "caller",
+  "name": "epic 0.29 AC-D2: a restore continues the same child instance and keeps its taken result",
+  "start_at": 1000,
+  "steps": [
+    {
+      "do": "feed",
+      "event": {
+        "kind": "start",
+        "request": "up-1",
+        "input": {
+          "task": "t"
+        }
+      },
+      "expect": {
+        "state": "Call",
+        "open": [
+          "callee-1"
+        ],
+        "sent": [
+          "callee-1"
+        ],
+        "data": {
+          "call_request_id": "up-1"
+        }
+      },
+      "also": {
+        "callee-1": {
+          "state": "Ask",
+          "open": [
+            "agent-1"
+          ]
+        }
+      }
+    },
+    {
+      "do": "restart",
+      "expect": {
+        "state": "Call",
+        "open": [
+          "callee-1"
+        ],
+        "data": {
+          "call_request_id": "up-1"
+        }
+      },
+      "also": {
+        "callee-1": {
+          "state": "Ask",
+          "open": [
+            "agent-1"
+          ]
+        }
+      }
+    },
+    {
+      "do": "feed",
+      "event": {
+        "kind": "answer",
+        "request": "agent-1",
+        "input": "hi"
+      },
+      "on": "callee-1",
+      "expect": {
+        "state": "Done",
+        "outcome": "answer:{\"$record\":\"CallOutput\",\"fields\":{\"answer\":\"hi\",\"score\":3}}"
+      },
+      "also": {
+        "parent": {
+          "state": "Call",
+          "queue": [
+            "send callee-1",
+            "in answer"
+          ],
+          "outcome": "none"
+        }
+      }
+    },
+    {
+      "do": "restart",
+      "expect": {
+        "state": "Call",
+        "queue": [
+          "send callee-1",
+          "in answer"
+        ],
+        "outcome": "none"
+      },
+      "also": {
+        "callee-1": {
+          "state": "Done",
+          "outcome": "answer:{\"$record\":\"CallOutput\",\"fields\":{\"answer\":\"hi\",\"score\":3}}"
+        }
+      }
+    },
+    {
+      "do": "pump",
+      "expect": {
+        "state": "Done",
+        "journal": [
+          {
+            "code": "request_repeated",
+            "params": {
+              "attempt": "1"
+            }
+          },
+          {
+            "code": "child_answered",
+            "params": {
+              "answer": "hi",
+              "score": "3"
+            }
+          }
+        ],
+        "open": [],
+        "queue": [
+          "in answer"
+        ],
+        "outcome": "answer:hi"
+      },
+      "also": {
+        "callee-1": {
+          "state": "Done"
+        }
+      }
+    }
+  ]
+}

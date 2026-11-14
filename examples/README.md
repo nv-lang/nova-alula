@@ -6,7 +6,7 @@ The examples of the package `alula` (task 158): small machines that show one con
 ```powershell
 . C:/work/nova/nova-oracle-0.1.0-windows-x86_64/setup-env.ps1
 nova build src/alula.nv -o target/alula.exe
-target/alula.exe test examples        # 105 of 105 tests passed (66 here and 39 of chat/)
+target/alula.exe test examples        # 107 of 107 tests passed (68 here and 39 of chat/)
 ```
 
 `registry.md` and `journal.md` are the host "examples": the program takes them from the folder of the machines (spec 7a, AL-113; the form is in [src/machine/README.md](../src/machine/README.md)). The language itself holds

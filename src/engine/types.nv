@@ -109,6 +109,20 @@ export type OpenRequest { id str, party str, attempt int, step int, input str, w
 /// PartyCounter: the attempt counter of a party (spec rule 15): grows on every order, never reset.
 export type PartyCounter { party str, attempts int }
 
+/// Pins: the identity the instance is pinned to for its whole life (the epic 0.29 result D, AC-D4):
+/// `contract_id` of the manifest and `artifact_id` of the build the engine was started with. A
+/// restore over a snapshot pinned differently is REFUSED (no fallback to "the last compatible
+/// build", no reinterpreting of an old instance); empty strings mean the instance is not pinned.
+export type Pins { contract_id str, artifact_id str }
+
+/// EventRecord: an admitted event of a trusted producer (the epic 0.29 result D, AC-D5). The dedup
+/// key is `(producer, event_id)` — the tenant and the instance are the engine itself, one engine one
+/// instance; `fingerprint` is the content the event carried (the kind, the request, the input): a
+/// repeat with the SAME fingerprint is an idempotent duplicate (no second transition), a repeat with
+/// ANOTHER fingerprint is a conflict (refused, journaled). A delivery RPC id or the time of the
+/// delivery is no part of the key.
+export type EventRecord { producer str, event_id str, fingerprint str }
+
 /// EngineState: the data of the engine itself (spec: "engine data"); saved whole in the snapshot.
 ///  - `state` is the state of the machine, typed by the machine; it is encoded only at the border of the snapshot;
 ///  - `step` is the number of committed steps, `event_counter` the number of arrived events;
@@ -125,7 +139,9 @@ export type EngineState[S] {
     final_kind str,
     final_text str,
     final_code str,
-    final_step int
+    final_step int,
+    pins Pins,
+    seen_events []EventRecord
 }
 
 /// FailCode name: the text used in events, in the snapshot and in the outcome.
@@ -248,5 +264,6 @@ export fn Incoming.signal(name str, input str) -> Incoming => Incoming.incoming(
 export fn EngineState.fresh[S](trace str, state S) -> EngineState[S] => {
     trace, step: 0, event_counter: 0, state,
     open_requests: []OpenRequest.new(), closed: []str.new(), counters: []PartyCounter.new(),
-    final_kind: "", final_text: "", final_code: "", final_step: 0
+    final_kind: "", final_text: "", final_code: "", final_step: 0,
+    pins: Pins { contract_id: "", artifact_id: "" }, seen_events: []EventRecord.new()
 }

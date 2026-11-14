@@ -54,7 +54,7 @@ fn parse_err(text str) -> str {
 test "every test" {
     // the tests of a parent with its nested machines run in the unit `machine_nested_run`, the others on the machine they name
     ro files = test_files()
-    assert(files.len() == 66)
+    assert(files.len() == 68)
     mut run = 0
     for f in files {
         if f.name.starts_with("nested-") || f.name.starts_with("batch-") { continue }
@@ -62,7 +62,7 @@ test "every test" {
         if !run_ok(result) { panic("${f.name}: ${report_text(result)}") }
         run += 1
     }
-    assert(run == 66 - 17 - 9 - 3)
+    assert(run == 68 - 18 - 9 - 3)
 }
 
 test "test object input" {
@@ -143,7 +143,7 @@ test "lists of files" {
 
 test "names by the Alula" {
     ro tests = test_files()
-    assert(tests.len() == 66)
+    assert(tests.len() == 68)
     for f in tests { assert(f.name.ends_with(".alula.test.json")) }
     ro tables = table_files()
     assert(tables.len() == 10)
