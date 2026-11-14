@@ -554,7 +554,7 @@ test "dt scalars" {
 test "dt optional" {
     ro opt = OptionalType(TextType)
     assert(value_equal(dtval("{\"none\":true}", opt), Null))
-    assert(value_equal(dtval("{\"some\":\"a\"}", opt), SomeV(SomeBox { inner: Text("a") })))
+    assert(value_equal(dtval("{\"some\":\"a\"}", opt), SomeV(Text("a"))))
     assert(dtflaw("{\"some\":null}", opt) == "$.some: expected a text, got null")
     assert(dtflaw("{}", opt) == "$: an optional is {\"none\": true} or {\"some\": <value>}")
     assert(dtflaw("{\"none\":false}", opt) == "$: the \"none\" of an optional is true")
@@ -569,8 +569,8 @@ test "dt optional three forms" {
     ro sn = dtval("{\"some\":{\"none\":true}}", opt)
     ro ss = dtval("{\"some\":{\"some\":\"a\"}}", opt)
     assert(value_equal(n, Null))
-    assert(value_equal(sn, SomeV(SomeBox { inner: Null })))
-    assert(value_equal(ss, SomeV(SomeBox { inner: SomeV(SomeBox { inner: Text("a") }) })))
+    assert(value_equal(sn, SomeV(Null)))
+    assert(value_equal(ss, SomeV(SomeV(Text("a")))))
     assert(!value_equal(n, sn))
     assert(!value_equal(n, ss))
     assert(!value_equal(sn, ss))
@@ -592,7 +592,7 @@ test "dt record" {
 test "dt variant" {
     ro spec = VariantType("Outcome")
     assert(value_equal(dtval("{\"case\":\"Done\",\"fields\":{\"text\":{\"some\":\"t\"},\"count\":3}}", spec),
-        make_variant("Outcome", "Done", [tv("text", SomeV(SomeBox { inner: Text("t") })), tv("count", Int(3))])))
+        make_variant("Outcome", "Done", [tv("text", SomeV(Text("t"))), tv("count", Int(3))])))
     assert(value_equal(dtval("{\"case\":\"Refused\",\"fields\":{}}", spec), enum_value("Outcome", "Refused")))
     assert(dtflaw("{\"case\":\"Done\"}", spec) == "$: a variant with fields is {\"case\": <name>, \"fields\": { ... }}")
     assert(dtflaw("{\"case\":\"Nope\",\"fields\":{}}", spec) == "$: \"Nope\" is not a case of Outcome")

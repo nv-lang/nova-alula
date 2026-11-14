@@ -351,7 +351,7 @@ fn previous_state(ctx Ctx) -> Result[str, Fault] {
     match data_get(ctx.data, "previous") {
         Text(s) => Ok(s)
         // task 146: the datum is `?State`; a present value is held wrapped
-        SomeV(b) => match b.inner {
+        SomeV(b) => match b {
             Text(s) => Ok(s)
             _ => Err(defect_fault("no_previous", "the datum previous is empty"))
         }
@@ -371,7 +371,7 @@ fn take_goto(mut ctx Ctx, next Goto) -> Result[Goto, Fault] {
                     Ok(Goto { target: ToState(s), restart: next.restart })
                 }
                 // task 146: the datum is an optional; a present value is held wrapped
-                SomeV(b) => match b.inner {
+                SomeV(b) => match b {
                     Text(s) => {
                         ctx.data = data_put(ctx.data, "preparation_return", Null)
                         Ok(Goto { target: ToState(s), restart: next.restart })

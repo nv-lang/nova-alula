@@ -95,19 +95,19 @@ test "ev else-if chain equals the nested if (AL-157)" {
 
 test "ev some" {
     // the explicit optional constructor: a bare value becomes present, no former layer is taken off
-    assert(eis(eopt(lit_int(5)), SomeV(SomeBox { inner: Int(5) })))
-    assert(eis(eopt(lit_text("x")), SomeV(SomeBox { inner: Text("x") })))
-    assert(eis(eopt(lit_bool(true)), SomeV(SomeBox { inner: Bool(true) })))
+    assert(eis(eopt(lit_int(5)), SomeV(Int(5))))
+    assert(eis(eopt(lit_text("x")), SomeV(Text("x"))))
+    assert(eis(eopt(lit_bool(true)), SomeV(Bool(true))))
     // ?x.field is ?(x.field): the field access happens first, then the wrap
     ro f = eopt(field_of(name_ref("f"), "evidence"))
     match eval(f, escope()) {
-        Ok(v) => assert(value_equal(v, SomeV(SomeBox { inner: Text("e1") })))
+        Ok(v) => assert(value_equal(v, SomeV(Text("e1"))))
         Err(x) => panic("the field of a record must wrap: ${kind_word(x.kind)}@${x.path}")
     }
     // the double wrap: ?(?x) keeps both layers
-    assert(eis(eopt(eopt(lit_int(5))), SomeV(SomeBox { inner: SomeV(SomeBox { inner: Int(5) }) })))
+    assert(eis(eopt(eopt(lit_int(5))), SomeV(SomeV(Int(5)))))
     // ?пусто is a present none (Some(None)), not the plain none
-    assert(eis(eopt(lit_null()), SomeV(SomeBox { inner: Null })))
+    assert(eis(eopt(lit_null()), SomeV(Null)))
     assert(!eis(eopt(lit_null()), Null))
     // the strict equality: ?rhs is a valid optional side, the equality compares all layers
     assert(eis(en(Eq, eopt(lit_int(5)), eopt(lit_int(5))), Bool(true)))
@@ -162,10 +162,10 @@ test "ev decode" {
     assert(eis(edec(lit_text("[1,true]"), "[]int"), make_decode_reject("$[1]", "expected an int, got a boolean")))
     // a nested optional inner type: the none and the present forms are both accepted, the bare value is not
     assert(eis(edec(lit_text("{\"none\":true}"), "?text"), make_decode_ok(Null)))
-    assert(eis(edec(lit_text("{\"some\":\"x\"}"), "?text"), make_decode_ok(SomeV(SomeBox { inner: Text("x") }))))
+    assert(eis(edec(lit_text("{\"some\":\"x\"}"), "?text"), make_decode_ok(SomeV(Text("x")))))
     assert(eis(edec(lit_text("\"bare\""), "?text"), make_decode_reject("$", "expected an optional object, got a string")))
     // the outer optional of the decode result itself is the work of the machine, not of the codec
-    assert(eis(edec(lit_text("{\"some\":{\"some\":\"x\"}}"), "??text"), make_decode_ok(SomeV(SomeBox { inner: SomeV(SomeBox { inner: Text("x") }) }))))
+    assert(eis(edec(lit_text("{\"some\":{\"some\":\"x\"}}"), "??text"), make_decode_ok(SomeV(SomeV(Text("x"))))))
     // a not-a-text argument is an error of the evaluator, not a refusal
     ro not_text = edec(lit_int(5), "int")
     match ev_plain(not_text) {
@@ -501,7 +501,7 @@ test "mc any all" {
     assert(eis_in(ec("any", [er("xs"), big]), Bool(true)))
     assert(eis_in(ec("all", [er("xs"), big]), Bool(false)))
     assert(eis_in(ec("count", [er("xs"), big]), Int(2)))
-    assert(eis_in(ec("first_where", [er("xs"), big]), SomeV(SomeBox { inner: Int(4) })))
+    assert(eis_in(ec("first_where", [er("xs"), big]), SomeV(Int(4))))
     assert(eis_in(ec("first_where", [er("xs"), lambda1("v", en(Gt, er("v"), ei(9)))]), Null))
     assert(eis(ec("any", [eint_list([]), big]), Bool(false)))
     assert(eis(ec("all", [eint_list([]), big]), Bool(true)))
@@ -517,7 +517,7 @@ test "mc early stop" {
 
 test "mc first stop" {
     ro xs = eint_list([1, 0])
-    assert(eis(ec("first_where", [xs, lambda1("v", en(Eq, en(Div, ei(10), er("v")), ei(10)))]), SomeV(SomeBox { inner: Int(1) })))
+    assert(eis(ec("first_where", [xs, lambda1("v", en(Eq, en(Div, ei(10), er("v")), ei(10)))]), SomeV(Int(1))))
 }
 
 test "mc fold" {

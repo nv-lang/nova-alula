@@ -315,7 +315,7 @@ fn check_at(spec TypeSpec, v Value, defs TypeDefs, path str) -> Result[(), TypeC
         }
         OptionalType(inner) => match v {
             Null => Ok(())
-            SomeV(item) => check_at(inner, item.inner, defs, path)
+            SomeV(item) => check_at(inner, item, defs, path)
             _ => check_at(inner, v, defs, path)
         }
         ListType(inner) => match v {
@@ -414,8 +414,8 @@ export fn normalize_at(spec TypeSpec, v Value, defs TypeDefs) -> Value {
     match spec {
         OptionalType(inner) => match v {
             Null => Null
-            SomeV(item) => SomeV(SomeBox { inner: normalize_at(inner, item.inner, defs) })
-            _ => SomeV(SomeBox { inner: normalize_at(inner, v, defs) })
+            SomeV(item) => SomeV(normalize_at(inner, item, defs))
+            _ => SomeV(normalize_at(inner, v, defs))
         }
         ListType(inner) => match v {
             List(items) => {

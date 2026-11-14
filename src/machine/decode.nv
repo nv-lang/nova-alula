@@ -134,7 +134,7 @@ fn decode_optional(inner TypeSpec, o JsonObject, defs TypeDefs, path str) -> Res
         }
         None => match o.get("some") {
             Some(v) => match decode_at(inner, v, defs, "${path}.some") {
-                Ok(x) => Ok(SomeV(SomeBox { inner: x }))
+                Ok(x) => Ok(SomeV(x))
                 Err(e) => Err(e)
             }
             None => Err(optional_shape(path))

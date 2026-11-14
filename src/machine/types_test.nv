@@ -98,7 +98,7 @@ test "ty decode outcome" {
     assert(tmsg(DecodeOutcomeType(IntType), enum_value("Severity", "Critical")).contains("expected DecodeOutcome(int)"))
     // the inner type is fully checked: a nested optional accepts the present and the none forms
     assert(tok(DecodeOutcomeType(OptionalType(TextType)), make_decode_ok(Null)))
-    ro present = make_decode_ok(SomeV(SomeBox { inner: Text("x") }))
+    ro present = make_decode_ok(SomeV(Text("x")))
     assert(tok(DecodeOutcomeType(OptionalType(TextType)), present))
     assert(!tok(DecodeOutcomeType(OptionalType(TextType)), make_decode_ok(Int(1))))
 }

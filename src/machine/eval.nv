@@ -315,7 +315,7 @@ fn binary(op BinOp, left Expr, right Expr, mut env Env, mut host PrimitiveHost, 
             ro l = part(left, "left", env, host, depth)?
             match l {
                 Null => part(right, "right", env, host, depth)
-                SomeV(inner) => Ok(inner.inner)
+                SomeV(inner) => Ok(inner)
                 _ => Ok(l)
             }
         }
@@ -644,7 +644,7 @@ fn eval_macro(name str, args []Expr, mut env Env, mut host PrimitiveHost, depth 
     }
     // first_where
     for x in items {
-        if predicate(lam, x, "args[1]", env, host, depth)? { return Ok(SomeV(SomeBox { inner: x })) }
+        if predicate(lam, x, "args[1]", env, host, depth)? { return Ok(SomeV(x)) }
     }
     Ok(Null)
 }
@@ -824,7 +824,7 @@ fn eval_plain(name str, v []Value) -> Result[Value, EvalError] {
         }
         "require" => match v[0] {
             Null => refuse(Unreachable, "a required value is absent")
-            SomeV(inner) => Ok(inner.inner)
+            SomeV(inner) => Ok(inner)
             _ => Ok(v[0])
         }
         "remove" => match v[0] {
@@ -865,7 +865,7 @@ fn eval_plain(name str, v []Value) -> Result[Value, EvalError] {
         }
         "text_to_time" => match v[0] {
             Text(s) => match text_to_time(s) {
-                Some(ms) => Ok(SomeV(SomeBox { inner: Int(ms) }))
+                Some(ms) => Ok(SomeV(Int(ms)))
                 None => Ok(Null)
             }
             _ => wrong_at("args[0]", "text", v[0])
@@ -1083,7 +1083,7 @@ fn ev(e Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, E
             // the explicit optional constructor (AL-156): `?x` wraps x in exactly one Some layer without
             // taking the former ones off - a bare value becomes present, an optional becomes a double optional
             ro v = part(x, "operand", env, host, depth)?
-            Ok(SomeV(SomeBox { inner: v }))
+            Ok(SomeV(v))
         }
     }
 }

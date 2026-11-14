@@ -29,7 +29,7 @@ module alula.machine_typed
 
 import std.encoding.json.{Json, JsonValue, JsonObject}
 import std.crypto.sha256.{Sha256}
-import alula.machine.{Value, Null, Bool, Int, Float, Text, List, Dict, DictEntry, RecordField, SomeV, SomeBox, make_record, make_dict, make_tuple, make_variant, enum_value, value_equal, value_json, is_uuid}
+import alula.machine.{Value, Null, Bool, Int, Float, Text, List, Dict, DictEntry, RecordField, SomeV, make_record, make_dict, make_tuple, make_variant, enum_value, value_equal, value_json, is_uuid}
 
 // The private comparisons of value.nv are one-liners; the contract module keeps its own copies
 // (a sibling module sees only the exports of alula.machine).
@@ -745,7 +745,7 @@ fn variant_type_name(v Value) -> Option[str] => match v { Variant { type_name, n
 
 fn variant_case(v Value) -> Option[str] => match v { Variant { type_name, name, fields } => Some(name), _ => None }
 
-fn v_some(v Value) -> Option[Value] => match v { SomeV(box) => Some(box.inner), _ => None }
+fn v_some(v Value) -> Option[Value] => match v { SomeV(inner) => Some(inner), _ => None }
 
 fn is_tuple_value(v Value) -> bool {
     match v {
@@ -1911,7 +1911,7 @@ fn decode_constructed_json(j JsonValue, schema Value, declarations Value) -> Res
                             match o.get("some") {
                                 None => return Err("an optional is {\"none\": true} or {\"some\": <value>}")
                                 Some(inner) => match decode_typed_json(inner, e.value, declarations) {
-                                    Ok(v) => Ok(SomeV(SomeBox { inner: v }))
+                                    Ok(v) => Ok(SomeV(v))
                                     Err(m) => Err(m)
                                 }
                             }
