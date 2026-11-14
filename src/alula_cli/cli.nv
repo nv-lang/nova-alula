@@ -310,11 +310,43 @@ fn run_file_command(command str, a Args) Fs Io -> int {
         Err(message) => return usage_error(command, message)
     }
     ro libs = library_files(text, file, a)
-    if command == "compile" { return deliver(compile_command(text, file, a.no_check, a.lenient, registry, libs), command, a) }
+    if command == "compile" { return compile_deliver(text, file, a, registry, libs) }
     if command == "render" { return deliver(render_command(text, file, language, a.lenient, registry, libs), command, a) }
     if command == "convert" { return convert_deliver(text, file, language, a, registry, libs) }
     if command == "check" { return deliver(check_command(text, file, a.no_check, registry, libs), command, a) }
     deliver(summary_command(text, file, a.no_check, registry, libs), command, a)
+}
+
+// `alula compile` with `--manifest`: the tree goes by `-o` (or to the standard output), the manifest
+// JSON goes to the file of `--manifest` (the epic 0.29 result B). The manifest file must not be there
+// without `--force`, like the file of `-o`.
+fn compile_deliver(text str, file str, a Args, registry Registry, libs []NamedText) Fs Io -> int {
+    mut registry_text = ""
+    mut journal_text = ""
+    if a.has_manifest {
+        registry_text = match host_text(a.has_registry, a.registry_file, "${dir_of(file)}/registry.md") {
+            Ok(t) => t
+            Err(m) => return usage_error("compile", m)
+        }
+        journal_text = match host_text(a.has_journal, a.journal_file, "${dir_of(file)}/journal.md") {
+            Ok(t) => t
+            Err(m) => return usage_error("compile", m)
+        }
+        if !a.force && file_exists(a.manifest_file) {
+            return usage_error("compile", "${a.manifest_file} already exists (use --force to overwrite)")
+        }
+    }
+    ro made = compile_command(text, file, a.no_check, a.lenient, registry, libs, if a.has_manifest { a.manifest_file } else { "" }, registry_text, journal_text)
+    ro code = deliver(made, "compile", a)
+    if code != 0 { return code }
+    if made.manifest != "" {
+        make_folders(dir_of(a.manifest_file))
+        match write_text(path_of(a.manifest_file), made.manifest) {
+            Ok(written) => ()
+            Err(e) => return usage_error("compile", "cannot write ${a.manifest_file}")
+        }
+    }
+    code
 }
 
 fn run_test_command(a Args) Fs Io -> int {

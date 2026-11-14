@@ -5,7 +5,7 @@ import std.text
 import alula.machine_table.{alula_versions}
 
 /// The version of the program.
-export const PROGRAM_VERSION = "0.28.0"
+export const PROGRAM_VERSION = "0.29.0"
 
 /// The line of `alula version`: the program and the version of the language it writes (0.28: there is no transition period); no version of a machine and no schema after a slash (AL-147).
 export fn version_text() -> str {
@@ -22,8 +22,10 @@ Usage:
   alula <command> --help
 
 Commands:
-  alula compile <file.alula.md> [-o <file.alula.json>] [--lenient] [--no-check] [--force]
-      Alula -> the JSON tree of the machine (the language of the file is read from its header).
+  alula compile <file.alula.md> [-o <file.alula.json>] [--manifest <file>] [--lenient] [--no-check] [--force]
+      Alula -> the JSON tree of the machine (the language of the file is read from its header);
+      with --manifest the public manifest of the machine goes to the file (the contract_id and the
+      artifact_id are notes on the standard error).
   alula render <file.alula.json> [--language ru|en] [-o <file.alula.md>] [--lenient] [--force] [--lib <folder>]
       the JSON tree -> a file of Alula in the canonical form (Russian by default).
   alula convert <file.alula.md> --language ru|en [-o <file.alula.md>] [--no-check] [--lenient] [--force] [--lib <folder>]

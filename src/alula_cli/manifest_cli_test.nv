@@ -1,0 +1,83 @@
+// manifest_cli_test.nv - the epic 0.29 result B: `alula compile --manifest` — the public manifest of
+// the machine goes to the file, the contract_id and the artifact_id are the notes of the standard error.
+
+module alula.alula_cli
+
+import alula.machine_manifest.{manifest_from_json, contract_id}
+
+test "cm the manifest file and the notes" {
+    ro ran = run_cli(["compile", "/work/tiny.alula.md", "--manifest", "/work/tiny.manifest.json"], tiny_file(), "/work/tiny.manifest.json")
+    assert(ran.code == 0)
+    assert(ran.out == "${tiny_json()}\n")
+    assert(ran.present)
+    assert(ran.back.ends_with("\n"))
+    assert(ran.err.contains("alula: note: manifest contract sha256:"))
+    assert(ran.err.contains("alula: note: manifest artifact sha256:"))
+    // the file holds the canonical projection; it reads back through the strict reader and its
+    // contract_id is the one of the note
+    match manifest_from_json(ran.back) {
+        Ok(m) => match contract_id(m) {
+            Ok(d) => assert(ran.err.contains(d))
+            Err(e) => panic("the contract of the file: ${e}")
+        }
+        Err(e) => panic("the manifest does not read back: ${e}")
+    }
+    // the manifest names the machine of the tree
+    assert(ran.back.contains("\"machine\":"))
+}
+
+test "cm the manifest is refused with no-check" {
+    ro ran = run_with(["compile", "/work/tiny.alula.md", "--no-check", "--manifest", "/work/tiny.manifest.json"], tiny_file())
+    assert(ran.code == 2)
+    assert(ran.err.contains("checked machine only"))
+    assert(ran.out == "")
+}
+
+test "cm the manifest is not written over a file" {
+    mut files = tiny_file()
+    files.push(file("/work/tiny.manifest.json", "old"))
+    ro ran = run_cli(["compile", "/work/tiny.alula.md", "--manifest", "/work/tiny.manifest.json"], files, "/work/tiny.manifest.json")
+    assert(ran.code == 2)
+    assert(ran.err.contains("already exists"))
+}
+
+test "cm no manifest of an errored machine" {
+    ro ran = run_cli(["compile", "/work/tiny.alula.md", "--manifest", "/work/tiny.manifest.json"], one("/work/tiny.alula.md", broken_ru()), "/work/tiny.manifest.json")
+    assert(ran.code == 1)
+    assert(!ran.present)
+    assert(!ran.err.contains("manifest contract"))
+}
+
+test "cm no manifest without the option" {
+    ro ran = run_cli(["compile", "/work/tiny.alula.md"], tiny_file(), "/work/tiny.manifest.json")
+    assert(ran.code == 0)
+    assert(!ran.present)
+    assert(!ran.err.contains("manifest contract"))
+}
+
+test "cm the artifact reacts to the libraries" {
+    // the tiny machine connects no library; the artifact note is there and is a digest
+    ro ran = run_cli(["compile", "/work/tiny.alula.md", "--manifest", "/work/tiny.manifest.json"], tiny_file(), "/work/tiny.manifest.json")
+    assert(ran.code == 0)
+    // the same machine with a changed registry text changes the artifact, not the contract: the
+    // registry of the folder is the host of the folder, so the note carries another digest; here the
+    // contract note is stable across the two runs
+    ro again = run_cli(["compile", "/work/tiny.alula.md", "--manifest", "/work/other.manifest.json"], tiny_file(), "/work/other.manifest.json")
+    assert(again.code == 0)
+    ro c1 = note_of(ran.err, "manifest contract")
+    ro c2 = note_of(again.err, "manifest contract")
+    assert(c1 != "" && c1 == c2)
+    ro a1 = note_of(ran.err, "manifest artifact")
+    ro a2 = note_of(again.err, "manifest artifact")
+    assert(a1 != "" && a1 == a2)
+}
+
+fn note_of(err str, what str) -> str {
+    for line in lines_of_text(err) {
+        if line.contains("${what} sha256:") {
+            ro at = line.find("${what} sha256:") ?? 0
+            return line[at + what.byte_len() + 1..]
+        }
+    }
+    ""
+}

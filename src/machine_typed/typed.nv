@@ -248,6 +248,10 @@ fn cf64_digit(c char) -> int {
 // The compact canonical JSON bytes of a descriptor or of a declaration: object keys sorted by the
 // Unicode code point of the name, arrays in their order, no spaces, floats refused (a descriptor has
 // none), depth bounded as the values are.
+/// `canonical_json_text`: the compact canonical JSON of a Value (the keys sorted by the code point, no
+/// spaces, the contract escaping); the shared helper of the canonical forms (the descriptors, the manifest).
+export fn canonical_json_text(v Value) -> Result[str, str] => canonical_json(v, 0)
+
 fn canonical_json(v Value, depth int) -> Result[str, str] {
     if depth > TYPED_MAX_DEPTH { return Err("too deep") }
     match v {
@@ -1352,6 +1356,10 @@ export fn typed_bytes(v Value, schema Value, declarations Value) -> Result[[]u8,
 // ORACLE-WORKAROUND(128): `Sha256.hash` returns the fixed `[32]u8`; a fixed array passed into a `[]u8`
 // parameter (or iterated by `for`) does not compile (the C passes the fixed-array struct where the Vec
 // pointer is expected; probe-a, 2026-11-14). The bytes are copied out by index.
+/// `typed_sha256_hex`: 64 lower case hex digits of SHA-256 over the bytes; the shared helper of the
+/// digests (the value digest, the contract and the artifact identities).
+export fn typed_sha256_hex(data []u8) -> str => sha256_hex(data)
+
 fn sha256_hex(data []u8) -> str {
     ro digest = Sha256.hash(data)
     mut out = []u8.new()

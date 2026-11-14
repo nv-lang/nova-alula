@@ -31,7 +31,7 @@ type TxHeader { title str, machine str, version str, format str }
 
 /// The hint of the old keys of the header (AL-144; the keys are of 0.27, the version of the language to write is 0.28).
 fn header_old_hint() -> str {
-    ro message_text = "с 0.27 — revision и alula_version: `machine_version: …` пишется `revision: <целое>`, `format: 2.NN` — `alula_version: 0.28`; переходного периода нет"
+    ro message_text = "с 0.27 — revision и alula_version: `machine_version: …` пишется `revision: <целое>`, `format: 2.NN` — `alula_version: 0.29`; переходного периода нет"
     message_text
 }
 
@@ -109,7 +109,7 @@ fn header_read(entries []TxEntry, mut cx TxCx) -> TxHeader {
         format = alula_version
         if old_lines.len() == 0 && !format_versions().contains(format) {
             ro shown = if format == "" { "не указана" } else { format }
-            note(cx, struct_error(1, 1, "версия языка ${shown}: переводчик читает Алулу 0.28 (строка `alula_version: 0.28`); переходного периода нет: файл 0.27 переносит tools/migrate-alula-228.py (2.26 — tools/migrate-alula-227.py)"))
+            note(cx, struct_error(1, 1, "версия языка ${shown}: переводчик читает Алулу 0.29 (строка `alula_version: 0.29`); переходного периода нет: файл 0.28 переносит tools/migrate-alula-229.py (0.27 — tools/migrate-alula-228.py))"))
         }
     }
     TxHeader { title, machine, version, format }
@@ -459,7 +459,7 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
     mut root = if header.format == "2.25" {
         [kv("format", js("machine/2")), kv("alula_version", js("2.25")), kv("machine", js(header.machine)), kv("version", js(header.version))]
     } else {
-        [kv("kind", js("machine")), kv("alula_version", js("0.28")), kv("machine", js(header.machine)), kv("revision", TxRaw(if is_integer_text(header.version) { header.version } else { "1" }))]
+        [kv("kind", js("machine")), kv("alula_version", js("0.29")), kv("machine", js(header.machine)), kv("revision", TxRaw(if is_integer_text(header.version) { header.version } else { "1" }))]
     }
     if header.title != "" { root.push(kv("title", js(header.title))) }
     if types.records.len() > 0 || types.variants.len() > 0 {

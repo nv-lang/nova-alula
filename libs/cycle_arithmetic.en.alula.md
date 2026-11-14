@@ -1,7 +1,7 @@
 # Library: cycle_arithmetic
 
 - library: cycle_arithmetic
-- alula_version: 0.28
+- alula_version: 0.29
 - language: en
 
 ## Functions

@@ -1,0 +1,1095 @@
+// manifest.nv - the public manifest of a machine and the identities of the integration (the epic 0.29
+// result B, R2). The norm is spec/alula-value-codec.md, "Canonical manifest и идентичности"; the model
+// reference is tools/typed_value_codec.py (canonical_manifest_bytes, contract_id,
+// _manifest_projection, SUPPORTED_CODEC, SUPPORTED_EVENT_ENVELOPE). The module is a SIBLING of
+// alula.machine and alula.machine_typed (one folder is one module and one unit; the survey item 129).
+//
+// What the contract fixes:
+//  - the manifest is an object with EXACTLY the keys `alula_version`, `machine`, `revision`, `types`,
+//    `parties`, `signals`, `queries`, `codec`, `event_envelope`; no `contract_id`, no `artifact_id`, no
+//    locator, no timestamps, no title (they would change the identity by an address, not by content);
+//  - `contract_id` = "sha256:" + SHA-256 over the CANONICAL manifest bytes (compact JSON, the object
+//    keys sorted by the code point, arrays in their normative order, floats refused);
+//  - the codec and the envelope projections are FIXED semantic tables: any other value is refused,
+//    even valid JSON; changing the codec or the envelope changes the manifest and the contract_id;
+//  - `artifact_id` identifies the BUILD (the machine, the libraries, the registries, the executor
+//    semantics), never a storage address; the framing of the artifact projection is the decision of
+//    this task (the contract fixes what artifact_id identifies, not the bytes) and is recorded in
+//    manifest_test.nv: {"executor", "journal", "libraries", "machine", "registry"} over the canonical
+//    JSON, where `machine` is the digest of the canonical bytes of the compiled tree, `libraries` is
+//    the array of {"hash", "name"} sorted by the name, `registry`/`journal` are the digests of the
+//    host texts (empty text = no file); `artifact_id` = "sha256:" + SHA-256 over those bytes;
+//  - `queries` is empty for a machine of the tree `machine/2`: the tree declares no queries; the key
+//    stays in the projection because the manifest shape is fixed by the contract.
+
+module alula.machine_manifest
+
+import std.encoding.json.{Json}
+import alula.machine.{Value, Null, Bool, Int, Text, List, Dict, DictEntry, FieldDef, TypeSpec, value_equal, value_from_json}
+import alula.machine_table.{MachineDef, PartyDef, party_kind_word}
+import alula.machine_typed.{canonical_json_text, typed_sha256_hex, typed_validate}
+
+// ---- small helpers ------------------------------------------------------------------------------------
+
+const SAFE_INTEGER = 9007199254740991
+
+fn v_text(v Value) -> Option[str] => match v { Text(s) => Some(s), _ => None }
+
+fn v_int(v Value) -> Option[int] => match v { Int(n) => Some(n), _ => None }
+
+fn v_entries(v Value) -> Option[[]DictEntry] => match v { Dict(e) => Some(e), _ => None }
+
+fn v_list(v Value) -> Option[[]Value] => match v { List(e) => Some(e), _ => None }
+
+fn entry_of(entries []DictEntry, key str) -> Option[Value] {
+    for e in entries {
+        match e.key {
+            Text(k) => { if k == key { return Some(e.value) } }
+            _ => ()
+        }
+    }
+    None
+}
+
+fn entry_of_dict(v Value, key str) -> Option[Value] {
+    match v_entries(v) {
+        None => None
+        Some(entries) => entry_of(entries, key)
+    }
+}
+
+// The text value of a key of an object (None: absent or not a text).
+fn text_of_field(v Value, key str) -> Option[str] {
+    match entry_of_dict(v, key) {
+        Some(t) => v_text(t)
+        None => None
+    }
+}
+
+fn cmp_str(a str, b str) -> int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    0
+}
+
+fn cmp_int(a int, b int) -> int {
+    if a < b { return -1 }
+    if a > b { return 1 }
+    0
+}
+
+// A stable insertion sort over manifest items by a comparator.
+fn sort_with(mut items []Value, cmp fn(Value, Value) -> int) -> () {
+    mut i = 1
+    while i < items.len() {
+        mut j = i
+        while j > 0 && cmp(items[j - 1], items[j]) > 0 {
+            ro tmp = items[j - 1]
+            items[j - 1] = items[j]
+            items[j] = tmp
+            j -= 1
+        }
+        i += 1
+    }
+}
+
+fn text_key(v Value) -> str {
+    match text_of_field(v, "name") {
+        Some(n) => n
+        None => ""
+    }
+}
+
+fn cmp_by_name(a Value, b Value) -> int => cmp_str(text_key(a), text_key(b))
+
+fn is_scalar_text(s str) -> bool => s.byte_len() > 0
+
+// A pair of a key and a value, for building the projections.
+fn kv(k str, v Value) -> DictEntry => { key: Text(k), value: v }
+
+fn dict_of(pairs []DictEntry) -> Value => Dict(pairs)
+
+fn arr(items []Value) -> Value => List(items)
+
+fn txt(s str) -> Value => Text(s)
+
+// ---- the type descriptor ------------------------------------------------------------------------------
+
+// The contract descriptor of a machine type (the table "Типизированное представление" and the grammar
+// "Грамматика схемы" of spec/alula-value-codec.md): the machine/2 type syntax mapped onto the grammar.
+fn type_descriptor(spec TypeSpec) -> Result[Value, str] {
+    match spec {
+        IntType => Ok(txt("i64"))
+        IntMin(n) => {
+            if n < 0 { return Err("the lower bound of int_min is negative") }
+            Ok(dict_of([kv("int_min", txt("${n}"))]))
+        }
+        FloatType => Ok(txt("f64"))
+        TextType => Ok(txt("str"))
+        IdType => Ok(txt("id"))
+        BoolType => Ok(txt("bool"))
+        NothingType => Ok(txt("null"))
+        TextSet(words) => {
+            if words.len() < 2 { return Err("a literal set holds two words or more") }
+            mut sorted = []str.new()
+            for w in words { sorted.push(w) }
+            sort_strs(sorted)
+            mut out = []Value.new()
+            for w in sorted { out.push(txt(w)) }
+            Ok(dict_of([kv("literal_set", arr(out))]))
+        }
+        OptionalType(inner) => match type_descriptor(inner) {
+            Err(m) => Err(m)
+            Ok(d) => Ok(dict_of([kv("optional", d)]))
+        }
+        ListType(inner) => match type_descriptor(inner) {
+            Err(m) => Err(m)
+            Ok(d) => Ok(dict_of([kv("list", d)]))
+        }
+        DictType { key: kt, value: vt } => match type_descriptor(kt) {
+            Err(m) => Err(m)
+            Ok(dk) => match type_descriptor(vt) {
+                Err(m) => Err(m)
+                Ok(dv) => {
+                    mut pair = []Value.new()
+                    pair.push(dk)
+                    pair.push(dv)
+                    Ok(dict_of([kv("map", arr(pair))]))
+                }
+            }
+        }
+        FullDictType { key: kt, value: vt } => {
+            ro name = match kt {
+                VariantType(n) => n
+                _ => return Err("the key of a full dict is an enumeration")
+            }
+            match type_descriptor(vt) {
+                Err(m) => Err(m)
+                Ok(dv) => {
+                    mut pair = []Value.new()
+                    pair.push(txt(name))
+                    pair.push(dv)
+                    Ok(dict_of([kv("full_map", arr(pair))]))
+                }
+            }
+        }
+        TupleType(items) => {
+            if items.len() < 2 { return Err("a tuple holds two types or more") }
+            mut out = []Value.new()
+            for item in items {
+                match type_descriptor(item) {
+                    Ok(d) => out.push(d)
+                    Err(m) => return Err(m)
+                }
+            }
+            Ok(dict_of([kv("tuple", arr(out))]))
+        }
+        RecordType(name) => Ok(dict_of([kv("record", txt(name))]))
+        VariantType(name) => Ok(dict_of([kv("variant", txt(name))]))
+        DecodeOutcomeType(_) => Err("the decode outcome is not a type of the manifest (it is the built-in type of the decode function)")
+    }
+}
+
+fn sort_strs(mut words []str) -> () {
+    mut i = 1
+    while i < words.len() {
+        mut j = i
+        while j > 0 && cmp_str(words[j - 1], words[j]) > 0 {
+            ro tmp = words[j - 1]
+            words[j - 1] = words[j]
+            words[j] = tmp
+            j -= 1
+        }
+        i += 1
+    }
+}
+
+// The fields of a record or of a case as the manifest array {name, type}, sorted by the name.
+fn fields_array(fields []FieldDef) -> Result[Value, str] {
+    mut items = []Value.new()
+    for f in fields {
+        match type_descriptor(f.spec) {
+            Ok(d) => items.push(dict_of([kv("name", txt(f.name)), kv("type", d)]))
+            Err(m) => return Err(m)
+        }
+    }
+    sort_with(items, cmp_by_name)
+    Ok(arr(items))
+}
+
+// ---- the fixed projections -----------------------------------------------------------------------------
+
+// The exact codec projection of the contract (the model SUPPORTED_CODEC); any other value is refused
+// by validate_manifest even if it is valid JSON.
+export fn codec_projection() -> Value {
+    mut domain = []Value.new()
+    for w in ["alias", "bool", "f64", "full_map", "i64", "id", "int_min", "list", "literal_set", "map", "null", "optional", "record", "str", "tuple", "variant"] {
+        domain.push(txt(w))
+    }
+    // the pairs as two parallel arrays: an array literal of tuple literals breaks the C on 0.1.0
+    // (the class of the survey item 52)
+    ro tf_names = ["alias", "bool", "f64", "full_map", "i64", "id", "int_min", "list", "literal_set", "map", "null", "optional", "record", "str", "tuple", "variant"]
+    ro tf_forms = ["declared-name-wraps-base", "json-boolean", "json-number-or-float-tag", "array-of-all-enum-pairs", "canonical-decimal-json-string", "lowercase-uuid-text", "canonical-decimal-json-string-with-lower-bound", "json-array-ordered", "json-string-in-closed-set", "array-of-key-value-pairs", "json-null", "none-some-object", "json-object-with-exact-fields", "json-string", "json-array-fixed-arity-at-least-two", "case-fields-object"]
+    mut type_forms = []DictEntry.new()
+    mut i = 0
+    while i < tf_names.len() {
+        type_forms.push(kv(tf_names[i], txt(tf_forms[i])))
+        i += 1
+    }
+    ro mk_names = ["alias", "bool", "f64", "full_map", "i64", "id", "int_min", "list", "literal_set", "map", "null", "optional", "record", "str", "tuple", "variant"]
+    ro mk_marks = ["Y", "B", "F", "G", "I", "U", "J", "L", "C", "M", "N", "O", "R", "S", "T", "V"]
+    mut markers = []DictEntry.new()
+    mut m = 0
+    while m < mk_names.len() {
+        markers.push(kv(mk_names[m], txt(mk_marks[m])))
+        m += 1
+    }
+    mut f64 = []DictEntry.new()
+    f64.push(kv("finite", txt("shortest-roundtrip-decimal")))
+    f64.push(kv("tie_break", txt("nearest-then-even")))
+    f64.push(kv("fixed_exponent_min", Int(0 - 6)))
+    f64.push(kv("fixed_exponent_max", Int(20)))
+    f64.push(kv("nan", txt("NaN")))
+    f64.push(kv("positive_infinity", txt("Infinity")))
+    f64.push(kv("negative_infinity", txt("-Infinity")))
+    f64.push(kv("negative_zero", txt("-0.0")))
+    f64.push(kv("positive_zero", txt("0.0")))
+    f64.push(kv("json_finite", txt("number-same-binary64")))
+    f64.push(kv("json_specials", txt("$float-tag")))
+    f64.push(kv("nan_payload", txt("discard")))
+    dict_of([
+        kv("domain", arr(domain)),
+        kv("json", dict_of([
+            kv("encoding", txt("UTF-8")),
+            kv("bom", Bool(false)),
+            kv("unicode_normalization", txt("none")),
+            kv("object_key_order", txt("Unicode code point")),
+            kv("arrays", txt("preserve")),
+            kv("string_escaping", txt("JSON-short-escapes; other-U+0000-001F-lowercase-u00xx; slash-literal")),
+            kv("duplicate_keys", txt("reject")),
+            kv("unknown_fields", txt("reject")),
+            kv("safe_integer_range", txt("-9007199254740992..9007199254740991")),
+        ])),
+        kv("type_forms", dict_of(type_forms)),
+        kv("typed_bytes", dict_of([
+            kv("length", txt("u64-big-endian")),
+            kv("text", txt("length-prefixed-UTF-8")),
+            kv("f64", txt("length-prefixed-ASCII")),
+            kv("markers", dict_of(markers)),
+        ])),
+        kv("i64", dict_of([
+            kv("wire", txt("canonical-decimal-json-string")),
+            kv("minimum", txt("-9223372036854775808")),
+            kv("maximum", txt("9223372036854775807")),
+        ])),
+        kv("int_min", dict_of([
+            kv("form", txt("int>=n")),
+            kv("bound", txt("inclusive-lower-bound")),
+        ])),
+        kv("literal_set", dict_of([
+            kv("minimum_values", Int(2)),
+            kv("unique", Bool(true)),
+            kv("order", txt("Unicode code point")),
+        ])),
+        kv("full_map", dict_of([
+            kv("key_type", txt("fieldless-enum")),
+            kv("coverage", txt("all-cases-exactly-once")),
+        ])),
+        kv("f64", dict_of(f64)),
+        kv("digest", dict_of([
+            kv("algorithm", txt("SHA-256")),
+            kv("domain", txt("alula-value-digest")),
+            kv("separator_hex", txt("00")),
+            kv("representation", txt("sha256:lowercase-hex-64")),
+        ])),
+    ])
+}
+
+// The exact event envelope projection (the model SUPPORTED_EVENT_ENVELOPE; the semantic identifiers of
+// the four kinds of the event protocol).
+export fn envelope_projection() -> Value {
+    mut kinds = []Value.new()
+    kinds.push(dict_of([
+        kv("name", txt("machine.control")),
+        kv("required_fields", arr([txt("signal")])),
+        kv("conditional_fields", dict_of([
+            kv("pause_id", txt("parent-continue-only")),
+            kv("request_id", txt("parent-owned-control-only")),
+        ])),
+        kv("data_shape", txt("control-data")),
+    ]))
+    kinds.push(dict_of([
+        kv("name", txt("party.signal")),
+        kv("required_fields", arr([txt("party"), txt("signal")])),
+        kv("conditional_fields", dict_of([
+            kv("gate_id", txt("gate-signal-only")),
+            kv("subject_id", txt("subject-bound-gate-only")),
+        ])),
+        kv("data_shape", txt("declared-signal-fields")),
+    ]))
+    kinds.push(dict_of([
+        kv("name", txt("request.failure")),
+        kv("required_fields", arr([txt("party"), txt("request_id")])),
+        kv("conditional_fields", dict_of([]DictEntry.new())),
+        kv("data_shape", txt("code-and-message")),
+    ]))
+    kinds.push(dict_of([
+        kv("name", txt("request.reply")),
+        kv("required_fields", arr([txt("party"), txt("request_id")])),
+        kv("conditional_fields", dict_of([]DictEntry.new())),
+        kv("data_shape", txt("result-only")),
+    ]))
+    dict_of([
+        kv("required_fields", arr([txt("contract_id"), txt("data"), txt("event_id"), txt("event_kind"), txt("instance_id")])),
+        kv("unknown_fields", txt("reject")),
+        kv("event_id", txt("logical-event-not-rpc-call")),
+        kv("instance_id", txt("non-reusable")),
+        kv("contract_binding", txt("contract_id-equals-instance-contract-pin")),
+        kv("data", txt("object-selected-by-event-kind-schema")),
+        kv("event_kinds", arr(kinds)),
+    ])
+}
+
+// ---- the projection of a checked machine ---------------------------------------------------------------
+
+fn party_inputs(p PartyDef) -> Result[Value, str] {
+    if p.input_spec.len() > 0 { return Err("the party ${p.name} carries an input_spec (a tree of the seam of 2.25): the manifest is exported from a tree of 0.27 and newer") }
+    fields_array(p.input_fields)
+}
+
+fn party_result(p PartyDef) -> Result[Value, str] {
+    if p.result_spec.len() == 0 { return Ok(Null) }
+    if p.result_spec.len() > 1 { return Err("the party ${p.name} carries more than one result") }
+    type_descriptor(p.result_spec[0])
+}
+
+fn signals_of(def MachineDef) -> Result[Value, str] {
+    mut items = []Value.new()
+    for s in def.signals {
+        match fields_array(s.fields) {
+            Ok(f) => items.push(dict_of([kv("name", txt(s.name)), kv("party", Null), kv("fields", f)]))
+            Err(m) => return Err(m)
+        }
+    }
+    for p in def.parties {
+        for s in p.signals {
+            match fields_array(s.fields) {
+                Ok(f) => items.push(dict_of([kv("name", txt(s.name)), kv("party", txt(p.name)), kv("fields", f)]))
+                Err(m) => return Err(m)
+            }
+        }
+    }
+    sort_with(items, cmp_signals)
+    Ok(arr(items))
+}
+
+fn signal_party(v Value) -> str {
+    match entry_of_dict(v, "party") {
+        Some(Text(p)) => p
+        _ => ""
+    }
+}
+
+fn signal_name(v Value) -> str {
+    match text_of_field(v, "name") {
+        Some(n) => n
+        None => ""
+    }
+}
+
+fn cmp_signals(a Value, b Value) -> int {
+    ro pa = signal_party(a)
+    ro pb = signal_party(b)
+    if pa != pb { return cmp_str(pa, pb) }
+    cmp_str(signal_name(a), signal_name(b))
+}
+
+fn types_of(def MachineDef) -> Result[Value, str] {
+    mut records = []Value.new()
+    for r in def.types.records {
+        match fields_array(r.fields) {
+            Ok(f) => records.push(dict_of([kv("name", txt(r.name)), kv("fields", f)]))
+            Err(m) => return Err(m)
+        }
+    }
+    sort_with(records, cmp_by_name)
+    mut variants = []Value.new()
+    for v in def.types.variants {
+        mut cases = []Value.new()
+        for c in v.cases {
+            match fields_array(c.fields) {
+                Ok(f) => cases.push(dict_of([kv("name", txt(c.name)), kv("fields", f)]))
+                Err(m) => return Err(m)
+            }
+        }
+        sort_with(cases, cmp_by_name)
+        variants.push(dict_of([kv("name", txt(v.name)), kv("cases", arr(cases))]))
+    }
+    sort_with(variants, cmp_by_name)
+    Ok(dict_of([
+        kv("aliases", arr([]Value.new())),
+        kv("records", arr(records)),
+        kv("variants", arr(variants)),
+    ]))
+}
+
+fn parties_of(def MachineDef) -> Result[Value, str] {
+    mut items = []Value.new()
+    for p in def.parties {
+        match party_inputs(p) {
+            Err(m) => return Err(m)
+            Ok(inputs) => match party_result(p) {
+                Err(m) => return Err(m)
+                Ok(result) => items.push(dict_of([
+                    kv("name", txt(p.name)),
+                    kv("kind", txt(party_kind_word(p.kind))),
+                    kv("inputs", inputs),
+                    kv("result", result),
+                ]))
+            }
+        }
+    }
+    sort_with(items, cmp_by_name)
+    Ok(arr(items))
+}
+
+/// `manifest_of`: the public manifest projection of a CHECKED machine (the model of machine_table).
+/// The shape is validated afterwards by `validate_manifest`; the caller exports it only from a machine
+/// that passed the checks of the table (the manifest does not bypass the checker).
+export fn manifest_of(def MachineDef) -> Result[Value, str] {
+    match parse_revision(def.version) {
+        Err(m) => return Err(m)
+        Ok(revision) => match types_of(def) {
+            Err(m) => return Err(m)
+            Ok(types) => match parties_of(def) {
+                Err(m) => return Err(m)
+                Ok(parties) => match signals_of(def) {
+                    Err(m) => return Err(m)
+                    Ok(signals) => Ok(dict_of([
+                        kv("alula_version", txt(def.alula_version)),
+                        kv("machine", txt(def.name)),
+                        kv("revision", Int(revision)),
+                        kv("types", types),
+                        kv("parties", parties),
+                        kv("signals", signals),
+                        kv("queries", arr([]Value.new())),
+                        kv("codec", codec_projection()),
+                        kv("event_envelope", envelope_projection()),
+                    ]))
+                }
+            }
+        }
+    }
+}
+
+fn parse_revision(version str) -> Result[int, str] {
+    // the tree holds the revision as the text of an integer, 1 by default (AL-147)
+    if version.byte_len() == 0 { return Ok(1) }
+    mut n = 0
+    for c in version.chars() {
+        if c < '0' || c > '9' { return Err("the revision is not an integer") }
+        n = n * 10 + (c as int - 0x30)
+        if n > SAFE_INTEGER { return Err("the revision is outside the safe integer range") }
+    }
+    Ok(n)
+}
+
+// ---- the validation of the projection ------------------------------------------------------------------
+
+// The exact keys of the public manifest, nothing more (the contract; a locator, a pin, a timestamp or
+// a title would change the identity by an address, not by the content).
+fn manifest_keys() -> []str => ["alula_version", "codec", "event_envelope", "machine", "parties", "queries", "revision", "signals", "types"]
+
+fn check_keys(v Value, keys []str, what str) -> Result[[]DictEntry, str] {
+    match v_entries(v) {
+        None => return Err("${what} must be an object")
+        Some(entries) => {
+            if entries.len() != keys.len() { return Err("${what} must have exactly the keys ${keys.len()}") }
+            for e in entries {
+                match e.key {
+                    Text(k) => {
+                        mut known = false
+                        for want in keys {
+                            if k == want { known = true }
+                        }
+                        if !known { return Err("${what}: the key \"${k}\" is not in the public projection") }
+                    }
+                    _ => return Err("${what}: the keys are texts")
+                }
+            }
+            Ok(entries)
+        }
+    }
+}
+
+fn check_sorted_names(items []Value, what str) -> Result[(), str] {
+    mut prev = ""
+    mut i = 0
+    for item in items {
+        ro name = match text_of_field(item, "name") {
+            Some(n) => n
+            None => return Err("${what}[${i}]: the name is a text")
+        }
+        if !is_scalar_text(name) { return Err("${what}[${i}]: the name is not empty") }
+        if i > 0 && cmp_str(prev, name) >= 0 { return Err("${what} must be uniquely sorted by name") }
+        prev = name
+        i += 1
+    }
+    Ok(())
+}
+
+fn check_fields(f Value, what str) -> Result[(), str] {
+    match v_list(f) {
+        None => return Err("${what}: the fields are an array")
+        Some(items) => {
+            mut prev = ""
+            mut i = 0
+            for item in items {
+                match entry_of_dict(item, "type") {
+                    None => return Err("${what}[${i}]: the field is {name, type}")
+                    Some(_) => ()
+                }
+                match v_entries(item) {
+                    None => return Err("${what}[${i}]: the field is an object")
+                    Some(fs) => {
+                        if fs.len() != 2 { return Err("${what}[${i}]: the field is exactly {name, type}") }
+                    }
+                }
+                ro name = match text_of_field(item, "name") {
+                    Some(n) => n
+                    None => return Err("${what}[${i}]: the field name is a text")
+                }
+                if i > 0 && cmp_str(prev, name) >= 0 { return Err("${what}: the fields must be uniquely sorted by name") }
+                prev = name
+                i += 1
+            }
+            Ok(())
+        }
+    }
+}
+
+// The declarations of the manifest types in the shape of the contract validator (typed_validate).
+fn declarations_of_types(types Value) -> Result[Value, str] {
+    mut out = []DictEntry.new()
+    match entry_of_dict(types, "aliases") {
+        None => return Err("the types hold aliases")
+        Some(a) => match v_list(a) {
+            None => return Err("the aliases are an array")
+            Some(items) => {
+                for item in items {
+                    ro name = match text_of_field(item, "name") {
+                        Some(n) => n
+                        None => return Err("the alias name is a text")
+                    }
+                    match entry_of_dict(item, "type") {
+                        None => return Err("the alias ${name} has no type")
+                        Some(t) => out.push(kv(name, dict_of([kv("kind", txt("alias")), kv("type", t)])))
+                    }
+                }
+            }
+        }
+    }
+    for kind in ["records", "variants"] {
+        match entry_of_dict(types, kind) {
+            None => return Err("the types hold ${kind}")
+            Some(a) => match v_list(a) {
+                None => return Err("the ${kind} are an array")
+                Some(items) => {
+                    for item in items {
+                        ro name = match text_of_field(item, "name") {
+                            Some(n) => n
+                            None => return Err("the declared name is a text")
+                        }
+                        if kind == "records" {
+                            match entry_of_dict(item, "fields") {
+                                None => return Err("the record ${name} has no fields")
+                                Some(f) => match fields_to_dict(f) {
+                                    Err(m) => return Err(m)
+                                    Ok(fd) => out.push(kv(name, dict_of([kv("fields", fd), kv("kind", txt("record"))])))
+                                }
+                            }
+                        } else {
+                            match entry_of_dict(item, "cases") {
+                                None => return Err("the variant ${name} has no cases")
+                                Some(c) => match cases_to_dict(c) {
+                                    Err(m) => return Err(m)
+                                    Ok(cd) => out.push(kv(name, dict_of([kv("cases", cd), kv("kind", txt("variant"))])))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(dict_of(out))
+}
+
+fn fields_to_dict(f Value) -> Result[Value, str] {
+    match v_list(f) {
+        None => return Err("the fields are an array")
+        Some(items) => {
+            mut out = []DictEntry.new()
+            for item in items {
+                ro name = match text_of_field(item, "name") {
+                    Some(n) => n
+                    None => return Err("the field name is a text")
+                }
+                match entry_of_dict(item, "type") {
+                    None => return Err("the field ${name} has no type")
+                    Some(t) => out.push(kv(name, t))
+                }
+            }
+            Ok(dict_of(out))
+        }
+    }
+}
+
+fn cases_to_dict(c Value) -> Result[Value, str] {
+    match v_list(c) {
+        None => return Err("the cases are an array")
+        Some(items) => {
+            if items.len() == 0 { return Err("a variant holds at least one case") }
+            mut out = []DictEntry.new()
+            for item in items {
+                ro name = match text_of_field(item, "name") {
+                    Some(n) => n
+                    None => return Err("the case name is a text")
+                }
+                match entry_of_dict(item, "fields") {
+                    None => return Err("the case ${name} has no fields")
+                    Some(f) => match fields_to_dict(f) {
+                        Err(m) => return Err(m)
+                        Ok(fd) => out.push(kv(name, fd))
+                    }
+                }
+            }
+            Ok(dict_of(out))
+        }
+    }
+}
+
+// The descriptors of the manifest are validated by the validator of the contract against the declared
+// types of the same manifest.
+fn check_descriptor(d Value, declarations Value, what str) -> Result[(), str] {
+    match typed_validate(d, declarations) {
+        Ok(_) => Ok(())
+        Err(m) => Err("${what}: ${m}")
+    }
+}
+
+fn check_value_shape(v Value, what str) -> Result[(), str] {
+    match v {
+        Null => Ok(())
+        Bool(_) => Ok(())
+        Int(n) => {
+            if n > SAFE_INTEGER || n < 0 - SAFE_INTEGER - 1 { return Err("${what}: the integer is outside the safe JSON range") }
+            Ok(())
+        }
+        Float(_) => return Err("${what}: a manifest holds no floats")
+        Text(s) => {
+            if !is_scalar_text(s) { return Err("${what}: the text is not empty") }
+            Ok(())
+        }
+        List(items) => {
+            mut i = 0
+            for item in items {
+                match check_value_shape(item, "${what}[${i}]") {
+                    Ok(_) => ()
+                    Err(m) => return Err(m)
+                }
+                i += 1
+            }
+            Ok(())
+        }
+        Dict(entries) => {
+            for e in entries {
+                match e.key {
+                    Text(_) => ()
+                    _ => return Err("${what}: the keys are texts")
+                }
+                match check_value_shape(e.value, "${what}") {
+                    Ok(_) => ()
+                    Err(m) => return Err(m)
+                }
+            }
+            Ok(())
+        }
+        _ => return Err("${what}: the form is not a manifest value")
+    }
+}
+
+/// `validate_manifest`: the projection of the contract, checked key by key. The canonizer does NOT
+/// sort the arrays: a projection with a non-normative order is refused. The codec and the envelope
+/// must equal the fixed projections exactly (any other semantic value is refused, even valid JSON).
+export fn validate_manifest(m Value) -> Result[bool, str] {
+    match check_value_shape(m, "$") {
+        Err(e) => return Err(e)
+        Ok(_) => ()
+    }
+    match check_keys(m, manifest_keys(), "the manifest") {
+        Err(e) => return Err(e)
+        Ok(_) => ()
+    }
+    ro version = match text_of_field(m, "alula_version") {
+        Some(t) => t
+        None => return Err("alula_version is a text")
+    }
+    if !is_scalar_text(version) { return Err("alula_version is not empty") }
+    match text_of_field(m, "machine") {
+        Some(t) => { if !is_scalar_text(t) { return Err("machine is not empty") } }
+        None => return Err("machine is a text")
+    }
+    ro revision_v = match entry_of_dict(m, "revision") {
+        Some(t) => t
+        None => return Err("revision is an integer")
+    }
+    match v_int(revision_v) {
+        Some(n) => {
+            if n < 0 || n > SAFE_INTEGER { return Err("revision is a non-negative safe JSON integer") }
+        }
+        None => return Err("revision is an integer")
+    }
+    // types
+    ro types = match entry_of_dict(m, "types") {
+        Some(t) => t
+        None => return Err("types is an object")
+    }
+    match check_keys(types, ["aliases", "records", "variants"], "types") {
+        Err(e) => return Err(e)
+        Ok(_) => ()
+    }
+    for kind in ["aliases", "records", "variants"] {
+        match entry_of_dict(types, kind) {
+            None => return Err("types holds ${kind}")
+            Some(a) => match v_list(a) {
+                None => return Err("the ${kind} are an array")
+                Some(items) => {
+                    match check_sorted_names(items, kind) {
+                        Err(e) => return Err(e)
+                        Ok(_) => ()
+                    }
+                    for item in items {
+                        match v_entries(item) {
+                            None => return Err("the declaration of ${kind} is an object")
+                            Some(fs) => {
+                                if kind == "aliases" && fs.len() != 2 { return Err("the alias declaration is exactly {name, type}") }
+                                if kind == "records" && fs.len() != 2 { return Err("the record declaration is exactly {name, fields}") }
+                                if kind == "variants" && fs.len() != 2 { return Err("the variant declaration is exactly {name, cases}") }
+                            }
+                        }
+                        if kind == "records" {
+                            match entry_of_dict(item, "fields") {
+                                None => return Err("the record declaration has no fields")
+                                Some(f) => match check_fields(f, "the fields of the record") {
+                                    Err(e) => return Err(e)
+                                    Ok(_) => ()
+                                }
+                            }
+                        }
+                        if kind == "variants" {
+                            match entry_of_dict(item, "cases") {
+                                None => return Err("the variant declaration has no cases")
+                                Some(c) => match v_list(c) {
+                                    None => return Err("the cases are an array")
+                                    Some(cs) => {
+                                        if cs.len() == 0 { return Err("a variant holds at least one case") }
+                                        match check_sorted_names(cs, "the cases") {
+                                            Err(e) => return Err(e)
+                                            Ok(_) => ()
+                                        }
+                                        for case in cs {
+                                            match entry_of_dict(case, "fields") {
+                                                None => return Err("the case declaration has no fields")
+                                                Some(f) => match check_fields(f, "the fields of the case") {
+                                                    Err(e) => return Err(e)
+                                                    Ok(_) => ()
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    ro declarations = match declarations_of_types(types) {
+        Err(e) => return Err(e)
+        Ok(d) => d
+    }
+    // parties
+    ro parties = match entry_of_dict(m, "parties") {
+        Some(p) => p
+        None => return Err("parties is an array")
+    }
+    match v_list(parties) {
+        None => return Err("parties are an array")
+        Some(items) => {
+            match check_sorted_names(items, "parties") {
+                Err(e) => return Err(e)
+                Ok(_) => ()
+            }
+            for item in items {
+                match v_entries(item) {
+                    None => return Err("a party is an object")
+                    Some(fs) => {
+                        if fs.len() != 4 { return Err("a party is exactly {name, kind, inputs, result}") }
+                    }
+                }
+                match entry_of_dict(item, "inputs") {
+                    None => return Err("the party has no inputs")
+                    Some(f) => match check_fields(f, "the inputs of the party") {
+                        Err(e) => return Err(e)
+                        Ok(_) => ()
+                    }
+                }
+                match entry_of_dict(item, "inputs") {
+                    None => return Err("the party has no inputs")
+                    Some(f) => match fields_descriptors(f) {
+                        Err(e) => return Err(e)
+                        Ok(ds) => {
+                            for d in ds {
+                                match check_descriptor(d, declarations, "the input of a party") {
+                                    Err(e) => return Err(e)
+                                    Ok(_) => ()
+                                }
+                            }
+                        }
+                    }
+                }
+                match entry_of_dict(item, "result") {
+                    None => return Err("the party has no result key")
+                    Some(Null) => ()
+                    Some(r) => match check_descriptor(r, declarations, "the result of a party") {
+                        Err(e) => return Err(e)
+                        Ok(_) => ()
+                    }
+                }
+            }
+        }
+    }
+    // signals
+    ro signals = match entry_of_dict(m, "signals") {
+        Some(s) => s
+        None => return Err("signals is an array")
+    }
+    match v_list(signals) {
+        None => return Err("signals are an array")
+        Some(items) => {
+            mut prev_party = ""
+            mut prev_name = ""
+            mut i = 0
+            for item in items {
+                match v_entries(item) {
+                    None => return Err("a signal is an object")
+                    Some(fs) => {
+                        if fs.len() != 3 { return Err("a signal is exactly {name, party, fields}") }
+                    }
+                }
+                ro name = match text_of_field(item, "name") {
+                    Some(n) => n
+                    None => return Err("the signal name is a text")
+                }
+                ro party = match entry_of_dict(item, "party") {
+                    Some(Null) => ""
+                    Some(Text(p)) => p
+                    _ => return Err("the party of a signal is a text or null")
+                }
+                if party != "" {
+                    mut known = false
+                    match v_list(parties) {
+                        Some(ps) => {
+                            for p in ps {
+                                match text_of_field(p, "name") {
+                                    Some(pn) => { if pn == party { known = true } }
+                                    None => ()
+                                }
+                            }
+                        }
+                        None => ()
+                    }
+                    if !known { return Err("the signal ${name} references the undeclared party ${party}") }
+                }
+                if i > 0 {
+                    if cmp_str(prev_party, party) > 0 || (cmp_str(prev_party, party) == 0 && cmp_str(prev_name, name) >= 0) {
+                        return Err("the signals must be uniquely sorted by the party and the name")
+                    }
+                }
+                prev_party = party
+                prev_name = name
+                match entry_of_dict(item, "fields") {
+                    None => return Err("the signal has no fields")
+                    Some(f) => match check_fields(f, "the fields of the signal") {
+                        Err(e) => return Err(e)
+                        Ok(_) => ()
+                    }
+                }
+                i += 1
+            }
+        }
+    }
+    // queries
+    match entry_of_dict(m, "queries") {
+        None => return Err("queries is an array")
+        Some(q) => match v_list(q) {
+            None => return Err("the queries are an array")
+            Some(items) => {
+                match check_sorted_names(items, "queries") {
+                    Err(e) => return Err(e)
+                    Ok(_) => ()
+                }
+                for item in items {
+                    match v_entries(item) {
+                        None => return Err("a query is an object")
+                        Some(fs) => {
+                            if fs.len() != 3 { return Err("a query is exactly {name, inputs, result}") }
+                        }
+                    }
+                    match entry_of_dict(item, "inputs") {
+                        None => return Err("the query has no inputs")
+                        Some(f) => match check_fields(f, "the inputs of the query") {
+                            Err(e) => return Err(e)
+                            Ok(_) => ()
+                        }
+                    }
+                    match entry_of_dict(item, "result") {
+                        None => return Err("the query has no result")
+                        Some(r) => match check_descriptor(r, declarations, "the result of a query") {
+                            Err(e) => return Err(e)
+                            Ok(_) => ()
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // the fixed semantic projections
+    match entry_of_dict(m, "codec") {
+        Some(c) => {
+            if !value_equal(c, codec_projection()) { return Err("the codec projection is not the supported canonical profile") }
+        }
+        None => return Err("codec is an object")
+    }
+    match entry_of_dict(m, "event_envelope") {
+        Some(e) => {
+            if !value_equal(e, envelope_projection()) { return Err("the event envelope projection is not the supported protocol profile") }
+        }
+        None => return Err("event_envelope is an object")
+    }
+    Ok(true)
+}
+
+fn fields_descriptors(f Value) -> Result[[]Value, str] {
+    match v_list(f) {
+        None => return Err("the fields are an array")
+        Some(items) => {
+            mut out = []Value.new()
+            for item in items {
+                match entry_of_dict(item, "type") {
+                    None => return Err("the field has no type")
+                    Some(t) => out.push(t)
+                }
+            }
+            Ok(out)
+        }
+    }
+}
+
+// ---- the canonical bytes and the identities ------------------------------------------------------------
+
+/// `canonical_manifest_bytes`: the projection is validated first, then the compact canonical JSON
+/// bytes are built (the object keys sorted by the code point, the arrays in their normative order).
+export fn canonical_manifest_bytes(m Value) -> Result[[]u8, str] {
+    match validate_manifest(m) {
+        Err(e) => return Err(e)
+        Ok(_) => ()
+    }
+    match canonical_json_text(m) {
+        Err(e) => return Err(e)
+        Ok(t) => Ok(t.bytes())
+    }
+}
+
+/// `contract_id`: "sha256:" + 64 lower case hex digits of SHA-256 over the canonical manifest bytes.
+export fn contract_id(m Value) -> Result[str, str] {
+    match canonical_manifest_bytes(m) {
+        Err(e) => return Err(e)
+        Ok(bs) => Ok("sha256:${typed_sha256_hex(bs)}")
+    }
+}
+
+/// `manifest_from_json`: the manifest as the consumer reads it — the strict parse (a repeated key of
+/// an object is refused by the JSON parser), then the full validation of the projection.
+export fn manifest_from_json(text str) -> Result[Value, str] {
+    match Json.parse(text) {
+        Err(_) => return Err("not valid JSON")
+        Ok(j) => match value_from_json(j) {
+            Err(e) => return Err(e)
+            Ok(v) => match validate_manifest(v) {
+                Err(e) => return Err(e)
+                Ok(_) => Ok(v)
+            }
+        }
+    }
+}
+
+// ---- the artifact identity -----------------------------------------------------------------------------
+
+/// `artifact_id`: the identity of the BUILD. The framing is the decision of the epic 0.29 result B
+/// (the contract fixes what artifact_id identifies, not the bytes): the canonical JSON of
+/// {"executor", "journal", "libraries", "machine", "registry"}, where `machine` is the digest of the
+/// canonical bytes of the compiled tree, `libraries` is {"hash", "name"} sorted by the name, and
+/// `registry`/`journal` are the digests of the host texts (an empty text = no file). The result is
+/// "sha256:" + SHA-256 over those bytes. No storage address, no instance pin.
+export fn artifact_id(executor str, tree Value, libraries Value, registry_text str, journal_text str) -> Result[str, str] {
+    if !is_scalar_text(executor) { return Err("the executor version is not empty") }
+    match v_list(libraries) {
+        None => return Err("the libraries are an array")
+        Some(items) => {
+            for item in items {
+                match v_entries(item) {
+                    None => return Err("a library is an object")
+                    Some(fs) => {
+                        if fs.len() != 2 { return Err("a library is exactly {hash, name}") }
+                    }
+                }
+                match text_of_field(item, "hash") {
+                    Some(h) => { if !is_scalar_text(h) { return Err("the hash of a library is not empty") } }
+                    None => return Err("a library has a hash")
+                }
+                match text_of_field(item, "name") {
+                    Some(n) => { if !is_scalar_text(n) { return Err("the name of a library is not empty") } }
+                    None => return Err("a library has a name")
+                }
+            }
+        }
+    }
+    ro tree_digest = match canonical_json_text(tree) {
+        Err(e) => return Err(e)
+        Ok(t) => "sha256:${typed_sha256_hex(t.bytes())}"
+    }
+    mut libs = match v_list(libraries) {
+        None => return Err("the libraries are an array")
+        Some(items) => items
+    }
+    sort_with(libs, cmp_by_name)
+    ro projection = dict_of([
+        kv("executor", txt(executor)),
+        kv("journal", txt(text_digest(journal_text))),
+        kv("libraries", arr(libs)),
+        kv("machine", txt(tree_digest)),
+        kv("registry", txt(text_digest(registry_text))),
+    ])
+    match canonical_json_text(projection) {
+        Err(e) => return Err(e)
+        Ok(t) => Ok("sha256:${typed_sha256_hex(t.bytes())}")
+    }
+}
+
+fn text_digest(text str) -> str {
+    if text.byte_len() == 0 { return "" }
+    "sha256:${typed_sha256_hex(text.bytes())}"
+}

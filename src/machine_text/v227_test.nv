@@ -22,7 +22,7 @@ fn m227() -> str {
 
 - machine: Halt
 - revision: 3
-- alula_version: 0.28
+- alula_version: 0.29
 - language: ru
 
 ## Имена
@@ -114,7 +114,7 @@ test "v227 a machine of 0.27 is translated: the tree has kind, alula_version and
     ro r = r227(m227())
     assert(first227(r) == "ok")
     assert(r.json.contains("\"kind\":\"machine\""))
-    assert(r.json.contains("\"alula_version\":\"0.28\""))
+    assert(r.json.contains("\"alula_version\":\"0.29\""))
     assert(r.json.contains("\"revision\":3"))
     assert(!r.json.contains("\"format\""))
     assert(!r.json.contains("\"version\""))
@@ -138,15 +138,15 @@ test "v227 machine_version in the header is an error with the hint" {
 }
 
 test "v227 format in the header is an error with the hint" {
-    assert(says227(r227(m227().replace("- alula_version: 0.28", "- format: 0.27")), "с 0.27 — revision и alula_version"))
-    assert(says227(r227(m227().replace("- alula_version: 0.28", "- format: 2.26")), "с 0.27 — revision и alula_version"))
+    assert(says227(r227(m227().replace("- alula_version: 0.29", "- format: 0.27")), "с 0.27 — revision и alula_version"))
+    assert(says227(r227(m227().replace("- alula_version: 0.29", "- format: 2.26")), "с 0.27 — revision и alula_version"))
 }
 
-test "v227 an alula_version other than 0.28 is an error" {
-    assert(!(first227(r227(m227().replace("- alula_version: 0.28", "- alula_version: 2.26"))) == "ok"))
+test "v227 an alula_version other than 0.29 is an error" {
+    assert(!(first227(r227(m227().replace("- alula_version: 0.29", "- alula_version: 2.26"))) == "ok"))
     // task 253 (приёмка): the refusal of a file of 0.27 names the migration script
-    assert(says227(r227(m227().replace("- alula_version: 0.28", "- alula_version: 0.27")), "tools/migrate-alula-228.py"))
-    assert(says227(r227(m227().replace("- alula_version: 0.28", "- alula_version: 2.26")), "tools/migrate-alula-228.py"))
+    assert(says227(r227(m227().replace("- alula_version: 0.29", "- alula_version: 0.27")), "tools/migrate-alula-228.py"))
+    assert(says227(r227(m227().replace("- alula_version: 0.29", "- alula_version: 2.26")), "tools/migrate-alula-228.py"))
 }
 
 test "v227 the order of the header is machine, revision, alula_version, language in the rendered file" {
@@ -155,7 +155,7 @@ test "v227 the order of the header is machine, revision, alula_version, language
     assert(back.notes.len() == 0)
     ro at_machine = back.text.find("- machine: Halt") ?? -1
     ro at_revision = back.text.find("- revision: 3") ?? -1
-    ro at_version = back.text.find("- alula_version: 0.28") ?? -1
+    ro at_version = back.text.find("- alula_version: 0.29") ?? -1
     ro at_language = back.text.find("- language: ru") ?? -1
     assert(at_machine >= 0 && at_machine < at_revision && at_revision < at_version && at_version < at_language)
     assert(!back.text.contains("machine_version"))
@@ -164,12 +164,12 @@ test "v227 the order of the header is machine, revision, alula_version, language
 
 // ---- the libraries of 0.27 (AL-145) -------------------------------------------------------------------------------------------------------------------
 
-test "v227 the files of the libraries are those of the methodology for 0.28" {
-    assert(definitions_hash(pause227()) == "3ea37b7e5f62")
-    assert(definitions_hash(pause227_en()) == "042bcf5854f5")
-    assert(definitions_hash(cycle227()) == "7b00101ed9ed")
-    assert(definitions_hash(cycle227_en()) == "1ecb918aebe0")
-    assert(pause227().contains("- alula_version: 0.28"))
+test "v227 the files of the libraries are those of the methodology for 0.29" {
+    assert(definitions_hash(pause227()) == "413396f18517")
+    assert(definitions_hash(pause227_en()) == "31b869a4f7cc")
+    assert(definitions_hash(cycle227()) == "8dd3bc954085")
+    assert(definitions_hash(cycle227_en()) == "3b3321c87caa")
+    assert(pause227().contains("- alula_version: 0.29"))
     assert(pause227().contains("## Требует стороны"))
     assert(pause227().contains("## Требует концы"))
     assert(pause227_en().contains("## Requires parties"))
@@ -180,7 +180,7 @@ test "v227 the files of the libraries are those of the methodology for 0.28" {
 fn req_lib(sections str) -> str => `# Библиотека: Счёт
 
 - library: tally
-- alula_version: 0.28
+- alula_version: 0.29
 - language: ru
 
 SECTIONS
@@ -221,7 +221,7 @@ fn req_machine(lib str) -> str {
 
 - machine: Req
 - revision: 1
-- alula_version: 0.28
+- alula_version: 0.29
 - language: ru
 
 ## Имена
@@ -328,7 +328,7 @@ test "v227 the old single section of the requirements is an error with the hint"
 }
 
 test "v227 format in the header of a library is an error with the hint" {
-    ro lib = req_lib(req_all()).replace("- alula_version: 0.28", "- format: 2.26")
+    ro lib = req_lib(req_all()).replace("- alula_version: 0.29", "- format: 2.26")
     assert(says227(req_report(lib, req_machine(lib)), "с 0.27 — revision и alula_version"))
 }
 
@@ -338,7 +338,7 @@ fn callee227() -> str => `# Машина: Вызываемая
 
 - machine: callee
 - revision: 2
-- alula_version: 0.28
+- alula_version: 0.29
 - language: ru
 
 ## Типы
@@ -410,7 +410,7 @@ fn caller227(kind str) -> str => `# Машина: Вызывающая
 
 - machine: caller
 - revision: 1
-- alula_version: 0.28
+- alula_version: 0.29
 - language: ru
 
 ## Имена

@@ -1,7 +1,7 @@
 # Library: Pause
 
 - library: pause
-- alula_version: 0.28
+- alula_version: 0.29
 - language: en
 
 ## Parameters

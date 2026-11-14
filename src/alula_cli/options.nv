@@ -5,12 +5,12 @@ import std.text
 
 /// Args: what the words after the name of the command say. `error` is empty when they are right; `help` is the flag `--help` or `-h`.
 export type Args {
-    files []str, output str, has_output bool, force bool, lenient bool, no_check bool, verbose bool, language str, has_language bool, registry_file str, has_registry bool, journal_file str, has_journal bool, help bool, error str,
+    files []str, output str, has_output bool, force bool, lenient bool, no_check bool, verbose bool, language str, has_language bool, registry_file str, has_registry bool, journal_file str, has_journal bool, manifest_file str, has_manifest bool, help bool, error str,
     lib str, has_lib bool
 }
 
 fn args_empty() -> Args {
-    Args { files: []str.new(), output: "", has_output: false, force: false, lenient: false, no_check: false, verbose: false, language: "", has_language: false, registry_file: "", has_registry: false, journal_file: "", has_journal: false, help: false, error: "", lib: "", has_lib: false }
+    Args { files: []str.new(), output: "", has_output: false, force: false, lenient: false, no_check: false, verbose: false, language: "", has_language: false, registry_file: "", has_registry: false, journal_file: "", has_journal: false, manifest_file: "", has_manifest: false, help: false, error: "", lib: "", has_lib: false }
 }
 
 /// The names of the commands.
@@ -18,7 +18,7 @@ export fn command_names() -> []str => ["compile", "render", "convert", "check", 
 
 /// The options that a command takes (`-o` and `--output` are one option, `-v` and `--verbose` too); the others are "unknown option".
 fn options_of(command str) -> []str {
-    if command == "compile" { return ["-o", "--force", "--lenient", "--no-check", "--registry", "--journal", "--lib"] }
+    if command == "compile" { return ["-o", "--force", "--lenient", "--no-check", "--manifest", "--registry", "--journal", "--lib"] }
     if command == "render" { return ["-o", "--force", "--lenient", "--language", "--registry", "--journal", "--lib"] }
     if command == "convert" { return ["-o", "--force", "--lenient", "--no-check", "--language", "--registry", "--journal", "--lib"] }
     if command == "check" { return ["--no-check", "--registry", "--journal", "--lib"] }
@@ -81,6 +81,20 @@ export fn parse_args(command str, words []str) -> Args {
                 i += 1
             } else {
                 a.error = first_error(a.error, "${name} needs a file")
+            }
+        } else if name == "--manifest" {
+            // the file of the manifest of the machine (the epic 0.29 result B): written beside the tree
+            if !allowed.contains("--manifest") {
+                a.error = first_error(a.error, "unknown option `${w}`")
+            } else if w.contains("=") {
+                a.manifest_file = w[(w.find("=") ?? 0) + 1..]
+                a.has_manifest = true
+            } else if i + 1 < words.len() && !is_option(words[i + 1]) {
+                a.manifest_file = words[i + 1]
+                a.has_manifest = true
+                i += 1
+            } else {
+                a.error = first_error(a.error, "--manifest needs a file")
             }
         } else if name == "--lib" {
             // the folder of the libraries (2.26, section 9): a file of `- Файл:` that is not beside the machine is looked for there

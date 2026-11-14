@@ -334,10 +334,6 @@ def runtime_smoke_check():
     return not ("export type PartyKind enum" not in source or "ServiceParty" in source)
 
 
-def runtime_diff_is_empty():
-    return subprocess.run(["git", "diff", "--quiet", "origin/main...HEAD", "--", "src"], cwd=ROOT, check=False).returncode == 0
-
-
 def main():
     failures = 0
     checks = 0
@@ -407,7 +403,9 @@ def main():
     reverse("codec does not require transport", lambda m: m["shared_integration_codec"].update(requires_network=True), "transport_or_inbox_must_not_be_required")
 
     check("runtime smoke-check (not semantic proof)", runtime_smoke_check())
-    check("runtime diff empty against origin/main", runtime_diff_is_empty())
+    # "runtime diff empty against origin/main" was the guard of the model tasks 016-017 (src untouched
+    # by the profile work); the implementation tasks of the epic 0.29 change src by design, so the
+    # guard is retired with them (2026-11-14, result B)
     print(f"{checks - failures} of {checks} checks passed; {failures} failed")
     return 1 if failures else 0
 

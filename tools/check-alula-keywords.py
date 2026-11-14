@@ -1463,11 +1463,11 @@ def check_v228(text, name):
     for n, k, v in got:
         if k == 'revision' and not re.match(r'^[1-9][0-9]*$', v):
             errs.append('%s:%d: ревизия `%s` — ревизия целое число (с 0.27, AL-144)' % (name, n, v))
-        if k == 'alula_version' and v != '0.28':
-            errs.append('%s:%d: `alula_version: %s` — образец пакета пишется на Алуле 0.28' % (name, n, v))
+        if k == 'alula_version' and v != '0.29':
+            errs.append('%s:%d: `alula_version: %s` — образец пакета пишется на Алуле 0.29' % (name, n, v))
     for (_, k1, _), (n2, k2, _) in zip(got, got[1:]):
         if order.index(k2) <= order.index(k1):
-            errs.append('%s:%d: шапка не по порядку: `%s` после `%s` (порядок 0.28: %s)' % (name, n2, k2, k1, ', '.join(order)))
+            errs.append('%s:%d: шапка не по порядку: `%s` после `%s` (порядок 0.29: %s)' % (name, n2, k2, k1, ', '.join(order)))
     if kind == 'library':
         errs += ['%s:%d: у библиотеки нет ревизии (с 0.27 — `library`, `alula_version`, `language`, AL-144)' % (name, n) for n, k, _ in keys if k == 'revision']
     if not any(k == 'alula_version' for _, k, _ in keys):

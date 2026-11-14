@@ -49,6 +49,12 @@ def migrated(text, origin):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     out = mod.migrate_md(os.path.join(ROOT, origin), text, mod.Run(True))
+    text = text if out is None else out
+    # then 0.28 -> 0.29 (the epic 0.29, result B): the header `alula_version: 0.29`
+    spec = importlib.util.spec_from_file_location("migrate_alula_229", os.path.join(ROOT, "tools", "migrate-alula-229.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    out = mod.migrate_md(os.path.join(ROOT, origin), text, mod.Run(True))
     return text if out is None else out
 
 LINK = re.compile(r'\[(?:[^\[\]]|\[[^\]]*\])*\]\([^)\s]*(?:\s+"[^"]*")?\)')
@@ -108,7 +114,7 @@ def judge(source, args, rep):
             continue
         first = next((i for i in range(min(len(x), len(y))) if x[i] != y[i]), min(len(x), len(y)))
         rep.add(copy, first + 1, "copy-differs", "копия расходится с %s (первая разница на строке %d)%s" % (
-            origin, first + 1, ", ссылки и проза не считаются, копия — после переноса на 0.28" if without_links else ""))
+            origin, first + 1, ", ссылки и проза не считаются, копия — после переноса на 0.29" if without_links else ""))
     return guardlib.Outcome(count=count)
 
 

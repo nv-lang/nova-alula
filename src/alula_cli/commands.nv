@@ -4,18 +4,26 @@ module alula.alula_cli
 
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
-import alula.machine.{NamedText, Registry}
+import alula.machine.{NamedText, Registry, Value, Text, List, Dict, DictEntry, value_from_json}
+import alula.machine_table.{MachineDef}
 import alula.machine_table.{load_machine, parse_machine, issue_text}
 import alula.machine_text.{translate_report_with, translate_checked_with, TranslateReport, error_text, render_summary, render_machine_libs, library_registry, is_library_text, library_paths, library_twin_path, tree_library_paths}
 import alula.machine_run.{AlulaMachine, NestedRegistry, check_registry, run_nested_test, load_alula_machine, parse_test, test_problem, run_test, run_ok, report_text}
+import alula.machine_manifest.{manifest_of, contract_id, artifact_id}
+import alula.machine_typed.{canonical_json_text}
+import std.encoding.json.{Json}
 import alula.machine_table.{MachineParty}
 
 // ORACLE-WORKAROUND(9): the type is not named `Outcome`: a user type named like a prelude type breaks the build of the program (CC-FAIL "no member named tag in struct Nova_Outcome"); name it `Outcome` when item 9 is fixed
 /// CmdResult: the result of a command. `out` is the product (it goes to the standard output or to the file of `-o`), `err` the lines of the standard error, `code` the exit code
 /// (0 success, 1 errors in a file, 2 wrong use).
-export type CmdResult { out str, err str, code int }
+export type CmdResult { out str, err str, code int, manifest str }
 
-fn done(out str, err str, code int) -> CmdResult => { out, err, code }
+fn done(out str, err str, code int) -> CmdResult => { out, err, code, manifest: "" }
+
+// The result that also carries the manifest file (the epic 0.29 result B): the program writes it to
+// the file of `--manifest` after the product of `-o`.
+fn done_manifest(out str, err str, code int, manifest str) -> CmdResult => { out, err, code, manifest }
 
 /// The lines as one text of the standard error: every line ends with a newline; no lines is no text.
 fn lines_text(lines []str) -> str {
@@ -88,13 +96,70 @@ fn note_lines(notes []str, file str) -> []str {
 // ---- compile -----------------------------------------------------------------------------------------------------------------------
 
 /// `alula compile`: Alula -> the JSON tree of the machine. With errors there is no JSON unless `lenient`; the code is 1 either way.
-export fn compile_command(text str, file str, no_check bool, lenient bool, registry Registry, libs []NamedText) -> CmdResult {
+export fn compile_command(text str, file str, no_check bool, lenient bool, registry Registry, libs []NamedText, manifest_file str, registry_text str, journal_text str) -> CmdResult {
+    if manifest_file != "" && no_check { return done("", "alula compile: the manifest is exported from a checked machine only (drop --no-check)\n", 2) }
     ro report = translated(text, no_check, registry, libs)
     mut lines = report_lines(report, file)
-    if report.errors.len() == 0 { return done("${report.json}\n", lines_text(lines), 0) }
+    if report.errors.len() == 0 {
+        if manifest_file == "" { return done("${report.json}\n", lines_text(lines), 0) }
+        return with_manifest(report.json, registry, libs, manifest_file, registry_text, journal_text, lines)
+    }
     lines.push("alula compile: ${report.errors.len()} errors in ${file} (${report.rows_noted} of ${report.rows_total} rows with notes)")
     ro out = if lenient { "${report.json}\n" } else { "" }
     done(out, lines_text(lines), 1)
+}
+
+// The manifest of the compiled tree (the epic 0.29 result B): the public projection, the contract_id
+// and the artifact_id as the notes of the standard error, the manifest JSON to the file of `--manifest`.
+fn with_manifest(tree str, registry Registry, libs []NamedText, manifest_file str, registry_text str, journal_text str, mut lines []str) -> CmdResult {
+    match load_machine(tree, registry) {
+        Err(issues) => {
+            for issue in issues { lines.push("${manifest_file}:1:1: manifest: ${issue_text(issue)}") }
+            done("", lines_text(lines), 1)
+        }
+        Ok(def) => match manifest_of(def) {
+            Err(m) => done("", "alula compile: the manifest: ${m}\n", 1)
+            Ok(manifest) => match contract_id(manifest) {
+                Err(m) => done("", "alula compile: the contract_id: ${m}\n", 1)
+                Ok(cid) => {
+                    lines.push("alula: note: manifest contract ${cid}")
+                    match tree_value(tree) {
+                        Err(m) => done("", "alula compile: ${m}\n", 1)
+                        Ok(tv) => match artifact_id("alula ${PROGRAM_VERSION}", tv, artifact_libraries(def), registry_text, journal_text) {
+                            Err(m) => done("", "alula compile: the artifact_id: ${m}\n", 1)
+                            Ok(aid) => {
+                                lines.push("alula: note: manifest artifact ${aid}")
+                                match canonical_json_text(manifest) {
+                                    Err(m) => done("", "alula compile: the canonical form: ${m}\n", 1)
+                                    Ok(t) => done_manifest("${tree}\n", lines_text(lines), 0, "${t}\n")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The tree as a Value for the digest of the artifact inputs.
+fn tree_value(tree str) -> Result[Value, str] {
+    match Json.parse(tree) {
+        Err(_) => return Err("the tree is not valid JSON")
+        Ok(j) => match value_from_json(j) {
+            Err(e) => return Err("the tree: ${e}")
+            Ok(v) => Ok(v)
+        }
+    }
+}
+
+// The libraries of the machine as the artifact inputs: {"hash", "name"} of every connection.
+fn artifact_libraries(def MachineDef) -> Value {
+    mut out = []Value.new()
+    for inc in def.includes {
+        out.push(Dict([DictEntry { key: Text("hash"), value: Text(inc.hash) }, DictEntry { key: Text("name"), value: Text(inc.name) }]))
+    }
+    List(out)
 }
 
 // ---- render ------------------------------------------------------------------------------------------------------------------------
