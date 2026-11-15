@@ -1,0 +1,187 @@
+// outbox_test.nv - the probes of the effects boundary (the epic 0.29 result E, the card E):
+// the intent is fixed together with its receipt; the replay uses the same effect identity; an
+// unknown outcome is never a success and never a blind repeat; the trusted context is checked at
+// the submit and at the replay; the withdrawal of the rights does not go round the dedup.
+
+module alula.host
+
+fn ctx(role str, principal str) -> TrustedContext => { tenant: "t1", producer: "prod-1", principal, role }
+
+fn intent_of(effect_id str, action str) -> Intent => {
+    tenant: "t1", producer: "prod-1", effect_id, action, payload: "{\"archive\":\"n-7\"}"
+}
+
+// The host with a handler of "archive": applied, refused or unknown — by the command word in the payload.
+fn host_with_handler(command str) -> EffectHost {
+    mut h = EffectHost { world: new_world(), handlers: []Handler.new() }
+    h.grant("t1", "alice")
+    h.bind_handler("archive", fn(i Intent, c TrustedContext) -> EffectOutcome {
+        if command == "unknown" { return EffectOutcome.Unknown }
+        if command == "refuse" { return EffectOutcome.Refused }
+        EffectOutcome.Applied
+    })
+    h
+}
+
+// ---- the submit and the receipts -----------------------------------------------------------------------
+
+test "ob submit applied: the intent and the receipt are fixed together" {
+    mut h = host_with_handler("apply")
+    ro r = h.submit(intent_of("e-1", "archive"), ctx("submit", "alice"))
+    assert(r.decision == "dispatched")
+    match r.receipt {
+        Some(rec) => {
+            assert(rec.outcome == EffectOutcome.Applied)
+            assert(rec.effect_id == "e-1")
+        }
+        None => panic("no receipt of a dispatched intent")
+    }
+    // the record is held by the host: the same receipt answers the lookup
+    match h.receipt_of_effect("t1", "prod-1", "e-1") {
+        Some(rec) => assert(rec.outcome == EffectOutcome.Applied)
+        None => panic("the receipt is not held")
+    }
+    assert(h.intents_of_tenant("t1").len() == 1)
+}
+
+// ---- the dedup of the submit ---------------------------------------------------------------------------
+
+test "ob submit of a fixed identity is a duplicate, the handler is not called again" {
+    mut h = host_with_handler("apply")
+    ro first = h.submit(intent_of("e-1", "archive"), ctx("submit", "alice"))
+    assert(first.decision == "dispatched")
+    ro second = h.submit(intent_of("e-1", "archive"), ctx("submit", "alice"))
+    assert(second.decision == "duplicate")
+    assert(second.receipt == None)
+    assert(h.intents_of_tenant("t1").len() == 1)
+}
+
+// ---- the stable identity of the replay -----------------------------------------------------------------
+
+test "ob the replay of an applied effect does not run it again" {
+    mut h = host_with_handler("apply")
+    ro sub = h.submit(intent_of("e-1", "archive"), ctx("submit", "alice"))
+    assert(sub.decision == "dispatched")
+    ro rep = h.replay(intent_of("e-1", "archive"), ctx("replay", "alice"))
+    assert(rep.decision == "duplicate")
+    assert(rep.receipt == None)
+    match h.receipt_of_effect("t1", "prod-1", "e-1") {
+        Some(rec) => assert(rec.outcome == EffectOutcome.Applied)
+        None => panic("the receipt is lost")
+    }
+}
+
+test "ob the replay after an unknown outcome runs the SAME effect identity" {
+    mut h = host_with_handler("unknown")
+    ro sub = h.submit(intent_of("e-1", "archive"), ctx("submit", "alice"))
+    assert(sub.decision == "dispatched")
+    match sub.receipt {
+        Some(rec) => assert(rec.outcome == EffectOutcome.Unknown)
+        None => panic("no receipt of the unknown")
+    }
+    // the outcome turned good: the host swaps its handler and the replay runs the SAME effect
+    // identity, not a new effect
+    h.bind_handler("archive", fn(i Intent, c TrustedContext) -> EffectOutcome { EffectOutcome.Applied })
+    ro rep = h.replay(intent_of("e-1", "archive"), ctx("replay", "alice"))
+    assert(rep.decision == "dispatched")
+    match rep.receipt {
+        Some(rec) => {
+            assert(rec.outcome == EffectOutcome.Applied)
+            // THE SAME effect identity: the receipt is rewritten, no second effect exists
+            assert(rec.effect_id == "e-1")
+            assert(h.intents_of_tenant("t1").len() == 1)
+        }
+        None => panic("no receipt of the replay")
+    }
+}
+
+test "ob a refused outcome is held as refused, and the replay may run" {
+    // the handler is refusing first; the replay swaps the handler (the host owns its handlers) and
+    // runs the SAME effect identity again
+    mut h = host_with_handler("refuse")
+    ro sub = h.submit(intent_of("e-1", "archive"), ctx("submit", "alice"))
+    match sub.receipt {
+        Some(rec) => assert(rec.outcome == EffectOutcome.Refused)
+        None => panic("no receipt of the refusal")
+    }
+    h.bind_handler("archive", fn(i Intent, c TrustedContext) -> EffectOutcome { EffectOutcome.Applied })
+    ro rep = h.replay(intent_of("e-1", "archive"), ctx("replay", "alice"))
+    assert(rep.decision == "dispatched")
+    match rep.receipt {
+        Some(rec) => {
+            assert(rec.outcome == EffectOutcome.Applied)
+            assert(rec.effect_id == "e-1")
+            assert(h.intents_of_tenant("t1").len() == 1)
+        }
+        None => panic("no receipt of the replay after the refusal")
+    }
+}
+
+// ---- the unknown is never a success --------------------------------------------------------------------
+
+test "ob an unknown outcome without a handler is not a success" {
+    mut h = EffectHost { world: new_world(), handlers: []Handler.new() }
+    h.grant("t1", "alice")
+    ro r = h.submit(intent_of("e-1", "no_such_action"), ctx("submit", "alice"))
+    assert(r.decision == "dispatched")
+    match r.receipt {
+        Some(rec) => assert(rec.outcome == EffectOutcome.Unknown)
+        None => panic("the unknown became no receipt")
+    }
+    // the intent STAYS for the host to decide: the outbox holds it
+    assert(h.intents_of_tenant("t1").len() == 1)
+}
+
+// ---- the trusted context -------------------------------------------------------------------------------
+
+test "ob the rights are checked at the submit and at the replay" {
+    mut h = host_with_handler("apply")
+    ro refused = h.submit(intent_of("e-1", "archive"), ctx("submit", "mallory"))
+    assert(refused.decision == "refused-rights")
+    assert(refused.receipt == None)
+    // the granted principal submits; then the rights are withdrawn and the replay is refused too
+    ro ok = h.submit(intent_of("e-2", "archive"), ctx("submit", "alice"))
+    assert(ok.decision == "dispatched")
+    h.withdraw_rights("t1", "alice")
+    ro replay_refused = h.replay(intent_of("e-2", "archive"), ctx("replay", "alice"))
+    assert(replay_refused.decision == "refused-rights")
+    assert(replay_refused.receipt == None)
+}
+
+test "ob the role of the context is checked" {
+    mut h = host_with_handler("apply")
+    ro s = h.submit(intent_of("e-1", "archive"), ctx("replay", "alice"))
+    assert(s.decision == "refused-border")
+    ro r = h.replay(intent_of("e-1", "archive"), ctx("submit", "alice"))
+    assert(r.decision == "refused-border")
+}
+
+test "ob the withdrawal of the rights does not break the dedup" {
+    mut h = host_with_handler("apply")
+    h.submit(intent_of("e-1", "archive"), ctx("submit", "alice"))
+    h.withdraw_rights("t1", "alice")
+    // a second submit by a principal without rights is refused by the rights, not answered as a
+    // duplicate: the rights are checked first (the caller learns that it has no rights)
+    ro again = h.submit(intent_of("e-1", "archive"), ctx("submit", "alice"))
+    assert(again.decision == "refused-rights")
+    // the held record is still there: the receipt answers without any rights
+    match h.receipt_of_effect("t1", "prod-1", "e-1") {
+        Some(rec) => assert(rec.outcome == EffectOutcome.Applied)
+        None => panic("the record is lost")
+    }
+}
+
+// ---- the identity is (tenant, producer, effect_id) -----------------------------------------------------
+
+test "ob the same effect_id of another producer is another effect" {
+    mut h = host_with_handler("apply")
+    ro a = h.submit(intent_of("e-1", "archive"), ctx("submit", "alice"))
+    assert(a.decision == "dispatched")
+    mut other = intent_of("e-1", "archive")
+    other.producer = "prod-2"
+    mut c = ctx("submit", "alice")
+    c.producer = "prod-2"
+    ro b = h.submit(other, c)
+    assert(b.decision == "dispatched")
+    assert(h.intents_of_tenant("t1").len() == 2)
+}

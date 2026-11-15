@@ -1,0 +1,253 @@
+// outbox.nv - the boundary of the host effects of the epic 0.29 result E (R5, AC of the card E): the
+// intents with a stable effect identity, the receipts, the trusted context, and the dispatcher that
+// keeps the four refusals of the card:
+//   - an intent is fixed together with its applied receipt (the record goes to the host, not away);
+//   - a repeat of the dispatch uses the SAME effect identity (the idempotent re-dispatch of the same
+//     intent, not a new effect);
+//   - an UNKNOWN outcome is never marked as a success and never causes a blind repeat of an
+//     irreversible effect: the outcome stays `unknown` and the intent stays for the host to decide;
+//   - a foreign trusted context is checked at the submit and at the replay; the withdrawal of rights
+//     does not go round the dedup (the rights and the dedup are checked independently).
+//
+// The contract of the effect identity: the caller gives the intent its `effect_id` (a text of the
+// caller, e.g. "<instance>-<step>-<n>" or a UUID of the host); the dispatcher never invents or
+// renames one. The handler is a function the host binds: it receives the intent and the trusted
+// context and answers one of three outcomes — applied, refused, unknown. Nothing else.
+//
+// The module is data and dispatch only: no effect of its own, so it sits under `--strict-effects`
+// cleanly; the WORLD of the reference host keeps the record (the intents, the receipts, the rights),
+// which makes the whole boundary testable in memory.
+
+module alula.host
+
+/// TrustedContext: who submits and replays (AC of the card E): the tenant, the producer and the
+/// principal are OUT of the payload — the caller cannot forge them by the data of the event; the
+/// test context of the package carries them plainly, a host of a product carries them from its
+/// authentication. `role` is "submit" or "replay".
+export type TrustedContext { tenant str, producer str, principal str, role str }
+
+/// Intent: an irreversible effect the machine asked for, with its stable effect identity. `action`
+/// names what the handler should do (a word of the host, e.g. "archive", "move_to_archive");
+/// `payload` is the data of the action. The identity is `(tenant, producer, effect_id)` — the same
+/// triple is the SAME effect, whatever the delivery.
+export type Intent { tenant str, producer str, effect_id str, action str, payload str }
+
+/// EffectOutcome of a dispatch: "applied", "refused" or "unknown".
+export type EffectOutcome enum
+    | Applied
+    | Refused
+    | Unknown
+
+/// Receipt: what became of a dispatch. An applied receipt names the effect identity it belongs to; an
+/// unknown outcome is kept as unknown (never rewritten into a success by the dispatcher).
+export type Receipt { effect_id str, outcome EffectOutcome, detail str }
+
+/// DispatchResult: what `submit` or `replay` decided. `receipt` is Some only for a dispatch that ran
+/// (applied/refused/unknown); the refusals of the border (the rights, the dedup conflict) carry no
+/// receipt — the handler was not called.
+export type DispatchResult { decision str, receipt Option[Receipt], message str }
+
+fn receipt_ok(r Receipt) -> str => r.effect_id
+
+/// EffectHost: the outbox boundary over a World of the reference host. The keys of the world:
+///   "intent:<tenant>:<producer>:<effect_id>"  -> the intent (fixed together with the receipt),
+///   "receipt:<tenant>:<producer>:<effect_id>" -> the receipt of the last dispatch,
+///   "principal:<tenant>:<principal>"          -> "allow" or the withdrawal of the rights.
+/// The handlers are bound by `bind_handler` (one handler per action word; the host may bind several).
+export type EffectHost {
+    priv world World,
+    priv handlers []Handler
+}
+
+/// Handler: a bound handler of an action word: the host answers the outcome itself (the package does
+/// not invent one).
+export type Handler { action str, f fn(Intent, TrustedContext) -> EffectOutcome }
+
+/// Bind the handler of an action word (one per word: a second `bind_handler` of the same word
+/// replaces the first — the host owns its handlers).
+export fn EffectHost mut @bind_handler(action str, f fn(Intent, TrustedContext) -> EffectOutcome) -> () {
+    mut kept = []Handler.new()
+    for h in @handlers {
+        if h.action != action { kept.push(h) }
+    }
+    kept.push(Handler { action, f })
+    @handlers = kept
+}
+
+fn key_intent(tenant str, producer str, effect_id str) -> str => "intent:${tenant}:${producer}:${effect_id}"
+
+fn key_receipt(tenant str, producer str, effect_id str) -> str => "receipt:${tenant}:${producer}:${effect_id}"
+
+// The rights of the principal: "allow" is bound by the host; an unbound principal has no rights.
+fn has_rights(mut world World, ctx TrustedContext) -> bool {
+    ro v = world.get("principal:${ctx.tenant}:${ctx.principal}")
+    match v {
+        Text(s) => s == "allow"
+        _ => false
+    }
+}
+
+/// `submit`: the first dispatch of an intent (AC of the card E). The checks in the order the card
+/// names them:
+///   1. the trusted context must carry the rights ("allow" for the principal of the tenant);
+///   2. the dedup: an effect identity that is already fixed (a receipt is there) is NOT dispatched
+///      again by submit — the caller answers with "duplicate" and the held receipt; the withdrawal
+///      of the rights does not change that: the dedup is checked on the fixed record, not by the
+///      rights of the caller;
+///   3. the dispatch: the handler of the action word runs with the intent and the SAME trusted
+///      context; the outcome becomes a receipt, the intent is fixed TOGETHER WITH its receipt.
+/// An unknown outcome is recorded as unknown (never as a success).
+export fn EffectHost mut @submit(intent Intent, mut ctx TrustedContext) -> DispatchResult {
+    if ctx.role != "submit" { return DispatchResult { decision: "refused-border", receipt: None, message: "submit needs a context of the role submit, got ${ctx.role}" } }
+    if !has_rights(@world, ctx) {
+        return DispatchResult { decision: "refused-rights", receipt: None, message: "the principal ${ctx.principal} of the tenant ${ctx.tenant} has no rights to submit" }
+    }
+    ro key = key_intent(intent.tenant, intent.producer, intent.effect_id)
+    if @world.has(key) {
+        ro held = @world.get(key_receipt(intent.tenant, intent.producer, intent.effect_id))
+        match held {
+            Text(_) => return DispatchResult { decision: "duplicate", receipt: None, message: "the effect ${intent.effect_id} is already fixed: submit does not dispatch it again" }
+            _ => ()
+        }
+    }
+    return @dispatch(intent, ctx)
+}
+
+/// `replay`: the re-dispatch of an intent after an unknown outcome or a crash (AC of the card E).
+/// The checks:
+///   1. the rights of the replaying principal (checked like at the submit; the withdrawal of the
+///      rights does not go round the dedup — the rights are checked FIRST, independently);
+///   2. the dedup: an intent with an APPLIED receipt is not dispatched again — the held receipt is
+///      the answer (the effect identity is stable: the replay of an applied effect would be a second
+///      application of an irreversible effect);
+///   3. the dispatch with the SAME effect identity: the handler decides anew, the receipt is
+///      rewritten (the last state of the effect).
+export fn EffectHost mut @replay(intent Intent, mut ctx TrustedContext) -> DispatchResult {
+    if ctx.role != "replay" { return DispatchResult { decision: "refused-border", receipt: None, message: "replay needs a context of the role replay, got ${ctx.role}" } }
+    if !has_rights(@world, ctx) {
+        return DispatchResult { decision: "refused-rights", receipt: None, message: "the principal ${ctx.principal} of the tenant ${ctx.tenant} has no rights to replay" }
+    }
+    ro rkey = key_receipt(intent.tenant, intent.producer, intent.effect_id)
+    ro held = @world.get(rkey)
+    match held {
+        Text(_) => {
+            // an applied receipt stops the replay; a refused or an unknown one lets it run
+            mut applied = false
+            match @world.get(key_intent(intent.tenant, intent.producer, intent.effect_id)) {
+                Text(_) => { if is_applied_receipt_text(@world.get(rkey)) { applied = true } }
+                _ => ()
+            }
+            if applied {
+                return DispatchResult { decision: "duplicate", receipt: None, message: "the effect ${intent.effect_id} is applied: the replay does not run it again" }
+            }
+        }
+        _ => ()
+    }
+    @dispatch(intent, ctx)
+}
+
+// Does the held receipt text say "applied"? (the receipt travels as its canonical text)
+fn is_applied_receipt_text(v Value) -> bool {
+    match v {
+        Text(t) => t.starts_with("applied|")
+        _ => false
+    }
+}
+
+fn receipt_text(r Receipt) -> str {
+    ro outcome = match r.outcome {
+        Applied => "applied"
+        Refused => "refused"
+        Unknown => "unknown"
+    }
+    // the leading word IS the outcome marker: the reader of a held receipt takes it first (no
+    // substring search inside the json)
+    "${outcome}|{\"effect_id\":\"${r.effect_id}\",\"outcome\":\"${outcome}\",\"detail\":\"${r.detail}\"}"
+}
+
+fn receipt_of(text str) -> Receipt {
+    // the canonical text is ours (receipt_text): "<outcome>|<json>"
+    ro body = match text.find("|") {
+        None => text
+        Some(at) => text[at + 1..]
+    }
+    ro held_effect_id = between(body, "\"effect_id\":\"", "\"")
+    ro outcome_word = between(body, "\"outcome\":\"", "\"")
+    ro detail = between(body, "\"detail\":\"", "\"")
+    ro outcome = if outcome_word == "applied" { EffectOutcome.Applied } else if outcome_word == "refused" { EffectOutcome.Refused } else { EffectOutcome.Unknown }
+    Receipt { effect_id: held_effect_id, outcome, detail }
+}
+
+fn between(text str, open str, close str) -> str {
+    match text.find(open) {
+        None => ""
+        Some(at) => {
+            ro tail = text[at + open.byte_len()..]
+            match tail.find(close) {
+                None => ""
+                Some(end) => tail[..end]
+            }
+        }
+    }
+}
+
+fn EffectHost mut @dispatch(intent Intent, mut ctx TrustedContext) -> DispatchResult {
+    mut handler = Handler { action: "", f: fn(i Intent, c TrustedContext) -> EffectOutcome { EffectOutcome.Unknown } }
+    mut found = false
+    for h in @handlers {
+        if h.action == intent.action {
+            handler = h
+            found = true
+        }
+    }
+    if !found {
+        // no handler: the outcome is unknown (the effect did not run, and the dispatcher does not
+        // invent a success); the intent stays in the world for the host to decide
+        ro r = Receipt { effect_id: intent.effect_id, outcome: EffectOutcome.Unknown, detail: "no handler of the action ${intent.action}" }
+        @record(intent, r)
+        return DispatchResult { decision: "dispatched", receipt: Some(r), message: "" }
+    }
+    ro f = handler.f
+    ro outcome = f(intent, ctx)
+    ro detail = "by ${ctx.producer}/${ctx.principal}"
+    ro r = Receipt { effect_id: intent.effect_id, outcome, detail }
+    @record(intent, r)
+    DispatchResult { decision: "dispatched", receipt: Some(r), message: "" }
+}
+
+// The intent and its receipt are fixed together (the card E: "an intent is fixed together with its
+// applied receipt").
+fn EffectHost mut @record(intent Intent, r Receipt) -> () {
+    @world.put(key_intent(intent.tenant, intent.producer, intent.effect_id), Text(receipt_text(r)))
+    @world.put(key_receipt(intent.tenant, intent.producer, intent.effect_id), Text(receipt_text(r)))
+}
+
+/// `receipt_of_effect`: the held receipt of an effect identity (None: the effect is not fixed).
+export fn EffectHost @receipt_of_effect(tenant str, producer str, effect_id str) -> Option[Receipt] {
+    match @world.get(key_receipt(tenant, producer, effect_id)) {
+        Text(t) => Some(receipt_of(t))
+        _ => None
+    }
+}
+
+/// `grant` / `withdraw_rights`: the rights of a principal (the test helper of the host; a product
+/// host carries them from its authentication). The withdrawal does not change the fixed records: the
+/// dedup reads them without the rights.
+export fn EffectHost mut @grant(tenant str, principal str) -> () {
+    @world.put("principal:${tenant}:${principal}", Text("allow"))
+}
+
+export fn EffectHost mut @withdraw_rights(tenant str, principal str) -> () {
+    @world.put("principal:${tenant}:${principal}", Text("deny"))
+}
+
+/// `intents_of_tenant`: the effect identities fixed for a tenant (the outbox as the host sees it).
+export fn EffectHost @intents_of_tenant(tenant str) -> []str {
+    mut out = []str.new()
+    for k in @world.keys() {
+        if k.starts_with("intent:${tenant}:") {
+            out.push(between(k, "intent:${tenant}:", ""))
+        }
+    }
+    out
+}

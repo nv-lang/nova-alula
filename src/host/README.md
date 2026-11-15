@@ -34,6 +34,32 @@ export fn Host @check_bindings(reg Registry) -> []str                 // every f
 
 The negative compilations are in `scripts/negative-179/` (each file names its expected code in a line `// expect: <CODE>`); `scripts/accept-179.sh` checks them in a copy of the package.
 
+## The boundary of the effects: the intents, the receipts and the trusted context (the epic 0.29 result E)
+
+`outbox.nv` is the boundary the card E of the epic asks for, as DATA and DISPATCH (no effect of its
+own, clean under `--strict-effects`; the record lives in the World of the reference host):
+
+- `Intent` — an irreversible effect with its STABLE identity `(tenant, producer, effect_id)`; the
+  caller gives the identity, the dispatcher never invents one;
+- `submit(intent, ctx)` — the first dispatch: the rights of the principal of the trusted context are
+  checked FIRST (the context carries the tenant, the producer and the principal OUT of the payload —
+  the caller cannot forge them by the event data); the dedup of a fixed identity answers "duplicate"
+  with the held record — the handler is not called again; the outcome of the handler (applied /
+  refused / unknown) becomes the receipt, fixed TOGETHER WITH the intent;
+- `replay(intent, ctx)` — the re-dispatch: the rights are checked first; an APPLIED receipt stops the
+  replay (the identity is stable: no second application of an irreversible effect); a refused or an
+  unknown one lets it run with THE SAME effect identity, the receipt is rewritten;
+- an UNKNOWN outcome is held as unknown, never rewritten into a success; an action without a handler
+  is unknown too and the intent STAYS in the outbox for the host to decide;
+- the withdrawal of the rights (`withdraw_rights`) does not go round the dedup: the rights are
+  checked first and independently of the held records; the records answer the lookup without rights.
+
+Handlers are bound by `bind_handler(action, f)` (the host owns them; a second binding of the same
+word replaces the first). Tests: `outbox_test.nv` — the submit/receipt coupling, the dedup, the
+stable identity of the replay after an unknown and after a refused, the unknown without a handler,
+the rights at the submit and at the replay, the role of the context, the withdrawal against the
+dedup, the identity split by producer.
+
 ## The test host
 
 `Host` is the test host as it stands: `stats()` gives the counters by class (`pure`, `volatile`, `acting`) and the number of broken contracts; `world_version()` is the version of the world; `host_over(world)` builds a host over a world the caller keeps, so a test can hand a closure the same world and see the host catch it (`host_test.nv`, tests "closure ..."). The world of the reference host is a store of values by a text key (`World`, `env.nv`); a host of a product has its own world and its own environment types by the same pattern.
