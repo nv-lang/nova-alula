@@ -15,7 +15,7 @@ fn ask_opened(mut world MemoryWorld) -> Engine[CallMachine, str] {
 
 fn sub(mut e Engine[CallMachine, str], mut world MemoryWorld, producer str, event_id str, fingerprint str, event Incoming) -> AdmitEvent {
     with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
-        e.submit(event, producer, event_id, fingerprint)
+        e.submit_event(event, producer, event_id, fingerprint)
     }
 }
 
@@ -162,7 +162,7 @@ test "ad the pins and the seen keys travel in the snapshot" {
     mut world = MemoryWorld.at(1000)
     with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
         mut e = start_engine_pinned[str, CallMachine](caller(), "pinned-2", pins_of("sha256:c2", "sha256:a2"))
-        e.submit(asked_event(), "transport-a", "e-1", "ask|{}")
+        e.submit_event(asked_event(), "transport-a", "e-1", "ask|{}")
     }
     with Journal = memory_journal(world), Store = memory_store(world) {
         ro snapshot = Store.load("pinned-2")

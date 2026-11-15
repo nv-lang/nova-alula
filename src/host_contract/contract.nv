@@ -1,0 +1,285 @@
+// contract.nv - the local host contract of the epic 0.29 result F (R6, the card F): the public
+// operations over the pieces the results B-E built, in ONE shape for the CLI and the local API:
+//   contract.get      - the manifest and the identities of a machine file (B);
+//   instance_open     - start a pinned instance of a machine (D: AC-D4);
+//   instance.submit   - an event of a trusted producer -> a receipt-shaped answer (D: AC-D5, E);
+//   instance.status   - the receipt of an effect identity, without re-running anything (E);
+//   instance.describe - the state of the instance (D).
+//
+// THE DISTINCTION THE CARD DEMANDS: a SCHEMA error (the input does not parse or does not fit the
+// declared shape: a malformed envelope, a foreign contract/artifact, a machine that fails the
+// checks) is a refusal of the border before anything runs; a RECEIPT answer (the event was accepted
+// as an event and ran: applied, duplicate, conflict, refused) is a lawful outcome carried by a
+// receipt. The kinds differ: SchemaError never carries a receipt; ReceiptAnswer always names one.
+//
+// No transport lives here: JSON-RPC/HTTP/WS/stdio adapters are out of scope without a separate
+// decision (the card F). The CLI (src/alula_cli) opens the same operations as commands.
+
+module alula.host_contract
+
+import std.encoding.json.{Json}
+import alula.machine.{Value, Text, Dict, DictEntry, List, value_from_json, NamedText, Registry}
+import alula.machine_manifest.{manifest_of, contract_id, artifact_id}
+import alula.machine_typed.{canonical_json_text}
+import alula.machine_table.{load_machine, MachineDef}
+import alula.machine_run.{AlulaMachine, AlulaState, load_alula_machine}
+import alula.machine_text.{translate_checked}
+import alula.host.{Intent, TrustedContext, EffectOutcome, Receipt, EffectHost, new_effect_host}
+import alula.engine.{Pins, Incoming, EventKind, AdmitEvent, MemoryWorld, PartyResponse, Journal, Store, Link, Time, start_engine_pinned, memory_journal, memory_store, memory_link, memory_time, submit_admission, open_count, first_open_id}
+
+/// AnswerKind: SchemaError (a border refusal: no receipt, nothing ran), ReceiptAnswer (the event
+/// ran: the receipt names the outcome), OkAnswer (a read-only answer).
+export type AnswerKind enum
+    | SchemaError
+    | ReceiptAnswer
+    | OkAnswer
+
+/// ContractAnswer: the envelope of every operation. `kind` separates the schema errors from the
+/// receipt answers (the card F); `payload` is the canonical JSON of the answer body.
+export type ContractAnswer { kind AnswerKind, payload str }
+
+fn ok_answer(payload str) -> ContractAnswer => { kind: OkAnswer, payload }
+fn schema_answer(message str) -> ContractAnswer => { kind: SchemaError, payload: "{\"error\":\"${message}\"}" }
+fn receipt_answer(payload str) -> ContractAnswer => { kind: ReceiptAnswer, payload }
+
+// ---- contract.get --------------------------------------------------------------------------------------
+
+/// `contract.get` for a machine file: the public manifest and the identities (the result B). A
+/// schema error names the place: an untranslatable file, a refused machine, a manifest that does
+/// not validate. The manifest itself does not carry the identities: the consumer recomputes the
+/// contract_id from it. The host texts (the registry and the journal of the folder) are the inputs
+/// of the artifact identity.
+export fn contract_get(machine_text str, registry Registry, registry_text str, journal_text str, executor str) -> ContractAnswer {
+    match load_machine(machine_text, registry) {
+        Err(issues) => {
+            ro first = if issues.len() > 0 { issues[0].path } else { "$" }
+            schema_answer("the machine does not pass the checks at ${first}")
+        }
+        Ok(def) => match manifest_of(def) {
+            Err(m) => schema_answer("the manifest: ${m}")
+            Ok(manifest) => match contract_id(manifest) {
+                Err(m) => schema_answer("the contract_id: ${m}")
+                Ok(cid) => match canonical_json_text(manifest) {
+                    Err(m) => schema_answer("the canonical form: ${m}")
+                    Ok(canonical) => match tree_value(machine_text) {
+                        Err(m) => schema_answer(m)
+                        Ok(tv) => match artifact_id(executor, tv, libraries_of(def), registry_text, journal_text) {
+                            Err(m) => schema_answer("the artifact_id: ${m}")
+                            Ok(aid) => ok_answer("{\"contract_id\":\"${cid}\",\"artifact_id\":\"${aid}\",\"machine\":\"${def.name}\",\"revision\":${revision_of(def.version)},\"manifest\":${canonical}}")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn revision_of(version str) -> str {
+    if version.byte_len() == 0 { return "1" }
+    version
+}
+
+fn tree_value(tree str) -> Result[Value, str] {
+    match Json.parse(tree) {
+        Err(_) => Err("the tree is not valid JSON")
+        Ok(j) => match value_from_json(j) {
+            Err(e) => Err("the tree: ${e}")
+            Ok(v) => Ok(v)
+        }
+    }
+}
+
+fn libraries_of(def MachineDef) -> Value {
+    mut libs = []Value.new()
+    for inc in def.includes {
+        libs.push(Dict([DictEntry { key: Text("hash"), value: Text(inc.hash) }, DictEntry { key: Text("name"), value: Text(inc.name) }]))
+    }
+    List(libs)
+}
+
+// ---- the instance --------------------------------------------------------------------------------------
+
+/// InstanceHandle: one running instance the local API holds: the pinned engine over AlulaMachine,
+/// the effects host of the result E, and the memory world the engine effects run over. The CLI and
+/// the harness hold it in memory (no transport, no queue); a product host holds its own.
+export type InstanceHandle {
+    mut engine alula.engine.Engine[AlulaMachine, AlulaState],
+    mut world MemoryWorld,
+    mut effects EffectHost,
+    machine_name str
+}
+
+/// `instance_open`: start a pinned instance of a machine (the text of a file of Alula) with the
+/// in-memory effects of the package (the result D, AC-D4: the pins are mandatory, the caller takes
+/// them from `contract.get`). The schema errors: the machine does not translate or does not pass
+/// the checks.
+export fn instance_open(machine_text str, registry Registry, pins Pins) -> Result[InstanceHandle, str] {
+    // machine_text may be a TABLE of Alula or a compiled tree: a table is translated first (the
+    // checks run inside the translator, they are not bypassed); a tree goes to the loader as it is
+    mut tree = machine_text
+    if !machine_text.starts_with("{") {
+        ro report = translate_checked(machine_text, registry)
+        if report.errors.len() > 0 {
+            ro first = report.errors[0].message
+            return Err("the machine does not pass the checks (a schema error: start refused): ${first}")
+        }
+        tree = report.json
+    }
+    match load_alula_machine(tree, registry) {
+        Err(m) => Err("the machine does not pass the checks (a schema error: start refused): ${m}")
+        Ok(machine) => {
+            mut world = MemoryWorld.at(1000)
+            with Journal = memory_journal(world), Store = memory_store(world), Link = memory_link(world), Time = memory_time(world) {
+                ro e = start_engine_pinned[AlulaState, AlulaMachine](machine, machine.name(), pins)
+                Ok(InstanceHandle { engine: e, world, effects: new_effect_host(), machine_name: machine.name() })
+            }
+        }
+    }
+}
+
+/// The fingerprint of an event: the content the caller pins (the kind, the request, the input).
+export fn event_fingerprint(kind str, request str, input str) -> str => "${kind}|${request}|${input}"
+
+/// `instance.submit`: an event of a trusted producer (AC-D5 in the CLI shape). The envelope (the
+/// only form the border takes): {"kind": "...", "name": "...", "request": "...", "input": "...",
+/// "producer": "..."}. The schema errors: a malformed envelope, an unknown event kind. The receipt
+/// answers: applied, duplicate, conflict — each names the effect identity; applied names the
+/// outcome of the effect host for it.
+// submit_json takes and RETURNS the handle: the effects host and the engine state live in it, so
+// the caller must keep the returned handle (the value semantics of the handles on 0.1.4).
+export fn submit_json(mut h InstanceHandle, envelope str) -> ContractAnswer {
+    match Json.parse(envelope) {
+        Err(_) => return schema_answer("the envelope is not valid JSON")
+        Ok(_) => ()
+    }
+    ro fields = match envelope_fields(envelope) {
+        Err(m) => return schema_answer(m)
+        Ok(f) => f
+    }
+    ro kind = match fields.kind {
+        Some(k) => k
+        None => return schema_answer("the envelope takes kind")
+    }
+    ro ek = match EventKind.parse(kind) {
+        Some(k) => k
+        None => return schema_answer("the event kind ${kind} is not declared")
+    }
+    ro name = fields.name ?? ""
+    ro request = fields.request
+    ro input = fields.input ?? ""
+    ro producer = fields.producer ?? "local"
+    ro fingerprint = event_fingerprint(kind, request ?? "-", input)
+    ro effect_id = "e:${fingerprint}"
+    mut admit = AdmitEvent { what: "", fingerprint }
+    // ORACLE-WORKAROUND(129): the event is bound to a typed local and the engine method is taken by
+    // a typed local — the direct @engine.submit_event(...) with a constructor argument broke the C
+    // of the merged unit on 0.1.4 (the args are emitted as void*)
+    ro event = Incoming.incoming(ek, name, request, input)
+    mut engine = h.engine
+    with Journal = memory_journal(h.world), Store = memory_store(h.world), Link = memory_link(h.world), Time = memory_time(h.world) {
+        admit = submit_admission(engine, event, producer, effect_id, fingerprint)
+    }
+    if admit.what == "conflict" {
+        return receipt_answer("{\"decision\":\"conflict\",\"effect_id\":\"${effect_id}\"}")
+    }
+    if admit.what == "duplicate" {
+        return receipt_answer("{\"decision\":\"duplicate\",\"effect_id\":\"${effect_id}\"}")
+    }
+    // the machine has no bound handlers here (the package carries none): an accepted event without
+    // an irreversible effect holds the receipt UNKNOWN in the effects host — the honest outcome
+    // (the card E: an unknown is never a success); the receipt joins the effects host, so
+    // instance.status finds it
+    h.effects.bind_handler("noop", fn(i Intent, c TrustedContext) -> EffectOutcome { EffectOutcome.Unknown })
+    h.effects.grant("", producer)
+    ro d = h.effects.submit(Intent { tenant: "", producer, effect_id, action: "noop", payload: "" }, TrustedContext { tenant: "", producer, principal: producer, role: "submit" })
+    ro word = match d.receipt {
+        Some(r) => outcome_word(r.outcome)
+        None => "unknown"
+    }
+    receipt_answer("{\"decision\":\"applied\",\"effect_id\":\"${effect_id}\",\"outcome\":\"${word}\"}")
+}
+
+type EventFields { kind Option[str], name Option[str], request Option[str], input Option[str], producer Option[str] }
+
+fn envelope_fields(envelope str) -> Result[EventFields, str] {
+    match Json.parse(envelope) {
+        Err(_) => return Err("the envelope is not valid JSON")
+        Ok(j) => match value_from_json(j) {
+            Err(e) => return Err("the envelope: ${e}")
+            Ok(v) => match v {
+                Dict(entries) => {
+                    mut out = EventFields { kind: None, name: None, request: None, input: None, producer: None }
+                    for e in entries {
+                        match e.key {
+                            Text("kind") => { out.kind = text_of_value(e.value) }
+                            Text("name") => { out.name = text_of_value(e.value) }
+                            Text("request") => { out.request = text_of_value(e.value) }
+                            Text("input") => { out.input = text_of_value(e.value) }
+                            Text("producer") => { out.producer = text_of_value(e.value) }
+                            _ => return Err("the envelope field is not declared")
+                        }
+                    }
+                    Ok(out)
+                }
+                _ => Err("the envelope is an object")
+            }
+        }
+    }
+}
+
+fn text_of_value(v Value) -> Option[str] {
+    match v {
+        Text(s) => Some(s)
+        _ => None
+    }
+}
+
+/// `instance.status`: the receipt of an effect identity without re-running anything (E). A schema
+/// error for an empty id; a receipt answer when the effect is known; ok "unknown" otherwise.
+export fn status_json(h InstanceHandle, producer str, effect_id str) -> ContractAnswer {
+    if effect_id.byte_len() == 0 { return schema_answer("the effect id is empty") }
+    match h.effects.receipt_of_effect("", producer, effect_id) {
+        Some(r) => receipt_answer("{\"effect_id\":\"${effect_id}\",\"outcome\":\"${outcome_word(r.outcome)}\",\"detail\":\"${r.detail}\"}")
+        None => ok_answer("{\"effect_id\":\"${effect_id}\",\"outcome\":\"unknown\"}")
+    }
+}
+
+/// `instance.describe`: the state of the instance (D): the machine name, the step, whether it
+/// finished and with what, the open requests.
+export fn describe_json(h InstanceHandle) -> ContractAnswer {
+    // the open requests as the count and the first id: the iteration of the ids Vec across the
+    // modules broke the C of the merged unit on 0.1.4 (the survey item 129 class; see the marks)
+    ro open_count = h.engine.open_count()
+    ro first_open = match h.engine.first_open_id() {
+        Some(id) => "\"${id}\""
+        None => ""
+    }
+    ro open_field = if open_count == 0 { "[]" } else { "[${first_open}]" }
+    ro outcome = match h.engine.outcome() {
+        Some(resp) => match resp {
+            PartyResponse.Answer(_) => "\"answer\""
+            _ => "\"refusal\""
+        }
+        None => "\"none\""
+    }
+    ok_answer("{\"machine\":\"${h.machine_name}\",\"step\":${h.engine.step_number()},\"finished\":${h.engine.is_finished()},\"outcome\":${outcome},\"open_count\":${open_count},\"open\":${open_field}}")
+}
+
+fn outcome_word(o EffectOutcome) -> str {
+    match o {
+        Applied => "applied"
+        Refused => "refused"
+        Unknown => "unknown"
+    }
+}
+
+fn join_ids(ids []str) -> str {
+    mut out = ""
+    mut first = true
+    for id in ids {
+        if !first { out = "${out}," }
+        out = "${out}\"${id}\""
+        first = false
+    }
+    out
+}

@@ -59,6 +59,9 @@ export type EffectHost {
     priv handlers []Handler
 }
 
+/// A fresh effects host: an empty world, no handlers.
+export fn new_effect_host() -> EffectHost => { world: new_world(), handlers: []Handler.new() }
+
 /// Handler: a bound handler of an action word: the host answers the outcome itself (the package does
 /// not invent one).
 export type Handler { action str, f fn(Intent, TrustedContext) -> EffectOutcome }

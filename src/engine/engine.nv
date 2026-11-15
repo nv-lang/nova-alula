@@ -164,6 +164,12 @@ fn overtaken_lines(all []JournalEntry, trace str) -> []int {
 
 // ---- the epic 0.29 result D: the admission of a trusted producer and the withdrawal of a wait ------
 
+// The free-function form of the admission (for the callers outside the merged unit: the local host
+// contract calls this one; the method form above stays for the tests of this unit).
+export fn submit_admission[M Machine[S], S](mut e Engine[M, S], raw Incoming, producer str, event_id str, fingerprint str) Journal Store Time -> AdmitEvent {
+    e.submit_event(raw, producer, event_id, fingerprint)
+}
+
 /// AdmitEvent: what `submit` decided and did. `applied` — the event was new and the step ran;
 /// `duplicate` — the same (producer, event_id) with the same fingerprint was admitted before: the
 /// event is NOT applied again (idempotent delivery); `conflict` — the same key with ANOTHER
@@ -177,7 +183,7 @@ export type AdmitEvent { what str, fingerprint str }
 /// or of the typed data changes it, so a repeat with a changed content is a conflict, not a new
 /// event. The admitted key is written into the engine state (it travels with the snapshot), so the
 /// same probes hold after a restore.
-export fn Engine[M Machine[S], S] mut @submit(raw Incoming, producer str, event_id str, fingerprint str) Journal Store Time -> AdmitEvent {
+export fn Engine[M Machine[S], S] mut @submit_event(raw Incoming, producer str, event_id str, fingerprint str) Journal Store Time -> AdmitEvent {
     for seen in @engine_state.seen_events {
         if seen.producer == producer && seen.event_id == event_id {
             if seen.fingerprint == fingerprint {
@@ -599,6 +605,16 @@ export fn Engine[M Machine[S], S] @open_ids() -> []str {
     mut ids = []str.new()
     for r in @engine_state.open_requests { ids.push(r.id) }
     ids
+}
+
+/// The number of the open requests — the describe of the local host contract (the result F) reads
+/// it without iterating the ids Vec across modules.
+export fn Engine[M Machine[S], S] @open_count() -> int => @engine_state.open_requests.len()
+
+/// The id of the first open request (None: none open).
+export fn Engine[M Machine[S], S] @first_open_id() -> Option[str] {
+    if @engine_state.open_requests.len() == 0 { return None }
+    Some(@engine_state.open_requests[0].id)
 }
 
 /// The state of the machine.
