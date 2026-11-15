@@ -4,7 +4,7 @@
 
 Every place of the package that goes round a defect or a limit of Oracle carries a comment `// ORACLE-WORKAROUND(N): what is gone round; how to simplify when item N is fixed`, where N is an item of [README.md](README.md) ("Known problems"). `git grep ORACLE-WORKAROUND` finds them, `python scripts/oracle-workarounds.py --list` prints them by item with the line. When Nova fixes an item, open its places below, simplify the code as the mark says and remove the mark; then rerun `python scripts/oracle-workarounds.py --index`.
 
-Marks: 108 in 63 files. Items with marks: 36. Items without marks: 2 (no workaround in the code).
+Marks: 109 in 64 files. Items with marks: 37. Items without marks: 1 (no workaround in the code).
 
 | Item | What | Places (files; marks in a file if more than one) | Marks |
 |---|---|---|---|
@@ -45,4 +45,4 @@ Marks: 108 in 63 files. Items with marks: 36. Items without marks: 2 (no workaro
 | 61 | `none_arg_generic_option`: a literal `None` as the argument of a parameter of the type `Option[Wrap[str]]`, where `Wrap` is a... | `src/machine_nested_run/proto_test.nv` | 1 |
 | 127 | `str_to_int_none`: `word.to_int() != None` is TRUE for a text that is no number (`word.to_int() ?? -1` gives -1, so the value is... | `src/machine_agent/v217_test.nv` | 1 |
 | 128 | `fixarr_to_vec_arg`: the fixed array returned by a std function cannot be passed as the argument of a `[]u8` parameter... | `src/machine_typed/typed.nv` | 1 |
-| 129 | `const_pool_clobber` (CLOSED by 0.1.4: not reproducible in any shape; the marks and the `ro` hoisting of typed_test.nv are... | no workaround in the code | 0 |
+| 129 | `const_pool_clobber` (the 0.1.0 form — the literal/assert clobber of a peer file — is NOT reproducible on 0.1.4; REOPENED... | `src/host_contract/contract.nv` | 1 |
