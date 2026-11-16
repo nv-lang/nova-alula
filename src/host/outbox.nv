@@ -62,6 +62,60 @@ export type EffectHost {
 /// A fresh effects host: an empty world, no handlers.
 export fn new_effect_host() -> EffectHost => { world: new_world(), handlers: []Handler.new() }
 
+/// The result value of an executed effect (None: not executed or not stored). The value is held by
+/// the effects world, so an idempotent repeat of the same identity reads it without a re-run. The
+/// thin host (the epic «Тонкий хозяин», П-1) drives this channel explicitly: the acting primitives
+/// of machines return values (start_process gives the pid, acquire_lock gives bool, ...).
+export fn EffectHost @result_of_effect(tenant str, producer str, effect_id str) -> Option[Value] {
+    ro v = @world.get("result_value:${tenant}:${producer}:${effect_id}")
+    match v {
+        Null => None
+        _ => Some(v)
+    }
+}
+
+/// `may_submit`: the rights check of the trusted context, WITHOUT dispatching (the thin host checks
+/// the rights before its own acting execution; the withdrawal does not bypass the check).
+export fn EffectHost @may_submit(ctx TrustedContext) -> bool {
+    ro v = @world.get("principal:${ctx.tenant}:${ctx.principal}")
+    match v {
+        Text(s) => s == "allow"
+        _ => false
+    }
+}
+
+/// The held outcome of an effect identity (None: not fixed yet).
+export fn EffectHost @held_outcome(tenant str, producer str, effect_id str) -> Option[EffectOutcome] {
+    match @world.get(key_receipt(tenant, producer, effect_id)) {
+        Text(t) => match t.starts_with("applied|") {
+            true => Some(EffectOutcome.Applied)
+            false => match t.starts_with("refused|") {
+                true => Some(EffectOutcome.Refused)
+                false => Some(EffectOutcome.Unknown)
+            }
+        }
+        _ => None
+    }
+}
+
+/// `record_exec`: the driver's record of an EXECUTED effect — the intent and the receipt are fixed
+/// together, the result value is stored in the effects world (the value channel of the thin host).
+/// The receipt outcome must be the truth of the execution: Applied for a real execution with the
+/// value, Refused for a refusal of the environment, Unknown when the execution could not be
+/// confirmed (never rewritten into a success).
+export fn EffectHost mut @record_exec(intent Intent, ctx TrustedContext, outcome EffectOutcome, value Option[Value], detail str) -> () {
+    mut out = detail
+    match value {
+        Some(v) => {
+            @world.put("result_value:${intent.tenant}:${intent.producer}:${intent.effect_id}", v)
+            ()
+        }
+        None => ()
+    }
+    ro r = Receipt { effect_id: intent.effect_id, outcome, detail: out }
+    @record(intent, r)
+}
+
 /// Handler: a bound handler of an action word: the host answers the outcome itself (the package does
 /// not invent one).
 export type Handler { action str, f fn(Intent, TrustedContext) -> EffectOutcome }
@@ -254,3 +308,10 @@ export fn EffectHost @intents_of_tenant(tenant str) -> []str {
     }
     out
 }
+
+/// The driver state of the thin host: the world of the effects host is shared through the value
+/// copies of the handle (the Vec payload), so the process/lock state put by the driver in one call
+/// is visible in the next call through another copy of the handle. Keys are namespaced by callers.
+export fn EffectHost @state_get(key str) -> Value => @world.get(key)
+
+export fn EffectHost mut @state_put(key str, v Value) -> () => @world.put(key, v)

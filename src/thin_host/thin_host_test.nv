@@ -1,0 +1,479 @@
+// thin_host_test.nv - the probes of the thin host (the epic «Тонкий хозяин в пакете», П-1; REQ-4,
+// REQ-5, AC-4, AC-5): the equivalence with the methodology ScriptedHost (the same scenarios — the
+// same outcomes, ported from test_scripted_host.py of the task 111), the full negatives of REQ-5,
+// and the contract scenario AC-5 (parse_agent — volatile, the answer through the AL-153 decode: an
+// invalid one is a step failure, a valid one — the value of the type). The registry probe (AC-1,
+// the rows line-equal to the methodology registry) closes the set. The filesystem probes run over
+// the memory handler of std (hermetic); the same operations over the real handler are exercised by
+// the last test.
+
+module alula.thin_host
+
+import std.fs.{Path, MemFs, mock_fs, create_dir_all}
+import alula.machine.{Value, Text, Int, Bool, Null, List, Registry, load_host, Pure, Acting, Volatile, value_json}
+import alula.machine_run.{alula_step}
+import alula.machine_run.{AlulaMachine, AlulaState, load_alula_machine, Incoming, EventKind}
+import alula.engine.{StepEnvironment, Transition}
+
+// ---- the fixtures --------------------------------------------------------------------------------------
+
+fn th() -> ScriptedThinHost => new_scripted_host("/tree", "local")
+
+fn thin_registry() -> str => registry_text()
+
+fn th_set_answer(mut h ScriptedThinHost, key str, value Value) -> () {
+    match h.answers {
+        Dict(entries) => {
+            entries.push(DictEntry { key: Text(key), value })
+            h.answers = Dict(entries)
+        }
+        _ => ()
+    }
+}
+
+fn th_start_answer(mut h ScriptedThinHost, command str, dir str, pid int) -> () {
+    th_set_answer(h, "process:${command}:${dir}", Int(pid))
+}
+
+fn th_running_answer(mut h ScriptedThinHost, pid int, running bool) -> () {
+    th_set_answer(h, "running:${pid}", Bool(running))
+}
+
+fn th_agent_answer(mut h ScriptedThinHost, instruction str, input str, answer str) -> () {
+    th_set_answer(h, "agent:${instruction}:${input}", Text(answer))
+}
+
+fn th_command_answer(mut h ScriptedThinHost, command str, dir str, code int, stdout str) -> () {
+    th_set_answer(h, "command:${command}:${dir}", Dict([
+        DictEntry { key: Text("code"), value: Int(code) },
+        DictEntry { key: Text("stdout"), value: Text(stdout) },
+    ]))
+}
+
+fn run(mut h ScriptedThinHost, name str, args []Value) Fs -> Result[Value, StepFailure] => run_thin_primitive(h, name, args)
+
+fn is_failure(r Result[Value, StepFailure]) -> bool {
+    match r {
+        Err(_) => true
+        _ => false
+    }
+}
+
+fn failure_message(r Result[Value, StepFailure]) -> str {
+    match r {
+        Err(e) => e.message
+        _ => ""
+    }
+}
+
+// ---- the tree: the positives (the equivalence with the methodology ScriptedHost) -----------------------
+
+test "tf write then read roundtrip" {
+    mut fs = MemFs.new()
+    mut h = th()
+    with Fs = mock_fs(fs) {
+        ro w = h.tree.write_file("a/b.txt", "hello")
+        assert(w.is_ok())
+        match h.tree.read_file("a/b.txt") {
+            Ok(Text(t)) => assert(t == "hello")
+            _ => panic("the roundtrip failed")
+        }
+    }
+}
+
+test "tf move: the source is gone, the destination holds the text" {
+    mut fs = MemFs.new()
+    mut h = th()
+    with Fs = mock_fs(fs) {
+        ro _w = h.tree.write_file("a/c.txt", "data")
+        ro m = h.tree.move_file("a/c.txt", "b/c.txt")
+        assert(m.is_ok())
+        match h.tree.read_file("b/c.txt") {
+            Ok(Text(t)) => assert(t == "data")
+            _ => panic("the moved file lost its text")
+        }
+        match h.tree.read_file("a/c.txt") {
+            Err(_) => ()
+            Ok(_) => panic("the source is still there")
+        }
+    }
+}
+
+test "tf list_dir is sorted" {
+    mut fs = MemFs.new()
+    mut h = th()
+    with Fs = mock_fs(fs) {
+        ro _w1 = h.tree.write_file("d/c.txt", "3")
+        ro _w2 = h.tree.write_file("d/a.txt", "1")
+        ro _w3 = h.tree.write_file("d/b.txt", "2")
+        match h.tree.list_dir("d") {
+            Ok(List(items)) => {
+                assert(items.len() == 3)
+                match items[0] { Text(t) => assert(t == "a.txt"), _ => panic("not a text") }
+                match items[2] { Text(t) => assert(t == "c.txt"), _ => panic("not a text") }
+            }
+            _ => panic("list_dir failed")
+        }
+    }
+}
+
+test "tf acquire_lock: free true, foreign false, own token true" {
+    mut fs = MemFs.new()
+    mut h = th()
+    with Fs = mock_fs(fs) {
+        match h.tree.acquire_lock("locks/task.lock", "token-1") {
+            Ok(Bool(true)) => ()
+            _ => panic("a free lock is not taken")
+        }
+        // a foreign token: the VALUE false, not a failure (REQ-5)
+        match h.tree.acquire_lock("locks/task.lock", "token-2") {
+            Ok(Bool(false)) => ()
+            _ => panic("a foreign token must give the value false")
+        }
+        // the repeated call with the own token: true (REQ-5)
+        match h.tree.acquire_lock("locks/task.lock", "token-1") {
+            Ok(Bool(true)) => ()
+            _ => panic("the own token must give the value true")
+        }
+    }
+}
+
+// ---- REQ-5: the negatives ------------------------------------------------------------------------------
+
+test "tf a path outside the tree is refused" {
+    mut fs = MemFs.new()
+    mut h = th()
+    with Fs = mock_fs(fs) {
+        ro r = h.tree.write_file("../outside.txt", "v")
+        assert(is_failure(r))
+        assert(failure_message(r).contains("leaves the tree"))
+        // the absolute path too
+        ro a = h.tree.write_file("/etc/x", "v")
+        assert(is_failure(a))
+    }
+}
+
+test "tf a missing file is a failure; file_exists is the value false" {
+    mut fs = MemFs.new()
+    mut h = th()
+    with Fs = mock_fs(fs) {
+        ro r = h.tree.read_file("nope.txt")
+        assert(is_failure(r))
+        match h.tree.file_exists("nope.txt") {
+            Ok(Bool(false)) => ()
+            _ => panic("file_exists must give the value false")
+        }
+        ro d = h.tree.delete_file("nope.txt")
+        assert(is_failure(d))
+    }
+}
+
+test "tf a missing folder is a failure" {
+    mut fs = MemFs.new()
+    mut h = th()
+    with Fs = mock_fs(fs) {
+        ro r = h.tree.list_dir("nope")
+        assert(is_failure(r))
+    }
+}
+
+// ---- the scripted scenario primitives ------------------------------------------------------------------
+
+test "tf a missing scripted key is a failure" {
+    mut h = th()
+    ro r = run(h, "start_process", [Text("cc"), Text("/d"), Text("log.txt")])
+    assert(is_failure(r))
+    assert(failure_message(r).contains("no scripted answer"))
+}
+
+test "tf start_process gives the scripted pid through the outbox; the receipt is held" {
+    mut h = th()
+    th_start_answer(h, "cc", "/d", 7)
+    ro r = run(h, "start_process", [Text("cc"), Text("/d"), Text("log.txt")])
+    match r {
+        Ok(Int(pid)) => assert(pid == 7)
+        _ => panic("start_process did not give the scripted pid")
+    }
+    // the acting went through the outbox: the receipt is held (applied)
+    match h.effects.receipt_of_effect("", "local", "e:start_process:cc|/d|log.txt") {
+        Some(rec) => assert(rec.outcome == EffectOutcome.Applied)
+        None => panic("no receipt of the acting")
+    }
+}
+
+// the write_file dispatcher path on the REAL tree (the coverage the acceptance asked for: the
+// sabotage of the write branch of execute_acting must redden this test)
+test "tf write_file through the dispatcher on the real tree" {
+    ro root = "target/thin-host-dispatch"
+    ro made = create_dir_all(Path.posix(root))
+    mut h = new_scripted_host(root, "local")
+    ro r = run(h, "write_file", [Text("probe.txt"), Text("via outbox")])
+    assert(r.is_ok())
+    // the receipt is held (applied), the file holds the content
+    match h.effects.receipt_of_effect("", "local", "e:write_file:probe.txt|via outbox") {
+        Some(rec) => assert(rec.outcome == EffectOutcome.Applied)
+        None => panic("no receipt of the acting")
+    }
+    match h.tree.read_file("probe.txt") {
+        Ok(Text(t)) => assert(t == "via outbox")
+        _ => panic("the file was not written")
+    }
+    // the repeat of the same identity: applied, no blind re-run
+    ro again = run(h, "write_file", [Text("probe.txt"), Text("via outbox")])
+    assert(again.is_ok())
+}
+
+test "tf the repeat of the same acting identity is idempotent" {
+    mut h = th()
+    th_start_answer(h, "cc", "/d", 7)
+    ro first = run(h, "start_process", [Text("cc"), Text("/d"), Text("log.txt")])
+    match first { Ok(Int(pid)) => assert(pid == 7), _ => panic("no pid") }
+    ro second = run(h, "start_process", [Text("cc"), Text("/d"), Text("log.txt")])
+    match second { Ok(Int(pid)) => assert(pid == 7), _ => panic("no pid on the repeat") }
+}
+
+// The probe that DISTINGUISHES the dedup from a re-run: after the first acting call the scripted
+// key DISAPPEARS — a re-run would fail on the missing key, the dedup returns the held pid.
+test "tf dedup: the repeat does not re-run (the scripted key disappears)" {
+    mut h = th()
+    th_start_answer(h, "cc", "/d", 7)
+    ro first = run(h, "start_process", [Text("cc"), Text("/d"), Text("log.txt")])
+    match first { Ok(Int(pid)) => assert(pid == 7), _ => panic("no pid on the first call") }
+    // remove the scripted answer: a re-run would hit "no scripted answer"
+    match h.answers {
+        Dict(entries) => {
+            mut kept = []DictEntry.new()
+            for e in entries {
+                match e.key {
+                    Text(k) => { if k != "process:cc:/d" { kept.push(e) } }
+                    _ => ()
+                }
+            }
+            h.answers = Dict(kept)
+        }
+        _ => ()
+    }
+    ro second = run(h, "start_process", [Text("cc"), Text("/d"), Text("log.txt")])
+    match second { Ok(Int(pid)) => assert(pid == 7), _ => panic("the dedup re-ran and failed") }
+}
+
+test "tf stop_process: unknown pid is a failure, the repeat is a no-op" {
+    mut h = th()
+    th_start_answer(h, "cc", "/d", 7)
+    ro started = run(h, "start_process", [Text("cc"), Text("/d"), Text("log.txt")])
+    if started.is_err() { panic("START-ERR=${failure_message(started)}") }
+    ro stop = run(h, "stop_process", [Int(7)])
+    if stop.is_err() { panic("STOP2-ERR=${failure_message(stop)}") }
+    // the repeated stop: no-op (not a failure)
+    ro again = run(h, "stop_process", [Int(7)])
+    assert(again.is_ok())
+    // the unknown pid: failure (REQ-5)
+    ro ghost = run(h, "stop_process", [Int(99)])
+    assert(is_failure(ghost))
+    assert(failure_message(ghost).contains("an unknown pid"))
+}
+
+test "tf process_running gives the scripted value" {
+    mut h = th()
+    th_running_answer(h, 5, false)
+    // the value false of process_running is a VALUE, not a failure (REQ-5)
+    match run(h, "process_running", [Int(5)]) {
+        Ok(Bool(false)) => ()
+        _ => panic("process_running must give the value false")
+    }
+}
+
+test "tf run_command gives the scripted record" {
+    mut h = th()
+    th_command_answer(h, "build", "/d", 0, "ok")
+    match run(h, "run_command", [Text("build"), Text("/d")]) {
+        Ok(v) => assert(value_json(v).contains("\"stdout\":\"ok\""))
+        _ => panic("run_command failed")
+    }
+}
+
+test "tf parse_agent: a non-JSON answer is a failure" {
+    mut h = th()
+    th_agent_answer(h, "инструкция", "вход", "не json")
+    ro r = run(h, "parse_agent", [Text("инструкция"), Text("вход")])
+    assert(is_failure(r))
+    assert(failure_message(r).contains("not a JSON text"))
+}
+
+test "tf parse_agent: a JSON answer passes" {
+    mut h = th()
+    th_agent_answer(h, "инструкция", "вход", "{\"done\":true}")
+    match run(h, "parse_agent", [Text("инструкция"), Text("вход")]) {
+        Ok(Text(t)) => assert(t == "{\"done\":true}")
+        _ => panic("parse_agent failed on a JSON answer")
+    }
+}
+
+test "tf sha256 is 64 lower case hex" {
+    mut h = th()
+    match run(h, "sha256", [Text("abc")]) {
+        Ok(Text(d)) => assert(d == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+        _ => panic("sha256 failed")
+    }
+}
+
+// ---- AC-5: parse_agent in a machine step through the AL-153 decode -------------------------------------
+
+fn parse_machine() -> str => `{
+  "format":"machine/2","machine":"ThinParse","version":"1",
+  "types":{"records":[{"name":"Out","fields":[{"name":"answer","type":"text"}]}]},
+  "data":[{"name":"got","type":"text","initial":{"expr":{"op":"lit","value":""}}}],
+  "primitives":[{"name":"parse_agent","params":[{"name":"instruction","type":"text"},{"name":"input","type":"text"}],"result":"text","class":"volatile"}],
+  "initial":"Decode",
+  "states":[
+    {"name":"Decode","kind":"operation","rows":[{"n":1,"event":{"kind":"now"},"actions":[
+      {"do":"assign","target":"got","value":{"op":"match",
+        "on":{"op":"decode","type":"Out","text":{"op":"primitive_call","name":"parse_agent","args":[
+          {"op":"lit","value":"инструкция"},{"op":"lit","value":"текст-вход"}]}},
+        "arms":[
+          {"patterns":[{"kind":"case","name":"Accepted","bind":{"value":"result"}}],
+           "body":{"op":"field","of":{"op":"name","name":"result"},"name":"answer"}},
+          {"patterns":[{"kind":"case","name":"Rejected","bind":{"path":"path"}}],
+           "body":{"op":"name","name":"path"}}
+        ]}}
+    ],"to":"Done"}]},
+    {"name":"Done","kind":"end","reads":["got"]}
+  ],
+  "ends":{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},
+    "answer":{"kind":"answer","value":{"op":"name","name":"got"}}}]}
+}`
+
+// The AC-5 scenario: the machine calls parse_agent (volatile) inside the AL-153 decode of its
+// text. A valid scripted answer: the decode accepts the JSON, `got` holds the value of the type.
+// An invalid one: the primitive FAILS (the step failure of host-spec) — the machine sees a machine
+// error and gets no value (REQ-6: невалидный = сбой шага).
+
+test "ac5 parse_agent valid: the decode accepts the JSON into the type" {
+    mut fs = MemFs.new()
+    mut h = th()
+    th_agent_answer(h, "инструкция", "текст-вход", "{\"answer\":\"из инструмента\"}")
+    with Fs = mock_fs(fs) {
+        match load_host(thin_registry(), "") {
+        Err(lines) => panic("the thin registry does not parse: ${lines.join("; ")}")
+        Ok(reg) => match load_alula_machine(parse_machine(), reg) {
+            Err(e) => panic("the parse machine does not load: ${e}")
+            Ok(m) => {
+                mut env = StepEnvironment.new()
+                mut host = new_thin_primitive_host(h)
+                ro t = alula_step(m, m.initial(), Incoming.incoming(EventKind.Input, "start", None, ""), env, host)
+                match t.state_value() {
+                    Some(st) => {
+                        assert(st.name_probe() == "Done")
+                        assert(st.datum_text_probe("got") == "из инструмента")
+                    }
+                    None => panic("the valid answer did not move to Done")
+                }
+            }
+        }
+        Err(lines) => panic("the registry does not parse: ${lines.join("; ")}")
+        }
+    }
+}
+
+test "ac5 parse_agent invalid: a step failure, no value" {
+    mut fs = MemFs.new()
+    mut h = th()
+    th_agent_answer(h, "инструкция", "текст-вход", "не json")
+    with Fs = mock_fs(fs) {
+        match load_host(thin_registry(), "") {
+        Err(lines) => panic("the thin registry does not parse: ${lines.join("; ")}")
+        Ok(reg) => match load_alula_machine(parse_machine(), reg) {
+            Err(e) => panic("the parse machine does not load: ${e}")
+            Ok(m) => {
+                mut env = StepEnvironment.new()
+                mut host = new_thin_primitive_host(h)
+                ro t = alula_step(m, m.initial(), Incoming.incoming(EventKind.Input, "start", None, ""), env, host)
+                // the machine error: no value of the type reached the data (got stays empty)
+                    match t.state_value() {
+                        Some(st) => assert(st.datum_text_probe("got") == "")
+                        None => ()
+                    }
+                }
+            }
+            Err(lines) => panic("the registry does not parse: ${lines.join("; ")}")
+        }
+    }
+}
+
+// ---- the registry (AC-1): the 13 rows line-equal to the methodology ------------------------------------
+
+// The 13 rows of the methodology registry (alula-machines/registry.md, редакция 5633435), verbatim.
+fn methodology_rows() -> []str {
+    [
+        "| read_file | path: text | text | volatile | — | — |",
+        "| write_file | path: text; content: text | — | acting | — | objects: the file |",
+        "| move_file | from: text; to: text | — | acting | — | objects: the moved file |",
+        "| delete_file | path: text | — | acting | — | objects: the deleted file |",
+        "| file_exists | path: text | bool | volatile | objects: the file | — |",
+        "| list_dir | path: text | []text | volatile | objects: the folder | — |",
+        "| start_process | command: text; dir: text; log_path: text | int>=1 | acting | — | objects: the process and its log |",
+        "| stop_process | pid: int>=1 | — | acting | — | objects: the process |",
+        "| process_running | pid: int>=1 | bool | volatile | objects: the process | — |",
+        "| run_command | command: text; dir: text | ExecResult | acting | — | — |",
+        "| acquire_lock | path: text; token: text | bool | acting | — | objects: the lock |",
+        "| parse_agent | instruction: text; input: text | text | volatile | service: the cheap agent | — |",
+        "| sha256 | text: text | text | pure | — | — |",
+    ]
+}
+
+test "tr the registry holds the 13 rows verbatim (AC-1)" {
+    ro text = registry_text()
+    ro rows = methodology_rows()
+    mut i = 0
+    for row in rows {
+        if !text.contains(row) { panic("the row ${i} of the methodology registry is not verbatim in the package registry") }
+        i += 1
+    }
+    // no core-4 rows leaked in
+    assert(!text.contains("| issue_token |"))
+    assert(!text.contains("| verify_token |"))
+    assert(!text.contains("| journal_write |"))
+    assert(!text.contains("| release_lock |"))
+    // the registry parses and gives 13 primitives with the classes of the host-spec
+    match load_host(text, "") {
+        Err(lines) => panic("the registry does not parse: ${lines.join("; ")}")
+        Ok(reg) => {
+            mut n = 0
+            for p in reg.primitives {
+                if p.name == "new_id" { continue }
+                n += 1
+            }
+            assert(n == 13)
+            mut saw_pure = false
+            for p in reg.primitives {
+                if p.name == "sha256" {
+                    assert(p.class == Pure)
+                    saw_pure = true
+                }
+                if p.name == "write_file" {
+                    assert(p.class == Acting)
+                }
+                if p.name == "read_file" {
+                    assert(p.class == Volatile)
+                }
+            }
+            assert(saw_pure)
+        }
+    }
+}
+
+// ---- the real filesystem (the reference host over the real handler) ------------------------------------
+
+test "tf the reference host over the real filesystem" {
+    ro root = "target/thin-host-real"
+    ro made = create_dir_all(Path.posix(root))
+    mut h = new_tree(root)
+    ro w = h.write_file("probe.txt", "real")
+    assert(w.is_ok())
+    match h.read_file("probe.txt") {
+        Ok(Text(t)) => assert(t == "real")
+        _ => panic("the real roundtrip failed")
+    }
+    ro out = h.write_file("../escape.txt", "v")
+    assert(is_failure(out))
+}

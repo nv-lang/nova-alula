@@ -83,6 +83,16 @@ export type Transition[S] enum
     | Go(S)
     | Stay
 
+/// The state the step went to (None: stayed) — the accessor for the callers in other modules (the
+/// direct payload match of a foreign enum broke the C of the merged unit on 0.1.4; the item-129
+/// class of the survey).
+export fn Transition[S] @state_value() -> Option[S] {
+    match @ {
+        Go(st) => Some(st)
+        Stay => None
+    }
+}
+
 /// JournalParam: a parameter of a journal event - a name and a value that is always a string (the caller writes `"${x}"`).
 export type JournalParam { name str, value str }
 

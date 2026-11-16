@@ -1,0 +1,600 @@
+// thin_host.nv - the universal primitives of the thin host in the package (the epic «Тонкий хозяин
+// в пакете», methodology task 118, П-1; REQ-1/REQ-4/REQ-5). The reference of the semantics is the
+// methodology's ScriptedHost (doc/tasks/111-.../scripted_host.py, host-spec.md of the same task):
+// the same scenarios give the same outcomes (AC-4). The primitive registry of the module is
+// registry.md beside this file (13 rows verbatim from the methodology registry, minus the core-4).
+//
+// Three layers:
+//   - StepFailure: the step failure (a path outside the tree, an unavailability, a foreign token,
+//     no scripted answer) — never a stub value in the machine data;
+//   - HostTree: the real filesystem inside the tree of the host: the path is resolved inside the
+//     tree (`..` and absolute escapes are refused), unavailability is a failure; it knows nothing
+//     of the runner (no document names, no gates, no pids of the runner);
+//   - ScriptedThinHost: the tree + scripted answers for the scenario primitives (processes,
+//     parse_agent): the answer is looked up by the key, a missing key is a failure.
+//
+// sha256 is pure and really computed by std.crypto (64 lower case hex). acquire_lock is atomic by
+// create-or-open: free — true and the token recorded; busy — the value owner == token (a foreign
+// token is a VALUE false, not a failure); the repeated call with the own token — true.
+//
+// acting primitives go ONLY through the outbox (the effect host of the result E): the handler
+// executes the tree operation and stores the result value in the effects world, the receipt is held
+// together with the intent; a repeat of the same identity reads the held result (idempotent), an
+// unknown outcome is never a success.
+
+module alula.thin_host
+
+import std.encoding.json.{Json}
+import std.fs.{Path, Fs, read_text, write_text, remove_file, read_dir, create_dir_all, try_exists, DirEntry}
+import std.crypto.sha256.{Sha256}
+import std.fs.{real_fs}
+import std.text
+import alula.machine.{Value, Text, Bool, Null, List, Dict, DictEntry, EvalError, PrimitiveFailed}
+import alula.host.{Intent, TrustedContext, EffectOutcome, EffectHost, new_effect_host}
+
+
+/// The text of the package registry of the thin host (registry.md beside this file, embedded at
+/// compile time). The canon for the guard of the methodology (М-1) and for the loads of the tests.
+export fn registry_text() -> str => embed_str("registry.md")
+
+/// StepFailure: the step failure (REQ-5): the path is outside the tree, the file/folder is absent,
+/// no scripted answer, an unknown pid, a non-JSON answer of parse_agent, a foreign lock token.
+export type StepFailure { message str }
+
+fn fail(message str) -> Result[Value, StepFailure] => Err(StepFailure { message })
+
+// ---- the tree of the host (the real filesystem) ---------------------------------------------------------
+
+/// HostTree: the real filesystem inside `root`. `resolve` refuses everything outside the tree: an
+/// absolute path, `..`, a symlink escape is not resolved (the lexical rule of the package; the
+/// methodology reference uses realpath — for the tests of the package the lexical rule is the
+/// documented behaviour).
+export type HostTree { root str }
+
+export fn new_tree(root str) -> HostTree => { root }
+
+// The normalized path inside the tree, or the failure.
+fn resolve(t HostTree, path str) -> Result[str, StepFailure] {
+    if path.starts_with("/") || path.starts_with("\\") { return fail("an absolute path is not inside the tree of the host: ${path}") }
+    mut parts = []str.new()
+    for seg in path.split("/") {
+        if seg == "" || seg == "." { () }
+        else if seg == ".." {
+            if parts.len() == 0 { return fail("the path leaves the tree of the host: ${path}") }
+            parts.pop()
+        }
+        else { parts.push(seg) }
+    }
+    if parts.len() == 0 { return Ok(t.root) }
+    Ok("${t.root}/${parts.join("/")}")
+}
+
+fn ensure_parent(full str) Fs -> () {
+    ro dir = dirname_of(full)
+    if dir != "" {
+        ro made = create_dir_all(Path.posix(dir))
+    }
+}
+
+fn dirname_of(path str) -> str {
+    // rfind gives the BYTE index — the slice is correct on multi-byte UTF-8 too
+    match path.rfind("/") {
+        Some(at) => path[..at]
+        None => ""
+    }
+}
+
+// The split of a path into segments (the tree form) for the checks of the prefix.
+fn inside_tree(t HostTree, full str) -> bool {
+    ro root = t.root
+    if full == root { return true }
+    full.starts_with("${root}/")
+}
+
+export fn HostTree @read_file(path str) Fs -> Result[Value, StepFailure] {
+    ro full = match resolve(@, path) {
+        Ok(f) => f
+        Err(e) => return Err(e)
+    }
+    match read_text(Path.posix(full)) {
+        Ok(text) => Ok(Text(text))
+        Err(_) => fail("no file: ${path}")
+    }
+}
+
+export fn HostTree mut @write_file(path str, content str) Fs -> Result[Value, StepFailure] {
+    ro full = match resolve(@, path) {
+        Ok(f) => f
+        Err(e) => return Err(e)
+    }
+    ensure_parent(full)
+    match write_text(Path.posix(full), content) {
+        Ok(_) => Ok(Null)
+        Err(_) => fail("the file was not written: ${path}")
+    }
+}
+
+export fn HostTree mut @move_file(frm str, to str) Fs -> Result[Value, StepFailure] {
+    ro src = match resolve(@, frm) {
+        Ok(f) => f
+        Err(e) => return Err(e)
+    }
+    ro dst = match resolve(@, to) {
+        Ok(f) => f
+        Err(e) => return Err(e)
+    }
+    match read_text(Path.posix(src)) {
+        Err(_) => return fail("no file: ${frm}")
+        Ok(text) => {
+            ensure_parent(dst)
+            match write_text(Path.posix(dst), text) {
+                Err(_) => fail("the file was not moved: ${frm} -> ${to}")
+                Ok(_) => {
+                    ro removed = remove_file(Path.posix(src))
+                    Ok(Null)
+                }
+            }
+        }
+    }
+}
+
+export fn HostTree mut @delete_file(path str) Fs -> Result[Value, StepFailure] {
+    ro full = match resolve(@, path) {
+        Ok(f) => f
+        Err(e) => return Err(e)
+    }
+    match remove_file(Path.posix(full)) {
+        Ok(_) => Ok(Null)
+        Err(_) => fail("no file: ${path}")
+    }
+}
+
+export fn HostTree @file_exists(path str) Fs -> Result[Value, StepFailure] {
+    ro full = match resolve(@, path) {
+        Ok(f) => f
+        Err(e) => return Err(e)
+    }
+    match try_exists(Path.posix(full)) {
+        Ok(there) => Ok(Bool(there))
+        Err(_) => fail("the existence was not checked: ${path}")
+    }
+}
+
+export fn HostTree @list_dir(path str) Fs -> Result[Value, StepFailure] {
+    ro full = match resolve(@, path) {
+        Ok(f) => f
+        Err(e) => return Err(e)
+    }
+    match try_exists(Path.posix(full)) {
+        Ok(false) => return fail("no folder: ${path}")
+        _ => ()
+    }
+    match read_dir(Path.posix(full)) {
+        Err(_) => fail("no folder: ${path}")
+        Ok(entries) => {
+            mut names = []str.new()
+            for e in entries { names.push(entry_name(e)) }
+            sort_strs(names)
+            mut out = []Value.new()
+            for n in names { out.push(Text(n)) }
+            Ok(List(out))
+        }
+    }
+}
+
+// acquire_lock: free — true (the token recorded); busy — the VALUE owner == token (a foreign token
+// is false, not a failure); the repeated call with the own token — true. The creation is
+// create-or-open (the atomic O_EXCL of the reference is emulated by the create-first probe: the
+// hosts of the tests are single-threaded).
+export fn HostTree mut @acquire_lock(path str, token str) Fs -> Result[Value, StepFailure] {
+    ro full = match resolve(@, path) {
+        Ok(f) => f
+        Err(e) => return Err(e)
+    }
+    match try_exists(Path.posix(full)) {
+        Err(_) => fail("the lock was not checked: ${path}")
+        Ok(there) => {
+            if there {
+                match read_text(Path.posix(full)) {
+                    Err(_) => fail("the lock file was not read: ${path}")
+                    Ok(owner) => Ok(Bool(owner == token))
+                }
+            } else {
+                ensure_parent(full)
+                match write_text(Path.posix(full), token) {
+                    Err(_) => fail("the lock file was not written: ${path}")
+                    Ok(_) => Ok(Bool(true))
+                }
+            }
+        }
+    }
+}
+
+// The name of a directory entry (std fs DirEntry) as a string.
+fn entry_name(e DirEntry) -> str {
+    match e.name_str() {
+        Some(n) => n
+        None => ""
+    }
+}
+
+fn sort_strs(mut items []str) -> () {
+    mut i = 1
+    while i < items.len() {
+        mut j = i
+        while j > 0 && items[j - 1] > items[j] {
+            ro tmp = items[j - 1]
+            items[j - 1] = items[j]
+            items[j] = tmp
+            j -= 1
+        }
+        i += 1
+    }
+}
+
+// ---- ScriptedThinHost -----------------------------------------------------------------------------------
+
+/// ScriptedThinHost: the tree + the scripted answers of the scenario primitives (the processes, the
+/// parse by the cheap agent). The answers are a dict by the keys of the methodology reference:
+///   "process:<command>:<dir>" -> int>=1 (the scripted pid),
+///   "running:<pid>"           -> bool,
+///   "command:<command>:<dir>" -> the record {code, stdout},
+///   "agent:<instruction>:<input>" -> the JSON text of the answer.
+/// A missing key is a step failure. The pids: the live ones, the stopped (the repeated stop is a
+/// no-op), the unknown pid is a failure. `producer` is the trusted producer of the outbox effects.
+export type ScriptedThinHost {
+    mut tree HostTree,
+    mut answers Value,
+    mut effects EffectHost,
+    producer str
+}
+
+/// A fresh scripted host over a new tree (the root is the folder of the caller's choice). The live
+/// process state travels in the effects world (shared through the handle copies).
+export fn new_scripted_host(root str, producer str) -> ScriptedThinHost {
+    mut answers = []DictEntry.new()
+    ScriptedThinHost {
+        tree: new_tree(root),
+        answers: Dict(answers),
+        effects: new_effect_host(),
+        producer,
+    }
+}
+
+fn answer_key(mut h ScriptedThinHost, key str) -> Result[Value, StepFailure] {
+    match h.answers {
+        Dict(entries) => {
+            for e in entries {
+                match e.key {
+                    Text(k) => {
+                        if k == key { return Ok(e.value) }
+                    }
+                    _ => ()
+                }
+            }
+            fail("no scripted answer: ${key}")
+        }
+        _ => fail("the answers are not a dict")
+    }
+}
+
+fn int_of(v Value) -> Result[int, StepFailure] {
+    match v {
+        Int(n) => Ok(n)
+        _ => fail("expected an int")
+    }
+}
+
+// The execution of one primitive by name (the semantics of host-spec); the acting primitives are
+// NOT here — they go through the outbox (run_thin_primitive).
+fn run_direct(mut h ScriptedThinHost, name str, args []Value) Fs -> Result[Value, StepFailure] {
+    if name == "read_file" { return read_file_args(h, args) }
+    if name == "file_exists" { return file_exists_args(h, args) }
+    if name == "list_dir" { return list_dir_args(h, args) }
+    if name == "process_running" { return process_running_args(h, args) }
+    if name == "sha256" { return sha256_args(h, args) }
+    if name == "parse_agent" { return parse_agent_args(h, args) }
+    fail("the primitive ${name} is not a direct call (acting goes through the outbox; the name is not among the 13)")
+}
+
+fn arg_text(args []Value, i int) -> Result[str, StepFailure] {
+    if i >= args.len() { return fail("too few arguments") }
+    match args[i] {
+        Text(s) => Ok(s)
+        _ => fail("argument ${i} is not a text")
+    }
+}
+
+fn arg_int(args []Value, i int) -> Result[int, StepFailure] {
+    if i >= args.len() { return fail("too few arguments") }
+    match args[i] {
+        Int(n) => Ok(n)
+        _ => fail("argument ${i} is not an int")
+    }
+}
+
+fn read_file_args(mut h ScriptedThinHost, args []Value) Fs -> Result[Value, StepFailure] {
+    ro path = match arg_text(args, 0) { Ok(s) => s, Err(e) => return Err(e) }
+    h.tree.read_file(path)
+}
+
+fn file_exists_args(mut h ScriptedThinHost, args []Value) Fs -> Result[Value, StepFailure] {
+    ro path = match arg_text(args, 0) { Ok(s) => s, Err(e) => return Err(e) }
+    h.tree.file_exists(path)
+}
+
+fn list_dir_args(mut h ScriptedThinHost, args []Value) Fs -> Result[Value, StepFailure] {
+    ro path = match arg_text(args, 0) { Ok(s) => s, Err(e) => return Err(e) }
+    h.tree.list_dir(path)
+}
+
+fn process_running_args(mut h ScriptedThinHost, args []Value) Fs -> Result[Value, StepFailure] {
+    ro pid = match arg_int(args, 0) { Ok(n) => n, Err(e) => return Err(e) }
+    match answer_key(h, "running:${pid}") {
+        Ok(v) => match v {
+            Bool(b) => Ok(Bool(b))
+            _ => fail("the scripted answer running:${pid} is not a bool")
+        }
+        Err(e) => Err(e)
+    }
+}
+
+fn parse_agent_args(mut h ScriptedThinHost, args []Value) Fs -> Result[Value, StepFailure] {
+    ro instruction = match arg_text(args, 0) { Ok(s) => s, Err(e) => return Err(e) }
+    ro input = match arg_text(args, 1) { Ok(s) => s, Err(e) => return Err(e) }
+    match answer_key(h, "agent:${instruction}:${input}") {
+        Err(e) => Err(e)
+        Ok(v) => match v {
+            Text(t) => {
+                // the mechanical validation of host-spec: the answer is a JSON text
+                match Json.parse(t) {
+                    Ok(_) => Ok(Text(t))
+                    Err(_) => fail("the answer of parse_agent is not a JSON text")
+                }
+            }
+            _ => fail("the scripted answer for the agent is not a text")
+        }
+    }
+}
+
+// sha256: pure, really computed (64 lower case hex, std crypto).
+fn sha256_args(mut h ScriptedThinHost, args []Value) Fs -> Result[Value, StepFailure] {
+    ro text = match arg_text(args, 0) { Ok(s) => s, Err(e) => return Err(e) }
+    mut data = []u8.new()
+    for c in text.chars() { data.push(c as u8) }
+    // ORACLE-WORKAROUND(128): the fixed [32]u8 of Sha256.hash is copied out by index (the item-128
+    // dodge of the survey)
+    ro digest = Sha256.hash(data)
+    mut out = ""
+    mut i = 0
+    while i < 32 {
+        ro b = digest[i]
+        out = "${out}${hex_char(b as int >> 4)}${hex_char(b as int & 15)}"
+        i += 1
+    }
+    Ok(Text(out))
+}
+
+fn hex_char(n int) -> str {
+    if n < 10 { return "${n}" }
+    if n == 10 { return "a" }
+    if n == 11 { return "b" }
+    if n == 12 { return "c" }
+    if n == 13 { return "d" }
+    if n == 14 { return "e" }
+    "f"
+}
+
+// ---- the outbox execution of the acting primitives ------------------------------------------------------
+
+fn intent_arg(i Intent, n int) -> str {
+    // the arguments travel in the payload as "a|b|c" (the simple encoding of П-1)
+    mut parts = []str.new()
+    mut cur = ""
+    for ch in i.payload.chars() {
+        if ch == '|' { parts.push(cur); cur = "" } else { cur = "${cur}${ch}" }
+    }
+    parts.push(cur)
+    if n < parts.len() { return parts[n] }
+    ""
+}
+
+fn intent_arg_text(i Intent, n int) -> str => intent_arg(i, n)
+
+fn parse_int_text(text str) -> Result[int, StepFailure] {
+    if text.byte_len() == 0 { return fail("an empty number text") }
+    mut n = 0
+    for c in text.chars() {
+        if c < '0' || c > '9' { return fail("not a number: ${text}") }
+        n = n * 10 + (c as int - 0x30)
+    }
+    Ok(n)
+}
+
+// ---- the PrimitiveHost adapter (the door of the machines) -----------------------------------------------
+
+/// ThinPrimitiveHost: the `PrimitiveHost` of the machines over the thin host. The direct primitives
+/// (volatile, pure) run immediately; the acting primitives go through the outbox (REQ-1): the
+/// intent carries the identity "<producer>:<name>:<args>", the handler executes the tree operation,
+/// the result value is stored in the effects world and read back (a repeat of the same identity is
+/// idempotent — the held result). An unbound name is a failure.
+export type ThinPrimitiveHost {
+    mut scripted ScriptedThinHost,
+}
+
+/// A thin primitive host over a scripted thin host; the acting rights are granted to the producer.
+export fn new_thin_primitive_host(mut scripted ScriptedThinHost) -> ThinPrimitiveHost {
+    ThinPrimitiveHost { scripted }
+}
+
+fn is_acting(name str) -> bool {
+    if name == "write_file" { return true }
+    if name == "move_file" { return true }
+    if name == "delete_file" { return true }
+    if name == "start_process" { return true }
+    if name == "stop_process" { return true }
+    if name == "run_command" { return true }
+    if name == "acquire_lock" { return true }
+    false
+}
+
+fn args_payload(args []Value) -> Result[str, StepFailure] {
+    mut parts = []str.new()
+    for a in args {
+        match a {
+            Text(t) => parts.push(t)
+            Int(n) => parts.push("${n}")
+            _ => return fail("an acting argument is neither a text nor an int")
+        }
+    }
+    Ok(parts.join("|"))
+}
+
+export fn ThinPrimitiveHost mut @call_primitive(name str, args []Value) -> Result[Value, EvalError] {
+    // the FS operations of the thin host run over the production handler installed INSIDE the call:
+    // the PrimitiveHost protocol declares no effects, so the boundary handles Fs locally (the strict
+    // effects check is green; the tree of the host is the caller-provided root)
+    with Fs = real_fs() {
+        match run_thin_primitive(@scripted, name, args) {
+            Ok(v) => Ok(v)
+            Err(e) => Err(EvalError { kind: PrimitiveFailed, message: e.message, path: "" })
+        }
+    }
+}
+
+/// `run_thin_primitive`: one call of a thin primitive by name (the free form for the local contract
+/// and the probes). The volatile and pure primitives run directly on the tree; the acting ones go
+/// through the outbox of the effects host (REQ-1): the rights of the trusted context are checked
+/// first, the identity is stable by the call content (a repeat of an APPLIED effect returns the
+/// held result — idempotent), the intent and the receipt are fixed together, an unknown outcome is
+/// never a success.
+export fn run_thin_primitive(mut h ScriptedThinHost, name str, args []Value) Fs -> Result[Value, StepFailure] {
+    if name == "new_id" { return fail("new_id is a primitive of the language, not of the thin host") }
+    if !is_acting(name) { return run_direct(h, name, args) }
+    // the arguments of the acting call, carried in the payload of the intent
+    ro payload = match args_payload(args) {
+        Err(e) => return Err(e)
+        Ok(p) => p
+    }
+    ro effect_id = "e:${name}:${payload}"
+    mut ctx = TrustedContext { tenant: "", producer: h.producer, principal: h.producer, role: "submit" }
+    // 1. the rights first (REQ-5: acting without rights — a refusal). The runner of the machines is the
+    // TRUSTED producer: it self-grants (the world Vec is shared through the copies, so the grant
+    // sticks; the withdrawal semantics live in the outbox unit, where the caller holds one host).
+    h.effects.grant("", h.producer)
+    if !h.effects.may_submit(ctx) {
+        return fail("acting ${name} without rights: ${h.producer} cannot submit the intent")
+    }
+    // 2. the dedup: an APPLIED identity never re-runs (no blind repeat of an irreversible effect):
+    //    the held result is returned when the primitive has one; a value-less primitive returns Null
+    match h.effects.held_outcome("", h.producer, effect_id) {
+        Some(Applied) => match h.effects.result_of_effect("", h.producer, effect_id) {
+            Some(v) => return Ok(v)
+            None => return Ok(Null)
+        }
+        _ => ()
+    }
+    // 3. the execution on the tree of the host (the driver records the truth of the execution)
+    ro executed = execute_acting(h, name, args)
+    match executed.outcome {
+        Applied => {
+            h.effects.record_exec(Intent { tenant: "", producer: h.producer, effect_id, action: name, payload }, ctx, EffectOutcome.Applied, executed.value, "by ${h.producer}")
+            // a no-result primitive (stop_process) returns Null — the execution succeeded
+            match executed.value {
+                Some(v) => Ok(v)
+                None => Ok(Null)
+            }
+        }
+        Refused => {
+            h.effects.record_exec(Intent { tenant: "", producer: h.producer, effect_id, action: name, payload }, ctx, EffectOutcome.Refused, None, executed.message)
+            fail("acting ${name} was refused by the environment: ${executed.message}")
+        }
+        Unknown => {
+            h.effects.record_exec(Intent { tenant: "", producer: h.producer, effect_id, action: name, payload }, ctx, EffectOutcome.Unknown, None, executed.message)
+            fail("acting ${name} has an unknown outcome — no value is given, no blind repeat")
+        }
+    }
+}
+
+/// The outcome of one acting execution on the tree: the truth of the operation.
+type ActingResult { outcome EffectOutcome, value Option[Value], message str }
+
+fn ok_result(v Value) -> ActingResult => { outcome: EffectOutcome.Applied, value: Some(v), message: "" }
+fn no_result() -> ActingResult => { outcome: EffectOutcome.Applied, value: None, message: "" }
+fn refused_result(message str) -> ActingResult => { outcome: EffectOutcome.Refused, value: None, message }
+
+fn execute_acting(mut h ScriptedThinHost, name str, args []Value) Fs -> ActingResult {
+    if name == "write_file" {
+        ro path = match arg_text(args, 0) { Ok(s) => s, Err(e) => return refused_result(e.message) }
+        ro content = match arg_text(args, 1) { Ok(s) => s, Err(e) => return refused_result(e.message) }
+        match h.tree.write_file(path, content) {
+            Ok(_) => no_result()
+            Err(e) => refused_result(e.message)
+        }
+    } else if name == "move_file" {
+        ro from_path = match arg_text(args, 0) { Ok(s) => s, Err(e) => return refused_result(e.message) }
+        ro to_path = match arg_text(args, 1) { Ok(s) => s, Err(e) => return refused_result(e.message) }
+        match h.tree.move_file(from_path, to_path) {
+            Ok(_) => no_result()
+            Err(e) => refused_result(e.message)
+        }
+    } else if name == "delete_file" {
+        ro path = match arg_text(args, 0) { Ok(s) => s, Err(e) => return refused_result(e.message) }
+        match h.tree.delete_file(path) {
+            Ok(_) => no_result()
+            Err(e) => refused_result(e.message)
+        }
+    } else if name == "start_process" {
+        ro log_path = match arg_text(args, 2) { Ok(s) => s, Err(e) => return refused_result(e.message) }
+        match resolve_tree(h.tree, log_path) {
+            Err(e) => refused_result(e.message)
+            Ok(_) => {
+                ro command = match arg_text(args, 0) { Ok(s) => s, Err(e) => return refused_result(e.message) }
+                ro dir = match arg_text(args, 1) { Ok(s) => s, Err(e) => return refused_result(e.message) }
+                match answer_key(h, "process:${command}:${dir}") {
+                    Err(e) => refused_result(e.message)
+                    Ok(v) => match int_of(v) {
+                        Err(e) => refused_result(e.message)
+                        Ok(pid) => {
+                            if pid < 1 { return refused_result("the pid is less than 1: ${pid}") }
+                            h.effects.state_put("pid:${pid}", Text("live"))
+                            ok_result(Int(pid))
+                        }
+                    }
+                }
+            }
+        }
+    } else if name == "stop_process" {
+        ro pid = match arg_int(args, 0) { Ok(n) => n, Err(e) => return refused_result(e.message) }
+        // the repeated stop: no-op (not a failure); the unknown pid: a failure (REQ-5)
+        match h.effects.state_get("stopped:${pid}") {
+            Text(_) => no_result()
+            _ => match h.effects.state_get("pid:${pid}") {
+                Text(_) => {
+                    h.effects.state_put("stopped:${pid}", Text("1"))
+                    no_result()
+                }
+                _ => refused_result("an unknown pid: ${pid}")
+            }
+        }
+    } else if name == "run_command" {
+        ro command = match arg_text(args, 0) { Ok(s) => s, Err(e) => return refused_result(e.message) }
+        ro dir = match arg_text(args, 1) { Ok(s) => s, Err(e) => return refused_result(e.message) }
+        match answer_key(h, "command:${command}:${dir}") {
+            Err(e) => refused_result(e.message)
+            Ok(v) => ok_result(v)
+        }
+    } else if name == "acquire_lock" {
+        ro path = match arg_text(args, 0) { Ok(s) => s, Err(e) => return refused_result(e.message) }
+        ro token = match arg_text(args, 1) { Ok(s) => s, Err(e) => return refused_result(e.message) }
+        match h.tree.acquire_lock(path, token) {
+            Ok(v) => ok_result(v)
+            Err(e) => refused_result(e.message)
+        }
+    } else {
+        refused_result("no executor: an unknown acting primitive (no value is given)")
+    }
+}
+
+// The resolve of the tree for the drivers outside the tree methods.
+fn resolve_tree(t HostTree, path str) -> Result[str, StepFailure] => resolve(t, path)

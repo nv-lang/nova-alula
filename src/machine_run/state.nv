@@ -5,12 +5,37 @@
 // (`{"state":"Awaiting","started":true,"input":null,"data":{...}}`, the values in the lossless form of the core).
 module alula.machine_run
 
-import alula.machine.{Value, DefTable}
+import alula.machine.{Value, DefTable, value_json, record_get, Text}
 import alula.machine_table.{MachineDef}
 
 /// AlulaState: where the machine is and what it holds. `taken` are the rows that the step made this state with took, `State#n` (a state or a common
 /// event, `common#n`, an end `end:State#n`): not data of the machine, a mark for the proof that every row of a table has a test.
 export type AlulaState { name str, started bool, input Value, data Value, taken []str }
+
+/// The probes of the state for the callers in other modules (the local host contract, the thin
+/// host): the direct field access on a payload bound in a match broke the C of the merged unit on
+/// 0.1.4 (the survey item 129 class), so the callers read through these methods.
+export fn AlulaState @name_probe() -> str => @name
+
+/// The JSON of a datum by name ("" — absent) — the probe for other modules.
+export fn AlulaState @datum_json_probe(name str) -> str => value_json(@datum_value(name))
+
+export fn AlulaState @datum_text_probe(name str) -> str {
+    match @datum_value(name) {
+        Text(t) => t
+        _ => ""
+    }
+}
+
+fn AlulaState @datum_value(name str) -> Value {
+    match @data {
+        Record { fields } => match record_get(fields, name) {
+            Some(v) => v
+            None => Null
+        }
+        _ => Null
+    }
+}
 
 /// ScriptedReply: the answer of a scripted primitive of the default host.
 export type ScriptedReply { name str, value Value }
