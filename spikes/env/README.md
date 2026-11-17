@@ -1,6 +1,6 @@
 # spikes/env: the environment of the package alula on Nova
 
-The notes on **Nova Oracle on Windows x86_64** that the code of this package depends on (the package was built on 0.1.0 until 2026-11-14; since the word of the owner «только 0.1.4 можно использовать» the toolchain is **0.1.4** — the survey below keeps the 0.1.0 items, the ones closed by 0.1.1–0.1.4 are named in part 1a): how to install the compiler and run the tests (part 1), and the defects and limits of
+The notes on **Nova Oracle on Windows x86_64** that the code of this package depends on (the package was built on 0.1.0 until 2026-11-14, on 0.1.4 until 2026-11-17; since the word of the owner «более ранние использовать нельзя» the toolchain is **0.1.6** — the survey below keeps the 0.1.0 items, the ones closed by 0.1.1–0.1.6 are named in part 1a): how to install the compiler and run the tests (part 1), and the defects and limits of
 Oracle that the code goes round ("Known problems"), with the reproductions in `repro_engine/`. The items keep the numbers they have in the survey of the CrewHarness repository, where the package was
 written (`spikes/env/README.md` there): the marks in the code (`ORACLE-WORKAROUND(N)`) name them, so a number is never reused here; the items that the package does not meet (the child process, the
 WebSocket server, the ACP client, PostgreSQL, Polaris) are kept in that repository only.
@@ -10,7 +10,7 @@ WebSocket server, the ACP client, PostgreSQL, Polaris) are kept in that reposito
 | `repro_text_import/` | a program: `import std.text` and a pattern variable `text` of another module (item 32); `nova build src/text_import.nv` |
 | `repro_engine/` | minimal reproductions of the Oracle 0.1.0 defects found while writing the engine, the evaluator, the interpreter, the translator and the program `alula` (a Nova package of its own: `nova build src/<name>/<name>.nv`) |
 
-## 1. Install Oracle 0.1.4 (no system changes)
+## 1. Install Oracle 0.1.6 (no system changes)
 
 Needs: Windows 10/11 x86_64, Clang (LLVM) installed on the machine, Node 22+ (global `WebSocket`), `gh` or `curl`.
 Everything below uses PowerShell; the environment variables and `PATH` change for the current session only.
@@ -18,29 +18,29 @@ Everything below uses PowerShell; the environment variables and `PATH` change fo
 ```powershell
 # download and verify (SHA-256 must equal the line in SHA256SUMS)
 mkdir C:/work/oracle-dl; cd C:/work/oracle-dl
-gh release download oracle-v0.1.4 -R nv-lang/nova -p "nova-oracle-0.1.4-windows-x86_64.zip" -p SHA256SUMS
-(Get-FileHash nova-oracle-0.1.4-windows-x86_64.zip -Algorithm SHA256).Hash   # compare with the next line
+gh release download oracle-v0.1.6 -R nv-lang/nova -p "nova-oracle-0.1.6-windows-x86_64.zip" -p SHA256SUMS
+(Get-FileHash nova-oracle-0.1.6-windows-x86_64.zip -Algorithm SHA256).Hash   # compare with the next line
 Get-Content SHA256SUMS                                                         # the line for the windows zip
-# expected: 469dfe4966b086c5b70f223d3d1fff02ed3690efb163f380efce37dea441182c
+# expected: 757acd9c65e4dde01a40ecd24e87e00bdb95849ded54a1cf6e80d5507e4055d4
 
 # unpack
-Expand-Archive nova-oracle-0.1.4-windows-x86_64.zip -DestinationPath C:/work/nova
+Expand-Archive nova-oracle-0.1.6-windows-x86_64.zip -DestinationPath C:/work/nova
 
 # every new PowerShell session: dot-source the setup script (the leading dot matters)
-. C:/work/nova/nova-oracle-0.1.4-windows-x86_64/setup-env.ps1
-nova --version        # nova 0.1.4
+. C:/work/nova/nova-oracle-0.1.6-windows-x86_64/setup-env.ps1
+nova --version        # nova 0.1.6
 ```
 
 The archive name in the quickstart on the release tag may not be the real name
-(`nova-oracle-<version>-windows-x86_64.zip`); the 0.1.4 archive carries the compiler, `std`, `nova_rt`
+(`nova-oracle-<version>-windows-x86_64.zip`); the 0.1.6 archive carries the compiler, `std`, `nova_rt`
 and the Boehm GC, so the one unpacked folder is the whole toolchain.
 
-## 1a. What 0.1.4 closed of the survey (2026-11-14)
+## 1a. What 0.1.4–0.1.6 closed of the survey (0.1.4: 2026-11-14; 0.1.5: 2026-11-17; 0.1.6: 2026-11-17)
 
 Probed on this package before the switch: the sum-lift of a bare value into a self-recursive variant
 (the `SomeBox` workaround of `value.nv`, registry 1965 — the A/B repro is green on 0.1.4); the
 const-pool clobber of the merged unit (item 129 — not reproducible in any shape); the payload match of
-`ParseJsonError.DuplicateKey` (the test `dt not json` is green). Still red on 0.1.4: item 128
+`ParseJsonError.DuplicateKey` (the test `dt not json` is green). Still red on 0.1.6 (probed on 0.1.4, 0.1.5 and 0.1.6): importing std.os.proc into a package unit breaks the merged-CU private-call resolution (`undefined identifier dedupe_envs` / `env_blob_of` at std proc.nv:414–415; the item-129 class, a THIRD independent manifestation — the isolated-unit dodge does not work either, the battle_procs unit was tried and rolled back) — item 128
 (`[N]T` into a `[]T` parameter) and the `embed_str` → `Fs` demand of `--strict-effects` (both
 reported to the Oracle session). The workarounds of the closed items stay in the code until their
 removal is taken as its own change (each mark names its removal condition).

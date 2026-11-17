@@ -47,7 +47,7 @@ The seam of 2.25 (decided by the fact, item 44 of [docs/history.md](docs/history
 Open questions to the methodology (a field with two JSON names named without its owner, the JSON name of a nested machine, the `title` of a tree) are in the logs of the tasks 149, 151, 152 and 154 of the CrewHarness repository. Task 154 aligned the package with the clarified text of the specification (AL-104 ... AL-111): the label of a form with fields is "формы", the bare names of the elements, the places of the empty `[]`, `новый_ид`, `то же, запуск заново`.
 
 The package has no dependencies except Nova's `std` (`std.io`, `std.os` and `std.fs` are used only in `src/alula_cli/` and `src/alula.nv`).
-Built and tested with **Nova Oracle 0.1.4** and Clang (0.1.0 until 2026-11-14), see [spikes/env/README.md](spikes/env/README.md).
+Built and tested with **Nova Oracle 0.1.6** and Clang (0.1.4 was the leading point 2026-11-14 … 2026-11-17; since the word of the owner «более ранние использовать нельзя» the toolchain is **0.1.6**), see [spikes/env/README.md](spikes/env/README.md).
 
 ## What is here
 
@@ -60,7 +60,7 @@ One folder under `src/` is one module `alula.<folder>` and one unit of tests (Or
 | `alula.machine_manifest` | the public manifest of the machine and the identities of the integration: the projection of a checked tree, the fixed codec and envelope projections, the canonical bytes, the `contract_id` and the `artifact_id`, the strict reader of a foreign manifest ([README](src/machine_manifest/README.md)) |
 | `alula.machine_profiles` | the interaction profiles of the parties at the machine border: the matrix kind → profile → bindings as code, the profile contract over the party declaration, the party bindings against the host ([README](src/machine_profiles/README.md)) |
 | `alula.thin_host` | the universal primitives of the thin host in the package (13: FS 6, processes 4, locks, parse_agent, sha256; the registry of the package — the canon, the guard of the methodology compares the rows) + the scripted test host and the reference host over the real FS; acting — only through the outbox |
-| `alula.battle_host` | the battle host of the thin primitives (П-2): the real FS tree, the real `run_command` over `Os` (exit code; the stdout capture is the D453 deferral), locks, sha256; the process primitives stay scripted until the Oracle fix of the std.os.proc merged-CU break (item-129 class, both 0.1.4 and 0.1.5); acting — through the outbox |
+| `alula.battle_host` | the battle host of the thin primitives (П-2): the real FS tree, the real `run_command` over `Os` (exit code; the stdout capture is the D453 deferral), locks, sha256; the process primitives stay scripted until the Oracle fix of the std.os.proc merged-CU break (item-129 class, 0.1.4/0.1.5/0.1.6); acting — through the outbox |
 | `alula.machine` | the core of the machines: the dynamic `Value`, the types, the tree of an expression, the pure evaluator, the registry of the primitives of the host and the table of the journal codes (the language names two primitives and 35 codes, a host gives the rest as data: `registry.md`, `journal.md`), and the schemas `schema/` compiled in ([README](src/machine/README.md)) |
 | `alula.examples` | tests only: the examples (`examples/`: 15 machines as JSON, 10 as tables, 68 tests, `registry.md`, `journal.md`) and the registry of the samples of the specification, embedded into the tests |
 | `alula.machine_table` | the model of a machine, the decoder of the tree `machine/2`, the type syntax, the checks of a table (0.29) |
@@ -101,7 +101,7 @@ A host registers its own primitives and journal codes as data (the files `regist
 ## Build and check
 
 ```powershell
-. C:/work/nova/nova-oracle-0.1.4-windows-x86_64/setup-env.ps1     # the leading dot matters
+. C:/work/nova/nova-oracle-0.1.6-windows-x86_64/setup-env.ps1     # the leading dot matters
 cd C:/work/alula
 
 nova test src --jobs 4 --timeout 600                 # all units (the heavy ones: machine_runner about 7 minutes, alula_tests about 3)
