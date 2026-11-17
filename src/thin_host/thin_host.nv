@@ -51,6 +51,10 @@ fn fail(message str) -> Result[Value, StepFailure] => Err(StepFailure { message 
 /// documented behaviour).
 export type HostTree { root str }
 
+/// The normalized path inside the tree — exported for the sibling hosts (the battle host resolves
+/// the log path in the same tree).
+export fn HostTree @resolve_path(path str) -> Result[str, StepFailure] => resolve(@, path)
+
 export fn new_tree(root str) -> HostTree => { root }
 
 // The normalized path inside the tree, or the failure.
@@ -451,9 +455,10 @@ fn args_payload(args []Value) -> Result[str, StepFailure] {
 }
 
 export fn ThinPrimitiveHost mut @call_primitive(name str, args []Value) -> Result[Value, EvalError] {
-    // the FS operations of the thin host run over the production handler installed INSIDE the call:
-    // the PrimitiveHost protocol declares no effects, so the boundary handles Fs locally (the strict
-    // effects check is green; the tree of the host is the caller-provided root)
+    // the PrimitiveHost protocol declares no effects, so the transitive `Fs` of run_thin_primitive
+    // is handled HERE, at the boundary, by an explicit `with` (D62 strict-effects: the default
+    // handler auto-construction does not exempt an undeclared transitive effect; everywhere else
+    // the convention holds — no per-call `with real_fs()`, production relies on #default_handler)
     with Fs = real_fs() {
         match run_thin_primitive(@scripted, name, args) {
             Ok(v) => Ok(v)

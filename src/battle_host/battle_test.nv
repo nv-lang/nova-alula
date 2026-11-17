@@ -1,0 +1,266 @@
+// battle_test.nv - the probes of the battle host (П-2): the real FS roundtrip over a real root,
+// the real run_command (exit codes over `Os`), the scripted process semantics (the Oracle block
+// on std.os.proc — the module header of battle.nv), the negatives of REQ-5, and the acting through
+// the outbox (the rights are checked, every execution is recorded).
+
+module alula.battle_host
+
+import std.fs.{Path, real_fs, try_exists, remove_dir_all}
+import alula.machine.{Value, Text, Bool, Int, Null, List, Record}
+
+// ---- the fixtures --------------------------------------------------------------------------------------
+
+// a fresh real root per run
+fn fresh_root() Fs -> str {
+    ro root = "target/battle-host-test"
+    if try_exists(Path.posix(root)) == Ok(true) {
+        match remove_dir_all(Path.posix(root)) {
+            Ok(_) => ()
+            Err(e) => panic("${e}")
+        }
+    }
+    root
+}
+
+fn bh() Fs -> BattleThinHost {
+    new_battle_host(fresh_root(), "battle-runner")
+}
+
+fn bh_with_answers(mut h BattleThinHost, key str, value str) -> () {
+    h.effects.state_put("agent:${key}", Text(value))
+}
+
+fn run(mut h BattleThinHost, name str, args []Value) Fs -> Result[Value, StepFailure] => run_battle_primitive(h, name, args)
+
+fn must(mut h BattleThinHost, name str, args []Value) Fs -> Value {
+    match run(h, name, args) {
+        Ok(v) => v
+        Err(e) => panic(e.message)
+    }
+}
+
+// ---- the FS primitives over the real tree --------------------------------------------------------------
+
+test "bf write then read roundtrip over the real fs" {
+    mut h = bh()
+    match run_battle_primitive(h, "write_file", [Text("notes/a.txt"), Text("hello battle")]) {
+        Ok(_) => ()
+        Err(e) => panic(e.message)
+    }
+    match run_battle_primitive(h, "read_file", [Text("notes/a.txt")]) {
+        Ok(Text(t)) => assert(t == "hello battle")
+        _ => panic("the read back is not the text")
+    }
+}
+
+test "bf move: the source is gone, the destination holds the text" {
+    mut h = bh()
+    must(h, "write_file", [Text("m/1.txt"), Text("x")])
+    match run_battle_primitive(h, "move_file", [Text("m/1.txt"), Text("m/2.txt")]) {
+        Ok(_) => ()
+        Err(e) => panic(e.message)
+    }
+    match run_battle_primitive(h, "read_file", [Text("m/1.txt")]) {
+        Err(_) => ()
+        Ok(_) => panic("the source survived the move")
+    }
+    match run_battle_primitive(h, "read_file", [Text("m/2.txt")]) {
+        Ok(Text(t)) => assert(t == "x")
+        _ => panic("the destination is missing")
+    }
+}
+
+test "bf list_dir is sorted and delete_file removes" {
+    mut h = bh()
+    must(h, "write_file", [Text("d/b.txt"), Text("2")])
+    must(h, "write_file", [Text("d/a.txt"), Text("1")])
+    match run_battle_primitive(h, "list_dir", [Text("d")]) {
+        Ok(List(items)) => {
+            assert(items.len() == 2)
+            match items[0] {
+                Text(t) => assert(t == "a.txt")
+                _ => panic("the first entry is not a text")
+            }
+        }
+        _ => panic("list_dir failed")
+    }
+    match run_battle_primitive(h, "delete_file", [Text("d/a.txt")]) {
+        Ok(_) => ()
+        Err(e) => panic(e.message)
+    }
+    match run_battle_primitive(h, "file_exists", [Text("d/a.txt")]) {
+        Ok(Bool(false)) => ()
+        _ => panic("the deleted file still exists")
+    }
+}
+
+test "bf acquire_lock: free true, foreign false, own true" {
+    mut h = bh()
+    match run_battle_primitive(h, "acquire_lock", [Text("job.lock"), Text("t-battle")]) {
+        Ok(Bool(true)) => ()
+        _ => panic("the free lock is not acquired")
+    }
+    match run_battle_primitive(h, "acquire_lock", [Text("job.lock"), Text("t-other")]) {
+        Ok(Bool(false)) => ()
+        _ => panic("a foreign token took the lock")
+    }
+    match run_battle_primitive(h, "acquire_lock", [Text("job.lock"), Text("t-battle")]) {
+        Ok(Bool(true)) => ()
+        _ => panic("the owner lost the own lock")
+    }
+}
+
+// ---- run_command: the REAL execution over `Os` ---------------------------------------------------------
+
+test "bf run_command runs a real command and reports the exit code 0" {
+    mut h = bh()
+    must(h, "write_file", [Text("r/keep.txt"), Text("k")])
+    match run_battle_primitive(h, "run_command", [Text("exit 0"), Text("r")]) {
+        Ok(rec) => match field_of(rec, "code") {
+            Int(0) => ()
+            _ => panic("the exit code is not 0")
+        }
+        Err(e) => panic(e.message)
+    }
+}
+
+test "bf run_command reports a non-zero exit code" {
+    mut h = bh()
+    match run_battle_primitive(h, "run_command", [Text("exit 3"), Text(".")]) {
+        Ok(rec) => match field_of(rec, "code") {
+            Int(3) => ()
+            _ => panic("the exit code is not 3")
+        }
+        Err(e) => panic(e.message)
+    }
+}
+
+test "bf run_command outside the tree is refused" {
+    mut h = bh()
+    match run_battle_primitive(h, "run_command", [Text("exit 0"), Text("../outside")]) {
+        Err(_) => ()
+        Ok(_) => panic("a dir outside the tree was accepted")
+    }
+}
+
+// ---- the process primitives: scripted until the Oracle fix --------------------------------------------
+
+test "bf start_process gives the scripted pid; the repeat of the stop is a no-op; an unknown pid fails" {
+    mut h = bh()
+    bh_with_answers(h, "process:cmd:.", "42")
+    match run_battle_primitive(h, "start_process", [Text("cmd"), Text("."), Text("log.txt")]) {
+        Ok(Int(pid)) => assert(pid == 42)
+        _ => panic("the scripted pid did not come back")
+    }
+    // the record of the acting exists (the receipt is held)
+    match run_battle_primitive(h, "stop_process", [Int(42)]) {
+        Ok(Null) => ()
+        _ => panic("the first stop failed")
+    }
+    // the repeated stop is a no-op
+    match run_battle_primitive(h, "stop_process", [Int(42)]) {
+        Ok(Null) => ()
+        _ => panic("the repeated stop is not a no-op")
+    }
+    match run_battle_primitive(h, "stop_process", [Int(7)]) {
+        Err(_) => ()
+        Ok(_) => panic("an unknown pid was stopped silently")
+    }
+}
+
+test "bf process_running reads the scripted answer as a VALUE false/true" {
+    mut h = bh()
+    bh_with_answers(h, "running:5", "false")
+    match run_battle_primitive(h, "process_running", [Int(5)]) {
+        Ok(Bool(false)) => ()
+        _ => panic("process_running is not a value false")
+    }
+    bh_with_answers(h, "running:6", "true")
+    match run_battle_primitive(h, "process_running", [Int(6)]) {
+        Ok(Bool(true)) => ()
+        _ => panic("process_running is not a value true")
+    }
+    match run_battle_primitive(h, "process_running", [Int(9)]) {
+        Err(_) => ()
+        Ok(_) => panic("a missing scripted answer is not a failure")
+    }
+}
+
+// ---- the negatives of REQ-5 ----------------------------------------------------------------------------
+
+test "bf the paths outside the tree are refused" {
+    mut h = bh()
+    match run_battle_primitive(h, "read_file", [Text("../escape.txt")]) {
+        Err(_) => ()
+        Ok(_) => panic("../ escaped the tree")
+    }
+
+    match run_battle_primitive(h, "write_file", [Text("C:/abs.txt"), Text("x")]) {
+        Err(_) => ()
+        Ok(_) => panic("an absolute path was accepted")
+    }
+    match run_battle_primitive(h, "read_file", [Text("no-such.txt")]) {
+        Err(_) => ()
+        Ok(_) => panic("a missing file was read")
+    }
+}
+
+// ---- sha256 / parse_agent ------------------------------------------------------------------------------
+
+test "bf sha256 of abc is the known digest" {
+    mut h = bh()
+    match run_battle_primitive(h, "sha256", [Text("abc")]) {
+        Ok(Text(d)) => assert(d == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+        _ => panic("sha256 did not return a text")
+    }
+}
+
+test "bf parse_agent: a valid JSON decodes, an invalid one is a failure" {
+    mut h = bh()
+    bh_with_answers(h, "agent:do it:input", "{\"status\":\"ok\"}")
+    match run_battle_primitive(h, "parse_agent", [Text("do it"), Text("input")]) {
+        Ok(Text(t)) => assert(t.contains("ok"))
+        _ => panic("the valid answer did not come back")
+    }
+    bh_with_answers(h, "agent:do it:bad", "not-json{")
+    match run_battle_primitive(h, "parse_agent", [Text("do it"), Text("bad")]) {
+        Err(_) => ()
+        Ok(_) => panic("a non-JSON answer was accepted")
+    }
+}
+
+// ---- the acting through the outbox ---------------------------------------------------------------------
+
+test "bf acting without rights is refused; the receipt is held on a grant" {
+    mut h = bh()
+    // withdraw the self-grant: the acting must refuse
+    h.effects.withdraw_rights("", h.producer)
+    match run_battle_primitive(h, "write_file", [Text("w/1.txt"), Text("x")]) {
+        Err(_) => ()
+        Ok(_) => panic("acting went through without rights")
+    }
+    // restore the grant: the execution is recorded in the outbox
+    h.effects.grant("", h.producer)
+    match run_battle_primitive(h, "write_file", [Text("w/1.txt"), Text("x")]) {
+        Ok(_) => ()
+        Err(e) => panic(e.message)
+    }
+    match h.effects.state_get("battle:next") {
+        Int(n) => assert(n >= 1)
+        _ => panic("no acting identity was issued")
+    }
+}
+
+// ---- the helper ----------------------------------------------------------------------------------------
+
+fn field_of(v Value, name str) -> Value {
+    match v {
+        Record { fields } => {
+            for f in fields {
+                if f.name == name { return f.value }
+            }
+            Null
+        }
+        _ => Null
+    }
+}
