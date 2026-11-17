@@ -342,7 +342,9 @@ export fn drive_nested_test(first_machine AlulaMachine, registry NestedRegistry,
     mut replies = []ScriptedReply.new()
     for r in machine.replies { replies.push(r) }
     mut traces = []NestedStepTrace.new()
+    mut skipped = ""
     for s in sc.steps {
+        skipped = ""
         ro from = w.root.world.journal.len()
         mark_from(w.root)
         if s.host.len() > 0 {
@@ -369,17 +371,34 @@ export fn drive_nested_test(first_machine AlulaMachine, registry NestedRegistry,
             }
         } else {
             ro path = path_of(w.root, "", s.on)
-            if path == "" { panic("test ${sc.name}: the step acts on ${s.on}, which has not started") }
-            mut parts = []str.new()
-            for part in path.split("/") { parts.push(part) }
-            act_on_path(w.root, parts, 0, s.op, s.event, s.ms, s, w.problems)
+            if path == "" {
+                // not a panic: the step is skipped (the machine it acts on does not exist), the
+                // routing still runs, and the problem is written into the trace below — a suite
+                // run then names every diverging test instead of dying on the first one
+                skipped = "the step acts on ${s.on}, which has not started"
+            } else {
+                mut parts = []str.new()
+                for part in path.split("/") { parts.push(part) }
+                act_on_path(w.root, parts, 0, s.op, s.event, s.ms, s, w.problems)
+            }
         }
         ro moved = route(w.root, registry, w.shared, w.problems)
-        if w.problems.len() > 0 { panic("test ${sc.name}: ${w.problems[0]}") }
+        mut problems_txt = ""
+        if w.problems.len() > 0 { problems_txt = w.problems[0] }
+        w.problems = []str.new()
         mut kid_traces = []StepTrace.new()
         mut requests = []str.new()
         collect_traces(w.root, "", s.op, kid_traces, requests)
-        traces.push(NestedStepTrace { parent: trace_of[AlulaState, AlulaMachine](w.root.run.engine.machine, w.root.run.engine, w.root.world, s.op, from), kids: kid_traces, requests })
+        mut t = trace_of[AlulaState, AlulaMachine](w.root.run.engine.machine, w.root.run.engine, w.root.world, s.op, from)
+        if skipped != "" || problems_txt != "" {
+            // the problems ride in the journal of the trace: the comparison shows them as a mismatch
+            mut journal2 = []str.new()
+            if skipped != "" { journal2.push(skipped) }
+            if problems_txt != "" { journal2.push(problems_txt) }
+            for line in t.journal { journal2.push(line) }
+            t.journal = journal2
+        }
+        traces.push(NestedStepTrace { parent: t, kids: kid_traces, requests })
     }
     traces
 }
