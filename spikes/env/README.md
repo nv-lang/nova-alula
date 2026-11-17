@@ -24,10 +24,10 @@ Get-Content SHA256SUMS                                                         #
 # expected: 757acd9c65e4dde01a40ecd24e87e00bdb95849ded54a1cf6e80d5507e4055d4
 
 # unpack
-Expand-Archive nova-oracle-0.1.6-windows-x86_64.zip -DestinationPath C:/work/nova
+Expand-Archive nova-oracle-0.1.6-windows-x86_64.zip -DestinationPath C:/work/nova/oracle-016-6
 
 # every new PowerShell session: dot-source the setup script (the leading dot matters)
-. C:/work/nova/nova-oracle-0.1.6-windows-x86_64/setup-env.ps1
+. C:/work/nova/oracle-016-6/nova-oracle-0.1.6-windows-x86_64/setup-env.ps1
 nova --version        # nova 0.1.6
 ```
 
@@ -35,15 +35,36 @@ The archive name in the quickstart on the release tag may not be the real name
 (`nova-oracle-<version>-windows-x86_64.zip`); the 0.1.6 archive carries the compiler, `std`, `nova_rt`
 and the Boehm GC, so the one unpacked folder is the whole toolchain.
 
-## 1a. What 0.1.4–0.1.6 closed of the survey (0.1.4: 2026-11-14; 0.1.5: 2026-11-17; 0.1.6: 2026-11-17)
+## 1a. What 0.1.4–0.1.6 closed of the survey (0.1.4: 2026-11-14; 0.1.5: 2026-11-17; 0.1.6: 2026-11-17 — the word of the owner «более ранние использовать нельзя»; the release notes of 0.1.6 name none of the survey items — the known limitations carry over from 0.1.5)
 
 Probed on this package before the switch: the sum-lift of a bare value into a self-recursive variant
 (the `SomeBox` workaround of `value.nv`, registry 1965 — the A/B repro is green on 0.1.4); the
 const-pool clobber of the merged unit (item 129 — not reproducible in any shape); the payload match of
-`ParseJsonError.DuplicateKey` (the test `dt not json` is green). Still red on 0.1.6 (probed on 0.1.4, 0.1.5 and 0.1.6): importing std.os.proc into a package unit breaks the merged-CU private-call resolution (`undefined identifier dedupe_envs` / `env_blob_of` at std proc.nv:414–415; the item-129 class, a THIRD independent manifestation — the isolated-unit dodge does not work either, the battle_procs unit was tried and rolled back) — item 128
-(`[N]T` into a `[]T` parameter) and the `embed_str` → `Fs` demand of `--strict-effects` (both
-reported to the Oracle session). The workarounds of the closed items stay in the code until their
-removal is taken as its own change (each mark names its removal condition).
+`ParseJsonError.DuplicateKey` (the test `dt not json` is green). Still red on **0.1.6** (each probed on 0.1.4, 0.1.5 AND 0.1.6; none is named in the release
+notes of 0.1.6 — the repros below ran on 0.1.6 at the toolchain switch, 2026-11-17):
+
+- **item 128** (`[N]T` returned by a std function into a `[]T` parameter): the repro
+  `repro_engine/src/fixarr_to_vec_arg_direct.nv` is red on 0.1.6 (the checker refuses the
+  `Sha256.hash(data)` call, the exe is not built); the boxed workaround shape
+  (`fixarr_to_vec_arg_boxed.nv`, the digest copied out by index) builds and runs green.
+  The package workarounds (3 marks: battle_host, machine_typed, thin_host) stay.
+- **item 129, the merged-CU private-call resolution** — now THREE independent manifestations:
+  (a) the 0.1.0 literal/assert clobber of a peer file (closed by 0.1.4, the repro
+  `const_pool_clobber.nv` is green since then); (b) the method-resolver landmine of a merged
+  machine unit (the machine_typed split, 0.29 result B); (c) on ALL of 0.1.4/0.1.5/0.1.6,
+  importing `std.os.proc` into ANY package unit breaks codegen (`undefined identifier
+  dedupe_envs` / `env_blob_of` at std proc.nv:414–415) — a minimal src unit was probed on each
+  toolchain, and the isolated-unit dodge does not work either (the battle_procs unit was tried
+  and rolled back). Consequence: the process primitives of the battle host keep the scripted
+  semantics until the Oracle fix.
+- **the `embed_str` → `Fs` demand of `--strict-effects`**: still red on 0.1.6 at the known
+  single site `src/examples/data.nv:153` (embed runs at compile time, an `Fs` effect-row would
+  be a false effect — the package does not work it around; the full-package `--strict-effects`
+  run stays scoped to the units that do not share the site).
+
+Report-worthy to the Oracle session (three items, repro paths above). The workarounds of the
+closed items stay in the code until their removal is taken as its own change (each mark names
+its removal condition).
 
 ### C compiler
 
