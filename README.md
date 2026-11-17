@@ -101,7 +101,7 @@ A host registers its own primitives and journal codes as data (the files `regist
 ## Build and check
 
 ```powershell
-. C:/work/nova/nova-oracle-0.1.6-windows-x86_64/setup-env.ps1     # the leading dot matters
+. C:/work/nova/oracle-016-6/nova-oracle-0.1.6-windows-x86_64/setup-env.ps1     # the leading dot matters
 cd C:/work/alula
 
 nova test src --jobs 4 --timeout 600                 # all units (the heavy ones: machine_runner about 7 minutes, alula_tests about 3)
