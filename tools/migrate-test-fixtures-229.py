@@ -71,8 +71,15 @@ class Machine:
         self.name = tree.get('machine') or tree.get('name') or ''
         self.data = {d['name']: parse_spec(d['type']) for d in tree.get('data', [])}
         self.records = {r['name']: r['fields'] for r in tree.get('types', {}).get('records', [])}
+        self.variant_defs = {v['name']: v for v in tree.get('types', {}).get('variants', [])}
         self.variants = {v['name']: v['cases'] for v in tree.get('types', {}).get('variants', [])}
         self.parties = tree.get('parties', [])
+        self.signals = {}
+        for sig in tree.get('signals', []) or []:
+            self.signals[sig['name']] = sig.get('fields', [])
+        for p in self.parties:
+            for sig in p.get('signals', []) or []:
+                self.signals[sig['name']] = sig.get('fields', [])
         self.input_fields = (tree.get('input') or {}).get('fields', [])
         self.result = (tree.get('ends') or {}).get('result')
 
@@ -87,6 +94,24 @@ class Machine:
         if p and p.get('kind') == 'agent' and p.get('result'):
             return ('type', p['result'])
         return None
+
+    # СЛОВО значения энума по имени случая (values таблицы), иначе само имя
+    def enum_word(self, variant, case):
+        d = self.variant_defs.get(variant) or {}
+        for pair in d.get('values', []) or []:
+            if pair[0] == case:
+                return pair[1]
+        return case
+
+    # Энум ли тип: все случаи без полей
+    def is_enum(self, variant):
+        cases = self.variants.get(variant)
+        if cases is None:
+            return False
+        for c in cases:
+            if c.get('fields'):
+                return False
+        return True
 
     def nested_of_party(self, pid):
         p = self.party_by_id(pid)
@@ -179,32 +204,36 @@ def walk_internal(v, spec, path, places):
                 places.append('%s: вариант %s.%s не в таблицах машины — значение не тронуто' % (path, rec, v.get('name')))
                 return v
             held = v.get('fields', {})
-            out = {'$variant': v['$variant'], 'name': v['name'], 'fields': {}}
+            walked = {}
             for k, x in held.items():
                 fs = spec_of_field(cf, k)
-                out['fields'][k] = x if fs is None else walk_internal(x, fs, '%s.%s' % (path, k), places)
-            return out
+                walked[k] = x if fs is None else walk_internal(x, fs, '%s.%s' % (path, k), places)
+            # канон value.nv: «fields» опускается, когда полей нет — движок в ответах её не пишет
+            if walked:
+                return {'$variant': v['$variant'], 'name': v['name'], 'fields': walked}
+            return {'$variant': v['$variant'], 'name': v['name']}
         return v
     return v
 
 
 class _RecTables:
-    """Таблицы текущей машины для walk_internal (обход не замыкает машину в рекурсии)."""
+    """Таблицы текущей машины для обходов (рекурсия не замыкает машину параметром)."""
     def __init__(self):
         self.records = {}
         self.variants = {}
+        self.machine = None
 
 
 rec_tables = _RecTables()
 
 
 def with_machine_tables(m, fn):
-    saved = (rec_tables.records, rec_tables.variants)
-    rec_tables.records, rec_tables.variants = m.records, m.variants
+    saved = (rec_tables.records, rec_tables.variants, rec_tables.machine)
+    rec_tables.records, rec_tables.variants, rec_tables.machine = m.records, m.variants, m
     try:
         return fn()
     finally:
-        rec_tables.records, rec_tables.variants = saved
+        rec_tables.records, rec_tables.variants, rec_tables.machine = saved
 
 
 # ---- обход внешней формы (ответ стороны agent) ------------------------------------------------------------
@@ -227,23 +256,27 @@ def walk_external(v, spec, path, places):
         return v
     if kind == 'type':
         name = spec[1]
-        if isinstance(v, dict) and '$variant' in v:
+        if isinstance(v, dict) and ('$variant' in v or 'case' in v):
+            cname = v.get('name') or v.get('case')
+            if rec_tables.machine is not None and rec_tables.machine.is_enum(name):
+                # ЭНУМ во внешнем кодеке — СТРОКА: слово из values (или имя случая), не объект
+                return rec_tables.machine.enum_word(name, cname)
             cases = rec_tables.variants.get(name)
             cf = None
             if cases:
                 for c in cases:
-                    if c['name'] == v['name']:
+                    if c['name'] == cname:
                         cf = c.get('fields', [])
             if cf is None:
-                places.append('%s: вариант %s.%s не в таблицах машины — значение не тронуто' % (path, name, v.get('name')))
+                places.append('%s: вариант %s.%s не в таблицах машины — значение не тронуто' % (path, name, cname))
                 return v
-            fields = {}
-            for k, x in v.get('fields', {}).items():
+            # внешняя форма варианта — РОВНО case+fields (decode_variant требует оба ключа),
+            # поэтому fields остаётся даже пустым; подсеть обходится (вложенные enum-объекты и т.п.)
+            walked = {}
+            for k, x in (v.get('fields') or {}).items():
                 fs = spec_of_field(cf, k)
-                fields[k] = x if fs is None else walk_external(x, fs, '%s.%s' % (path, k), places)
-            return {'case': v['name'], 'fields': fields}
-        if isinstance(v, dict) and 'case' in v and 'fields' in v:
-            return v  # уже 0.29
+                walked[k] = x if fs is None else walk_external(x, fs, '%s.%s' % (path, k), places)
+            return {'case': cname, 'fields': walked}
         if isinstance(v, dict) and '$record' in v:
             fields = rec_tables.records.get(name)
             if fields is None:
@@ -359,6 +392,20 @@ def migrate_fixture(path, doc, machines_dir, alula, cache):
                         changed[0] = True
                 elif spec is None and party_kind == '':
                     places.append('%s: ответ агенту: сторона по запросу %r не найдена — не тронуто' % (at, rid))
+        # 0.28-сокращение сигнала с ОДНИМ полем: голое значение → объект по имени поля
+        if ev.get('kind') == 'signal' and isinstance(ev.get('input'), (str, int, float, bool)):
+            sig_fields = None
+            for holder in (root,):
+                if ev.get('name') in holder.signals:
+                    sig_fields = holder.signals[ev.get('name')]
+                    break
+            if sig_fields is not None and on != '':
+                target0 = machine_for_also_or_on(on)
+                if target0 is not None and ev.get('name') in target0.signals:
+                    sig_fields = target0.signals[ev.get('name')]
+            if sig_fields is not None and len(sig_fields) == 1:
+                ev['input'] = {sig_fields[0]['name']: ev['input']}
+                changed[0] = True
         # внутренняя форма: expect.data / outcome
         exp = step.get('expect') or {}
         if isinstance(exp, dict):
