@@ -337,17 +337,26 @@ def migrate_fixture(path, doc, machines_dir, alula, cache):
         return 'answer:' + json.dumps(nv, ensure_ascii=False, separators=(',', ':')) if nv != v else text
 
     def machine_for_also_or_on(key):
-        """Имя вложенной машины по ключу also/on («parent» — сама машина фикстуры)."""
+        """Имя вложенной машины по ключу also/on («parent» — сама машина фикстуры).
+
+        Путь из нескольких уровней (`session_launch-1/agent_step-1`) проходится по вложенным
+        машинам стороны шаг за шагом: ответ агентской стороне глубины 2+ читается внешним
+        кодеком той машины, где сторона объявлена.
+        """
         if key == 'parent':
             return root
-        base = key.rsplit('-', 1)[0] if re.match(r'.*-\d+$', key) else key
-        nested = root.nested_of_party(base)
-        if nested:
+        cur = root
+        for seg in key.split('/'):
+            base = seg.rsplit('-', 1)[0] if re.match(r'.*-\d+$', seg) else seg
+            nested = cur.nested_of_party(base)
+            if not nested:
+                return None
             try:
-                return load_machines(path, nested, machines_dir, alula, cache)
+                cur = load_machines(path, nested, machines_dir, alula, cache)
             except LookupError as e:
                 places.append('%s: %s: %s' % (path, key, e))
-        return None
+                return None
+        return cur
 
     for i, step in enumerate(doc.get('steps', [])):
         at = '%s: шаг %d' % (path, i + 1)
@@ -392,8 +401,10 @@ def migrate_fixture(path, doc, machines_dir, alula, cache):
                         changed[0] = True
                 elif spec is None and party_kind == '':
                     places.append('%s: ответ агенту: сторона по запросу %r не найдена — не тронуто' % (at, rid))
-        # 0.28-сокращение сигнала с ОДНИМ полем: голое значение → объект по имени поля
-        if ev.get('kind') == 'signal' and isinstance(ev.get('input'), (str, int, float, bool)):
+        # сигнал с ОДНИМ полем: провод 0.29 — ГОЛОЕ значение поля (step.nv: decode_fields
+        # читает input как значение единственного поля, объект — только для 2+ полей).
+        # Завёрнутый в объект вход (ручная правка, прошлая волна) разворачивается.
+        if ev.get('kind') == 'signal':
             sig_fields = None
             for holder in (root,):
                 if ev.get('name') in holder.signals:
@@ -404,8 +415,11 @@ def migrate_fixture(path, doc, machines_dir, alula, cache):
                 if target0 is not None and ev.get('name') in target0.signals:
                     sig_fields = target0.signals[ev.get('name')]
             if sig_fields is not None and len(sig_fields) == 1:
-                ev['input'] = {sig_fields[0]['name']: ev['input']}
-                changed[0] = True
+                fname = sig_fields[0]['name']
+                inp = ev.get('input')
+                if isinstance(inp, dict) and list(inp.keys()) == [fname]:
+                    ev['input'] = inp[fname]
+                    changed[0] = True
         # внутренняя форма: expect.data / outcome
         exp = step.get('expect') or {}
         if isinstance(exp, dict):
@@ -450,6 +464,7 @@ def selftest():
                 {'name': 'Finished', 'fields': [{'name': 'text', 'type': '?text'}, {'name': 'artifact', 'type': '?text'}]},
                 {'name': 'PermanentError', 'fields': []}]}]},
         'parties': [{'name': 'агент', 'id': 'agent', 'kind': 'agent', 'result': 'TurnResult'}],
+        'signals': [{'name': 'route_gate_decision', 'fields': [{'name': 'reference', 'type': 'text'}]}],
         'ends': {'result': 'Reply'},
     }
     fixture = {'machine': 'm', 'steps': [
@@ -459,6 +474,8 @@ def selftest():
                     'outcome': 'answer:{"$record":"Reply","fields":{"text":"hello"}}'}},
         {'do': 'feed', 'event': {'kind': 'answer', 'name': 'agent_done', 'request': 'agent-1',
                                  'input': {'case': 'PermanentError', 'fields': {}}}},
+        {'do': 'feed', 'event': {'kind': 'signal', 'name': 'route_gate_decision', 'input': {'reference': 'd1'}}},
+        {'do': 'feed', 'event': {'kind': 'signal', 'name': 'route_gate_decision', 'input': 'd1'}},
     ]}
     machine = Machine(tree)
     cache = {'m': machine}
@@ -469,10 +486,12 @@ def selftest():
     assert s0['expect']['data']['started'] == {'$some': 1000}
     assert s0['expect']['data']['reply'] is None
     assert s0['expect']['outcome'] == 'answer:{"$record":"Reply","fields":{"text":{"$some":"hello"}}}', s0['expect']['outcome']
+    assert fixture['steps'][2]['event']['input'] == 'd1', fixture['steps'][2]['event']['input']
+    assert fixture['steps'][3]['event']['input'] == 'd1', fixture['steps'][3]['event']['input']
     # уже перенесённый ответ и уже различимое данное не меняются (идемпотентность)
     new2, places2 = migrate_fixture('t.alula.test.json', fixture, None, None, cache)
     assert new2 is None and places2 == [], (new2, places2)
-    print('selftest: ок (внешняя форма ответа, {"$some"} данных, идемпотентность)')
+    print('selftest: ок (внешняя форма ответа, {"$some"} данных, голое поле сигнала, идемпотентность)')
     return 0
 
 
