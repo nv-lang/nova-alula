@@ -1272,7 +1272,7 @@ fn ex_call(mut p TxP, mut cx TxCx, sc TxScope, name TxTok) -> Result[TxJ, Transl
         None => ()
     }
     ro args = ex_args(p, cx, sc)?
-    // an external function that the machine declares in `## Внешние функции` (AL-123): a call is a call of any function, the class decides where it may stand (the check)
+    // an external function that the machine declares in `## Инструменты` (AL-123): a call is a call of any function, the class decides where it may stand (the check)
     match pair_get(cx.env.prims, name.text) {
         Some(prim_en) => return Ok(ext_call_node(cx, name, prim_en, args))
         None => ()
@@ -1361,7 +1361,7 @@ fn tr_primitive(mut cx TxCx, t TxTok) -> str {
         Some(en) => return en
         None => ()
     }
-    cx_error(cx, t, "name", "внешней функции `${t.text}` нет в разделе `## ${kw(cx.words, "section", "External functions")}` машины")
+    cx_error(cx, t, "name", "внешней функции `${t.text}` нет в разделе `## ${kw(cx.words, "section", "Tools")}` машины")
     t.text
 }
 

@@ -596,7 +596,7 @@ fn rn_machine(machine_json str, language str, copy_includes bool, registry Regis
                 return RenderReport { text: "", notes: ["the key `portolan_version` is the former name of `alula_version` (the language is called Alula since the format 2.14; there is no transition period)"] } // guard-allow(legacy-name): the message names the former key
             }
             // a tree of another version of the language is not written (no transition period, task 125): the file would say a version that the translator does not read
-            if !seam && rj_gstr(root, "alula_version") != "" && rj_gstr(root, "alula_version") != "0.29" {
+            if !seam && rj_gstr(root, "alula_version") != "" && rj_gstr(root, "alula_version") != "0.30" {
                 return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 0.29 only is read and written (there is no transition period: a tree of 0.28 is migrated by tools/migrate-alula-229.py, of 0.27 — by tools/migrate-alula-228.py)"] }
             }
             ro former = rn_former_note(root, "$")
@@ -619,7 +619,7 @@ fn rn_machine(machine_json str, language str, copy_includes bool, registry Regis
                 // the order of the header of 0.27 (1b (а), AL-144): machine, revision, alula_version, language
                 ro revision = rj_gscalar(shown, "revision")
                 out.push("- revision: ${if revision == "" { "1" } else { revision }}")
-                out.push("- alula_version: 0.29")
+                out.push("- alula_version: 0.30")
             }
             out.push("- language: ${language}")
             out.push("")
@@ -633,7 +633,7 @@ fn rn_machine(machine_json str, language str, copy_includes bool, registry Regis
                 rn_section_226(out, rn_kw(cx, "section", "Parties"), rn_sec_parties(cx, shown))
                 rn_add(out, rn_extra_sections(cx, shown))
                 rn_section_226(out, rn_kw(cx, "section", "Includes"), rn_sec_includes(cx, shown, copy_includes))
-                rn_section_226(out, rn_kw(cx, "section", "External functions"), rn_sec_primitives(cx, shown))
+                rn_section_226(out, rn_kw(cx, "section", "Tools"), rn_sec_primitives(cx, shown))
                 rn_section_226(out, rn_kw(cx, "section", "Functions"), rn_sec_definitions(cx, shown, dropped.definitions))
                 rn_add(out, rn_sec_common(cx, shown))
                 rn_section_226(out, rn_kw(cx, "section", "States"), rn_sec_states(cx, shown))
@@ -652,7 +652,7 @@ fn rn_machine(machine_json str, language str, copy_includes bool, registry Regis
             rn_add(out, rn_sec_common(cx, shown))
             rn_section(out, rn_kw(cx, "section", "States"), rn_sec_states(cx, shown))
             rn_section(out, rn_kw(cx, "section", "Ends"), rn_sec_ends(cx, shown))
-            rn_section(out, rn_kw(cx, "section", "External functions"), rn_sec_primitives(cx, shown))
+            rn_section(out, rn_kw(cx, "section", "Tools"), rn_sec_primitives(cx, shown))
             RenderReport { text: "${rn_trimmed(out).join("\n")}\n", notes: cx.notes }
         }
     }

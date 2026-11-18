@@ -2,7 +2,7 @@
 
 - machine: Batch
 - revision: 1
-- alula_version: 0.29
+- alula_version: 0.30
 - language: en
 
 A set of nested calls (spec 4.2, `set:`; the party of the kind `machine`): one request to the machine `callee` for every name of the input `names`, no more than `LIMIT` at once (`Request limit`). The answers

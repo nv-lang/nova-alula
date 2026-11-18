@@ -2,7 +2,7 @@
 
 - machine: Pausable
 - revision: 1
-- alula_version: 0.29
+- alula_version: 0.30
 - language: en
 
 The library `Pause` (spec 9, `libs/pause.en.alula.md`): a human stops the machine in the middle of the work of the agent, the open request is cancelled and the machine waits in `Pause`; `continue` enters the state it was stopped

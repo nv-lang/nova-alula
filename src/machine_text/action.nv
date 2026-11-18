@@ -127,7 +127,7 @@ fn ac_stmt(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxStmt, TranslateError]
         if pair_has(cx.env.prims, w) || standard_call(cx, w) { return ac_call(p, cx, sc) }
         // a name with brackets in the place of an action is a call of an external function; it must be declared (AL-123)
         if !pair_has(cx.env.defs, w) && kw_key(words, "catalog", w) == None {
-            return Err(tx_err(t.line, t.col, "name", "внешняя функция `${w}` не объявлена: она объявляется строкой раздела `## ${kw(words, "section", "External functions")}` (AL-123)"))
+            return Err(tx_err(t.line, t.col, "name", "внешняя функция `${w}` не объявлена: она объявляется строкой раздела `## ${kw(words, "section", "Tools")}` (AL-123)"))
         }
     }
     ac_assign(p, cx, sc)

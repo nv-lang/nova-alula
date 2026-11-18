@@ -43,7 +43,7 @@ fn section_misplaced(key str, keys []str, w TxWords) -> str {
         return message
     }
     if keys.contains("Requires data") {
-        if key == "External functions" {
+        if key == "Tools" {
             ro message = "в библиотеке раздела `${title}` нет: библиотека не объявляет и не вызывает внешних функций (раздел 9)"
             return message
         }
@@ -241,9 +241,9 @@ fn lib_header(lines []str, mut cx TxCx) -> TxLibHead {
         }
     }
     if library == "" { note(cx, struct_error(1, 1, "в шапке библиотеки нет строки `- library: <латинское_имя>`")) }
-    if format != "0.29" && !old {
+    if format != "0.30" && !old {
         ro shown = if format == "" { "не указана" } else { format }
-        note(cx, struct_error(1, 1, "версия языка библиотеки ${shown}: библиотека пишется на Алуле 0.29 (строка `- alula_version: 0.29`)"))
+        note(cx, struct_error(1, 1, "версия языка библиотеки ${shown}: библиотека пишется на Алуле 0.30 (строка `- alula_version: 0.30`)"))
     }
     TxLibHead { title, library, format }
 }

@@ -10,7 +10,7 @@ fn hc_ticked(text str) -> str => text.replace("'", hc_tick())
 
 // A machine of a shop: its action calls the acting primitive `reserve` of the host and journals the code `item_reserved` of the host.
 fn hc_shop() -> str {
-    ro table = "\n## External functions\n\n```\nexternal fn reserve(item str, count int>=1) acting\n```\n"
+    ro table = "\n## Tools\n\n```\nexternal fn reserve(item str, count int>=1) acting\n```\n"
     ro machine = tiny_en().replace("turn_count += 1", "turn_count += 1; reserve(\"tea\", 1); journal(\"item_reserved\", item: \"tea\")").replace("Machine: Малая", "Machine: Shop").replace("- machine: Tiny", "- machine: Shop")
     "${machine}${table}"
 }

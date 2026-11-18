@@ -3,7 +3,7 @@ module alula.machine_text
 
 import std.text
 
-fn ext_section(lines str) -> str => "## Внешние функции\n\n```\n${lines}\n```\n\n## Концы"
+fn ext_section(lines str) -> str => "## Инструменты\n\n```\n${lines}\n```\n\n## Концы"
 
 fn with_ext(lines str, action str) -> str {
     ro made = tiny_with("## Концы", ext_section(lines))
@@ -14,7 +14,7 @@ fn json_of_ext(lines str, action str) -> str => translate_report(with_ext(lines,
 
 test "v224 the former heading and the former call are refused with the hint, once for all" {
     ro old_section = tiny_with("## Концы", "## Примитивы\n\n| имя | параметры | результат | класс | читает | пишет |\n|---|---|---|---|---|---|\n| close_agent_turn | — | — | действующая | — | — |\n\n## Концы")
-    assert(note_says(old_section, "`## Примитивы` в формате 2.23 не бывает (AL-123): пишется `## Внешние функции`; переходного периода нет"))
+    assert(note_says(old_section, "`## Примитивы` в формате 2.23 не бывает (AL-123): пишется `## Инструменты`; переходного периода нет"))
     ro old_call = with_ext("внешняя функция close_agent_turn() действующая", "; вызвать(close_agent_turn)")
     assert(note_says(old_call, "`вызвать(…)` в формате 2.23 не бывает (AL-123): пишется `имя(арг)`; переходного периода нет"))
     ro old_in_expr = tiny_with("| 1 | число_ходов >= 2 | — | КОНЕЦ |", "| 1 | вызвать(новый_ид) > 0 | — | КОНЕЦ |")
@@ -74,7 +74,7 @@ test "v224 the tail of a function of the author is refused" {
 
 test "v224 an external function is not mistaken for a function of the author by the pre-scan of the names" {
     // `функция имя` after `внешняя` declares an external function: the author's name `f` is free for the author
-    ro made = with_ext("внешняя функция читать() изменчивая -> число", "").replace("## Внешние функции", "## Функции\n\n```\nфункция читать_ещё() -> число =>\n  1\n```\n\n## Внешние функции")
+    ro made = with_ext("внешняя функция читать() изменчивая -> число", "").replace("## Инструменты", "## Функции\n\n```\nфункция читать_ещё() -> число =>\n  1\n```\n\n## Инструменты")
     assert(!note_says(made, "повторена"))
     assert(!note_says(made, "совпадает с функцией"))
 }
@@ -84,7 +84,7 @@ test "v224 a tree with the records renders back to the section, and the section 
     ro decl = "внешняя функция record_note(код число, ...поля: строка) действующая\nвнешняя функция сколько(метка строка) изменчивая -> число\nвнешняя функция сложить(а число, б число) -> число"
     ro first = translate_report(with_ext(decl, "; record_note(7, ключ: \"a\")")).json
     ro text = render(first, "ru")
-    assert(text.contains("## Внешние функции\n\n```\nвнешняя функция record_note(код число, ...поля: строка) действующая\n"))
+    assert(text.contains("## Инструменты\n\n```\nвнешняя функция record_note(код число, ...поля: строка) действующая\n"))
     assert(text.contains("record_note(7, ключ: \"a\")"))
     ro second = translate_report(text).json
     assert(second.contains("\"named\":[{\"name\":\"ключ\""))
