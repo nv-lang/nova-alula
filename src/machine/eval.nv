@@ -65,6 +65,9 @@ export type Scope { bindings []Binding }
 
 /// PrimitiveHost: the door of the evaluator to the world. The host answers a call of a primitive by name; the core does not
 /// check the registry (registry.nv checks the class of a call and the types of its arguments).
+/// Effect-free on purpose: the language allows an effect row here, but Fs/Proc would then thread through the whole core
+/// (every eval/engine signature takes `mut host PrimitiveHost`); the only entry into the world is one `with` at the host
+/// boundary (thin_host.nv @call_primitive).
 export type PrimitiveHost protocol {
     mut @call_primitive(name str, args []Value) -> Result[Value, EvalError]
 }
