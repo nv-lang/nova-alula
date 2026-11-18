@@ -9,9 +9,9 @@ these three items ("the known limitations carry over from 0.1.5").
 |---|---|---|---|
 | 128 `fixarr_to_vec_arg` | **RED** — the checker refuses | `nova build src/fixarr_to_vec_arg_direct.nv` | 3 workaround marks; the boxed form is the dodge |
 | 129 (a) const-pool clobber | **GREEN** (closed by 0.1.4) | `nova test src/const_pool_clobber.nv` | none (the sample stays) |
-| 129 (b) method resolver in a merged unit | **latent** — the dodge is in place | the host-contract unit (not reduced) | the mark in `src/host_contract/contract.nv` |
+| 129 (b) method/effect resolver in a merged unit | **RED** under `--strict-effects` — a reproducible case (probe below) | two-module probe below | the mark in `src/host_contract/contract.nv` |
 | 129 (c) `std.os.proc` | **the path-form import is broken; the module form builds** | two-module probe below | the scripted processes of `battle_host` are removable (our change) |
-| embed→Fs | **RED** under `--strict-effects` only | `nova test src/alula_cli --strict-effects` | no workaround by design |
+| embed→Fs | **a symptom of 129 (b), not of embed** — RED under `--strict-effects` only | `nova test src/alula_cli --strict-effects` | none needed once the effect lookup is fixed |
 
 The exact messages and commands are below. The reproductions of 128 and 129 (a) live in `spikes/env/repro_engine/`
 (a Nova package of its own: `nova build src/<name>.nv`).
@@ -39,19 +39,55 @@ broke the C instead).
 Package: three marks, all `ORACLE-WORKAROUND(128)` — `src/battle_host/battle.nv:202`, `src/machine_typed/typed.nv:1356`,
 `src/thin_host/thin_host.nv:369`; the helper is `bytes_of` in `typed.nv`.
 
+Oracle (2026-11-18): confirmed. **E7301 stays the final refusal** — no implicit `[N]T` → `[]T` (a value/view design
+item); the diagnostic gets a hint/fixit with the supported forms (copy by index, an explicit view helper) and is
+documented. The three marks stay.
+
 ## 129. `const_pool_clobber` — three independent manifestations
 
 **(a) the 0.1.0 literal/assert clobber of a peer file — closed by 0.1.4.** The sample stays green on 0.1.6:
 `nova test src/const_pool_clobber.nv` → PASS 1 / FAIL 0.
 
-**(b) the method resolver of a merged unit — latent on 0.1.6, found on 0.1.4.** In a merged unit of several files a
-DIRECT call of a method of another module's type with a constructor as an argument emits the arguments as `void*` and
-the C does not build (`@engine.submit_event(Incoming.incoming(...), …)`, the host-contract unit, the 0.29 result F); the
-method resolver with equal arity may also pick a WRONG method. The dodge: bind the constructor to a typed local, or
-route the call through a free function IN THE OWNER'S module; the package names the operations free functions over the
-handle (`submit_admission` of `engine.nv`). Mark: `src/host_contract/contract.nv:174`. No standalone reduced
-reproduction exists (like `leak_ab`); the reproduction is the unit. Asked: make the direct form sound, then the mark and
-the free-function dodge can go.
+**(b) the resolver of a merged unit — a method call and an effect lookup — RED on 0.1.6, reproducible.** In a merged
+unit of several files a DIRECT call of a method of another module's type with a constructor as an argument emits the
+arguments as `void*` and the C does not build (`@engine.submit_event(Incoming.incoming(...), …)`, the host-contract
+unit, the 0.29 result F); the method resolver with equal arity may also pick a WRONG method. The dodge: bind the
+constructor to a typed local, or route the call through a free function IN THE OWNER'S module; the package names the
+operations free functions over the handle (`submit_admission` of `engine.nv`). Mark: `src/host_contract/contract.nv:174`.
+
+The same lookup shows on the effect side: `--strict-effects` takes the callee by NAME over every declaration of the
+merged unit, ignoring arity, module and types (`sig.fn_decls.get(name)`; `check_callee_effects` →
+`check_transitive_effect_strict`). Two modules with a same-name function, one pure and one `Fs`, make a call of the pure
+one "require Fs". Minimal probe (three modules of one package; built on 0.1.6):
+
+```
+// puremod.nv:  module overloadprobe.puremod
+export fn f() -> int => 1
+export fn call() -> int => f()
+
+// effmod.nv:   module overloadprobe.effmod
+import std.fs.{Fs}
+fn f(x str, y str, n int) Fs -> int => n
+export fn g() -> int => 0
+
+// mainmod.nv:  module overloadprobe.mainmod
+import std.io.{Io}
+import overloadprobe.puremod.{call}
+import overloadprobe.effmod.{g}
+fn main() Io -> () { println("${g()}"); println("${call()}") }
+```
+
+`nova build src/mainmod/mainmod.nv --strict-effects` → `E_UNDECLARED_TRANSITIVE_EFFECT: call to f requires effect Fs`
+— and the false `Fs` leaks into the standard library: the lambda parameter `f` of `std/src/collections/vec_iter/core.nv`
+(672, 756) is checked against the same overload too. Without the flag the program builds and prints `0` / `1`.
+
+In `alula` the two declarations are `alula.examples.library_files()` (pure, `src/examples/data.nv:147`) and
+`alula.alula_cli.library_files(text, file, Args) Fs` (private, `src/alula_cli/cli.nv:163`). The report's first version
+blamed `embed_str`; that was wrong (see the next section).
+
+Oracle (2026-11-18): **taking 129 (b) and the "embed" symptom as ONE item** — the effect lookup of a call must account
+for arity, module and types; the minimal probe becomes a regression fixture; then the `contract.nv:174` mark and the
+free-function dodges are removable. 129 (b) is raised: it now has a reproducible case.
 
 **(c) `std.os.proc` — corrected on 0.1.6: the path-form import is the trigger, not the module.** `std/src/os/proc.nv`
 declares `module std.os` and sits beside `os.nv` of the same module. Importing the FILE PATH as if it were a module
@@ -85,7 +121,12 @@ point the error at the import line. **Package consequence:** the scripted proces
 on this path import; with `import std.os` they can be real processes. That is our change, not the Oracle's; the survey
 item 129 (c) is corrected by this section.
 
-## embed→Fs under `--strict-effects`
+Oracle (2026-11-18): confirmed (0.1.6; in their probe the module form built in 34 s). Taken: the import resolver must
+refuse a name that is not a declared module, with the error at the import line and a `std.os` hint, and must not merge
+one file as a module; the minimal probe is pinned. Package: switching `battle_host` to `import std.os` and the real
+processes is our task.
+
+## The `--strict-effects` symptom on `library_files` (129 (b), not embed)
 
 ```
 cd <package>
@@ -97,21 +138,23 @@ nova test src/alula_cli --strict-effects
   Hint: add `Fs` to the enclosing fn's effect-row, or install `with Fs = handler { … }` around this call.
 ```
 
-The chain is `library_files_in(dir)` → `library_files()` → `embed_str(...)`: embedding runs at compile time, so an `Fs`
-effect-row on either function would be a false effect, and a `with Fs` block in production code is not wanted. The site
-is `src/examples/data.nv:153–157` (the release note names line 153). A normal build and the normal test suite are green;
-only `--strict-effects` is red, and the package deliberately carries no workaround there.
+The first version of this report blamed `embed_str`: the chain is `library_files_in(dir)` → `library_files()` →
+`embed_str(...)` at `src/examples/data.nv:147–157`. That was wrong. `embed_str`/`embed_dir` are resolved before the
+type check (step 3 of the pipeline) and add no effect row. The `Fs` comes from the OTHER `library_files`
+(`src/alula_cli/cli.nv:163`, 3 arguments, `Fs`) through the name-only lookup of 129 (b). A normal build and the normal
+test suite are green; only `--strict-effects` is red.
 
-Asked: `embed_str`/`embed_dir` are compile-time and must not add `Fs` to the caller (or the flag needs a documented
-exception for embedding).
+Oracle (2026-11-18): the embed request is **withdrawn** — this is the same 129 (b) item; fixing the effect lookup clears
+the site. The wording of `docs/prerelease-0.29.0.md` ("embed_str asks for Fs") is superseded by this section; the survey
+carries the same correction.
 
 ## Workarounds and their removal conditions
 
 | Item | Place | Remove when |
 |---|---|---|
-| 128 | `battle_host/battle.nv:202`, `machine_typed/typed.nv:1356`, `thin_host/thin_host.nv:369` | the fixed array is accepted as a slice argument |
-| 129 (b) | `host_contract/contract.nv:174` + the free-function routes | the direct method call in a merged unit is sound |
+| 128 | `battle_host/battle.nv:202`, `machine_typed/typed.nv:1356`, `thin_host/thin_host.nv:369` | the fixed array is accepted as a slice argument (E7301 is final for now: keep the marks) |
+| 129 (b) | `host_contract/contract.nv:174` + the free-function routes | the resolver accounts for arity, module and types (the method and the effect lookups; the `library_files` strict-effects site clears) |
 | 129 (c) | `battle_host` scripted process primitives | our own import change to `std.os` (no Oracle fix needed) |
-| embed→Fs | none (by design) | the embed functions are effect-free at compile time |
+| embed→Fs | — (the site is 129 (b), no package workaround) | — |
 
 Survey: `spikes/env/README.md` — items 128, 129, the 0.1.6 part of 1a; this report supersedes 129 (c).

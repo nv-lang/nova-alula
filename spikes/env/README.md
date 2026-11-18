@@ -61,10 +61,14 @@ notes of 0.1.6 — the repros below ran on 0.1.6 at the toolchain switch, 2026-1
   module); `import std.os` builds and `real_proc()` runs on 0.1.6. See
   [oracle-report-0.1.6.md](oracle-report-0.1.6.md) §129 (c): the scripted processes are a
   package-side import change, not an Oracle fix.
-- **the `embed_str` → `Fs` demand of `--strict-effects`**: still red on 0.1.6 at the known
-  single site `src/examples/data.nv:153` (embed runs at compile time, an `Fs` effect-row would
-  be a false effect — the package does not work it around; the full-package `--strict-effects`
-  run stays scoped to the units that do not share the site).
+- **the `--strict-effects` site at `src/examples/data.nv:155`** (first reported as an `embed_str` → `Fs`
+  demand): still red on 0.1.6, but **not embed** — `embed_str`/`embed_dir` resolve before the type check
+  and add no effect row. The `Fs` comes from the same-name overload `library_files(text, file, Args) Fs`
+  (`src/alula_cli/cli.nv:163`) through the name-only effect lookup of item 129 (b); the pure
+  `library_files()` (`src/examples/data.nv:147`) is the call. Corrected 2026-11-18 — see
+  [oracle-report-0.1.6.md](oracle-report-0.1.6.md), the 129 (b) section; the package carries no
+  workaround there, and the full-package `--strict-effects` run stays scoped to units that do not
+  share the site.
 
 Report-worthy to the Oracle session (three items, repro paths above). The workarounds of the
 closed items stay in the code until their removal is taken as its own change (each mark names
@@ -192,6 +196,9 @@ A text in prose ("item 29", "the driver has a Session") is not a mark: replace i
   It warns when an item says "worked round in the code" and has no mark. The marks are searched in the tracked files of `src/`, `scripts/` and `spikes/` ().
 128. **`fixarr_to_vec_arg`**: the fixed array returned by a std function cannot be passed as the argument of a `[]u8` parameter: `Sha256.hash(data []u8) -> [32]u8` handed straight into a function taking `[]u8` (or iterated by `for`) breaks the C (the fixed-array struct is passed where the Vec pointer is expected; probe-a, 2026-11-14). The bytes are copied out by index into a fresh `[]u8` first (the helper `bytes_of` in `typed.nv`). the A/B repro is `repro_engine/src/fixarr_to_vec_arg_direct.nv` (red) against `fixarr_to_vec_arg_boxed.nv` (green), the same on 0.1.0 AND on 0.1.4.
 129. **`const_pool_clobber`** (the 0.1.0 form — the literal/assert clobber of a peer file — is NOT reproducible on 0.1.4; REOPENED 2026-11-15 with a NEW manifestation on 0.1.4: in a merged unit of several files a DIRECT call of a method of another module's type with a constructor as an argument (`@engine.submit_event(Incoming.incoming(...), producer, ...)`) emits the arguments as `void*` and the C does not build (probe: host_contract, result F); the dodge: bind the constructor to a typed local, or route the call through a free function IN THE OWNER'S module (`submit_admission` of engine.nv); the method resolver with equal arity may also pick a WRONG method (`h.submit_json(envelope)` resolved to `describe_json`, same probe) — name the operations FREE functions over the handle and call them free): in the merged compilation unit of 20+ files (the machine unit) an escaped string literal used in an assert against a match-bound text flips the generated C of ANOTHER peer file: the indexed member access `fields[0].name` over a `[]RecordField` is emitted as a cast to the struct of a DIFFERENT two-field record (`Nova_DictEntry`), and the C does not build. Found by bisection over the tests of the typed value contract (2026-11-14); NOT REDUCED: a two-file repro compiles and runs on 0.1.0 (like `leak_ab`, kept as the sample). Binding single literals to a `ro` first did NOT clear the unit (the clobber returned with the next batch of literals), so the WORKING dodge is structural: the typed value contract lives in its own sibling module `src/machine_typed/` (one folder is one module and one unit, the same rule as item 25), which builds and runs green on 0.1.0 AND on 0.1.4. Not reproducible on 0.1.4 in any shape. `repro_engine/src/const_pool_clobber` (the def companion `const_pool_clobber_def`).
-**Corrected 2026-11-18 (0.1.6):** the `std.os.proc` manifestation is the PATH-form import (`std.os.proc` is not a
-module; proc.nv declares `std.os`); the module form `import std.os` builds and `real_proc()` runs — see
-[oracle-report-0.1.6.md](oracle-report-0.1.6.md) §129 (c).
+**Corrected 2026-11-18 (0.1.6):** the resolver family also shows in the EFFECT lookup — `--strict-effects` takes the
+callee by name over every declaration of the merged unit, ignoring arity, module and types, so a pure call gets the
+`Fs` of a same-name overload (`library_files`; the site `src/examples/data.nv:155`). The old "embed→Fs" wording is
+wrong; see [oracle-report-0.1.6.md](oracle-report-0.1.6.md) §129 (b). The `std.os.proc` manifestation is the PATH-form
+import (`std.os.proc` is not a module; proc.nv declares `std.os`); the module form `import std.os` builds and
+`real_proc()` runs — see §129 (c).
