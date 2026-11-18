@@ -4,12 +4,11 @@
 //   - run_command: a REAL run to completion over `Os` (std/os/os.nv, D453: spawn + wait + exit
 //     code; that wave captures no stdout — ExecResult.stdout carries "" in the battle host v1,
 //     documented honestly);
-//   - processes (start/stop/running): ORACLE BLOCK (item-129 class, manifestation 3): importing
-//     std/os/proc.nv into ANY package unit breaks the merged-CU private-call resolution
-//     (dedupe_envs/env_blob_of undefined at proc.nv:414) on BOTH 0.1.4 and 0.1.5 — the isolated
-//     battle_procs unit was tried and rolled back. Until the Oracle fix, the process primitives
-//     keep the scripted semantics of П-1 (the answers dict); the real `Proc`-based versions are a
-//     drop-in replacement of the three scripted_* helpers.
+//   - processes (start/stop/running): REAL children over the `Proc` effect (std/os/proc.nv):
+//     `Command.start` with a process group, the handles live in the host registry (see below),
+//     `try_wait` for `process_running`, `kill` + `wait` for `stop_process`;
+//     the PATH-form import `std.os.proc` is not the module (`proc.nv` declares `std.os`) and
+//     breaks the build — the module is imported as `std.os` (Oracle report, 129 (c));
 //   - acquire_lock: atomic create-or-open via `File.create_new` (O_EXCL);
 //   - FS/sha256: as in П-1 (HostTree over the real Fs, std.crypto);
 //   - parse_agent stays scripted: the cheap agent is an EXTERNAL service — the battle host has no
@@ -17,8 +16,8 @@
 //
 // The battle host OWNS the processes it started: their handles live in its registry, so
 //   - `process_running` is a `try_wait` on the held child (deterministic, no tasklist race),
-//   - `stop_process` kills the held child and retires the holder; an unknown pid is a step
-//     failure (the battle host never signals a pid it does not own),
+//   - `stop_process` kills the held child and waits for it; an unknown pid is a step
+//     failure, a repeated stop is a no-op (the battle host never signals a pid it does not own),
 //   - the registry does not survive a restart of the host itself — a known methodology
 //     limitation (task 114, ряд 15/16).
 //
@@ -33,7 +32,7 @@
 module alula.battle_host
 
 import std.fs.{Path, Fs, read_text, write_text, remove_file, read_dir, create_dir_all, try_exists, DirEntry, File}
-import std.os.{Command}
+import std.os.{Command, Proc, Child, Signal, Tree}
 import std.encoding.json.{Json}
 import std.crypto.sha256.{Sha256}
 import alula.machine.{Value, Text, Bool, Int, Null, List, Dict, DictEntry, RecordField, EvalError, PrimitiveFailed, make_record}
@@ -47,11 +46,16 @@ import alula.thin_host.{HostTree, StepFailure, new_tree}
 /// with `Tree.Group`, kill, try_wait, `Command.run()` for run_command). The acting primitives are
 /// recorded in the outbox of the effects host (the rights are checked, every execution holds its
 /// receipt). parse_agent is scripted through the answers dict (the cheap agent is external).
-export type BattleThinHost {
+export type BattleThinHost consume {
     mut tree HostTree,
     mut effects EffectHost,
-    producer str
+    producer str,
+    consume procs []Child
 }
+
+/// The held children are released by the cleanup of the registry: a still-running child is killed
+/// when the host leaves its scope (D492: no orphan outlives its owner); a stopped one is reaped.
+export fn BattleThinHost consume @cleanup(_outcome ScopeOutcome) -> () { }
 
 /// A battle host over a REAL tree root (the folder must be creatable/existing) and a trusted
 /// producer (self-granted — the battle host is the runner of the machines).
@@ -59,7 +63,7 @@ export fn new_battle_host(root str, producer str) Fs -> BattleThinHost {
     ro made = create_dir_all(Path.posix(root))
     mut effects = new_effect_host()
     effects.grant("", producer)
-    { tree: new_tree(root), effects, producer }
+    { tree: new_tree(root), effects, producer, procs: []Child.new() }
 }
 
 // The unique identity per acting call: a counter in the effects world (shared through copies).
@@ -107,70 +111,76 @@ fn is_acting(name str) -> bool {
     false
 }
 
-fn scripted_start(mut h BattleThinHost, command str, dir str, log_path str) -> Result[Value, StepFailure] {
-    match answer_key(h, "process:${command}:${dir}") {
-        Ok(Text(t)) => {
-            ro pid = match int_of_text(t) {
-                Ok(n) => n
-                Err(m) => return fail(m)
-            }
-            if pid < 1 { return fail("the pid is less than 1: ${pid}") }
-            // the registry of the owned pids (the battle host owns what it started)
-            h.effects.state_put("pid:${pid}", Text("live"))
-            Ok(Int(pid))
-        }
-        _ => fail("no scripted answer: process:${command}:${dir}")
+// The index of the held child by its OS pid, or -1.
+fn proc_index(h BattleThinHost, pid int) Proc -> int {
+    mut i = 0
+    while i < h.procs.len() {
+        if h.procs[i].pid() == pid { return i }
+        i += 1
     }
+    -1
 }
 
-fn int_of_text(t str) -> Result[int, str] {
-    mut n = 0
-    for c in t.chars() {
-        if c < '0' { return Err("not a digit") }
-        if c > '9' { return Err("not a digit") }
-        n = n * 10 + (c as int - '0' as int)
-    }
-    if t == "" { return Err("the pid answer is empty") }
-    Ok(n)
-}
-
-fn scripted_stop(mut h BattleThinHost, pid int) -> Result[Value, StepFailure] {
-    // the repeated stop is a no-op; the unknown pid is a failure (REQ-5, host-spec 111)
-    match h.effects.state_get("stopped:${pid}") {
-        Text(_) => Ok(Null)
-        _ => match h.effects.state_get("pid:${pid}") {
-            Text(_) => {
-                h.effects.state_put("stopped:${pid}", Text("1"))
-                Ok(Null)
-            }
-            _ => fail("an unknown pid: ${pid}")
+// Spawn without a Result: the consume handle is bound and stored in one shape the ownership
+// checker accepts (a pattern-bound Child in a Result-returning function trips D133 on 0.1.6).
+// 0 = the process did not start; the caller turns it into a StepFailure.
+fn spawn_child(mut procs []Child, command str, dir_abs str, log_abs str) Proc -> int {
+    ro line = if log_abs == "" { command } else { shell_line(command, log_abs) }
+    match Command.new("cmd").arg("/c").arg(line).dir(Path.posix(dir_abs)).tree(Tree.Group).start() {
+        Err(_) => 0
+        Ok(consume c) => {
+            ro pid = c.pid()
+            procs.push(c)
+            pid
         }
     }
 }
 
-fn scripted_running(h BattleThinHost, pid int) -> Result[Value, StepFailure] {
-    match answer_key(h, "running:${pid}") {
-        Ok(Text(t)) => Ok(Bool(t == "true"))
-        _ => fail("no scripted answer: running:${pid}")
+fn battle_start_process(mut h BattleThinHost, command str, dir str, log_path str) Fs Proc -> Result[Value, StepFailure] {
+    ro dir_abs = match h.tree.resolve_path(dir) {
+        Ok(f) => f
+        Err(e) => return Err(e)
+    }
+    mut log_abs = ""
+    if log_path != "" {
+        log_abs = match h.tree.resolve_path(log_path) {
+            Ok(f) => f
+            Err(e) => return Err(e)
+        }
+    }
+    ro pid = spawn_child(h.procs, command, dir_abs, log_abs)
+    if pid < 1 { return fail("the process did not start: ${command}") }
+    Ok(Int(pid))
+}
+
+fn battle_stop_process(mut h BattleThinHost, pid int) Proc -> Result[Value, StepFailure] {
+    ro at = proc_index(h, pid)
+    if at < 0 { return fail("an unknown pid: ${pid}") }
+    match h.procs[at].try_wait() {
+        Ok(Some(_)) => Ok(Null)
+        Ok(None) => {
+            match h.procs[at].kill(Signal.Kill) {
+                Err(_) => return fail("the process ${pid} did not stop")
+                Ok(_) => ()
+            }
+            // wait for the death: stop is synchronous, so process_running is false right after
+            match h.procs[at].wait() {
+                Ok(_) => Ok(Null)
+                Err(_) => fail("the process ${pid} did not stop")
+            }
+        }
+        Err(_) => fail("the process ${pid} cannot be checked")
     }
 }
 
-fn battle_start_process(mut h BattleThinHost, command str, dir str, log_path str) -> Result[Value, StepFailure] {
-    // ORACLE BLOCK (item 129 class, manifestation 3): the real spawn needs the `Proc` effect
-    // (std/os/proc.nv) — see the module header. Until the fix, the scripted semantics of П-1.
-    scripted_start(h, command, dir, log_path)
-}
-
-fn battle_stop_process(mut h BattleThinHost, pid int) -> Result[Value, StepFailure] {
-    // ORACLE BLOCK (item 129 class, manifestation 3): see the module header. Until the fix, the
-    // scripted semantics of П-1 (a repeat is a no-op, an unknown pid is a failure — REQ-5).
-    scripted_stop(h, pid)
-}
-
-fn battle_process_running(h BattleThinHost, pid int) -> Result[Value, StepFailure] {
-    // ORACLE BLOCK (item 129 class, manifestation 3): see the module header. Until the fix, the
-    // scripted semantics of П-1.
-    scripted_running(h, pid)
+fn battle_process_running(mut h BattleThinHost, pid int) Proc -> Result[Value, StepFailure] {
+    ro at = proc_index(h, pid)
+    if at < 0 { return fail("an unknown pid: ${pid}") }
+    match h.procs[at].try_wait() {
+        Ok(Some(_)) => Ok(Bool(false))
+        Ok(None) => Ok(Bool(true))
+        Err(_) => fail("the process ${pid} cannot be checked")
+    }
 }
 
 fn battle_run_command(h BattleThinHost, command str, dir str) Fs -> Result[Value, StepFailure] {
@@ -240,7 +250,7 @@ fn battle_parse_agent(h BattleThinHost, args []Value) -> Result[Value, StepFailu
     answer_key(h, "agent:${instruction}:${input}")
 }
 
-fn execute_acting_battle(mut h BattleThinHost, name str, args []Value) Fs -> Result[Value, StepFailure] {
+fn execute_acting_battle(mut h BattleThinHost, name str, args []Value) Fs Proc -> Result[Value, StepFailure] {
     if name == "write_file" {
         ro path = match arg_text(args, 0) { Ok(s) => s, Err(e) => return Err(e) }
         ro content = match arg_text(args, 1) { Ok(s) => s, Err(e) => return Err(e) }
@@ -288,13 +298,12 @@ fn execute_acting_battle(mut h BattleThinHost, name str, args []Value) Fs -> Res
 // ---- run_battle_primitive ------------------------------------------------------------------------------
 
 /// `run_battle_primitive`: one call of a thin primitive on the battle host (the free form).
-///   - volatile/pure: read_file, file_exists, list_dir, process_running (scripted until the
-///     Oracle fix of the std.os.proc merged-CU break), parse_agent (scripted: the agent is
-///     external), sha256;
+///   - volatile/pure: read_file, file_exists, list_dir, process_running (a real `try_wait`
+///     on the held child), parse_agent (scripted: the agent is external), sha256;
 ///   - acting: write_file, move_file, delete_file, start_process, stop_process, run_command,
 ///     acquire_lock — the rights are checked, the execution is real, the intent+receipt are fixed
 ///     together with a unique identity `b:<name>:<counter>`.
-export fn run_battle_primitive(mut h BattleThinHost, name str, args []Value) Fs -> Result[Value, StepFailure] {
+export fn run_battle_primitive(mut h BattleThinHost, name str, args []Value) Fs Proc -> Result[Value, StepFailure] {
     if name == "new_id" { return fail("new_id is a primitive of the language, not of the thin host") }
     // volatile/pure — direct
     if name == "read_file" { return h.tree.read_file(arg_text(args, 0)?) }
