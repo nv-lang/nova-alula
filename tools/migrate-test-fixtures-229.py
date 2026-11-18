@@ -161,7 +161,7 @@ def walk_internal(v, spec, path, places):
                 places.append('%s: запись %s не в таблицах машины — значение не тронуто' % (path, rec))
                 return v
             out = {'$record': v['$record'], 'fields': {}}
-            for k, x in v['fields'].items():
+            for k, x in v.get('fields', {}).items():
                 fs = spec_of_field(fields, k)
                 if fs is None:
                     out['fields'][k] = x
@@ -250,7 +250,7 @@ def walk_external(v, spec, path, places):
                 places.append('%s: запись %s не в таблицах машины — значение не тронуто' % (path, name))
                 return v
             out = {}
-            for k, x in v['fields'].items():
+            for k, x in v.get('fields', {}).items():
                 fs = spec_of_field(fields, k)
                 out[k] = x if fs is None else walk_external(x, fs, '%s.%s' % (path, k), places)
             return out
@@ -474,7 +474,11 @@ def main(argv):
         except (ValueError, OSError) as e:
             sys.stderr.write('%s: не прочитан как JSON: %s\n' % (path, e))
             return 2
-        new, pl = migrate_fixture(path, doc, machines_dir, alula, cache)
+        try:
+            new, pl = migrate_fixture(path, doc, machines_dir, alula, cache)
+        except Exception as e:  # путь фикстуры в сообщении — стектрейс без имени не называет её
+            sys.stderr.write('%s: неожиданная ошибка: %s: %s (значение не тронуто)\n' % (path, type(e).__name__, e))
+            return 2
         places += pl
         if new is not None:
             changed.append(path)
