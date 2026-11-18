@@ -4,7 +4,7 @@ module alula.machine_text
 
 import std.text
 import alula.examples.{sample_registry}
-import alula.machine.{Registry, Primitive, ParamSpec, IntType, Volatile}
+import alula.machine.{Registry, Tool, ParamSpec, IntType, Volatile}
 import alula.machine_table.{load_machine}
 
 // A small machine of 2.26 with an external function, a datum that only the function reads and the end ERROR.
@@ -101,10 +101,10 @@ fn rd_fenced(text str) -> str => text.replace("FENCE", "```")
 // The registry of the samples with the external function `peek` that reads the datum `flag` without an argument.
 fn rd_registry() -> Registry {
     ro base = sample_registry()
-    mut prims = []Primitive.new()
-    for p in base.primitives { prims.push(p) }
-    prims.push(Primitive { name: "peek", params: []ParamSpec.new(), result: IntType, class: Volatile, reads: ["flag"], writes: []str.new() })
-    Registry { primitives: prims, journal: base.journal }
+    mut prims = []Tool.new()
+    for p in base.tools { prims.push(p) }
+    prims.push(Tool { name: "peek", params: []ParamSpec.new(), result: IntType, class: Volatile, reads: ["flag"], writes: []str.new() })
+    Registry { tools: prims, journal: base.journal }
 }
 
 fn rd_checked(text str) -> TranslateReport => translate_checked(text, rd_registry())

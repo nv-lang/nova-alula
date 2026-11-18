@@ -1,4 +1,4 @@
-// decl_test.nv - the declarations: the types, the constants, the parameters, the input, the data, the parties, the signals, the definitions, the primitives. Since 2.13 (AL-46) a name that leaves the machine
+// decl_test.nv - the declarations: the types, the constants, the parameters, the input, the data, the parties, the signals, the definitions, the tools. Since 2.13 (AL-46) a name that leaves the machine
 // gets its JSON name from the brackets of the declaration, the internal names (constants, parameters, definitions, parties, bindings) are written to the tree as they are.
 module alula.machine_text
 
@@ -269,9 +269,9 @@ test "dc reserved name" {
     assert(kind_says(defs_text("функция сумма_целых(в ?число) -> ?число =>\n  в"), "name", "`в` — служебное слово, именем быть не может"))
 }
 
-// ---- the primitives ----------------------------------------------------------------------------------------------------------------------
+// ---- the tools ----------------------------------------------------------------------------------------------------------------------
 
-test "dc primitives" {
+test "dc tools" {
     // AL-123: an external function is a line of the block of code under `## Инструменты`; its JSON name is the row of `## Имена` or is built by itself; `новый_ид` is the language's and is not written
     ro text = jsn("## Имена\n\n| имя | JSON-имя |\n|---|---|\n| прочитать_часы | read_clock |\n\n## Инструменты\n\n```\nвнешняя функция close_agent_turn() действующая\nвнешняя функция прочитать_часы(зона строка) изменчивая -> число\nвнешняя функция сложить(а число, б число) -> число\n```\n")
     assert(text.contains("\"primitives\":[{\"name\":\"close_agent_turn\",\"params\":[],\"class\":\"acting\"},{\"name\":\"read_clock\",\"params\":[{\"name\":\"зона\",\"type\":\"text\"}],\"result\":\"int\",\"class\":\"volatile\"},{\"name\":\"slozhit\",\"params\":[{\"name\":\"а\",\"type\":\"int\"},{\"name\":\"б\",\"type\":\"int\"}],\"result\":\"int\",\"class\":\"pure\"}]"))

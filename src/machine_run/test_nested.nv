@@ -109,7 +109,7 @@ type NestedWorld {
     registry NestedRegistry, root Kid, problems []str, shared []ScriptedReply
 }
 
-// The answers of the host that the steps of the parent give hold for the nested machines too (the answers are named by the primitive): the answers of a machine, the ones of the steps put over them.
+// The answers of the host that the steps of the parent give hold for the nested machines too (the answers are named by the tool): the answers of a machine, the ones of the steps put over them.
 fn overlaid(before []ScriptedReply, over []ScriptedReply) -> []ScriptedReply {
     mut out = []ScriptedReply.new()
     for r in before {
@@ -259,7 +259,7 @@ fn act_on_path(mut node Kid, parts []str, depth int, op str, event ScEvent, ms i
         return
     }
     if step.host.len() > 0 {
-        // the answers of the primitives of the host hold for the nested machine from this step on
+        // the answers of the tools of the host hold for the nested machine from this step on
         match replies_after(node.run.engine.machine.replies, step) {
             Ok(next) => { node.run.engine.machine = with_replies(node.run.engine.machine, next) }
             Err(m) => problems.push(m)

@@ -204,9 +204,9 @@ fn a_if(cond TxJ, then_actions []TxJ, else_actions []TxJ) -> TxJ {
     jobj(pairs)
 }
 
-fn a_call(primitive str, args []TxJ) -> TxJ => jobj([kv("do", js("call")), kv("primitive", js(primitive)), kv("args", TxArr(args))])
+fn a_call(tool str, args []TxJ) -> TxJ => jobj([kv("do", js("call")), kv("primitive", js(tool)), kv("args", TxArr(args))])
 
-fn a_call_named(primitive str, args []TxJ, named []TxKV) -> TxJ => jobj([kv("do", js("call")), kv("primitive", js(primitive)), kv("args", TxArr(args)), kv("named", named_pairs(named))])
+fn a_call_named(tool str, args []TxJ, named []TxKV) -> TxJ => jobj([kv("do", js("call")), kv("primitive", js(tool)), kv("args", TxArr(args)), kv("named", named_pairs(named))])
 
 fn a_machine_error(code str, params []TxKV) -> TxJ {
     mut pairs = [kv("do", js("machine_error")), kv("code", js(code))]

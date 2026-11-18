@@ -2,7 +2,7 @@
 //
 // What is checked: the names (unique, the right shape, no shadowing), the structure of every kind of a state, the events against the
 // signals and the progress of the parties, the targets ("Where"), the reads against the "Input" of the state (rule 11 of the
-// specification; in a tree of 2.26 the reads are derived and only the name is checked, AL-138), the writes against the data of the machine and their `writes` mark, the class of every primitive in the place of its call,
+// specification; in a tree of 2.26 the reads are derived and only the name is checked, AL-138), the writes against the data of the machine and their `writes` mark, the class of every tool in the place of its call,
 // the reachability of the states, the exhaustiveness of the "Ends", the definitions (no recursion), the journal codes, the bounds and the
 // includes. `check_machine` returns every issue it finds, each with its place in the JSON, in a fixed order; an empty list is a table that
 // the interpreter takes.
@@ -11,7 +11,7 @@ module alula.machine_table
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
 import std.text
 import std.unicode.{GeneralCategory}
-import alula.machine.{Expr, TypeDefs, FieldDef, Bind, DefFn, Registry, Position, check_expr_positions, check_call_position, find_primitive, primitive_names, has_tail, class_word, journal_find}
+import alula.machine.{Expr, TypeDefs, FieldDef, Bind, DefFn, Registry, Position, check_expr_positions, check_call_position, find_tool, primitive_names, has_tail, class_word, journal_find}
 import alula.machine.{ConditionPos, InputPos, ProfilePos, ForkEntryPos, OperationEntryPos, EndEntryPos, AcceptPos, ActionPos}
 import alula.machine.{Pure, Volatile, Acting, Value, Text, TypeSpec, TextSet, IdType, OptionalType, VariantType, RecordType, IntType, FloatType, TextType, BoolType, DecodeOutcomeType, spec_text, is_uuid, parse_spec}
 
@@ -108,7 +108,7 @@ fn kids(e Expr) -> []Expr {
         IndexOf { target, index } => [target, index]
         CallFn { name, args } => args
         Lambda { params, body } => [body]
-        CallPrimitive { name, args, named } => {
+        CallTool { name, args, named } => {
             mut out = []Expr.new()
             for a in args { out.push(a) }
             for f in named { out.push(f.value) }
@@ -721,11 +721,11 @@ fn check_state_shape(mut cx Checker, st StateDef, path str) -> () {
             }
             if st.edits != "" && find_data(def, st.edits) < 0 { cx_issue(cx, "${path}.edits", "the datum ${st.edits} is not declared") }
             if st.edit_check != "" {
-                match find_primitive(cx.registry, st.edit_check) {
+                match find_tool(cx.registry, st.edit_check) {
                     Some(p) => {
-                        if p.class != Volatile || p.params.len() != 0 { cx_issue(cx, "${path}.edit_check", "the check must be a volatile primitive without parameters") }
+                        if p.class != Volatile || p.params.len() != 0 { cx_issue(cx, "${path}.edit_check", "the check must be a volatile tool without parameters") }
                     }
-                    None => cx_issue(cx, "${path}.edit_check", "the primitive ${st.edit_check} is not registered")
+                    None => cx_issue(cx, "${path}.edit_check", "the tool ${st.edit_check} is not registered")
                 }
             }
         }
@@ -942,7 +942,7 @@ fn answer_spec_of(registry Registry, party PartyDef) -> []TypeSpec {
             Some(r) => { return [r] }
             None => ()
         }
-        match find_primitive(registry, party.parse[0].primitive) {
+        match find_tool(registry, party.parse[0].tool) {
             Some(p) => { return [p.result] }
             None => { return []TypeSpec.new() }
         }
@@ -1102,7 +1102,7 @@ fn parse_reads(cx Checker, st StateDef) -> []str {
     ro pi = find_party(cx.def, st.party)
     if pi < 0 { return out }
     for pr in cx.def.parties[pi].parse {
-        match find_primitive(cx.registry, pr.primitive) {
+        match find_tool(cx.registry, pr.tool) {
             Some(p) => {
                 for r in p.reads { push_unique(out, r) }
             }
@@ -1188,14 +1188,14 @@ export fn with_derived_reads(def MachineDef, registry Registry) -> MachineDef {
         parties: def.parties, request_limit: def.request_limit, signals: def.signals,
         definitions: def.definitions, includes: def.includes,
         initial: def.initial, error_end: def.error_end, common: def.common, states,
-        result_spec: def.result_spec, end_rows: def.end_rows, primitives: def.primitives
+        result_spec: def.result_spec, end_rows: def.end_rows, tools: def.tools
     }
 }
 
 fn primitive_reads(cx Checker, e Expr) -> []str {
     mut out = []str.new()
     for pn in primitive_names(e) {
-        match find_primitive(cx.registry, pn) {
+        match find_tool(cx.registry, pn) {
             Some(p) => {
                 for r in p.reads { push_unique(out, r) }
             }
@@ -1265,11 +1265,11 @@ fn check_reads(mut cx Checker) -> () {
             if (n == "event" || n == "party") && s.area == area_global() { cx_issue(cx, s.place, "${n} is not defined here") }
             if n == "state" && s.area == area_global() { cx_issue(cx, s.place, "state is not defined here") }
         }
-        // the hidden reads of the primitives named in the registry join the Input (in 2.26 they are derived into the reads)
+        // the hidden reads of the tools named in the registry join the Input (in 2.26 they are derived into the reads)
         if s.area == area_body() && s.state >= 0 && !derived {
             for hidden in primitive_reads(cx, s.expr) {
                 if roots.contains(hidden) && !allowed.contains(hidden) {
-                    cx_issue(cx, s.place, "the primitive reads ${hidden} which is not in the Input of the state (rule 11)")
+                    cx_issue(cx, s.place, "the tool reads ${hidden} which is not in the Input of the state (rule 11)")
                 }
             }
         }
@@ -1330,7 +1330,7 @@ fn check_writes_in(mut cx Checker, actions []Action, path str, accept bool) -> (
                 if accept { cx_issue(cx, p, "On accept has no machine_error (format 4.4)") }
             }
             CallAct { name, args, named } => {
-                if accept { cx_issue(cx, p, "On accept has no call of an acting primitive (format 4.4)") }
+                if accept { cx_issue(cx, p, "On accept has no call of an acting tool (format 4.4)") }
             }
             CancelOpenAct { party, except } => {
                 if party != "" && find_party(def, party) < 0 { cx_issue(cx, p, "the party ${party} is not declared") }
@@ -1478,7 +1478,7 @@ fn engine_writes_in(mut cx Checker, actions []Action, path str) -> () {
 }
 
 fn engine_writes_of(mut cx Checker, name str, path str) -> () {
-    match find_primitive(cx.registry, name) {
+    match find_tool(cx.registry, name) {
         Some(prim) => {
             if prim.class != Acting { return }
             for w in prim.writes {
@@ -1541,7 +1541,7 @@ fn check_no_data_writes(mut cx Checker, actions []Action, path str) -> () {
     }
 }
 
-// ---- the classes of the primitives ---------------------------------------------------------------------------------------------
+// ---- the classes of the tools ---------------------------------------------------------------------------------------------
 
 fn check_positions(mut cx Checker) -> () {
     for s in cx.sites {
@@ -1550,7 +1550,7 @@ fn check_positions(mut cx Checker) -> () {
             Err(x) => cx_issue(cx, "${s.place}${x.path[1..]}", x.message)
         }
     }
-    // the primitive calls that stand as actions
+    // the tool calls that stand as actions
     ro def = cx.def
     mut i = 0
     for st in def.states {
@@ -1572,7 +1572,7 @@ fn check_positions(mut cx Checker) -> () {
 
 // ---- the external functions declared in the file against the registry of the host (AL-123) ---------------------------------------------------------
 
-// The standard external functions of the language (spec 7a): the machine does not declare them, they are not in `primitives`.
+// The standard external functions of the language (spec 7a): the machine does not declare them, they are not in `tools`.
 fn standard_externals() -> []str => ["new_id"]
 
 // The base words of a type in the language of the messages: `int` is `число`, `text` is `строка`; the rest of the text is as the tree writes it.
@@ -1628,14 +1628,14 @@ fn class_in_words(class str) -> str {
 fn check_declared_primitives(mut cx Checker) -> () {
     ro def = cx.def
     mut at = 0
-    for d in def.primitives {
+    for d in def.tools {
         ro place = "$.primitives[${at}]"
         at += 1
         if standard_externals().contains(d.name) {
             cx_issue(cx, place, "функция ${d.name}: стандартная внешняя функция языка (7а) заранее объявлена, в файле её не объявляют")
             continue
         }
-        match find_primitive(cx.registry, d.name) {
+        match find_tool(cx.registry, d.name) {
             None => cx_issue(cx, place, "функция ${d.name}: нет в реестре хозяина")
             Some(p) => {
                 if p.params.len() != d.params.len() {
@@ -1663,7 +1663,7 @@ fn check_declared_primitives(mut cx Checker) -> () {
         }
     }
     mut declared = []str.new()
-    for d in def.primitives { declared.push(d.name) }
+    for d in def.tools { declared.push(d.name) }
     mut used = []str.new()
     for s in cx.sites {
         for pn in primitive_names(s.expr) { push_unique(used, pn) }
@@ -1679,7 +1679,7 @@ fn check_declared_primitives(mut cx Checker) -> () {
     }
 }
 
-// ---- the primitive new_id (format 2.5, sections 7 and 10) -------------------------------------------------------------------------------------
+// ---- the tool new_id (format 2.5, sections 7 and 10) -------------------------------------------------------------------------------------
 //
 // It may stand only in a binding of the entry of an operation (`let fresh = call(new_id)`), and the binding must be written to the data by the
 // row `now` of that state: the value is fixed in the step, a repeated step takes it from the saved event (rules 12 and 13).
@@ -1780,10 +1780,10 @@ fn check_call_actions(mut cx Checker, actions []Action, path str, pos Position) 
             CallAct { name, args, named } => {
                 match check_call_position(cx.registry, name, pos) {
                     Ok(u) => {
-                        match find_primitive(cx.registry, name) {
+                        match find_tool(cx.registry, name) {
                             Some(prim) => {
                                 if prim.class == Volatile || prim.class == Pure {
-                                    cx_issue(cx, p, "the call of the ${class_word(prim.class)} primitive ${name} as an action has no effect: bind its result with a binding")
+                                    cx_issue(cx, p, "the call of the ${class_word(prim.class)} tool ${name} as an action has no effect: bind its result with a binding")
                                 }
                                 ro wanted = if has_tail(cx.registry, name) { prim.params.len() - 1 } else { prim.params.len() }
                                 if wanted != args.len() { cx_issue(cx, p, "${name} takes ${wanted} arguments, got ${args.len()}") }
@@ -2607,7 +2607,7 @@ fn check_call_state(mut cx Checker, st StateDef, path str) -> () {
 // The property `Правит` (rule 14) and `Возвратов формы` of an appeal.
 fn check_edits_state(mut cx Checker, st StateDef, path str) -> () {
     ro def = cx.def
-    if st.edits != "" && st.edit_check == "" { cx_issue(cx, "${path}.edit_check", "Edits needs the check: the volatile primitive edit_check") }
+    if st.edits != "" && st.edit_check == "" { cx_issue(cx, "${path}.edit_check", "Edits needs the check: the volatile tool edit_check") }
     if st.edits == "" && st.edit_check != "" { cx_issue(cx, "${path}.edits", "edit_check is the check of Edits: the datum that the answer edits is missing") }
     if st.edits != "" && find_data(def, st.edits) >= 0 {
         mut written = false
@@ -2617,7 +2617,7 @@ fn check_edits_state(mut cx Checker, st StateDef, path str) -> () {
         if !written { cx_issue(cx, "${path}.edits", "the datum ${st.edits} of Edits is not written in On accept of the state ${st.name} (rule 14)") }
     }
     if st.edit_check != "" {
-        match find_primitive(cx.registry, st.edit_check) {
+        match find_tool(cx.registry, st.edit_check) {
             Some(p) => {
                 match p.result {
                     BoolType => ()
@@ -2641,26 +2641,26 @@ fn check_party_parse(mut cx Checker, pt PartyDef, path str) -> () {
     if pt.parse.len() == 0 { return }
     if pt.kind != MachineParty && pt.kind != AgentParty { cx_issue(cx, "${path}.parse", "only a party of the kind machine or agent has a parse") }
     ro pr = pt.parse[0]
-    match find_primitive(cx.registry, pr.primitive) {
-        None => cx_issue(cx, "${path}.parse.primitive", "the primitive ${pr.primitive} is not registered")
+    match find_tool(cx.registry, pr.tool) {
+        None => cx_issue(cx, "${path}.parse.tool", "the tool ${pr.tool} is not registered")
         Some(p) => {
-            if p.class != Volatile { cx_issue(cx, "${path}.parse.primitive", "the parse ${pr.primitive} must be a volatile primitive, it is ${class_word(p.class)}") }
+            if p.class != Volatile { cx_issue(cx, "${path}.parse.tool", "the parse ${pr.tool} must be a volatile tool, it is ${class_word(p.class)}") }
             if p.params.len() != 1 {
-                cx_issue(cx, "${path}.parse.primitive", "the parse ${pr.primitive} takes ${p.params.len()} parameters: it takes the answer only (one function per role, AL-131)")
+                cx_issue(cx, "${path}.parse.tool", "the parse ${pr.tool} takes ${p.params.len()} parameters: it takes the answer only (one function per role, AL-131)")
             } else {
                 if pt.kind == AgentParty {
                     // AL-153: the parse of an agent takes the original text of the answer, not the typed result
                     if spec_text(p.params[0].spec) != spec_text(TextType) {
-                        cx_issue(cx, "${path}.parse.primitive", "the first parameter of the parse ${pr.primitive} of an agent is ${spec_text(p.params[0].spec)}: the parse of an agent takes the text of the answer (text)")
+                        cx_issue(cx, "${path}.parse.tool", "the first parameter of the parse ${pr.tool} of an agent is ${spec_text(p.params[0].spec)}: the parse of an agent takes the text of the answer (text)")
                     }
                 } else if pt.result_spec.len() > 0 && spec_text(p.params[0].spec) != spec_text(pt.result_spec[0]) {
-                    cx_issue(cx, "${path}.parse.primitive", "the first parameter of the parse ${pr.primitive} is ${spec_text(p.params[0].spec)}, the result of the party is ${spec_text(pt.result_spec[0])}")
+                    cx_issue(cx, "${path}.parse.tool", "the first parameter of the parse ${pr.tool} is ${spec_text(p.params[0].spec)}, the result of the party is ${spec_text(pt.result_spec[0])}")
                 }
                 // a tree of the seam of 2.25 keeps the type after `->` of the parse: it must be the result of the declaration (a tree of 0.28 holds no type)
                 match pr.result {
                     Some(r) => {
                         if spec_text(p.result) != spec_text(r) {
-                            cx_issue(cx, "${path}.parse.type", "the parse ${pr.primitive} gives ${spec_text(p.result)}, the type after `->` of the parse is ${spec_text(r)}")
+                            cx_issue(cx, "${path}.parse.type", "the parse ${pr.tool} gives ${spec_text(p.result)}, the type after `->` of the parse is ${spec_text(r)}")
                         }
                     }
                     None => ()
@@ -3083,7 +3083,7 @@ export fn machine_warnings(def MachineDef, registry Registry) -> []LoadError {
     out
 }
 
-/// Every issue found in a decoded machine, in a fixed order; the registry gives the classes and the signatures of the primitives.
+/// Every issue found in a decoded machine, in a fixed order; the registry gives the classes and the signatures of the tools.
 export fn check_machine(def MachineDef, registry Registry) -> []LoadError {
     mut cx = Checker { def: with_derived_reads(def, registry), registry, issues: []LoadError.new(), sites: []Site.new() }
     check_names(cx)

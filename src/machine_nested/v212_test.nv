@@ -1,8 +1,8 @@
-// v212_test.nv - task 125: Alula 2.12 for the nested machines: the meeting examples read at 2.25, `Вход: нет` of an appeal, a pure primitive called as a function in a condition (AL-29), a field of the request that is named as a datum (AL-28), the table "by role" of the parse (AL-33).
+// v212_test.nv - task 125: Alula 2.12 for the nested machines: the meeting examples read at 2.25, `Вход: нет` of an appeal, a pure tool called as a function in a condition (AL-29), a field of the request that is named as a datum (AL-28), the table "by role" of the parse (AL-33).
 module alula.machine_nested
 
 import std.text
-import alula.machine.{Registry, Primitive, ParamSpec, TextType, IntType, BoolType, RecordType, ListType, Volatile, Pure, register}
+import alula.machine.{Registry, Tool, ParamSpec, TextType, IntType, BoolType, RecordType, ListType, Volatile, Pure, register}
 import alula.examples.{sample_registry}
 import alula.machine_text.{translate_checked, render, TranslateReport}
 
@@ -82,11 +82,11 @@ test "v212 call without the fields it needs" {
     assert(note_says(text, "count"))
 }
 
-// ---- a pure primitive in a condition (AL-29) --------------------------------------------------------------------------------------------
+// ---- a pure tool in a condition (AL-29) --------------------------------------------------------------------------------------------
 
 fn pure_registry() -> Registry {
     mut reg = sample_registry()
-    ro p = Primitive { name: "big", params: [ParamSpec { name: "n", spec: IntType, tail: false }], result: BoolType, class: Pure, reads: []str.new(), writes: []str.new() }
+    ro p = Tool { name: "big", params: [ParamSpec { name: "n", spec: IntType, tail: false }], result: BoolType, class: Pure, reads: []str.new(), writes: []str.new() }
     ro r = register(reg, p)
     reg
 }
@@ -133,7 +133,7 @@ test "v212 unknown function still refused" {
     assert(report.errors.len() > 0)
 }
 
-test "v212 undeclared primitive refused" {
+test "v212 undeclared tool refused" {
     ro report = checked_pure(boss212().replace("| 1 | ответ(итог) | — | reply = итог | DONE |", "| 1 | ответ(итог) | — | reply = итог | CHECK |").replace("### DONE — конец", "### CHECK — развилка\n- Читает: reply\n\n| № | Условие | Действия | Куда |\n|---|---|---|---|\n| 1 | big(2) | — | DONE |\n| 2 | иначе | — | DONE |\n\n### DONE — конец"))
     assert(report.errors.len() > 0)
 }
@@ -182,8 +182,8 @@ test "v212 field named as a datum read by the rows" {
 fn role_fns_registry() -> Registry {
     mut reg = sample_registry()
     ro answer = ParamSpec { name: "answer", spec: RecordType("CallOutput"), tail: false }
-    ro author = Primitive { name: "read_author", params: [answer], result: RecordType("CallOutput"), class: Volatile, reads: []str.new(), writes: []str.new() }
-    ro witness = Primitive { name: "read_witness", params: [answer], result: ListType(TextType), class: Volatile, reads: ["reply"], writes: []str.new() }
+    ro author = Tool { name: "read_author", params: [answer], result: RecordType("CallOutput"), class: Volatile, reads: []str.new(), writes: []str.new() }
+    ro witness = Tool { name: "read_witness", params: [answer], result: ListType(TextType), class: Volatile, reads: ["reply"], writes: []str.new() }
     ro r1 = register(reg, author)
     ro r2 = register(reg, witness)
     reg

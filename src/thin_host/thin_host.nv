@@ -1,7 +1,7 @@
-// thin_host.nv - the universal primitives of the thin host in the package (the epic «Тонкий хозяин
+// thin_host.nv - the universal tools of the thin host in the package (the epic «Тонкий хозяин
 // в пакете», methodology task 118, П-1; REQ-1/REQ-4/REQ-5). The reference of the semantics is the
 // methodology's ScriptedHost (doc/tasks/111-.../scripted_host.py, host-spec.md of the same task):
-// the same scenarios give the same outcomes (AC-4). The primitive registry of the module is
+// the same scenarios give the same outcomes (AC-4). The tool registry of the module is
 // registry.md beside this file (13 rows verbatim from the methodology registry, minus the core-4).
 //
 // Three layers:
@@ -10,14 +10,14 @@
 //   - HostTree: the real filesystem inside the tree of the host: the path is resolved inside the
 //     tree (`..` and absolute escapes are refused), unavailability is a failure; it knows nothing
 //     of the runner (no document names, no gates, no pids of the runner);
-//   - ScriptedThinHost: the tree + scripted answers for the scenario primitives (processes,
+//   - ScriptedThinHost: the tree + scripted answers for the scenario tools (processes,
 //     parse_agent): the answer is looked up by the key, a missing key is a failure.
 //
 // sha256 is pure and really computed by std.crypto (64 lower case hex). acquire_lock is atomic by
 // create-or-open: free — true and the token recorded; busy — the value owner == token (a foreign
 // token is a VALUE false, not a failure); the repeated call with the own token — true.
 //
-// acting primitives go ONLY through the outbox (the effect host of the result E): the handler
+// acting tools go ONLY through the outbox (the effect host of the result E): the handler
 // executes the tree operation and stores the result value in the effects world, the receipt is held
 // together with the intent; a repeat of the same identity reads the held result (idempotent), an
 // unknown outcome is never a success.
@@ -29,7 +29,7 @@ import std.fs.{Path, Fs, read_text, write_text, remove_file, read_dir, create_di
 import std.crypto.sha256.{Sha256}
 import std.fs.{real_fs}
 import std.text
-import alula.machine.{Value, Text, Bool, Null, List, Dict, DictEntry, EvalError, PrimitiveFailed}
+import alula.machine.{Value, Text, Bool, Null, List, Dict, DictEntry, EvalError, ToolFailed}
 import alula.host.{Intent, TrustedContext, EffectOutcome, EffectHost, new_effect_host}
 
 
@@ -238,7 +238,7 @@ fn sort_strs(mut items []str) -> () {
 
 // ---- ScriptedThinHost -----------------------------------------------------------------------------------
 
-/// ScriptedThinHost: the tree + the scripted answers of the scenario primitives (the processes, the
+/// ScriptedThinHost: the tree + the scripted answers of the scenario tools (the processes, the
 /// parse by the cheap agent). The answers are a dict by the keys of the methodology reference:
 ///   "process:<command>:<dir>" -> int>=1 (the scripted pid),
 ///   "running:<pid>"           -> bool,
@@ -289,8 +289,8 @@ fn int_of(v Value) -> Result[int, StepFailure] {
     }
 }
 
-// The execution of one primitive by name (the semantics of host-spec); the acting primitives are
-// NOT here — they go through the outbox (run_thin_primitive).
+// The execution of one tool by name (the semantics of host-spec); the acting tools are
+// NOT here — they go through the outbox (run_thin_tool).
 fn run_direct(mut h ScriptedThinHost, name str, args []Value) Fs -> Result[Value, StepFailure] {
     if name == "read_file" { return read_file_args(h, args) }
     if name == "file_exists" { return file_exists_args(h, args) }
@@ -298,7 +298,7 @@ fn run_direct(mut h ScriptedThinHost, name str, args []Value) Fs -> Result[Value
     if name == "process_running" { return process_running_args(h, args) }
     if name == "sha256" { return sha256_args(h, args) }
     if name == "parse_agent" { return parse_agent_args(h, args) }
-    fail("the primitive ${name} is not a direct call (acting goes through the outbox; the name is not among the 13)")
+    fail("the tool ${name} is not a direct call (acting goes through the outbox; the name is not among the 13)")
 }
 
 fn arg_text(args []Value, i int) -> Result[str, StepFailure] {
@@ -389,7 +389,7 @@ fn hex_char(n int) -> str {
     "f"
 }
 
-// ---- the outbox execution of the acting primitives ------------------------------------------------------
+// ---- the outbox execution of the acting tools ------------------------------------------------------
 
 fn intent_arg(i Intent, n int) -> str {
     // the arguments travel in the payload as "a|b|c" (the simple encoding of П-1)
@@ -415,20 +415,20 @@ fn parse_int_text(text str) -> Result[int, StepFailure] {
     Ok(n)
 }
 
-// ---- the PrimitiveHost adapter (the door of the machines) -----------------------------------------------
+// ---- the ToolHost adapter (the door of the machines) -----------------------------------------------
 
-/// ThinPrimitiveHost: the `PrimitiveHost` of the machines over the thin host. The direct primitives
-/// (volatile, pure) run immediately; the acting primitives go through the outbox (REQ-1): the
+/// ThinToolHost: the `ToolHost` of the machines over the thin host. The direct tools
+/// (volatile, pure) run immediately; the acting tools go through the outbox (REQ-1): the
 /// intent carries the identity "<producer>:<name>:<args>", the handler executes the tree operation,
 /// the result value is stored in the effects world and read back (a repeat of the same identity is
 /// idempotent — the held result). An unbound name is a failure.
-export type ThinPrimitiveHost {
+export type ThinToolHost {
     mut scripted ScriptedThinHost,
 }
 
-/// A thin primitive host over a scripted thin host; the acting rights are granted to the producer.
-export fn new_thin_primitive_host(mut scripted ScriptedThinHost) -> ThinPrimitiveHost {
-    ThinPrimitiveHost { scripted }
+/// A thin tool host over a scripted thin host; the acting rights are granted to the producer.
+export fn new_thin_tool_host(mut scripted ScriptedThinHost) -> ThinToolHost {
+    ThinToolHost { scripted }
 }
 
 fn is_acting(name str) -> bool {
@@ -454,27 +454,27 @@ fn args_payload(args []Value) -> Result[str, StepFailure] {
     Ok(parts.join("|"))
 }
 
-export fn ThinPrimitiveHost mut @call_primitive(name str, args []Value) -> Result[Value, EvalError] {
-    // the PrimitiveHost protocol declares no effects, so the transitive `Fs` of run_thin_primitive
+export fn ThinToolHost mut @call_tool(name str, args []Value) -> Result[Value, EvalError] {
+    // the ToolHost protocol declares no effects, so the transitive `Fs` of run_thin_tool
     // is handled HERE, at the boundary, by an explicit `with` (D62 strict-effects: the default
     // handler auto-construction does not exempt an undeclared transitive effect; everywhere else
     // the convention holds — no per-call `with real_fs()`, production relies on #default_handler)
     with Fs = real_fs() {
-        match run_thin_primitive(@scripted, name, args) {
+        match run_thin_tool(@scripted, name, args) {
             Ok(v) => Ok(v)
-            Err(e) => Err(EvalError { kind: PrimitiveFailed, message: e.message, path: "" })
+            Err(e) => Err(EvalError { kind: ToolFailed, message: e.message, path: "" })
         }
     }
 }
 
-/// `run_thin_primitive`: one call of a thin primitive by name (the free form for the local contract
-/// and the probes). The volatile and pure primitives run directly on the tree; the acting ones go
+/// `run_thin_tool`: one call of a thin tool by name (the free form for the local contract
+/// and the probes). The volatile and pure tools run directly on the tree; the acting ones go
 /// through the outbox of the effects host (REQ-1): the rights of the trusted context are checked
 /// first, the identity is stable by the call content (a repeat of an APPLIED effect returns the
 /// held result — idempotent), the intent and the receipt are fixed together, an unknown outcome is
 /// never a success.
-export fn run_thin_primitive(mut h ScriptedThinHost, name str, args []Value) Fs -> Result[Value, StepFailure] {
-    if name == "new_id" { return fail("new_id is a primitive of the language, not of the thin host") }
+export fn run_thin_tool(mut h ScriptedThinHost, name str, args []Value) Fs -> Result[Value, StepFailure] {
+    if name == "new_id" { return fail("new_id is a tool of the language, not of the thin host") }
     if !is_acting(name) { return run_direct(h, name, args) }
     // the arguments of the acting call, carried in the payload of the intent
     ro payload = match args_payload(args) {
@@ -491,7 +491,7 @@ export fn run_thin_primitive(mut h ScriptedThinHost, name str, args []Value) Fs 
         return fail("acting ${name} without rights: ${h.producer} cannot submit the intent")
     }
     // 2. the dedup: an APPLIED identity never re-runs (no blind repeat of an irreversible effect):
-    //    the held result is returned when the primitive has one; a value-less primitive returns Null
+    //    the held result is returned when the tool has one; a value-less tool returns Null
     match h.effects.held_outcome("", h.producer, effect_id) {
         Some(Applied) => match h.effects.result_of_effect("", h.producer, effect_id) {
             Some(v) => return Ok(v)
@@ -504,7 +504,7 @@ export fn run_thin_primitive(mut h ScriptedThinHost, name str, args []Value) Fs 
     match executed.outcome {
         Applied => {
             h.effects.record_exec(Intent { tenant: "", producer: h.producer, effect_id, action: name, payload }, ctx, EffectOutcome.Applied, executed.value, "by ${h.producer}")
-            // a no-result primitive (stop_process) returns Null — the execution succeeded
+            // a no-result tool (stop_process) returns Null — the execution succeeded
             match executed.value {
                 Some(v) => Ok(v)
                 None => Ok(Null)
@@ -597,7 +597,7 @@ fn execute_acting(mut h ScriptedThinHost, name str, args []Value) Fs -> ActingRe
             Err(e) => refused_result(e.message)
         }
     } else {
-        refused_result("no executor: an unknown acting primitive (no value is given)")
+        refused_result("no executor: an unknown acting tool (no value is given)")
     }
 }
 

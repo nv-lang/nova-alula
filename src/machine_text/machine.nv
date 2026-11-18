@@ -313,9 +313,9 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
         }
     }
     // the external functions are declared after the types (a signature names them) and before the parties, the data and the rows that call them (a profile, a parse and a check of `Правит` name them too)
-    mut primitives = []TxJ.new()
+    mut tools = []TxJ.new()
     match section_of(sections, "Tools") {
-        Some(sec) => { primitives = decl_externals(entries, sec, cx) }
+        Some(sec) => { tools = decl_externals(entries, sec, cx) }
         None => ()
     }
     mut constants = []TxJ.new()
@@ -499,7 +499,7 @@ fn translate_full(file_text str, registry []NamedText) -> TxFull {
     if common.len() > 0 { root.push(kv("common_events", TxArr(common))) }
     root.push(kv("states", TxArr(states)))
     root.push(kv("ends", jobj([kv("result", js(ends.result)), kv("rows", TxArr(ends.rows))])))
-    if primitives.len() > 0 { root.push(kv("primitives", TxArr(primitives))) }
+    if tools.len() > 0 { root.push(kv("primitives", TxArr(tools))) }
 
     ro elaborated = el_root(jobj(root))
     for e in el_errors(elaborated) { cx.errors.push(e) }

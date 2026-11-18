@@ -2,7 +2,7 @@
 
 - machine: agent_step
 - revision: 1
-- alula_version: 0.29
+- alula_version: 0.30
 - language: en
 
 This is an **illustration**: the "Agent step" machine in full, written in the Alula format, format version 2.24 ([spec/alula-spec.md](../alula-spec.md); it is the only definition of the notation). It is the English-language twin of [spec/samples/agent-step.alula.md](agent-step.alula.md): the same machine, row for row, with the English keywords of the [word table](../alula-keywords.tsv) (spec, section 1a); the JSON tree `machine/2` is the same for both files up to the internal names (constants, parameters, functions, party names, bindings). The file lets a reader open and see a real machine: types, data, parties, functions, all 37 transition rows, the ends with the "end to response" table, the attached "Pause" fragment; what the fragment brings (parameters, common events COMMON 1-6, the Pause state with events PAUSE 1-4) is described in section 9 of the specification.
@@ -209,7 +209,7 @@ Correspondence to the automaton code: the names of the functions are the names o
 
 ### Pause
 - File: libs/pause.en.alula.md
-- Hash: 31b869a4f7cc
+- Hash: b1163cc17e96
 
 | parameter | value |
 |---|---|
@@ -391,7 +391,7 @@ Errored is entered from the `else` rows of the forks (`machine_error("fork_no_ma
 
 The set of `stop_reason` has 12 values; Halted covers 11, the twelfth (`""`) is taken off by the `Except` line. The values `pause_halt` and `cancel_request` are required by the "Pause" fragment; both rows exist (No. 10 and No. 11). The cost limit has no code of its own (`cost_limit` leads to `MaxTokens`, decision 7 of the source).
 
-## External functions
+## Tools
 
 ```
 reply_validation() volatile -> ReplyCheck

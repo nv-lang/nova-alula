@@ -574,7 +574,7 @@ fn is_primitive_name(s str) -> bool =>
 fn validate_schema(schema Value, declarations Value, mut seen []str, mut aliases []str) -> Result[bool, str] {
     match schema {
         Text(s) => {
-            if !is_primitive_name(s) { return Err("unknown primitive") }
+            if !is_primitive_name(s) { return Err("unknown tool") }
             Ok(true)
         }
         Dict(entries) => {
@@ -1828,7 +1828,7 @@ fn decode_primitive_json(j JsonValue, s str) -> Result[Value, str] {
             }
         }
     } else {
-        Err("unknown primitive")
+        Err("unknown tool")
     }
 }
 

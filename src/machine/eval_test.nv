@@ -61,9 +61,9 @@ fn eerr_in(e Expr) -> str {
 
 type EHost { calls []str }
 
-fn EHost mut @call_primitive(name str, args []Value) -> Result[Value, EvalError] {
+fn EHost mut @call_tool(name str, args []Value) -> Result[Value, EvalError] {
     @calls.push(name)
-    if name == "fail" { return Err(EvalError { kind: PrimitiveFailed, message: "host says no", path: "" }) }
+    if name == "fail" { return Err(EvalError { kind: ToolFailed, message: "host says no", path: "" }) }
     Ok(Int(args.len()))
 }
 
@@ -704,7 +704,7 @@ test "lm double" {
 
 test "ho calls" {
     mut host = EHost { calls: []str.new() }
-    ro e = en(Add, call_primitive("first_call", [ei(1), ei(2)]), call_primitive("other", []Expr.new()))
+    ro e = en(Add, call_tool("first_call", [ei(1), ei(2)]), call_tool("other", []Expr.new()))
     match eval_with(e, empty_scope(), host) {
         Ok(v) => assert(value_equal(v, Int(2)))
         Err(x) => assert(false)
@@ -715,12 +715,12 @@ test "ho calls" {
 
 test "ho args first" {
     mut host = EHost { calls: []str.new() }
-    match eval_with(call_primitive("p", [ei(1), edivzero()]), empty_scope(), host) {
+    match eval_with(call_tool("p", [ei(1), edivzero()]), empty_scope(), host) {
         Ok(v) => assert(false)
         Err(x) => assert(x.path == "$.args[1]")
     }
     assert(host.calls.len() == 0)
-    match eval_with(en(Add, ei(1), call_primitive("fail", []Expr.new())), empty_scope(), host) {
+    match eval_with(en(Add, ei(1), call_tool("fail", []Expr.new())), empty_scope(), host) {
         Ok(v) => assert(false)
         Err(x) => {
             assert(kind_word(x.kind) == "primitive_failed")
@@ -731,12 +731,12 @@ test "ho args first" {
 }
 
 test "ho none" {
-    assert(eerr(call_primitive("any_call", []Expr.new())) == "primitive_failed@$")
+    assert(eerr(call_tool("any_call", []Expr.new())) == "primitive_failed@$")
 }
 
 test "ho lazy" {
     mut host = EHost { calls: []str.new() }
-    ro e = en(Or, lit_bool(true), call_primitive("p", []Expr.new()))
+    ro e = en(Or, lit_bool(true), call_tool("p", []Expr.new()))
     match eval_with(e, empty_scope(), host) {
         Ok(v) => assert(value_equal(v, Bool(true)))
         Err(x) => assert(false)

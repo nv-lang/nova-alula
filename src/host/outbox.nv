@@ -64,7 +64,7 @@ export fn new_effect_host() -> EffectHost => { world: new_world(), handlers: []H
 
 /// The result value of an executed effect (None: not executed or not stored). The value is held by
 /// the effects world, so an idempotent repeat of the same identity reads it without a re-run. The
-/// thin host (the epic «Тонкий хозяин», П-1) drives this channel explicitly: the acting primitives
+/// thin host (the epic «Тонкий хозяин», П-1) drives this channel explicitly: the acting tools
 /// of machines return values (start_process gives the pid, acquire_lock gives bool, ...).
 export fn EffectHost @result_of_effect(tenant str, producer str, effect_id str) -> Option[Value] {
     ro v = @world.get("result_value:${tenant}:${producer}:${effect_id}")

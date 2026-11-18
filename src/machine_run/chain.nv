@@ -4,7 +4,7 @@ module alula.machine_run
 import std.text
 import std.encoding.json.{Json, JsonValue, JsonObject}
 import alula.engine.{Incoming, EventKind, Environment, Transition, SendOrder, CancelOrder, FailCode, JournalParam, journal_event, param, Go, Stay}
-import alula.machine.{Value, Null, Int, Bool, Text, List, Record, record_get, RecordField, Binding, PrimitiveHost, PrimitiveFailed, TypeSpec, TypeDefs, RecordType, OptionalType, Lit, check_call_args, value_json, value_to_json, value_from_json, make_record, check_value, normalize_at, decode_typed, enum_value, spec_text, find_primitive}
+import alula.machine.{Value, Null, Int, Bool, Text, List, Record, record_get, RecordField, Binding, ToolHost, ToolFailed, TypeSpec, TypeDefs, RecordType, OptionalType, Lit, check_call_args, value_json, value_to_json, value_from_json, make_record, check_value, normalize_at, decode_typed, enum_value, spec_text, find_tool}
 import alula.machine_table.{StateDef, Goto, PartyDef, MachineDef, LValue, KeyStep, FieldStep, MachineParty, AgentParty, find_state, find_party, find_data}
 import alula.machine_table.{ToState}
 
@@ -27,7 +27,7 @@ fn request_text(pairs []ReqField) -> str {
     value_json(make_record("Request", fields))
 }
 
-fn silence_of(mut ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[int, Fault] {
+fn silence_of(mut ctx Ctx, st StateDef, mut host ToolHost) -> Result[int, Fault] {
     if st.silence.len() == 0 { return Ok(0) }
     ro v = run_expr(ctx, st.silence[0], host)?
     match v {
@@ -167,7 +167,7 @@ fn nested_request_text(types TypeDefs, party PartyDef, pairs []ReqField) -> str 
 }
 
 // The counter of the element of a set grows by one at a send (`lenses[*].attempt`, rule 15): the new number.
-fn bump_path_counter(mut ctx Ctx, counter str, element str, mut host PrimitiveHost) -> Result[int, Fault] {
+fn bump_path_counter(mut ctx Ctx, counter str, element str, mut host ToolHost) -> Result[int, Fault] {
     ro cut = counter.find("[*]") ?? 0
     ro root = counter[..cut]
     ro field = counter[cut + 4..]
@@ -183,7 +183,7 @@ fn bump_path_counter(mut ctx Ctx, counter str, element str, mut host PrimitiveHo
 
 // The request to the party `party` (an element of the set when `element` is not the id of the party): the fields of the table "Input" that the party reads, the profile, the counter
 // of the attempts, the order to the engine and the identifier of the request in `open_requests`.
-fn send_one(mut ctx Ctx, st StateDef, party PartyDef, element str, idle_term int, mut host PrimitiveHost) -> Result[(), Fault] {
+fn send_one(mut ctx Ctx, st StateDef, party PartyDef, element str, idle_term int, mut host ToolHost) -> Result[(), Fault] {
     ro mark = ctx.locals.len()
     ctx.locals.push(Binding { name: "party", value: Text(element) })
     mut pairs = []ReqField.new()
@@ -226,7 +226,7 @@ fn send_one(mut ctx Ctx, st StateDef, party PartyDef, element str, idle_term int
 
 // The elements of the set of an appeal that go now: the ids of the set, those that wait in `to_send` when the machine has that datum (rule 21: the mechanics take the parties from
 // `к_отправке` in the order of the set), at most as many as the limit of the simultaneous requests leaves room for.
-fn set_to_send(mut ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[[]str, Fault] {
+fn set_to_send(mut ctx Ctx, st StateDef, mut host ToolHost) -> Result[[]str, Fault] {
     ro v = run_expr(ctx, st.set[0], host)?
     mut all = []str.new()
     match v {
@@ -267,7 +267,7 @@ fn cancel_party_open(mut ctx Ctx, party_ix int) -> () {
     }
 }
 
-fn enter_appeal(mut ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[(), Fault] {
+fn enter_appeal(mut ctx Ctx, st StateDef, mut host ToolHost) -> Result[(), Fault] {
     ro pi = find_party(ctx.def, st.party)
     if pi < 0 { return Err(defect_fault("unknown_name", "no party ${st.party}")) }
     ro party = ctx.def.parties[pi]
@@ -312,7 +312,7 @@ fn failure_of(v Value) -> Result[FailCode, Fault] {
     }
 }
 
-fn enter_end(mut ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[(), Fault] {
+fn enter_end(mut ctx Ctx, st StateDef, mut host ToolHost) -> Result[(), Fault] {
     // an end cancels every open request (rule 22): the engine does it, the datum follows
     if has_datum(ctx, "open_requests") { put_texts(ctx, "open_requests", []str.new()) }
     ro mark = ctx.locals.len()
@@ -386,7 +386,7 @@ fn take_goto(mut ctx Ctx, next Goto) -> Result[Goto, Fault] {
 }
 
 // Go on from a "Where": enter the states one after another until an appeal waits or an end finishes (a call for every state of the chain).
-fn run_chain(mut ctx Ctx, next Goto, mut host PrimitiveHost) -> Result[(), Fault] {
+fn run_chain(mut ctx Ctx, next Goto, mut host ToolHost) -> Result[(), Fault] {
     ctx.chain += 1
     if ctx.chain > MAX_CHAIN { return Err(defect_fault("chain_too_long", "more than ${MAX_CHAIN} transitions in one step")) }
     mut target = ""
@@ -419,7 +419,7 @@ fn run_chain(mut ctx Ctx, next Goto, mut host PrimitiveHost) -> Result[(), Fault
 }
 
 // The first row of an operation or of a fork whose condition holds: its actions run, its "Where" comes back.
-fn run_work_row(mut ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[Goto, Fault] {
+fn run_work_row(mut ctx Ctx, st StateDef, mut host ToolHost) -> Result[Goto, Fault] {
     for r in st.rows {
         mut take = true
         if r.cond.len() > 0 { take = want_bool(run_expr(ctx, r.cond[0], host)?)? }
@@ -435,7 +435,7 @@ fn run_work_row(mut ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[Goto
 
 // ---- faults -----------------------------------------------------------------------------------------------------------------------
 
-fn handle_fault(mut ctx Ctx, f Fault, mut host PrimitiveHost) -> () {
+fn handle_fault(mut ctx Ctx, f Fault, mut host ToolHost) -> () {
     if f.defect {
         ctx.defect = true
         ctx.planned = []Planned.new()
@@ -477,7 +477,7 @@ fn compare_numbers(x_value Value, y_value Value) -> int {
     }
 }
 
-fn check_bounds(mut ctx Ctx, before Value, mut host PrimitiveHost) -> Result[(), Fault] {
+fn check_bounds(mut ctx Ctx, before Value, mut host ToolHost) -> Result[(), Fault] {
     for d in ctx.def.data {
         if d.name.contains("[") || !d.monotonic.on { continue }
         ro old = data_get(before, d.name)
@@ -506,7 +506,7 @@ fn spec_is_optional(spec TypeSpec) -> bool {
 }
 
 // The input of the call from the text of the start event; Ok(Err(..)) is a refusal that is already written.
-fn read_input(mut ctx Ctx, text str, mut host PrimitiveHost) -> Option[Value] {
+fn read_input(mut ctx Ctx, text str, mut host ToolHost) -> Option[Value] {
     ro def = ctx.def
     mut fields = []RecordField.new()
     if def.input.present {
@@ -572,7 +572,7 @@ fn input_scope_ctx(ctx Ctx, input Value) -> Ctx {
     }
 }
 
-fn start_machine(mut ctx Ctx, event Incoming, mut host PrimitiveHost) -> Result[(), Fault] {
+fn start_machine(mut ctx Ctx, event Incoming, mut host ToolHost) -> Result[(), Fault] {
     ro read = read_input(ctx, event.input, host)
     match read {
         None => return Ok(())
@@ -619,7 +619,7 @@ fn ignore_event(mut ctx Ctx, label str) -> () {
 }
 
 // "On accept" of an appeal: for an answer, a failure or a timeout, the first row that fits runs before the transition; its bindings stay.
-fn run_accept(mut ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[(), Fault] {
+fn run_accept(mut ctx Ctx, st StateDef, mut host ToolHost) -> Result[(), Fault] {
     for a in st.accept {
         ro h = hit_of(a.event, ctx.event)
         if h.yes {
@@ -683,22 +683,22 @@ type Parsed enum
     | ParsedOk(Value)
     | ParsedBad(str)
 
-// The parse of the party (`разбор`): the volatile primitive (one per role, AL-131) gets the answer and gives the value of the answer, or refuses: an answer that the parse does not take is
-// not by the form (the host: `PrimitiveFailed`, format 2.12, AL-33). A value that is not of the type of the parse is a defect of the host, not an answer not by the form; so is any other failure of the host.
-fn apply_parse(ctx Ctx, party PartyDef, mut host PrimitiveHost) -> Result[Parsed, Fault] {
+// The parse of the party (`разбор`): the volatile tool (one per role, AL-131) gets the answer and gives the value of the answer, or refuses: an answer that the parse does not take is
+// not by the form (the host: `ToolFailed`, format 2.12, AL-33). A value that is not of the type of the parse is a defect of the host, not an answer not by the form; so is any other failure of the host.
+fn apply_parse(ctx Ctx, party PartyDef, mut host ToolHost) -> Result[Parsed, Fault] {
     ro pr = party.parse[0]
     ro args = [ctx.event.value]
-    match check_call_args(ctx.table.registry, ctx.def.types, pr.primitive, args) {
+    match check_call_args(ctx.table.registry, ctx.def.types, pr.tool, args) {
         Ok(u) => ()
-        Err(x) => return Err(defect_fault("type_mismatch", "${pr.primitive}: ${x.path} ${x.message}"))
+        Err(x) => return Err(defect_fault("type_mismatch", "${pr.tool}: ${x.path} ${x.message}"))
     }
-    match host.call_primitive(pr.primitive, args) {
+    match host.call_tool(pr.tool, args) {
         Ok(v) => {
             // the type of the result of the parse: of a tree of the seam of 2.25 — the type after `->` of the tree; of a tree of 0.28 — the result of the declaration
             // of the function in the registry of the host (the tree holds the type not)
             ro spec = match pr.result {
                 Some(r) => Some(r)
-                None => match find_primitive(ctx.table.registry, pr.primitive) {
+                None => match find_tool(ctx.table.registry, pr.tool) {
                     Some(pf) => Some(pf.result)
                     None => None
                 }
@@ -717,12 +717,12 @@ fn apply_parse(ctx Ctx, party PartyDef, mut host PrimitiveHost) -> Result[Parsed
                                     Err(e) => Ok(ParsedBad("${e.path}: ${e.reason}"))
                                 }
                             }
-                            _ => Err(defect_fault("type_mismatch", "the parse ${pr.primitive} of an agent party answered not with a text"))
+                            _ => Err(defect_fault("type_mismatch", "the parse ${pr.tool} of an agent party answered not with a text"))
                         }
                     }
                     match check_value(s, v, ctx.def.types) {
                         Ok(u) => Ok(ParsedOk(normalize_at(s, v, ctx.def.types)))
-                        Err(x) => Err(defect_fault("type_mismatch", "the value of the parse ${pr.primitive} is not of the type ${spec_text(s)}: ${x.path} ${x.message}"))
+                        Err(x) => Err(defect_fault("type_mismatch", "the value of the parse ${pr.tool} is not of the type ${spec_text(s)}: ${x.path} ${x.message}"))
                     }
                 }
                 None => Ok(ParsedOk(v))
@@ -730,7 +730,7 @@ fn apply_parse(ctx Ctx, party PartyDef, mut host PrimitiveHost) -> Result[Parsed
         }
         Err(x) => {
             match x.kind {
-                PrimitiveFailed => Ok(ParsedBad(x.message))
+                ToolFailed => Ok(ParsedBad(x.message))
                 _ => Err(eval_fault(x))
             }
         }
@@ -746,14 +746,14 @@ fn form_used(ctx Ctx) -> int {
 }
 
 // The idle term of the new request of the party: a call of a nested machine has none.
-fn term_of(mut ctx Ctx, st StateDef, party PartyDef, mut host PrimitiveHost) -> Result[int, Fault] {
+fn term_of(mut ctx Ctx, st StateDef, party PartyDef, mut host ToolHost) -> Result[int, Fault] {
     if party.kind == MachineParty { return Ok(0) }
     silence_of(ctx, st, host)
 }
 
 // The answer is not by the form and a return is left: a new request of the same party (rule 18: for a nested machine it has a new identifier, the same one would give the ready answer,
 // rule 35), the input read again. The return is counted; the answer is not accepted.
-fn return_form(mut ctx Ctx, st StateDef, party PartyDef, why str, mut host PrimitiveHost) -> Result[(), Fault] {
+fn return_form(mut ctx Ctx, st StateDef, party PartyDef, why str, mut host ToolHost) -> Result[(), Fault] {
     ro used = form_used(ctx) + 1
     ctx.data = data_put(ctx.data, "$form_used", Int(used))
     note(ctx, "form_returned", [param("party", ctx.event.party), param("returns", "${used}"), param("request", ctx.event.request)])
@@ -763,9 +763,9 @@ fn return_form(mut ctx Ctx, st StateDef, party PartyDef, why str, mut host Primi
     Ok(())
 }
 
-// Did the object that the answer edits change since the attempt began (`Правит`, rule 14)? The check is a volatile primitive without parameters.
-fn object_edited(ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[bool, Fault] {
-    match host.call_primitive(st.edit_check, []Value.new()) {
+// Did the object that the answer edits change since the attempt began (`Правит`, rule 14)? The check is a volatile tool without parameters.
+fn object_edited(ctx Ctx, st StateDef, mut host ToolHost) -> Result[bool, Fault] {
+    match host.call_tool(st.edit_check, []Value.new()) {
         Ok(v) => {
             match v {
                 Bool(b) => Ok(b)
@@ -777,7 +777,7 @@ fn object_edited(ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[bool, F
 }
 
 // The answer is not accepted: the request goes again, the input read again (a new attempt).
-fn reject_edited(mut ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[(), Fault] {
+fn reject_edited(mut ctx Ctx, st StateDef, mut host ToolHost) -> Result[(), Fault] {
     ro pi = find_party(ctx.def, st.party)
     if pi < 0 { return Err(defect_fault("unknown_name", "no party ${st.party}")) }
     ro party = ctx.def.parties[pi]
@@ -788,7 +788,7 @@ fn reject_edited(mut ctx Ctx, st StateDef, mut host PrimitiveHost) -> Result[(),
     Ok(())
 }
 
-fn run_event(mut ctx Ctx, mut host PrimitiveHost) -> Result[(), Fault] {
+fn run_event(mut ctx Ctx, mut host ToolHost) -> Result[(), Fault] {
     // the common events come first, in every state
     ro common = choose(ctx, ctx.def.common, host)?
     if common.at >= 0 {
@@ -910,7 +910,7 @@ fn held_incoming(ctx Ctx, item Value, rid str) -> Incoming => {
 }
 
 // The kept outcomes that the state now waits for are taken one after another, as if they had just come: the request leaves the open ones, the event runs (a chain may lead to another state that waits for another kept outcome).
-fn replay_held(mut ctx Ctx, mut host PrimitiveHost) -> Result[(), Fault] {
+fn replay_held(mut ctx Ctx, mut host ToolHost) -> Result[(), Fault] {
     mut rounds = 0
     while rounds < 20 && !ctx.finished && !ctx.defect {
         ro items = held_items(ctx)
@@ -968,8 +968,8 @@ fn result_of(ctx Ctx, current AlulaState) -> Transition[AlulaState] {
 }
 
 /// One step of a machine that is data (see the top of this file). Reads only its arguments; gives its orders to the environment; the
-/// primitives of the machine go to the host.
-export fn alula_step(machine AlulaMachine, current AlulaState, event Incoming, mut environment Environment, mut host PrimitiveHost) -> Transition[AlulaState] {
+/// tools of the machine go to the host.
+export fn alula_step(machine AlulaMachine, current AlulaState, event Incoming, mut environment Environment, mut host ToolHost) -> Transition[AlulaState] {
     mut ctx = new_ctx(machine, current, event)
     if !current.started {
         if event.kind == EventKind.Input && event.name == "start" {

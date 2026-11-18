@@ -1,10 +1,10 @@
-// host.nv - the data of a host: the registry of its primitives and the table of its journal codes, read from the files that the host registers (spec sections 7 and 7a, AL-113).
+// host.nv - the data of a host: the registry of its tools and the table of its journal codes, read from the files that the host registers (spec sections 7 and 7a, AL-113).
 //
-// The language names one primitive (`new_id`) and 35 journal codes; everything else a host gives as data, in two Markdown files beside its machines:
-//   `registry.md`  the tables of the section 7: the primitives `name | parameters | result | class | reads | writes`, and the
+// The language names one tool (`new_id`) and 35 journal codes; everything else a host gives as data, in two Markdown files beside its machines:
+//   `registry.md`  the tables of the section 7: the tools `name | parameters | result | class | reads | writes`, and the
 //                  records and the variants that the signatures use `type | kind | members`. The names are the JSON names of the registry of the host; the types are written as the tree
 //                  `machine/2` writes them (`int>=0`, `?text`, `[]Finding`, `"a" | "b"`, see `parse_spec`); a bar inside a cell is `\|`; `—` is an empty list; a list of reads and writes is
-//                  separated by `;`; the last parameter may be the named tail `...name: type` (AL-129). The tables are told apart by the first cell of the header (`name`/`имя`, `primitive`/`примитив`, `type`/`тип`); the sets of types are told apart by the heading
+//                  separated by `;`; the last parameter may be the named tail `...name: type` (AL-129). The tables are told apart by the first cell of the header (`name`/`имя`, `tool`/`примитив`, `type`/`тип`); the sets of types are told apart by the heading
 //                  above the table (`## Types`, `## Types: session`).
 //   `journal.md`   the table of the codes `Machine | Code | Russian template | Parameters` (the form of `journal_language.md`).
 // `host_registry` joins the data of the host with the registry of the language: the check of a table runs against the union.
@@ -16,10 +16,10 @@ import std.text
 export type HostTypeSet { name str, defs TypeDefs }
 
 /// HostRegistryData: what a file `registry.md` holds, in the order of the file.
-export type HostRegistryData { primitives []Primitive, type_sets []HostTypeSet }
+export type HostRegistryData { tools []Tool, type_sets []HostTypeSet }
 
 /// The data of a host that gives nothing.
-export fn host_registry_empty() -> HostRegistryData => { primitives: []Primitive.new(), type_sets: []HostTypeSet.new() }
+export fn host_registry_empty() -> HostRegistryData => { tools: []Tool.new(), type_sets: []HostTypeSet.new() }
 
 // The cells of a row of a table: `| a | b |` -> ["a", "b"]; `\|` is a bar inside a cell.
 fn hs_cells(line str) -> []str {
@@ -94,7 +94,7 @@ fn hs_list(cell str) -> []str {
     hs_split_top(cell, ";")
 }
 
-fn hs_class(word str) -> Option[PrimitiveClass] {
+fn hs_class(word str) -> Option[ToolClass] {
     if word == "pure" { return Some(Pure) }
     if word == "volatile" { return Some(Volatile) }
     if word == "acting" { return Some(Acting) }
@@ -108,10 +108,10 @@ fn hs_class_former(word str) -> Option[str] {
     None
 }
 
-// The kind of a table by the first cell of its header: 1 primitives, 2 the table by role (gone since 2.24, AL-131: an error), 3 types, 0 none.
+// The kind of a table by the first cell of its header: 1 tools, 2 the table by role (gone since 2.24, AL-131: an error), 3 types, 0 none.
 fn hs_table_kind(first str) -> int {
     if first == "name" || first == "имя" { return 1 }
-    if first == "primitive" || first == "примитив" { return 2 }
+    if first == "tool" || first == "примитив" { return 2 }
     if first == "type" || first == "тип" { return 3 }
     0
 }
@@ -218,7 +218,7 @@ fn hs_params(cell str, known TypeDefs, line int) -> Result[[]ParamSpec, str] {
     ro parts = hs_split_top(cell, ";")
     mut at = 0
     for part in parts {
-        // the named tail of a primitive (AL-129) is written `...name: type` and stands last
+        // the named tail of a tool (AL-129) is written `...name: type` and stands last
         ro tail = part.starts_with("...")
         ro f = hs_field(if tail { part[3..].trim_ascii() } else { part }, known, line)?
         if tail && at + 1 != parts.len() { return Err(hs_err(line, "the named tail `${part}` stands last in the parameters (AL-129)")) }
@@ -236,10 +236,10 @@ fn hs_result(cell str, known TypeDefs, line int) -> Result[TypeSpec, str] {
     }
 }
 
-fn hs_primitive(row HostPrimRow, known TypeDefs) -> Result[Primitive, str] {
+fn hs_primitive(row HostPrimRow, known TypeDefs) -> Result[Tool, str] {
     ro c = row.cells
-    if c.len() != 6 { return Err(hs_err(row.line, "a primitive is `name | parameters | result | class | reads | writes`, six cells, got ${c.len()}")) }
-    if c[0] == "" { return Err(hs_err(row.line, "the name of a primitive is empty")) }
+    if c.len() != 6 { return Err(hs_err(row.line, "a tool is `name | parameters | result | class | reads | writes`, six cells, got ${c.len()}")) }
+    if c[0] == "" { return Err(hs_err(row.line, "the name of a tool is empty")) }
     ro params = hs_params(c[1], known, row.line)?
     ro result = hs_result(c[2], known, row.line)?
     ro class = match hs_class(c[3]) {
@@ -252,9 +252,9 @@ fn hs_primitive(row HostPrimRow, known TypeDefs) -> Result[Primitive, str] {
         }
     }
     if class == Pure && (!hs_is_none(c[4]) || !hs_is_none(c[5])) {
-        return Err(hs_err(row.line, "the pure primitive ${c[0]} reads its arguments only: its columns reads and writes are `—`, got `${c[4]}` and `${c[5]}` (AL-116)"))
+        return Err(hs_err(row.line, "the pure tool ${c[0]} reads its arguments only: its columns reads and writes are `—`, got `${c[4]}` and `${c[5]}` (AL-116)"))
     }
-    Ok(Primitive { name: c[0], params, result, class, reads: hs_list(c[4]), writes: hs_list(c[5]) })
+    Ok(Tool { name: c[0], params, result, class, reads: hs_list(c[4]), writes: hs_list(c[5]) })
 }
 
 /// The data of a file `registry.md`; the errors are the lines `registry.md:<line>: <reason>`. An empty text is a host that gives nothing.
@@ -290,7 +290,7 @@ export fn parse_registry_table(text str) -> Result[HostRegistryData, []str] {
         if kind == 1 {
             prim_rows.push(HostPrimRow { cells, line: line_no })
         } else if kind == 2 {
-            errors.push(hs_err(line_no, "the table by role (`primitive | role | result | reads`) is gone since 2.24 (AL-131): a parse is one function per role, each a row of the table of primitives"))
+            errors.push(hs_err(line_no, "the table by role (`tool | role | result | reads`) is gone since 2.24 (AL-131): a parse is one function per role, each a row of the table of tools"))
         } else if kind == 3 {
             if cells.len() != 3 {
                 errors.push(hs_err(line_no, "a type is `type | kind | members`, three cells, got ${cells.len()}"))
@@ -312,7 +312,7 @@ export fn parse_registry_table(text str) -> Result[HostRegistryData, []str] {
     }
     for r in prim_rows {
         match hs_primitive(r, known) {
-            Ok(p) => data.primitives.push(p)
+            Ok(p) => data.tools.push(p)
             Err(message) => errors.push(message)
         }
     }
@@ -328,12 +328,12 @@ export fn host_types(data HostRegistryData, name str) -> TypeDefs {
     TypeDefs { records: []RecordDef.new(), variants: []VariantDef.new() }
 }
 
-/// The registry of a host: the registry of the language and the primitives of the data, and the table of the journal: the codes of the language and the codes of the host. A primitive
+/// The registry of a host: the registry of the language and the tools of the data, and the table of the journal: the codes of the language and the codes of the host. A tool
 /// or a code of the host that repeats one of the language, a name twice are errors (a list of lines).
 export fn host_registry(data HostRegistryData, journal []JournalCode) -> Result[Registry, []str] {
     mut reg = language_registry()
     mut errors = []str.new()
-    for p in data.primitives {
+    for p in data.tools {
         match register(reg, p) {
             Ok(u) => ()
             Err(x) => errors.push("registry.md: ${x.message}")
@@ -345,7 +345,7 @@ export fn host_registry(data HostRegistryData, journal []JournalCode) -> Result[
     Ok(reg)
 }
 
-/// The registry of a host from the texts of its two files (an empty text is a file that is not there: a host without primitives, a host without codes).
+/// The registry of a host from the texts of its two files (an empty text is a file that is not there: a host without tools, a host without codes).
 export fn load_host(registry_text str, journal_text str) -> Result[Registry, []str] {
     ro data = parse_registry_table(registry_text)?
     host_registry(data, parse_journal(journal_text))

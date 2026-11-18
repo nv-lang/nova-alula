@@ -243,7 +243,7 @@ test "nm edits" {
 test "nm accept has no acting call" {
     ro accept = tiny_agent().replace("- Запрос:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| prompt | text_reply | сторона |\n", "- Запрос:\n\n| поле запроса | выражение | читает |\n|---|---|---|\n| prompt | text_reply | сторона |\n\n- При приёме:\n\n| событие | действия |\n|---|---|\n| ответ(ответ) | text_reply = PRIM() |\n")
     ro acting = with_prims(accept.replace("PRIM()", "close_for_writing(\"x\")"), ["close_for_writing"])
-    assert(note_says(acting, "the acting primitive close_for_writing may not stand in accept"))
+    assert(note_says(acting, "the acting tool close_for_writing may not stand in accept"))
     ro volatile = with_prims(accept.replace("PRIM()", "proposal_read()"), ["proposal_read"])
     assert(!note_says(volatile, "may not stand in accept"))
 }
@@ -470,9 +470,9 @@ test "nm meeting parties" {
         assert(def.parties[i].profile.len() == 1)
         assert(def.parties[i].parse.len() == 1)
     }
-    assert(def.parties[w].parse[0].primitive == "parse_witness_reply")
-    assert(def.parties[a].parse[0].primitive == "parse_author_reply")
-    assert(def.parties[l].parse[0].primitive == "parse_lens_reply")
+    assert(def.parties[w].parse[0].tool == "parse_witness_reply")
+    assert(def.parties[a].parse[0].tool == "parse_author_reply")
+    assert(def.parties[l].parse[0].tool == "parse_lens_reply")
     assert(def.parties[l].id == "")
     assert(def.parties[l].counter == "lenses[*].attempt")
     assert(def.request_limit.len() == 1)

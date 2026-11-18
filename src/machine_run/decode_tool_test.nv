@@ -1,6 +1,6 @@
 module alula.machine_run
 
-import alula.machine.{Text, Primitive, ParamSpec, TextType, Volatile, register}
+import alula.machine.{Text, Tool, ParamSpec, TextType, Volatile, register}
 import alula.examples.{sample_registry}
 
 fn decode_tool_machine() -> str => `{
@@ -28,7 +28,7 @@ fn decode_tool_machine() -> str => `{
 
 fn run_decode_tool(reply str) -> Out {
     mut reg = sample_registry()
-    ro _registered = register(reg, Primitive { name: "parse_reply", params: []ParamSpec.new(), result: TextType, class: Volatile, reads: []str.new(), writes: []str.new() })
+    ro _registered = register(reg, Tool { name: "parse_reply", params: []ParamSpec.new(), result: TextType, class: Volatile, reads: []str.new(), writes: []str.new() })
     match load_alula_machine(decode_tool_machine(), reg) {
         Ok(machine) => {
             ro m = with_replies(machine, [{ name: "parse_reply", value: Text(reply) }])

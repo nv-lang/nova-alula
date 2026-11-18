@@ -44,10 +44,10 @@ fn hi_registry() -> Registry {
 
 test "pure" {
     mut h = hi_host()
-    assert(hi_is(h.call_primitive("add_one", [Int(1)]), Int(2)))
-    assert(hi_is(h.call_primitive("add_one", [Text("x")]), Null))
-    assert(hi_is(h.call_primitive("add_one", []), Null))
-    assert(hi_is(h.call_primitive("join_text", [Text("a"), Int(1), Text("b")]), Text("ab")))
+    assert(hi_is(h.call_tool("add_one", [Int(1)]), Int(2)))
+    assert(hi_is(h.call_tool("add_one", [Text("x")]), Null))
+    assert(hi_is(h.call_tool("add_one", []), Null))
+    assert(hi_is(h.call_tool("join_text", [Text("a"), Int(1), Text("b")]), Text("ab")))
     assert(h.stats().pure == 4)
     assert(h.world_version() == 2)
 }
@@ -55,9 +55,9 @@ test "pure" {
 test "volatile" {
     mut h = hi_host()
     ro v0 = h.world_version()
-    assert(hi_is(h.call_primitive("new_id", []), Text("id-1")))
-    assert(hi_is(h.call_primitive("lookup", [Text("clock")]), Int(1000)))
-    assert(hi_is(h.call_primitive("lookup", [Text("none")]), Null))
+    assert(hi_is(h.call_tool("new_id", []), Text("id-1")))
+    assert(hi_is(h.call_tool("lookup", [Text("clock")]), Int(1000)))
+    assert(hi_is(h.call_tool("lookup", [Text("none")]), Null))
     assert(h.stats().volatile == 3)
     assert(h.world_version() == v0)
     assert(h.stats().violations == 0)
@@ -66,10 +66,10 @@ test "volatile" {
 test "acting" {
     mut h = hi_host()
     ro v0 = h.world_version()
-    assert(hi_is(h.call_primitive("store", [Text("k"), Text("v")]), Text("v")))
-    assert(hi_is(h.call_primitive("lookup", [Text("k")]), Text("v")))
-    assert(hi_is(h.call_primitive("advance_clock", [Int(50)]), Int(1050)))
-    assert(hi_is(h.call_primitive("lookup", [Text("clock")]), Int(1050)))
+    assert(hi_is(h.call_tool("store", [Text("k"), Text("v")]), Text("v")))
+    assert(hi_is(h.call_tool("lookup", [Text("k")]), Text("v")))
+    assert(hi_is(h.call_tool("advance_clock", [Int(50)]), Int(1050)))
+    assert(hi_is(h.call_tool("lookup", [Text("clock")]), Int(1050)))
     assert(h.stats().acting == 2)
     assert(h.world_version() == v0 + 2)
     assert(h.stats().violations == 0)

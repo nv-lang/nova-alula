@@ -6,7 +6,7 @@ Module `alula.machine_manifest`, a SIBLING of `alula.machine`, `alula.machine_ta
 идентичности" (task 017, the epic 0.29 result B); the model reference is `tools/typed_value_codec.py`
 (`canonical_manifest_bytes`, `contract_id`, `_manifest_projection`, `SUPPORTED_CODEC`,
 `SUPPORTED_EVENT_ENVELOPE`). The fixed vectors are literals in `manifest_test.nv`: the manifest vector
-of the contract (`sha256:0f1ff7f8…`), the projection of a real-shaped machine (`sha256:406fe990…`,
+of the contract (`sha256:4f1c2bb4…`), the projection of a real-shaped machine (`sha256:830f6998…`,
 computed once by the model), and the artifact vectors of the framing of the result B.
 
 ## What is here

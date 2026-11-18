@@ -4,11 +4,11 @@ module alula.machine_table
 
 import std.text
 import alula.examples.{sample_registry}
-import alula.machine.{Registry, language_registry, register, Primitive, ParamSpec, NothingType, Acting, Lit, Int, spec_text}
+import alula.machine.{Registry, language_registry, register, Tool, ParamSpec, NothingType, Acting, Lit, Int, spec_text}
 
 fn up226() -> str => `,{"name":"u_attempt","type":"int>=0","initial":{"expr":${jl("0")}},"monotonic":true,"writes":"mechanics"}`
 
-fn as226(text str) -> str => text.replace("{\"format\":\"machine/2\",\"machine\":\"Tiny\",\"version\":\"1\",", "{\"kind\":\"machine\",\"alula_version\":\"0.29\",\"machine\":\"Tiny\",\"revision\":1,")
+fn as226(text str) -> str => text.replace("{\"format\":\"machine/2\",\"machine\":\"Tiny\",\"version\":\"1\",", "{\"kind\":\"machine\",\"alula_version\":\"0.30\",\"machine\":\"Tiny\",\"revision\":1,")
 
 // The small machine as a tree of 2.26: the counter `u_attempt` of the party has no row in the data.
 fn tiny226_tree() -> str => as226(tiny().replace(up226(), ""))
@@ -27,7 +27,7 @@ fn datum_at(def MachineDef, name str) -> int {
 // The registry of the tests: the language and two acting functions with no parameters and no result, `grab` writes the counter `u_attempt`, `keep` writes the datum `n`.
 fn reg226(writes str) -> Registry {
     mut reg = language_registry()
-    ro p = Primitive { name: "grab", params: []ParamSpec.new(), result: NothingType, class: Acting, reads: []str.new(), writes: [writes] }
+    ro p = Tool { name: "grab", params: []ParamSpec.new(), result: NothingType, class: Acting, reads: []str.new(), writes: [writes] }
     match register(reg, p) {
         Ok(u) => ()
         Err(x) => panic("the registry of the test is wrong: ${x.message}")

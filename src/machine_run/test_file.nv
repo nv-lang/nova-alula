@@ -43,7 +43,7 @@ export type ScExpect {
     has_sent bool, sent []str, has_cancelled bool, cancelled []str
 }
 
-/// ScHost: the answer of a primitive of the host that holds from this step on (the lossless JSON of the core): `"host": {"reply_validation": {...}}`.
+/// ScHost: the answer of a tool of the host that holds from this step on (the lossless JSON of the core): `"host": {"reply_validation": {...}}`.
 export type ScHost { name str, json str }
 
 /// ScAlso: what a step expects of another engine than the one it acts on (a test of a parent and its nested machines, task 119): the target is `parent` or the id of the
@@ -643,7 +643,7 @@ fn signal_party_problem(def MachineDef, ev ScEvent) -> str {
     "the machine has no party ${ev.party} (the signal ${ev.name})"
 }
 
-/// Run a test on a machine that is data with the answers of the primitives of the host that the steps change (`host`): like `drive_test`,
+/// Run a test on a machine that is data with the answers of the tools of the host that the steps change (`host`): like `drive_test`,
 /// but the machine of the engine is made again before a step that has `host`.
 export fn drive_table_test(first_machine AlulaMachine, sc Test) -> []StepTrace {
     ro machine = match with_params(first_machine, sc.params) {

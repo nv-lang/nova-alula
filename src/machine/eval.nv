@@ -1,9 +1,9 @@
 // eval.nv - the evaluator of the expressions: a pure function of a tree and a scope.
 //
 // `eval(expr, scope)` reads nothing but its two arguments, writes nothing and has no effects in its signature; two runs
-// give the same result (the order of everything the evaluator walks is fixed). The only door to the world is a primitive of
-// the host: a node `CallPrimitive` goes to the `PrimitiveHost` that the caller passes (`eval_with`); `eval` passes a host
-// that refuses every primitive. The core does not know what a primitive does.
+// give the same result (the order of everything the evaluator walks is fixed). The only door to the world is a tool of
+// the host: a node `CallTool` goes to the `ToolHost` that the caller passes (`eval_with`); `eval` passes a host
+// that refuses every tool. The core does not know what a tool does.
 //
 // The rules (format v2, section 3 and the catalog, section 12; the choices where the format is silent are marked "decision" and listed in README.md):
 //  - `if`, `and`, `or`, `??` are lazy: the part that is not needed is not evaluated (not even for its errors);
@@ -52,7 +52,7 @@ export type EvalErrorKind enum
     | LambdaMisplaced
     | TooDeep
     | OutOfBudget
-    | PrimitiveFailed
+    | ToolFailed
 
 /// EvalError: the error of an evaluation: the kind, the text and the place in the tree.
 export type EvalError { kind EvalErrorKind, message str, path str }
@@ -63,20 +63,20 @@ export type Binding { name str, value Value }
 /// Scope: the names an expression may read (the data of the machine, the bound names of the step). A later binding of a name hides an earlier one.
 export type Scope { bindings []Binding }
 
-/// PrimitiveHost: the door of the evaluator to the world. The host answers a call of a primitive by name; the core does not
+/// ToolHost: the door of the evaluator to the world. The host answers a call of a tool by name; the core does not
 /// check the registry (registry.nv checks the class of a call and the types of its arguments).
 /// Effect-free on purpose: the language allows an effect row here, but Fs/Proc would then thread through the whole core
-/// (every eval/engine signature takes `mut host PrimitiveHost`); the only entry into the world is one `with` at the host
-/// boundary (thin_host.nv @call_primitive).
-export type PrimitiveHost protocol {
-    mut @call_primitive(name str, args []Value) -> Result[Value, EvalError]
+/// (every eval/engine signature takes `mut host ToolHost`); the only entry into the world is one `with` at the host
+/// boundary (thin_host.nv @call_tool).
+export type ToolHost protocol {
+    mut @call_tool(name str, args []Value) -> Result[Value, EvalError]
 }
 
-/// A host that refuses every primitive.
+/// A host that refuses every tool.
 export type NoHost { unused int }
 
-export fn NoHost mut @call_primitive(name str, args []Value) -> Result[Value, EvalError] {
-    Err(EvalError { kind: PrimitiveFailed, message: "no host", path: "" })
+export fn NoHost mut @call_tool(name str, args []Value) -> Result[Value, EvalError] {
+    Err(EvalError { kind: ToolFailed, message: "no host", path: "" })
 }
 
 /// A scope with no names.
@@ -107,7 +107,7 @@ export fn kind_word(kind EvalErrorKind) -> str {
         LambdaMisplaced => "lambda_misplaced"
         TooDeep => "too_deep"
         OutOfBudget => "out_of_budget"
-        PrimitiveFailed => "primitive_failed"
+        ToolFailed => "primitive_failed"
     }
 }
 
@@ -121,10 +121,10 @@ export fn error_text(e EvalError) -> str => "${kind_word(e.kind)} at ${e.path}: 
 export type DefFn { name str, params []str, specs []TypeSpec, result TypeSpec, body Expr }
 
 /// DefTable: what an evaluation may call besides the catalog: the definitions, the named types their signatures use, the globals,
-/// and (`checked`) the registry that checks the arguments and the result of every primitive call (task 107).
+/// and (`checked`) the registry that checks the arguments and the result of every tool call (task 107).
 export type DefTable { fns []DefFn, types TypeDefs, globals []Binding, registry Registry, checked bool }
 
-/// A table with no definitions and no checks of the primitives (`eval` and `eval_with` use it).
+/// A table with no definitions and no checks of the tools (`eval` and `eval_with` use it).
 export fn no_defs() -> DefTable => {
     fns: []DefFn.new(), types: empty_type_defs(), globals: []Binding.new(), registry: new_registry(), checked: false
 }
@@ -177,7 +177,7 @@ fn unbind(mut env Env, count int) -> () {
 }
 
 // Evaluate a part of a node; a mistake in it gets the step `seg` in its path.
-fn part(e Expr, seg str, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+fn part(e Expr, seg str, mut env Env, mut host ToolHost, depth int) -> Result[Value, EvalError] {
     match ev(e, env, host, depth + 1) {
         Ok(v) => Ok(v)
         Err(x) => Err(at(x, seg))
@@ -300,7 +300,7 @@ fn strict_op(op BinOp, l Value, r Value) -> Result[Value, EvalError] {
     }
 }
 
-fn binary(op BinOp, left Expr, right Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+fn binary(op BinOp, left Expr, right Expr, mut env Env, mut host ToolHost, depth int) -> Result[Value, EvalError] {
     match op {
         And => {
             ro l = part(left, "left", env, host, depth)?
@@ -383,7 +383,7 @@ fn case_field_spec(types TypeDefs, variant str, case str, field str) -> Option[T
     None
 }
 
-fn eval_fields(fields []FieldExpr, prefix str, mut env Env, mut host PrimitiveHost, depth int) -> Result[[]RecordField, EvalError] {
+fn eval_fields(fields []FieldExpr, prefix str, mut env Env, mut host ToolHost, depth int) -> Result[[]RecordField, EvalError] {
     mut out = []RecordField.new()
     for f in fields {
         ro v = part(f.value, "${prefix}.${f.name}", env, host, depth)?
@@ -392,7 +392,7 @@ fn eval_fields(fields []FieldExpr, prefix str, mut env Env, mut host PrimitiveHo
     Ok(out)
 }
 
-fn eval_args(args []Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[[]Value, EvalError] {
+fn eval_args(args []Expr, mut env Env, mut host ToolHost, depth int) -> Result[[]Value, EvalError] {
     mut out = []Value.new()
     mut i = 0
     for a in args {
@@ -403,7 +403,7 @@ fn eval_args(args []Expr, mut env Env, mut host PrimitiveHost, depth int) -> Res
     Ok(out)
 }
 
-fn eval_with_field(base Expr, fields []FieldExpr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+fn eval_with_field(base Expr, fields []FieldExpr, mut env Env, mut host ToolHost, depth int) -> Result[Value, EvalError] {
     ro b = part(base, "of", env, host, depth)?
     match b {
         Record { name, fields: old } => {
@@ -439,7 +439,7 @@ fn eval_with_field(base Expr, fields []FieldExpr, mut env Env, mut host Primitiv
 
 // A dict literal: the entries are made in the written order and that is the order of the dict (the norm "the order of a dict is the order of
 // the record", value.nv); a repeated key is not a later write but the error `DuplicateKey` at the place of the second entry.
-fn eval_dict_lit(entries []EntryExpr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+fn eval_dict_lit(entries []EntryExpr, mut env Env, mut host ToolHost, depth int) -> Result[Value, EvalError] {
     mut out = []DictEntry.new()
     mut i = 0
     for en in entries {
@@ -476,7 +476,7 @@ fn try_pattern(p Pattern, v Value, seg str) -> Result[Matched, EvalError] {
     }
 }
 
-fn run_arm(a MatchArm, binds []Binding, seg str, mut env Env, mut host PrimitiveHost, depth int) -> Result[Option[Value], EvalError] {
+fn run_arm(a MatchArm, binds []Binding, seg str, mut env Env, mut host ToolHost, depth int) -> Result[Option[Value], EvalError] {
     for b in binds { bind(env, b.name, b.value) }
     mut outcome Result[Option[Value], EvalError] = Ok(None)
     if a.guard.len() > 0 {
@@ -504,7 +504,7 @@ fn run_arm(a MatchArm, binds []Binding, seg str, mut env Env, mut host Primitive
     outcome
 }
 
-fn eval_match(subject Expr, arms []MatchArm, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+fn eval_match(subject Expr, arms []MatchArm, mut env Env, mut host ToolHost, depth int) -> Result[Value, EvalError] {
     ro v = part(subject, "on", env, host, depth)?
     mut i = 0
     for a in arms {
@@ -595,7 +595,7 @@ fn list_arg(v Value, i int) -> Result[[]Value, EvalError] {
 }
 
 // Apply a lambda of one parameter to a value; the names live for the body only.
-fn apply1(lam Lam, x Value, seg str, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+fn apply1(lam Lam, x Value, seg str, mut env Env, mut host ToolHost, depth int) -> Result[Value, EvalError] {
     mut n = 0
     if lam.params[0] != "_" {
         bind(env, lam.params[0], x)
@@ -606,7 +606,7 @@ fn apply1(lam Lam, x Value, seg str, mut env Env, mut host PrimitiveHost, depth 
     r
 }
 
-fn apply2(lam Lam, a Value, x Value, seg str, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+fn apply2(lam Lam, a Value, x Value, seg str, mut env Env, mut host ToolHost, depth int) -> Result[Value, EvalError] {
     mut n = 0
     if lam.params[0] != "_" {
         bind(env, lam.params[0], a)
@@ -621,7 +621,7 @@ fn apply2(lam Lam, a Value, x Value, seg str, mut env Env, mut host PrimitiveHos
     r
 }
 
-fn predicate(lam Lam, x Value, seg str, mut env Env, mut host PrimitiveHost, depth int) -> Result[bool, EvalError] {
+fn predicate(lam Lam, x Value, seg str, mut env Env, mut host ToolHost, depth int) -> Result[bool, EvalError] {
     ro r = apply1(lam, x, seg, env, host, depth)?
     match r {
         Bool(b) => Ok(b)
@@ -629,7 +629,7 @@ fn predicate(lam Lam, x Value, seg str, mut env Env, mut host PrimitiveHost, dep
     }
 }
 
-fn eval_macro(name str, args []Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+fn eval_macro(name str, args []Expr, mut env Env, mut host ToolHost, depth int) -> Result[Value, EvalError] {
     ro items = list_arg(part(args[0], "args[0]", env, host, depth)?, 0)?
     if name == "fold" {
         mut acc = part(args[1], "args[1]", env, host, depth)?
@@ -925,7 +925,7 @@ fn find_def(table DefTable, name str) -> int {
 
 // A call of a definition: the arguments are evaluated in the scope of the caller and checked against the types of the parameters; the
 // body runs in a scope of its own (the globals and the parameters) and its result is checked against the declared result.
-fn call_def(d DefFn, args []Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+fn call_def(d DefFn, args []Expr, mut env Env, mut host ToolHost, depth int) -> Result[Value, EvalError] {
     if args.len() != d.params.len() { return bad_count(d.name, d.params.len(), args.len()) }
     ro values = eval_args(args, env, host, depth)?
     // ORACLE-WORKAROUND(45): a copy of a `ro` list (`env.table.globals`) built by hand in a loop; write `mut names = env.table.globals` when item 45 is fixed
@@ -954,17 +954,17 @@ fn call_def(d DefFn, args []Expr, mut env Env, mut host PrimitiveHost, depth int
     }
 }
 
-// A call of a primitive of the host, with the registry checking the arguments and the result when the table asks for it.
-fn call_host(name str, values []Value, mut env Env, mut host PrimitiveHost) -> Result[Value, EvalError] {
+// A call of a tool of the host, with the registry checking the arguments and the result when the table asks for it.
+fn call_host(name str, values []Value, mut env Env, mut host ToolHost) -> Result[Value, EvalError] {
     if env.table.checked {
         match check_call_args(env.table.registry, env.table.types, name, values) {
             Ok(u) => ()
             Err(x) => return refuse(TypeMismatch, "${name}: ${x.path} ${x.message}")
         }
-        ro r = host.call_primitive(name, values)?
+        ro r = host.call_tool(name, values)?
         match check_call_result(env.table.registry, env.table.types, name, r) {
             Ok(u) => {
-                match find_primitive(env.table.registry, name) {
+                match find_tool(env.table.registry, name) {
                     Some(p) => return Ok(normalize_at(p.result, r, env.table.types))
                     None => return Ok(r)
                 }
@@ -972,10 +972,10 @@ fn call_host(name str, values []Value, mut env Env, mut host PrimitiveHost) -> R
             Err(x) => return refuse(TypeMismatch, "the result of ${name}: ${x.path} ${x.message}")
         }
     }
-    host.call_primitive(name, values)
+    host.call_tool(name, values)
 }
 
-fn eval_call(name str, args []Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+fn eval_call(name str, args []Expr, mut env Env, mut host ToolHost, depth int) -> Result[Value, EvalError] {
     if is_macro(name) {
         ro want = macro_arity(name)
         if args.len() != want { return bad_count(name, want, args.len()) }
@@ -1016,7 +1016,7 @@ fn eval_call(name str, args []Expr, mut env Env, mut host PrimitiveHost, depth i
 
 // ---- the walk -------------------------------------------------------------------------------------------------------
 
-fn ev(e Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, EvalError] {
+fn ev(e Expr, mut env Env, mut host ToolHost, depth int) -> Result[Value, EvalError] {
     if depth > MAX_EXPR_DEPTH { return refuse(TooDeep, "the tree is deeper than ${MAX_EXPR_DEPTH}") }
     env.steps = env.steps + 1
     if env.steps > MAX_STEPS { return refuse(OutOfBudget, "more than ${MAX_STEPS} nodes evaluated") }
@@ -1037,7 +1037,7 @@ fn ev(e Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, E
         }
         CallFn { name, args } => eval_call(name, args, env, host, depth)
         Lambda { params, body } => refuse(LambdaMisplaced, "a lambda may stand only as an argument of a list function")
-        CallPrimitive { name, args, named } => {
+        CallTool { name, args, named } => {
             mut values = eval_args(args, env, host, depth)?
             // the named tail (AL-129) goes to the host as the last argument, the list of the pairs `(name, value)` in the order of the writing
             if named.len() > 0 || has_tail(env.table.registry, name) {
@@ -1145,8 +1145,8 @@ fn ev(e Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, E
     }
 }
 
-/// Evaluate an expression with the definitions of a machine; primitives go to the host. The scope is read, not changed.
-export fn eval_defs(expr Expr, scope Scope, table DefTable, mut host PrimitiveHost) -> Result[Value, EvalError] {
+/// Evaluate an expression with the definitions of a machine; tools go to the host. The scope is read, not changed.
+export fn eval_defs(expr Expr, scope Scope, table DefTable, mut host ToolHost) -> Result[Value, EvalError] {
     // ORACLE-WORKAROUND(45): a copy of a `ro` list (`scope.bindings`) built by hand in a loop; write `mut names = scope.bindings` when item 45 is fixed
     mut names = []Binding.new()
     for b in scope.bindings { names.push(b) }
@@ -1157,12 +1157,12 @@ export fn eval_defs(expr Expr, scope Scope, table DefTable, mut host PrimitiveHo
     }
 }
 
-/// Evaluate an expression; primitives go to the host. The scope is read, not changed.
-export fn eval_with(expr Expr, scope Scope, mut host PrimitiveHost) -> Result[Value, EvalError] {
+/// Evaluate an expression; tools go to the host. The scope is read, not changed.
+export fn eval_with(expr Expr, scope Scope, mut host ToolHost) -> Result[Value, EvalError] {
     eval_defs(expr, scope, no_defs(), host)
 }
 
-/// Evaluate an expression; a primitive call is an error.
+/// Evaluate an expression; a tool call is an error.
 export fn eval(expr Expr, scope Scope) -> Result[Value, EvalError] {
     mut host = NoHost { unused: 0 }
     eval_with(expr, scope, host)

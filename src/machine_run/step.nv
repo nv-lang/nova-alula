@@ -1,7 +1,7 @@
 // step.nv - the interpreter: one step of a machine that is data.
 //
 // `alula_step(machine, state, event, environment, host)` is the whole of the protocol `Machine`'s `step`: it reads the state and the event
-// (nothing else: the clock is the stamp of the event, the primitives are the host's), gives its orders to the environment and returns the
+// (nothing else: the clock is the stamp of the event, the tools are the host's), gives its orders to the environment and returns the
 // transition. The order of a step is the order of the format:
 //   1. the event of the engine is read as the event of the machine (a signal, a part of an answer, the answer, the failure,
 //      the term); a name the machine does not know is the journal event `event_unknown`, a text that does not fit the fields of the signal is
@@ -24,7 +24,7 @@ import std.text
 import std.encoding.json.{Json}
 import std.encoding.json.{JsonValue, JsonObject}
 import alula.engine.{Incoming, SendOrder, CancelOrder, SignalOrder, Conclusion, FailCode, JournalParam, JournalEvent, journal_event, param}
-import alula.machine.{Value, Null, Int, Text, List, Dict, DictEntry, RecordField, Binding, Scope, DefTable, Expr, TypeSpec, PrimitiveHost, EvalError, Binary, Add}
+import alula.machine.{Value, Null, Int, Text, List, Dict, DictEntry, RecordField, Binding, Scope, DefTable, Expr, TypeSpec, ToolHost, EvalError, Binary, Add}
 import alula.machine.{eval_defs, kind_word, make_record, make_tuple, enum_value, value_text, value_json, value_to_json, value_compare, parse_value, value_from_json, record_get, dict_get, check_value, normalize_at, decode_typed, FieldDef, TypeDefs, check_call_args, check_call_result, has_tail, Lit}
 import alula.machine_table.{MachineDef, TableRow, EventPat, Action, LValue, PathStep, NamedExpr, Bind, SignalDef, PartyDef, MachineParty, AgentParty}
 import alula.machine_table.{find_state, find_party, find_data}
@@ -145,7 +145,7 @@ fn scope_of(ctx Ctx) -> Scope {
     Scope { bindings: bs }
 }
 
-fn run_expr(ctx Ctx, e Expr, mut host PrimitiveHost) -> Result[Value, Fault] {
+fn run_expr(ctx Ctx, e Expr, mut host ToolHost) -> Result[Value, Fault] {
     match eval_defs(e, scope_of(ctx), ctx.table, host) {
         Ok(v) => Ok(v)
         Err(x) => Err(eval_fault(x))
@@ -440,7 +440,7 @@ fn hit_of(pat EventPat, ev EventVal) -> Hit {
 }
 
 // The first row of a list that fits the event (the pattern and the condition); at < 0 - none. The bindings of the pattern are in the chosen.
-fn choose(mut ctx Ctx, rows []TableRow, mut host PrimitiveHost) -> Result[Chosen, Fault] {
+fn choose(mut ctx Ctx, rows []TableRow, mut host ToolHost) -> Result[Chosen, Fault] {
     mut i = 0
     for r in rows {
         ro h = hit_of(r.event, ctx.event)
@@ -464,7 +464,7 @@ fn missing_key() -> Fault => reason_fault("missing_key")
 
 // A value with the place at `steps[at..]` replaced: `x[key] = v` inserts or replaces in a dict, replaces an existing position of a list; with
 // more steps the element must be there (the short form `x[key].field = v`, format 5).
-fn update_at(cur Value, steps []PathStep, at int, v Value, ctx Ctx, mut host PrimitiveHost) -> Result[Value, Fault] {
+fn update_at(cur Value, steps []PathStep, at int, v Value, ctx Ctx, mut host ToolHost) -> Result[Value, Fault] {
     if at >= steps.len() { return Ok(v) }
     match steps[at] {
         KeyStep(ke) => {
@@ -538,7 +538,7 @@ fn update_at(cur Value, steps []PathStep, at int, v Value, ctx Ctx, mut host Pri
 fn data_def(ctx Ctx, name str) -> int => find_data(ctx.def, name)
 
 // Write a value into a datum (by the path) and check the datum against its type.
-fn write_target(mut ctx Ctx, target LValue, v Value, mut host PrimitiveHost) -> Result[(), Fault] {
+fn write_target(mut ctx Ctx, target LValue, v Value, mut host ToolHost) -> Result[(), Fault] {
     ro at = data_def(ctx, target.root)
     if at < 0 { return Err(defect_fault("unknown_name", "no datum ${target.root}")) }
     ro cur = data_get(ctx.data, target.root)
@@ -551,7 +551,7 @@ fn write_target(mut ctx Ctx, target LValue, v Value, mut host PrimitiveHost) -> 
     Ok(())
 }
 
-fn read_target(ctx Ctx, target LValue, mut host PrimitiveHost) -> Result[Value, Fault] {
+fn read_target(ctx Ctx, target LValue, mut host ToolHost) -> Result[Value, Fault] {
     mut cur = data_get(ctx.data, target.root)
     for s in target.steps {
         match s {
@@ -594,7 +594,7 @@ fn read_target(ctx Ctx, target LValue, mut host PrimitiveHost) -> Result[Value, 
 
 // ---- the journal -------------------------------------------------------------------------------------------------------------
 
-fn params_of(mut ctx Ctx, params []NamedExpr, mut host PrimitiveHost) -> Result[[]JournalParam, Fault] {
+fn params_of(mut ctx Ctx, params []NamedExpr, mut host ToolHost) -> Result[[]JournalParam, Fault] {
     mut out = []JournalParam.new()
     for q in params {
         ro v = run_expr(ctx, q.value, host)?
@@ -663,7 +663,7 @@ fn party_id_of(ctx Ctx, name str) -> str {
     ctx.def.parties[at].id
 }
 
-fn run_actions(mut ctx Ctx, actions []Action, mut host PrimitiveHost) -> Result[(), Fault] {
+fn run_actions(mut ctx Ctx, actions []Action, mut host ToolHost) -> Result[(), Fault] {
     for a in actions {
         match a {
             AssignAct { target, value } => {
@@ -730,7 +730,7 @@ fn run_actions(mut ctx Ctx, actions []Action, mut host PrimitiveHost) -> Result[
                     Ok(u) => ()
                     Err(x) => return Err(defect_fault("type_mismatch", "${name}: ${x.path} ${x.message}"))
                 }
-                ro r = match host.call_primitive(name, values) {
+                ro r = match host.call_tool(name, values) {
                     Ok(x) => x
                     Err(x) => return Err(eval_fault(x))
                 }

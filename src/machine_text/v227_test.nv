@@ -114,7 +114,7 @@ test "v227 a machine of 0.27 is translated: the tree has kind, alula_version and
     ro r = r227(m227())
     assert(first227(r) == "ok")
     assert(r.json.contains("\"kind\":\"machine\""))
-    assert(r.json.contains("\"alula_version\":\"0.29\""))
+    assert(r.json.contains("\"alula_version\":\"0.30\""))
     assert(r.json.contains("\"revision\":3"))
     assert(!r.json.contains("\"format\""))
     assert(!r.json.contains("\"version\""))
@@ -142,7 +142,7 @@ test "v227 format in the header is an error with the hint" {
     assert(says227(r227(m227().replace("- alula_version: 0.30", "- format: 2.26")), "с 0.27 — revision и alula_version"))
 }
 
-test "v227 an alula_version other than 0.29 is an error" {
+test "v227 an alula_version other than 0.30 is an error" {
     assert(!(first227(r227(m227().replace("- alula_version: 0.30", "- alula_version: 2.26"))) == "ok"))
     // task 253 (приёмка): the refusal of a file of 0.27 names the migration script
     assert(says227(r227(m227().replace("- alula_version: 0.30", "- alula_version: 0.27")), "tools/migrate-alula-228.py"))
@@ -164,11 +164,11 @@ test "v227 the order of the header is machine, revision, alula_version, language
 
 // ---- the libraries of 0.27 (AL-145) -------------------------------------------------------------------------------------------------------------------
 
-test "v227 the files of the libraries are those of the methodology for 0.29" {
-    assert(definitions_hash(pause227()) == "413396f18517")
-    assert(definitions_hash(pause227_en()) == "31b869a4f7cc")
-    assert(definitions_hash(cycle227()) == "8dd3bc954085")
-    assert(definitions_hash(cycle227_en()) == "3b3321c87caa")
+test "v227 the files of the libraries are those of the methodology for 0.30" {
+    assert(definitions_hash(pause227()) == "0f19c09c003e")
+    assert(definitions_hash(pause227_en()) == "b1163cc17e96")
+    assert(definitions_hash(cycle227()) == "0f945c058f51")
+    assert(definitions_hash(cycle227_en()) == "bac5c56fc284")
     assert(pause227().contains("- alula_version: 0.30"))
     assert(pause227().contains("## Требует стороны"))
     assert(pause227().contains("## Требует концы"))

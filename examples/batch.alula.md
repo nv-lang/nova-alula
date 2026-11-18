@@ -49,7 +49,7 @@ type Job { name str, attempt int>=0 }
 
 ### Pause
 - File: libs/pause.en.alula.md
-- Hash: 31b869a4f7cc
+- Hash: b1163cc17e96
 
 | parameter | value |
 |---|---|

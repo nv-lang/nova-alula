@@ -1,4 +1,4 @@
-// render_states.nv - the reverse generator, the states, the ends, the primitives and the whole file (task 113; the pieces before them are in render_expr.nv and render.nv).
+// render_states.nv - the reverse generator, the states, the ends, the tools and the whole file (task 113; the pieces before them are in render_expr.nv and render.nv).
 module alula.machine_text
 
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
@@ -597,7 +597,7 @@ fn rn_machine(machine_json str, language str, copy_includes bool, registry Regis
             }
             // a tree of another version of the language is not written (no transition period, task 125): the file would say a version that the translator does not read
             if !seam && rj_gstr(root, "alula_version") != "" && rj_gstr(root, "alula_version") != "0.30" {
-                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 0.29 only is read and written (there is no transition period: a tree of 0.28 is migrated by tools/migrate-alula-229.py, of 0.27 — by tools/migrate-alula-228.py)"] }
+                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 0.30 only is read and written (there is no transition period: a tree of 0.28 is migrated by tools/migrate-alula-229.py, of 0.27 — by tools/migrate-alula-228.py)"] }
             }
             ro former = rn_former_note(root, "$")
             if former != "" { return RenderReport { text: "", notes: [former] } }

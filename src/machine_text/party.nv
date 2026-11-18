@@ -1,4 +1,4 @@
-// party.nv - the parties (format section 1, `## Стороны`), the signals and the parts of an answer, the definitions (section 8), the primitives (section 7).
+// party.nv - the parties (format section 1, `## Стороны`), the signals and the parts of an answer, the definitions (section 8), the tools (section 7).
 module alula.machine_text
 
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
@@ -561,11 +561,11 @@ fn def_segs(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxSeg {
     segs
 }
 
-/// AL-81: the name of a definition or of a primitive is no word of the catalog in either language and is not `range` (the name of the call of a range in the tree); the JSON name is checked too.
+/// AL-81: the name of a definition or of a tool is no word of the catalog in either language and is not `range` (the name of the call of a range in the tree); the JSON name is checked too.
 fn call_clash(mut cx TxCx, n TxTok, json str) -> () {
     ro ru_words = words_load("ru")
     ro en_words = words_load("en")
-    // AL-107: `new_id` (`новый_ид`) is the built-in primitive of the host; it stands in the table of words under the kind `catalog` (section 12) but is no function of the catalog, so the name, as written and as JSON, is not checked
+    // AL-107: `new_id` (`новый_ид`) is the built-in tool of the host; it stands in the table of words under the kind `catalog` (section 12) but is no function of the catalog, so the name, as written and as JSON, is not checked
     ro ru_new_id = kw(ru_words, "catalog", "new_id")
     for cand in [n.text, json] {
         if cand == "new_id" || cand == ru_new_id { continue }

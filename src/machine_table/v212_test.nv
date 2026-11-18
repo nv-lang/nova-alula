@@ -3,7 +3,7 @@
 module alula.machine_table
 
 import std.text
-import alula.machine.{new_registry, find_primitive, JournalCode, journal_find, journal_table_issues}
+import alula.machine.{new_registry, find_tool, JournalCode, journal_find, journal_table_issues}
 import alula.machine.{schema_files, text_of_file, ListType, RecordType, VariantType}
 import alula.examples.{machine_files, sample_registry, example_registry}
 
@@ -65,8 +65,8 @@ test "v212 older versions refused" {
 
 test "v212 versions list" {
     assert(alula_versions().len() == 1)
-    assert(alula_versions()[0] == "0.29")
-    assert(ALULA_VERSION == "0.29")
+    assert(alula_versions()[0] == "0.30")
+    assert(ALULA_VERSION == "0.30")
 }
 
 test "v212 schema versions" {
@@ -140,33 +140,33 @@ test "v212 empty registry skips the table" {
 
 test "v212 parse functions by role in the registry of the host (AL-131)" {
     ro reg = sample_registry()
-    assert(find_primitive(reg, "parse_agent_reply").is_none())
+    assert(find_tool(reg, "parse_agent_reply").is_none())
     for name in ["parse_witness_reply", "parse_author_reply", "parse_lens_reply"] {
-        assert(find_primitive(reg, name).is_some())
+        assert(find_tool(reg, name).is_some())
     }
 }
 
 test "v212 parse function result types" {
-    match find_primitive(sample_registry(), "parse_witness_reply") {
+    match find_tool(sample_registry(), "parse_witness_reply") {
         Some(p) => assert(p.result == ListType(VariantType("WitnessAnswer")))
         None => assert(false)
     }
-    match find_primitive(sample_registry(), "parse_author_reply") {
+    match find_tool(sample_registry(), "parse_author_reply") {
         Some(p) => assert(p.result == VariantType("EditResult"))
         None => assert(false)
     }
-    match find_primitive(sample_registry(), "parse_lens_reply") {
+    match find_tool(sample_registry(), "parse_lens_reply") {
         Some(p) => assert(p.result == RecordType("LensResult"))
         None => assert(false)
     }
 }
 
 test "v212 the witness function reads the proposal, the others do not" {
-    match find_primitive(sample_registry(), "parse_witness_reply") {
+    match find_tool(sample_registry(), "parse_witness_reply") {
         Some(p) => assert(p.reads.contains("object: proposal"))
         None => assert(false)
     }
-    match find_primitive(sample_registry(), "parse_author_reply") {
+    match find_tool(sample_registry(), "parse_author_reply") {
         Some(p) => assert(!p.reads.contains("object: proposal"))
         None => assert(false)
     }

@@ -50,7 +50,7 @@ fn th_command_answer(mut h ScriptedThinHost, command str, dir str, code int, std
     ]))
 }
 
-fn run(mut h ScriptedThinHost, name str, args []Value) Fs -> Result[Value, StepFailure] => run_thin_primitive(h, name, args)
+fn run(mut h ScriptedThinHost, name str, args []Value) Fs -> Result[Value, StepFailure] => run_thin_tool(h, name, args)
 
 fn is_failure(r Result[Value, StepFailure]) -> bool {
     match r {
@@ -177,7 +177,7 @@ test "tf a missing folder is a failure" {
     }
 }
 
-// ---- the scripted scenario primitives ------------------------------------------------------------------
+// ---- the scripted scenario tools ------------------------------------------------------------------
 
 test "tf a missing scripted key is a failure" {
     mut h = th()
@@ -345,7 +345,7 @@ fn parse_machine() -> str => `{
 
 // The AC-5 scenario: the machine calls parse_agent (volatile) inside the AL-153 decode of its
 // text. A valid scripted answer: the decode accepts the JSON, `got` holds the value of the type.
-// An invalid one: the primitive FAILS (the step failure of host-spec) — the machine sees a machine
+// An invalid one: the tool FAILS (the step failure of host-spec) — the machine sees a machine
 // error and gets no value (REQ-6: невалидный = сбой шага).
 
 test "ac5 parse_agent valid: the decode accepts the JSON into the type" {
@@ -359,7 +359,7 @@ test "ac5 parse_agent valid: the decode accepts the JSON into the type" {
             Err(e) => panic("the parse machine does not load: ${e}")
             Ok(m) => {
                 mut env = StepEnvironment.new()
-                mut host = new_thin_primitive_host(h)
+                mut host = new_thin_tool_host(h)
                 ro t = alula_step(m, m.initial(), Incoming.incoming(EventKind.Input, "start", None, ""), env, host)
                 match t.state_value() {
                     Some(st) => {
@@ -386,7 +386,7 @@ test "ac5 parse_agent invalid: a step failure, no value" {
             Err(e) => panic("the parse machine does not load: ${e}")
             Ok(m) => {
                 mut env = StepEnvironment.new()
-                mut host = new_thin_primitive_host(h)
+                mut host = new_thin_tool_host(h)
                 ro t = alula_step(m, m.initial(), Incoming.incoming(EventKind.Input, "start", None, ""), env, host)
                 // the machine error: no value of the type reached the data (got stays empty)
                     match t.state_value() {
@@ -434,18 +434,18 @@ test "tr the registry holds the 13 rows verbatim (AC-1)" {
     assert(!text.contains("| verify_token |"))
     assert(!text.contains("| journal_write |"))
     assert(!text.contains("| release_lock |"))
-    // the registry parses and gives 13 primitives with the classes of the host-spec
+    // the registry parses and gives 13 tools with the classes of the host-spec
     match load_host(text, "") {
         Err(lines) => panic("the registry does not parse: ${lines.join("; ")}")
         Ok(reg) => {
             mut n = 0
-            for p in reg.primitives {
+            for p in reg.tools {
                 if p.name == "new_id" { continue }
                 n += 1
             }
             assert(n == 13)
             mut saw_pure = false
-            for p in reg.primitives {
+            for p in reg.tools {
                 if p.name == "sha256" {
                     assert(p.class == Pure)
                     saw_pure = true

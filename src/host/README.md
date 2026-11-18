@@ -1,10 +1,10 @@
-# host: the contract of the host of the external functions (AL-130)
+# host: the contract of the host of the tools (AL-130)
 
 Module `alula.host`, folder `src/host/`; the reference implementations are in the separate module `alula.host_impls`, folder `src/host_impls/`. The norm is the specification, section 7a, version 2.24 (`spec/alula-spec.md`, `spec/alula-spec.en.md`); the label is AL-130.
 
 ## The contract
 
-The host binds the implementations of external functions one function at a time, by the class of the function: `bind_pure`, `bind_volatile`, `bind_acting`. At load every declared external function is bound (an unbound one is a load error). The class of an external function is told by the type of its environment: a pure one gets none, a volatile one gets an environment without write methods, an acting one gets a writable environment; the compiler checks it. Not proven by types: that the implementation does not use output, files, clock or network behind the environment, or capture outside mutable state; this is covered by the import guard, `--strict-effects` (partly) and the test host. The contract belongs to the host, not to the machine file: it cannot be written in a file.
+The host binds the implementations of tools one function at a time, by the class of the function: `bind_pure`, `bind_volatile`, `bind_acting`. At load every declared tool is bound (an unbound one is a load error). The class of an tool is told by the type of its environment: a pure one gets none, a volatile one gets an environment without write methods, an acting one gets a writable environment; the compiler checks it. Not proven by types: that the implementation does not use output, files, clock or network behind the environment, or capture outside mutable state; this is covered by the import guard, `--strict-effects` (partly) and the test host. The contract belongs to the host, not to the machine file: it cannot be written in a file.
 
 The invariant in one sentence: a volatile implementation does not write the environment; a pure one does not read it.
 
@@ -70,7 +70,7 @@ The module `alula.host_impls` (`impls.nv`) holds the bodies as named `export fn`
 
 ## Not here (task 181)
 
-The check of the bindings against the declarations of a machine FILE (the section `## External functions` of the file, the name, the class and the signature agree with the registry; a mismatch is an error naming the function) is made when a file is loaded and belongs to the integration of the release (task 181, with the external functions of task 175). Here `check_bindings(registry)` checks the bindings against the registry of the host: every registered function is bound, by the class of the registry; the signature (parameters and result) is not compared, an implementation takes `[]Value`.
+The check of the bindings against the declarations of a machine FILE (the section `## Tools` of the file, the name, the class and the signature agree with the registry; a mismatch is an error naming the function) is made when a file is loaded and belongs to the integration of the release (task 181, with the tools of task 175). Here `check_bindings(registry)` checks the bindings against the registry of the host: every registered function is bound, by the class of the registry; the signature (parameters and result) is not compared, an implementation takes `[]Value`.
 
 ## Tests
 

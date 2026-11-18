@@ -3,7 +3,7 @@
 // a closure is the door the contract has to watch. The shipped implementations are in `src/host_impls/`.
 module alula.host
 
-import alula.machine.{Value, Null, Int, Text, EvalError, kind_word, value_equal, eval_with, empty_scope, call_primitive, lit_int, load_host, Registry, class_word}
+import alula.machine.{Value, Null, Int, Text, EvalError, kind_word, value_equal, eval_with, empty_scope, call_tool, lit_int, load_host, Registry, class_word}
 
 fn hc_val(r Result[Value, EvalError]) -> Value {
     match r {
@@ -40,10 +40,10 @@ test "bind and call" {
     h.bind_pure("one", hc_one)
     h.bind_volatile("get", hc_get)
     h.bind_acting("set", hc_set)
-    assert(hc_is(h.call_primitive("get", []), Null))
-    assert(hc_is(h.call_primitive("set", [Int(7)]), Int(7)))
-    assert(hc_is(h.call_primitive("get", []), Int(7)))
-    assert(hc_is(h.call_primitive("one", [Int(41)]), Int(42)))
+    assert(hc_is(h.call_tool("get", []), Null))
+    assert(hc_is(h.call_tool("set", [Int(7)]), Int(7)))
+    assert(hc_is(h.call_tool("get", []), Int(7)))
+    assert(hc_is(h.call_tool("one", [Int(41)]), Int(42)))
 }
 
 test "counters by class" {
@@ -53,10 +53,10 @@ test "counters by class" {
     h.bind_acting("set", hc_set)
     ro s0 = h.stats()
     assert(s0.pure == 0 && s0.volatile == 0 && s0.acting == 0 && s0.violations == 0)
-    ro r1 = h.call_primitive("get", [])
-    ro r2 = h.call_primitive("get", [])
-    ro r3 = h.call_primitive("set", [Int(1)])
-    ro r4 = h.call_primitive("one", [Int(1)])
+    ro r1 = h.call_tool("get", [])
+    ro r2 = h.call_tool("get", [])
+    ro r3 = h.call_tool("set", [Int(1)])
+    ro r4 = h.call_tool("one", [Int(1)])
     ro s = h.stats()
     assert(s.pure == 1)
     assert(s.volatile == 2)
@@ -69,18 +69,18 @@ test "world version" {
     h.bind_volatile("get", hc_get)
     h.bind_acting("set", hc_set)
     assert(h.world_version() == 0)
-    ro r1 = h.call_primitive("get", [])
+    ro r1 = h.call_tool("get", [])
     assert(h.world_version() == 0)
-    ro r2 = h.call_primitive("set", [Int(5)])
+    ro r2 = h.call_tool("set", [Int(5)])
     assert(h.world_version() == 1)
     assert(value_equal(h.world_get("a"), Int(5)))
-    ro r3 = h.call_primitive("get", [])
+    ro r3 = h.call_tool("get", [])
     assert(h.world_version() == 1)
 }
 
 test "not bound" {
     mut h = new_host()
-    ro r = h.call_primitive("nothing", [])
+    ro r = h.call_tool("nothing", [])
     assert(hc_kind(r) == "primitive_failed")
     assert(h.stats().pure + h.stats().volatile + h.stats().acting == 0)
 }
@@ -94,7 +94,7 @@ test "closure honest" {
             _ => Null
         }
     })
-    assert(hc_is(h.call_primitive("addk", [Int(5)]), Int(15)))
+    assert(hc_is(h.call_tool("addk", [Int(5)]), Int(15)))
     assert(h.stats().violations == 0)
 }
 
@@ -106,9 +106,9 @@ test "closure volatile cheat" {
         w.put("evil", Int(666))
         env.read("a")
     })
-    assert(hc_kind(h.call_primitive("honest", [])) == "ok")
+    assert(hc_kind(h.call_tool("honest", [])) == "ok")
     assert(h.stats().violations == 0)
-    ro bad = h.call_primitive("cheat", [])
+    ro bad = h.call_tool("cheat", [])
     assert(hc_kind(bad) == "primitive_failed")
     assert(h.stats().violations == 1)
     assert(h.stats().volatile == 2)
@@ -123,7 +123,7 @@ test "closure pure cheat" {
         w.put("evil", Int(1))
         Null
     })
-    ro bad = h.call_primitive("cheat", [])
+    ro bad = h.call_tool("cheat", [])
     assert(hc_kind(bad) == "primitive_failed")
     assert(h.stats().violations == 1)
     assert(h.stats().pure == 1)
@@ -134,7 +134,7 @@ test "closure acting may write" {
     mut w = new_world()
     mut h = host_over(w)
     h.bind_acting("set", hc_set)
-    ro r = h.call_primitive("set", [Int(3)])
+    ro r = h.call_tool("set", [Int(3)])
     assert(h.stats().violations == 0)
     assert(w.version() == 1)
     assert(value_equal(w.get("a"), Int(3)))
@@ -147,7 +147,7 @@ test "known limit pure read" {
     w.put("a", Int(9))
     mut h = host_over(w)
     h.bind_pure("peek", fn(args []Value) -> Value => w.get("a"))
-    ro r = h.call_primitive("peek", [])
+    ro r = h.call_tool("peek", [])
     assert(hc_is(r, Int(9)))
     assert(h.stats().violations == 0)
 }
@@ -158,7 +158,7 @@ test "bound twice" {
     h.bind_volatile("x", hc_get)
     h.bind_pure("x", hc_one)
     ro s = h.stats()
-    assert(hc_is(h.call_primitive("x", [Int(1)]), Int(2)))
+    assert(hc_is(h.call_tool("x", [Int(1)]), Int(2)))
     match h.bound_class("x") {
         Some(c) => assert(class_word(c) == "pure")
         None => assert(false)
@@ -234,10 +234,10 @@ test "bindings extra" {
     assert(problems.contains("surprise: bound, but the registry names no such external function"))
 }
 
-test "primitive host door" {
+test "tool host door" {
     mut h = new_host()
     h.bind_pure("one", hc_one)
-    ro e = call_primitive("one", [lit_int(41)])
+    ro e = call_tool("one", [lit_int(41)])
     match eval_with(e, empty_scope(), h) {
         Ok(v) => assert(value_equal(v, Int(42)))
         Err(x) => assert(false)
