@@ -351,6 +351,35 @@ fn index_access(t Value, i Value) -> Result[Value, EvalError] {
     }
 }
 
+// The spec of a field of a record type, or None when the type or the field is unknown (the check has
+// refused such a literal already; the evaluator stays total).
+fn rec_field_spec(types TypeDefs, record str, field str) -> Option[TypeSpec] {
+    for r in types.records {
+        if r.name == record {
+            for f in r.fields {
+                if f.name == field { return Some(f.spec) }
+            }
+        }
+    }
+    None
+}
+
+// The spec of a field of one case of a variant type (an enum case has no fields).
+fn case_field_spec(types TypeDefs, variant str, case str, field str) -> Option[TypeSpec] {
+    for v in types.variants {
+        if v.name == variant {
+            for c in v.cases {
+                if c.name == case {
+                    for f in c.fields {
+                        if f.name == field { return Some(f.spec) }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 fn eval_fields(fields []FieldExpr, prefix str, mut env Env, mut host PrimitiveHost, depth int) -> Result[[]RecordField, EvalError] {
     mut out = []RecordField.new()
     for f in fields {
@@ -376,10 +405,18 @@ fn eval_with_field(base Expr, fields []FieldExpr, mut env Env, mut host Primitiv
     match b {
         Record { name, fields: old } => {
             ro changes = eval_fields(fields, "fields", env, host, depth)?
+            // the writers wrap at the optional positions of the record being changed (value.nv)
+            mut norm_changes = []RecordField.new()
+            for c in changes {
+                match rec_field_spec(env.table.types, name, c.name) {
+                    Some(spec) => norm_changes.push(RecordField { name: c.name, value: normalize_at(spec, c.value, env.table.types) })
+                    None => norm_changes.push(c)
+                }
+            }
             // ORACLE-WORKAROUND(45): a copy of a `ro` list (`old`) built by hand in a loop; write `mut out = old` when item 45 is fixed
             mut out = []RecordField.new()
             for f in old { out.push(f) }
-            for c in changes {
+            for c in norm_changes {
                 mut found = false
                 mut i = 0
                 while i < out.len() {
@@ -1024,12 +1061,29 @@ fn ev(e Expr, mut env Env, mut host PrimitiveHost, depth int) -> Result[Value, E
         }
         RecordLit { type_name, fields } => {
             ro made = eval_fields(fields, "fields", env, host, depth)?
-            Ok(make_record(type_name, made))
+            // the writers at typed optional positions wrap (value.nv): a bare value in a ?T field of a
+            // record literal reads as present — normalized here, like the call and decode paths do
+            mut norm = []RecordField.new()
+            for f in made {
+                match rec_field_spec(env.table.types, type_name, f.name) {
+                    Some(spec) => norm.push(RecordField { name: f.name, value: normalize_at(spec, f.value, env.table.types) })
+                    None => norm.push(f)
+                }
+            }
+            Ok(make_record(type_name, norm))
         }
         WithFields { base, fields } => eval_with_field(base, fields, env, host, depth)
         VariantLit { type_name, name, fields } => {
             ro made = eval_fields(fields, "fields", env, host, depth)?
-            Ok(make_variant(type_name, name, made))
+            // the same wrap at the optional positions of a case (value.nv)
+            mut norm = []RecordField.new()
+            for f in made {
+                match case_field_spec(env.table.types, type_name, name, f.name) {
+                    Some(spec) => norm.push(RecordField { name: f.name, value: normalize_at(spec, f.value, env.table.types) })
+                    None => norm.push(f)
+                }
+            }
+            Ok(make_variant(type_name, name, norm))
         }
         ListLit(items) => {
             mut out = []Value.new()
