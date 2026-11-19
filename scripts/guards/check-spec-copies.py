@@ -61,6 +61,12 @@ def migrated(text, origin):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     out = mod.migrate_md(os.path.join(ROOT, origin), text, mod.Run(True))
+    text = text if out is None else out
+    # then 0.30 -> 0.31 (AL-159): the header `alula_version: 0.31`, the lambda in the form of Nova
+    spec = importlib.util.spec_from_file_location("migrate_alula_231", os.path.join(ROOT, "tools", "migrate-alula-231.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    out = mod.migrate_md(os.path.join(ROOT, origin), text, mod.Run(True))
     return text if out is None else out
 
 LINK = re.compile(r'\[(?:[^\[\]]|\[[^\]]*\])*\]\([^)\s]*(?:\s+"[^"]*")?\)')

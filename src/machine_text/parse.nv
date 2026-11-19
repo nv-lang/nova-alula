@@ -632,13 +632,55 @@ fn tx_fat(t TxTok) -> bool => t.kind == TK_SYM && t.text == "=>"
 /// The error about a former sign `->` where `=>` stands now (a lambda, a `match` branch): what to write instead; there is no transition period.
 fn former_arrow_error(t TxTok, where_ str, label str) -> TranslateError => tx_err(t.line, t.col, "syntax", "знак `->` ${where_} в формате 2.22 не бывает: пишется `=>` (${label}); `->` стоит только перед типом результата; переходного периода нет")
 
-fn is_lambda_start(p TxP, w TxWords) -> bool {
+fn is_lambda_start(p TxP, w TxWords, v226 bool) -> bool {
+    if v226 { return t_is(p_tok(p), "|") }
+    is_old_lambda_start(p, w)
+}
+
+// The lambda of 0.30 and of the 2.25 seam: `x => выр`, `(a, b) => выр`.
+fn is_old_lambda_start(p TxP, w TxWords) -> bool {
     ro t0 = p_tok(p)
     if t0.kind == TK_NAME && !is_keyword(w, t0.text) && (tx_fat(p_ahead(p, 1)) || tx_arrow(p_ahead(p, 1))) { return true }
     t_is(t0, "(") && p_ahead(p, 1).kind == TK_NAME && t_is(p_ahead(p, 2), ",") && p_ahead(p, 3).kind == TK_NAME && t_is(p_ahead(p, 4), ")") && (tx_fat(p_ahead(p, 5)) || tx_arrow(p_ahead(p, 5)))
 }
 
+// A lambda in a file of 0.31: the form of Nova, `|x| выр` / `|a, b| выр`; the body may be a block
+// expression as before (AL-84). The 2.25 seam and the 0.30 files keep the old form: the seam reads
+// and writes it (the texts of the tests), a 0.30 file is refused with the hint of the migrator.
 fn ex_lambda(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    if cx.v226 { return ex_lambda_nova(p, cx, sc) }
+    ex_lambda_old(p, cx, sc)
+}
+
+fn lambda_nova_needed(t TxTok) -> TranslateError =>
+    tx_err(t.line, t.col, "syntax", "лямбда 0.30 `x => выр` в 0.31 не пишется: `|x| выр` (двухместная — `|a, b| выр`); файл 0.30 переносит tools/migrate-alula-231.py")
+
+fn ex_lambda_nova(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
+    p_expect(p, "|")?
+    mut names = []TxTok.new()
+    names.push(p_tok(p))
+    p_adv(p)
+    if p_eat(p, ",") {
+        names.push(p_tok(p))
+        p_adv(p)
+        if t_is(p_tok(p), ",") { return Err(p_fail(p, "лямбда Алулы — одноместная или двухместная")) }
+    }
+    if !t_is(p_tok(p), "|") { return Err(p_fail(p, "ожидается закрывающий знак `|` лямбды")) }
+    p_adv(p)
+    mut inner = sc_clone(sc)
+    mut params = []str.new()
+    for n in names {
+        ro en = tr_binder(cx, n)
+        if params.contains(en) && en != "_" { cx_error(cx, n, "name", "параметр `${n.text}` повторён") }
+        params.push(en)
+        inner = sc_with(inner, n.text, en)
+    }
+    // the body is an expression, a block expression `|x| { пусть у = x * 2; у + 1 }` too (AL-84)
+    ro body = ex_expr(p, cx, inner)?
+    Ok(x_lambda(params, body))
+}
+
+fn ex_lambda_old(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxJ, TranslateError] {
     mut names = []TxTok.new()
     if p_eat(p, "(") {
         names.push(p_tok(p))
@@ -1247,8 +1289,10 @@ fn ex_args(mut p TxP, mut cx TxCx, sc TxScope) -> Result[TxArgs, TranslateError]
             ro value = ex_expr(p, cx, sc)?
             named.push(kv(t.text, value))
             named_tokens.push(t)
-        } else if is_lambda_start(p, cx.words) {
+        } else if is_lambda_start(p, cx.words, cx.v226) {
             positional.push(ex_lambda(p, cx, sc)?)
+        } else if cx.v226 && is_old_lambda_start(p, cx.words) {
+            return Err(lambda_nova_needed(p_tok(p)))
         } else {
             if named.len() > 0 { return Err(p_fail(p, "позиционный аргумент не может идти после именованного")) }
             positional.push(ex_expr(p, cx, sc)?)

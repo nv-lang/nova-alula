@@ -613,11 +613,13 @@ fn rn_expr(mut cx RnCx, v RJ, locals []str) -> str {
             names.push(rj_str(p))
             inner = rn_with(inner, rj_str(p))
         }
-        ro head = if names.len() == 1 { names[0] } else { "(${names.join(", ")})" }
         ro body = match rj_get(v, "body") {
             Some(x) => rn_expr(cx, x, inner)
             None => "none"
         }
+        // 0.31 writes the form of Nova; the 2.25 seam keeps the former form (its texts are byte-equal)
+        if cx.v226 { return "|${names.join(", ")}| ${body}" }
+        ro head = if names.len() == 1 { names[0] } else { "(${names.join(", ")})" }
         return "${head} ${rn_arrow(cx)} ${body}"
     }
     if op == "list" { return "[${rn_args(cx, rj_garr(v, "items"), locals)}]" }

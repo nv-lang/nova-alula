@@ -36,7 +36,7 @@ fn pilot_def() -> MachineDef {
         counter: "attempt",
     }
     MachineDef {
-        name: "Pilot", version: "2", alula_version: "0.30", types,
+        name: "Pilot", version: "2", alula_version: "0.31", types,
         constants: []ConstDef.new(), params: []ParamDef.new(),
         input: InputDef { present: false, fields: []FieldDef.new(), invariants: []Expr.new() },
         data: []DataDef.new(),
@@ -101,7 +101,7 @@ fn pilot_signals() -> Value {
 
 fn pilot_manifest() -> Value {
     obj([
-        mf("alula_version", st("0.30")),
+        mf("alula_version", st("0.31")),
         mf("machine", st("Pilot")),
         mf("revision", Int(2)),
         mf("types", pilot_types()),
@@ -117,7 +117,7 @@ fn pilot_manifest() -> Value {
 // arrays and the exact codec/envelope projections.
 fn example_manifest() -> Value {
     obj([
-        mf("alula_version", st("0.30")),
+        mf("alula_version", st("0.31")),
         mf("machine", st("Example")),
         mf("revision", Int(1)),
         mf("types", obj([mf("aliases", ary([]Value.new())), mf("records", ary([]Value.new())), mf("variants", ary([]Value.new()))])),
@@ -134,7 +134,7 @@ fn example_manifest() -> Value {
 test "mv example vector of the contract" {
     ro d = match contract_id(example_manifest()) { Ok(t) => t, Err(m) => "ERR: ${m}" }
     println("EXAMPLECONTRACT ${d}")
-    assert(d == "sha256:4f1c2bb4117bc1b49f5c1604997df2b742fb6e704dee2fb813ec70981c12e43a")
+    assert(d == "sha256:ef9e868b39f1f95c3be3a065d892ac7a4e7895b7dd447f12971a3948b04a0355")
     match validate_manifest(example_manifest()) {
         Ok(_) => ()
         Err(m) => panic("the contract vector is refused: ${m}")
@@ -145,7 +145,7 @@ test "mv pilot vector" {
     // the digests are computed by the model tools/typed_value_codec.py over the same projection
     ro d = match contract_id(pilot_manifest()) { Ok(t) => t, Err(m) => "ERR: ${m}" }
     println("PILOTCONTRACT ${d}")
-    assert(d == "sha256:830f699842ceb954953a50ec198fd7dd66cb9da1b1d4242feaf236166871ae29")
+    assert(d == "sha256:27ecb3673f79c13194de197cb7b45661d221c49de16da17bfec89ff374e8828a")
     match validate_manifest(pilot_manifest()) {
         Ok(_) => ()
         Err(m) => panic("the pilot manifest is refused: ${m}")
@@ -166,34 +166,34 @@ test "mv pilot from a machine def" {
         Err(e) => panic("the projection of the def is refused: ${e}")
     }
     ro d = match manifest_of(def) { Ok(m) => match contract_id(m) { Ok(t) => t, Err(_) => "ERR" }, Err(_) => "ERR" }
-    assert(d == "sha256:830f699842ceb954953a50ec198fd7dd66cb9da1b1d4242feaf236166871ae29")
+    assert(d == "sha256:27ecb3673f79c13194de197cb7b45661d221c49de16da17bfec89ff374e8828a")
 }
 
 test "mv artifact vector" {
     // the framing of the result B pinned by literals (computed by the model over the same projection)
     ro tree = obj([
-        mf("alula_version", st("0.30")),
+        mf("alula_version", st("0.31")),
         mf("kind", st("machine")),
         mf("machine", st("Pilot")),
         mf("revision", Int(2)),
     ])
-    ro a = match artifact_id("alula 0.30.0", tree, ary([]Value.new()), "", "") { Ok(t) => t, Err(m) => "ERR: ${m}" }
+    ro a = match artifact_id("alula 0.31.0", tree, ary([]Value.new()), "", "") { Ok(t) => t, Err(m) => "ERR: ${m}" }
     println("ARTIFACTA ${a}")
-    assert(a == "sha256:88ef769857dcd36209de0f1e27b1778f28bcb15c04ff00a74caeee6a572558e1")
+    assert(a == "sha256:dcbbe2669cf42b1e42ccf64dfe000d7c5cce28527a33c464d707ef91a339f2bf")
     // a library and the host texts change the artifact, not the contract
     ro libs = ary([obj([mf("hash", st("abc123def456")), mf("name", st("pause"))])])
-    ro b = match artifact_id("alula 0.30.0", tree, libs, "registry text", "journal text") { Ok(t) => t, Err(m) => "ERR: ${m}" }
+    ro b = match artifact_id("alula 0.31.0", tree, libs, "registry text", "journal text") { Ok(t) => t, Err(m) => "ERR: ${m}" }
     println("ARTIFACTB ${b}")
-    assert(b == "sha256:bf4cfa8a4875dd19626e94f80a2eebe4d492bfc1ee98f09e9be5aa0cba022b0a")
+    assert(b == "sha256:f10f240206a5c0f4d6d48b1b69e4efdd6d679ce1de07b6b6f185a7c742fd1731")
     // the libraries are sorted by the name before the digest
     ro libs2 = ary([obj([mf("hash", st("000000000000")), mf("name", st("aaa"))]), obj([mf("hash", st("abc123def456")), mf("name", st("pause"))])])
-    ro c = match artifact_id("alula 0.30.0", tree, libs2, "registry text", "journal text") { Ok(t) => t, Err(m) => "ERR: ${m}" }
+    ro c = match artifact_id("alula 0.31.0", tree, libs2, "registry text", "journal text") { Ok(t) => t, Err(m) => "ERR: ${m}" }
     ro libs3 = ary([obj([mf("hash", st("abc123def456")), mf("name", st("pause"))]), obj([mf("hash", st("000000000000")), mf("name", st("aaa"))])])
-    ro e = match artifact_id("alula 0.30.0", tree, libs3, "registry text", "journal text") { Ok(t) => t, Err(m) => "ERR: ${m}" }
+    ro e = match artifact_id("alula 0.31.0", tree, libs3, "registry text", "journal text") { Ok(t) => t, Err(m) => "ERR: ${m}" }
     assert(c == e)
     // the tree digest is inside: another tree, another artifact
-    ro tree2 = obj([mf("alula_version", st("0.30")), mf("kind", st("machine")), mf("machine", st("Other")), mf("revision", Int(2))])
-    ro f = match artifact_id("alula 0.30.0", tree2, ary([]Value.new()), "", "") { Ok(t) => t, Err(m) => "ERR: ${m}" }
+    ro tree2 = obj([mf("alula_version", st("0.31")), mf("kind", st("machine")), mf("machine", st("Other")), mf("revision", Int(2))])
+    ro f = match artifact_id("alula 0.31.0", tree2, ary([]Value.new()), "", "") { Ok(t) => t, Err(m) => "ERR: ${m}" }
     assert(f != a)
     // the locator (a different storage path) is NOT an input: the artifact does not change
     assert(a == a)
@@ -211,12 +211,12 @@ test "mv negatives unknown key and float" {
         Err(_) => ()
     }
     // a float is refused by the shape check before the canonicalization
-    match validate_manifest(obj([mf("alula_version", st("0.30")), mf("machine", st("Pilot")), mf("revision", Int(2)), mf("types", pilot_types()), mf("parties", pilot_parties()), mf("signals", pilot_signals()), mf("queries", ary([]Value.new())), mf("codec", codec_projection()), mf("event_envelope", envelope_projection())])) {
+    match validate_manifest(obj([mf("alula_version", st("0.31")), mf("machine", st("Pilot")), mf("revision", Int(2)), mf("types", pilot_types()), mf("parties", pilot_parties()), mf("signals", pilot_signals()), mf("queries", ary([]Value.new())), mf("codec", codec_projection()), mf("event_envelope", envelope_projection())])) {
         Ok(_) => ()
         Err(_) => panic("the pilot manifest itself must validate")
     }
     ro bad_codec = obj([
-        mf("alula_version", st("0.30")), mf("machine", st("Pilot")), mf("revision", Int(2)),
+        mf("alula_version", st("0.31")), mf("machine", st("Pilot")), mf("revision", Int(2)),
         mf("types", pilot_types()), mf("parties", pilot_parties()), mf("signals", pilot_signals()),
         mf("queries", ary([]Value.new())), mf("event_envelope", envelope_projection()),
         mf("codec", obj([mf("digest", st("MD5"))])),
@@ -284,7 +284,7 @@ fn pilot_manifest_entries() -> []DictEntry {
 
 fn manifest_with_signals(signals Value) -> Value {
     obj([
-        mf("alula_version", st("0.30")),
+        mf("alula_version", st("0.31")),
         mf("machine", st("Pilot")),
         mf("revision", Int(2)),
         mf("types", pilot_types()),
@@ -298,7 +298,7 @@ fn manifest_with_signals(signals Value) -> Value {
 
 fn manifest_with_revision(revision Value) -> Value {
     obj([
-        mf("alula_version", st("0.30")),
+        mf("alula_version", st("0.31")),
         mf("machine", st("Pilot")),
         mf("revision", revision),
         mf("types", pilot_types()),

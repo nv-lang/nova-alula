@@ -2,7 +2,7 @@
 
 - machine: meeting
 - revision: 1
-- alula_version: 0.30
+- alula_version: 0.31
 
 Это **запись машины «Совещание агентов» целиком на Алуле**, версия формата 0.28 ([spec/alula-spec.md](../alula-spec.md); он единственное определение языка записи). Первоисточник — эта запись на Алуле; прежние таблицы лежат в архиве и не обновляются. Прежняя запись — таблицы состояний [archive/task-runner-meeting-states.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/task-runner-meeting-states.md), код автомата [archive/task-runner-meeting-automaton.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/task-runner-meeting-automaton.md) и псевдокод [archive/task-runner-meeting-pseudocode.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/task-runner-meeting-pseudocode.md). Библиотека «Пауза» ([libs/pause.alula.md](libs/pause.alula.md)); прежняя запись — [archive/state-machine-pause-states.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/archive/state-machine-pause-states.md), коды журнала — [state-machine-journal.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/state-machine-journal.md), имена — [state-machine-glossary.md](https://github.com/unitcraft/ai-dev-methodology/blob/main/state-machines/state-machine-glossary.md). Вложенная машина «Шаг агента» — [spec/samples/agent-step.alula.md](agent-step.alula.md). Справка к записи — что не уложилось в формат, неоднозначности спецификации, соответствие источнику — [spec/samples/meeting-notes.md](meeting-notes.md).
 
@@ -100,8 +100,8 @@
 | вопрос_автора | ?строка | вопрос автора человеку, с которым совещание начинается |
 
 - Инвариант: длина(вход.порядок_линз) >= 1
-- Инвариант: вход.порядок_линз.все(л => вход.порядок_линз.количество(м => м == л) == 1)
-- Инвариант: вход.порядок_линз.все(л => не ["свидетель", "автор", "вратарь", "усиленный", "человек", "witness", "author", "gatekeeper", "enhanced", "human"].любой(с => с == л))
+- Инвариант: вход.порядок_линз.все(|л| вход.порядок_линз.количество(|м| м == л) == 1)
+- Инвариант: вход.порядок_линз.все(|л| не ["свидетель", "автор", "вратарь", "усиленный", "человек", "witness", "author", "gatekeeper", "enhanced", "human"].любой(|с| с == л))
 
 Идентификатор запроса вызова (`запрос_вызова`) во входе не лежит: его даёт исполнитель. Инварианты — инвариант 3 источника (идентификаторы линз отличны от слов-сторон) и условия «список непустой, идентификаторы различны» из данных `порядок_линз`; инвариант 1 источника (кто решает на воротах) записан сторонами «вратарь» и «усиленный», инвариант 2 (`номер_захода` не уменьшается) — признаком «не убывает» данного.
 
@@ -116,7 +116,7 @@
 | серия_чистых | число>=0 | 0 | — |
 | без_проб_подряд | число>=0 | 0 | — |
 | аннулирований | словарь[число>=0, число>=0] | [] | — |
-| линзы | словарь[строка, Линза] | вход.порядок_линз.словарь(л => л, л => Линза { идентификатор: л, потери_подряд: 0, пробы: 0, попытка: 0 }) | — |
+| линзы | словарь[строка, Линза] | вход.порядок_линз.словарь(\|л\| л, \|л\| Линза { идентификатор: л, потери_подряд: 0, пробы: 0, попытка: 0 }) | — |
 | к_отправке | []строка | [] | — |
 | ответившие | число>=0 | 0 | — |
 | сбойное_обращение | "" \| "Witness" \| "Lenses" \| "AuthorFix" \| "AuthorQuestion" | "" | — |
@@ -168,11 +168,11 @@
 
 ### арифметика_цикла
 - Файл: libs/cycle_arithmetic.alula.md
-- Хеш: 0f945c058f51
+- Хеш: a91871236f27
 
 ### Пауза
 - Файл: libs/pause.alula.md
-- Хеш: 0f19c09c003e
+- Хеш: b0f1a6e53e60
 
 | параметр | значение |
 |---|---|
