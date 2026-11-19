@@ -285,6 +285,8 @@ export fn parse_registry_table(text str) -> Result[HostRegistryData, []str] {
         if !in_table {
             in_table = true
             kind = if cells.len() > 0 { hs_table_kind(cells[0]) } else { 0 }
+            // the role table is the four-column one; the `tool | reason` table of a host is not a role table
+            if kind == 2 && cells.len() != 4 { kind = 0 }
             continue
         }
         if kind == 1 {
