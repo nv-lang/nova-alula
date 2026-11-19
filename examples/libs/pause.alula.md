@@ -1,7 +1,7 @@
 # Библиотека: Пауза
 
 - library: pause
-- alula_version: 0.30
+- alula_version: 0.31
 
 ## Параметры
 

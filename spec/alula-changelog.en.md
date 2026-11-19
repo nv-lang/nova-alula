@@ -8,6 +8,12 @@ Before 0.27 the numbers were written with a leading two: 2.26 is the previous re
 
 Change labels: the prefix AL- (Alula); before 2.17 the labels were written as Я-NN, the number is the same (the owner's word, 2026-10-22: «AL- — ОК»).
 
+**Against version 0.30.** The label of version 0.31 is **AL-159**: the owner's decision of 2026-11-19 (methodology chat, after an audit of the reasons: «лямбду Алулы свести к форме Новы `|…|`»). The format changes 0.30 → 0.31 (a breaking version, there is no transition period); the files are migrated by `tools/migrate-alula-231.py`. The tree nodes `lambda` and the wire do not change; the 13 tool signatures do not change.
+
+| № | Edit | Where |
+|---|---|---|
+| AL-159 | **a lambda in the form of Nova**: `\|x\| expr`, the binary `\|a, b\| expr`, an unneeded parameter `_`, a body-block `\|x\| { … }`; the former record `x => expr` / `(a, b) => expr` is a check error with the migrator hint; in a table cell the bars are written `\|`; the sign `=>` stays in a `match` branch and in the body of a function of one expression; the former objections of 2.18 to Nova's form are withdrawn by the owner as not objective (the escaping of `\|` is already paid for by literal sets since 2.5; the overloading of `\|` in Nova does not interfere); the tree nodes and the wire do not change | sections 1a, 3.1, 6, 7, 12 |
+
 **Against version 0.29.** The label of version 0.30 is **AL-158**: the owner's word of 2026-11-18 ("I would like to call these tools", the full rename). The format changes 0.29 → 0.30 (a breaking version, no transition period); the files are migrated by `tools/migrate-alula-230.py`. The tree key `primitives` and the action key `primitive` do not change.
 
 | № | Change | Where |

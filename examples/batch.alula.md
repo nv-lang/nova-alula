@@ -2,7 +2,7 @@
 
 - machine: Batch
 - revision: 1
-- alula_version: 0.30
+- alula_version: 0.31
 - language: en
 
 A set of nested calls (spec 4.2, `set:`; the party of the kind `machine`): one request to the machine `callee` for every name of the input `names`, no more than `LIMIT` at once (`Request limit`). The answers
@@ -32,7 +32,7 @@ type Job { name str, attempt int>=0 }
 |---|---|---|---|
 | names | []str | input.names | — |
 | to_send | []str | [] | — |
-| jobs | map[str, Job] | input.names.dict(n => n, n => Job { name: n, attempt: 0 }) | — |
+| jobs | map[str, Job] | input.names.dict(\|n\| n, \|n\| Job { name: n, attempt: 0 }) | — |
 | answered | []str | [] | — |
 | lost | []str | [] | — |
 
@@ -49,7 +49,7 @@ type Job { name str, attempt int>=0 }
 
 ### Pause
 - File: libs/pause.en.alula.md
-- Hash: b1163cc17e96
+- Hash: 7c0ee1ad4605
 
 | parameter | value |
 |---|---|

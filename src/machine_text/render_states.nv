@@ -596,8 +596,8 @@ fn rn_machine(machine_json str, language str, copy_includes bool, registry Regis
                 return RenderReport { text: "", notes: ["the key `portolan_version` is the former name of `alula_version` (the language is called Alula since the format 2.14; there is no transition period)"] } // guard-allow(legacy-name): the message names the former key
             }
             // a tree of another version of the language is not written (no transition period, task 125): the file would say a version that the translator does not read
-            if !seam && rj_gstr(root, "alula_version") != "" && rj_gstr(root, "alula_version") != "0.30" {
-                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 0.30 only is read and written (there is no transition period: a tree of 0.28 is migrated by tools/migrate-alula-229.py, of 0.27 — by tools/migrate-alula-228.py)"] }
+            if !seam && rj_gstr(root, "alula_version") != "" && rj_gstr(root, "alula_version") != "0.31" {
+                return RenderReport { text: "", notes: ["the tree is of the version ${rj_gstr(root, "alula_version")} of the language; the version 0.31 only is read and written (there is no transition period: a tree of 0.30 is migrated by tools/migrate-alula-231.py, of 0.29 — by tools/migrate-alula-230.py, of 0.28 — by tools/migrate-alula-229.py, of 0.27 — by tools/migrate-alula-228.py)"] }
             }
             ro former = rn_former_note(root, "$")
             if former != "" { return RenderReport { text: "", notes: [former] } }
@@ -619,7 +619,7 @@ fn rn_machine(machine_json str, language str, copy_includes bool, registry Regis
                 // the order of the header of 0.27 (1b (а), AL-144): machine, revision, alula_version, language
                 ro revision = rj_gscalar(shown, "revision")
                 out.push("- revision: ${if revision == "" { "1" } else { revision }}")
-                out.push("- alula_version: 0.30")
+                out.push("- alula_version: 0.31")
             }
             out.push("- language: ${language}")
             out.push("")

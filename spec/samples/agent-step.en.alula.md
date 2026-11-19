@@ -2,7 +2,7 @@
 
 - machine: agent_step
 - revision: 1
-- alula_version: 0.30
+- alula_version: 0.31
 - language: en
 
 This is an **illustration**: the "Agent step" machine in full, written in the Alula format, format version 2.24 ([spec/alula-spec.md](../alula-spec.md); it is the only definition of the notation). It is the English-language twin of [spec/samples/agent-step.alula.md](agent-step.alula.md): the same machine, row for row, with the English keywords of the [word table](../alula-keywords.tsv) (spec, section 1a); the JSON tree `machine/2` is the same for both files up to the internal names (constants, parameters, functions, party names, bindings). The file lets a reader open and see a real machine: types, data, parties, functions, all 37 transition rows, the ends with the "end to response" table, the attached "Pause" fragment; what the fragment brings (parameters, common events COMMON 1-6, the Pause state with events PAUSE 1-4) is described in section 9 of the specification.
@@ -175,7 +175,7 @@ fn decision_by_policy(action ActionKind, call_kind CallerKind) -> "allow" | "den
 }
 
 fn retry_pause(n int>=0) -> int =>
-  (1..n).fold(RETRY_PAUSE, (m, _) => m * 2)
+  (1..n).fold(RETRY_PAUSE, |m, _| m * 2)
 
 fn turn_term(req AgentRequest, request_turn str, retries int>=0) -> int {
   let extra = if request_turn == "retry" then { retry_pause(retries) } else { 0 };
@@ -209,7 +209,7 @@ Correspondence to the automaton code: the names of the functions are the names o
 
 ### Pause
 - File: libs/pause.en.alula.md
-- Hash: b1163cc17e96
+- Hash: 7c0ee1ad4605
 
 | parameter | value |
 |---|---|
