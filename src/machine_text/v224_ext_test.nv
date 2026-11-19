@@ -54,7 +54,7 @@ fn defs_says(body str, needle str) -> bool {
 test "v224 the named tail is the last parameter, the call gives the pairs in the order of the writing" {
     ro decl = "внешняя функция record_note(код число, ...поля: строка) действующая"
     ro tree = json_of_ext(decl, "; record_note(7, ключ: \"a\", второй: \"b\")")
-    assert(tree.contains("\"params\":[{\"name\":\"код\",\"type\":\"int\"},{\"name\":\"поля\",\"type\":\"str\",\"tail\":true}]"))
+    assert(tree.contains("\"params\":[{\"name\":\"код\",\"type\":\"int\"},{\"name\":\"поля\",\"type\":\"text\",\"tail\":true}]"))
     assert(tree.contains("\"named\":[{\"name\":\"ключ\",\"value\":{\"op\":\"lit\",\"value\":\"a\"}},{\"name\":\"второй\",\"value\":{\"op\":\"lit\",\"value\":\"b\"}}]"))
     // a call without pairs is allowed: the tail is empty
     assert(!note_says(with_ext(decl, "; record_note(7)"), "AL-129"))

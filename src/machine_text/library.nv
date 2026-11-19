@@ -1375,9 +1375,10 @@ fn contract_register(mut cx TxCx) -> () {
 /// The data of the engine of the library `контракт`: the JSON name, the type and the initial value of the tree. The machine reads them by name; only the engine writes them.
 fn contract_data_names() -> []str => ["call_request_id", "open_requests"]
 
-fn contract_datum_json(en str) -> TxJ {
-    if en == "open_requests" { return jobj([kv("name", js(en)), kv("type", js("[]str")), kv("initial", jobj([kv("expr", x_list([]TxJ.new()))])), kv("engine", TxBool(true))]) }
-    jobj([kv("name", js(en)), kv("type", js("str")), kv("initial", jobj([kv("expr", x_lit(js("")))])), kv("engine", TxBool(true))])
+fn contract_datum_json(en str, v226 bool) -> TxJ {
+    ro word = if v226 { "str" } else { "text" }
+    if en == "open_requests" { return jobj([kv("name", js(en)), kv("type", js(if v226 { "[]str" } else { "[]text" })), kv("initial", jobj([kv("expr", x_list([]TxJ.new()))])), kv("engine", TxBool(true))]) }
+    jobj([kv("name", js(en)), kv("type", js(word)), kv("initial", jobj([kv("expr", x_lit(js("")))])), kv("engine", TxBool(true))])
 }
 
 /// A row of `## Данные` (of the machine or of a library) that declares a datum of the engine of the contract is an error: the contract declares it (section 7а).
@@ -1437,10 +1438,10 @@ fn lib_types_contract(entries []TxEntry, sec TxSection, mut cx TxCx) -> () {
 }
 
 /// The data of the engine that the tree of a machine of 2.26 holds: those that the machine or its libraries read (by name; `открытые_запросы` also by `передать` and `отменить_открытые`).
-fn contract_data_used(text str) -> []TxJ {
+fn contract_data_used(text str, v226 bool) -> []TxJ {
     mut out = []TxJ.new()
-    if text.contains("\"op\":\"name\",\"name\":\"call_request_id\"") { out.push(contract_datum_json("call_request_id")) }
-    if text.contains("\"op\":\"name\",\"name\":\"open_requests\"") || text.contains("\"do\":\"pass\"") || text.contains("\"do\":\"cancel_open\"") { out.push(contract_datum_json("open_requests")) }
+    if text.contains("\"op\":\"name\",\"name\":\"call_request_id\"") { out.push(contract_datum_json("call_request_id", v226)) }
+    if text.contains("\"op\":\"name\",\"name\":\"open_requests\"") || text.contains("\"do\":\"pass\"") || text.contains("\"do\":\"cancel_open\"") { out.push(contract_datum_json("open_requests", v226)) }
     out
 }
 

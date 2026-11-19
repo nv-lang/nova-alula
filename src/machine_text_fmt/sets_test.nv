@@ -20,7 +20,7 @@ fn with_definition(def str) -> str => replaced(base_text(), "функция па
 
 test "st dict value" {
     ro text = with_data_row("| свод | словарь[строка, \"allow\" \\| \"deny\"] | [] | — | действия |")
-    assert(has_json(text, "{str: 'allow' | 'deny'}"))
+    assert(has_json(text, "{text: 'allow' | 'deny'}"))
 }
 
 test "st dict three" {
@@ -76,9 +76,9 @@ test "st in brackets" {
 }
 
 test "st nested" {
-    assert(has_json(with_data_row("| свод | словарь[строка, ?(\"a\" \\| \"b\")] | [] | — | действия |"), "{str: ?('a' | 'b')}"))
-    assert(has_json(with_data_row("| свод | словарь[строка, [](\"a\" \\| \"b\")] | [] | — | действия |"), "{str: []('a' | 'b')}"))
-    assert(has_json(with_data_row("| свод | словарь[строка, (\"a\" \\| \"b\", число)] | [] | — | действия |"), "{str: ('a' | 'b', int)}"))
+    assert(has_json(with_data_row("| свод | словарь[строка, ?(\"a\" \\| \"b\")] | [] | — | действия |"), "{text: ?('a' | 'b')}"))
+    assert(has_json(with_data_row("| свод | словарь[строка, [](\"a\" \\| \"b\")] | [] | — | действия |"), "{text: []('a' | 'b')}"))
+    assert(has_json(with_data_row("| свод | словарь[строка, (\"a\" \\| \"b\", число)] | [] | — | действия |"), "{text: ('a' | 'b', int)}"))
 }
 
 test "st one literal" {

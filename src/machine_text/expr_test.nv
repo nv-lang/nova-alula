@@ -41,8 +41,8 @@ test "ty base" {
     assert(ty("число>=0") == "int>=0")
     assert(ty("число>=1") == "int>=1")
     assert(ty("число >= 5") == "int>=5")
-    assert(ty("вещественное") == "f64")
-    assert(ty("строка") == "str")
+    assert(ty("вещественное") == "float")
+    assert(ty("строка") == "text")
     assert(ty("булево") == "bool")
     assert(ty("ид") == "id")
     assert(ty("Состояние") == "State")
@@ -51,13 +51,13 @@ test "ty base" {
 }
 
 test "ty compound" {
-    assert(ty("?строка") == "?str")
-    assert(ty("[]строка") == "[]str")
+    assert(ty("?строка") == "?text")
+    assert(ty("[]строка") == "[]text")
     assert(ty("[]?число>=0") == "[]?int>=0")
-    assert(ty("словарь[строка, число]") == "{str: int}")
-    assert(ty("полный словарь[КодСбоя, строка]") == "full {FailCode: str}")
-    assert(ty("(строка, число>=0)") == "(str, int>=0)")
-    assert(ty("(строка, число, булево)") == "(str, int, bool)")
+    assert(ty("словарь[строка, число]") == "{text: int}")
+    assert(ty("полный словарь[КодСбоя, строка]") == "full {FailCode: text}")
+    assert(ty("(строка, число>=0)") == "(text, int>=0)")
+    assert(ty("(строка, число, булево)") == "(text, int, bool)")
     assert(ty("?ид") == "?id")
     assert(ty("словарь[число>=0, []Токены]") == "{int>=0: []TokenUsage}")
 }
@@ -69,7 +69,7 @@ test "ty sets" {
     assert(ty("[](\"a\" | \"b\")") == "[](\"a\" | \"b\")")
     assert(ty("(\"a\" | \"b\")") == "\"a\" | \"b\"")
     assert(ty("(\"a\" | \"b\", число)") == "(\"a\" | \"b\", int)")
-    assert(ty("словарь[строка, \"a\" | \"b\"]") == "{str: \"a\" | \"b\"}")
+    assert(ty("словарь[строка, \"a\" | \"b\"]") == "{text: \"a\" | \"b\"}")
     assert(ty("\"a\" \\| \"b\"") == "\"a\" | \"b\"")
 }
 

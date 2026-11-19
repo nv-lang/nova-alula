@@ -76,13 +76,13 @@ test "l222 an enumeration with fields in lines" {
 test "l222 a record with the types of the words" {
     ro text = ru222_types("тип Заметка { текст строка, вес вещественное, готово булево }")
     assert(is_clean(text))
-    assert(tree222(text).contains("\"type\":\"str\"") && tree222(text).contains("\"type\":\"f64\"") && tree222(text).contains("\"type\":\"bool\""))
+    assert(tree222(text).contains("\"type\":\"text\"") && tree222(text).contains("\"type\":\"float\"") && tree222(text).contains("\"type\":\"bool\""))
 }
 
 test "l222 the same record in English" {
     ro text = en222_types("type Note { text str, weight f64, done bool }")
     assert(is_clean(text))
-    assert(tree222(text).contains("\"type\":\"str\"") && tree222(text).contains("\"type\":\"f64\"") && tree222(text).contains("\"type\":\"bool\""))
+    assert(tree222(text).contains("\"type\":\"text\"") && tree222(text).contains("\"type\":\"float\"") && tree222(text).contains("\"type\":\"bool\""))
 }
 
 test "l222 a comment stands in a block of code" {
@@ -279,7 +279,7 @@ test "l222 a loop in an action in both languages" {
 test "l222 a signal with fields in braces" {
     ro text = ru222("разрешить, отказать", "разрешить { автор строка }, отказать").replace("| 1 | сигнал(разрешить) | — | число_ходов += 1 | РЕШИТЬ |", "| 1 | сигнал(разрешить { автор }) | — | число_ходов += 1 | РЕШИТЬ |")
     assert(is_clean(text))
-    assert(tree222(text).contains("{\"name\":\"allow\",\"fields\":[{\"name\":\"author\",\"type\":\"str\"}]}"))
+    assert(tree222(text).contains("{\"name\":\"allow\",\"fields\":[{\"name\":\"author\",\"type\":\"text\"}]}"))
 }
 
 test "l222 a signal with fields in round brackets is refused" {

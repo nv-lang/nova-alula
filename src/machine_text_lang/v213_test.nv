@@ -211,7 +211,7 @@ test "v213 old column gate words refused en" {
 test "v213 signal with fields" {
     ro text = ru13("разрешить, отказать", "разрешить { автор строка }, отказать").replace("| 1 | сигнал(разрешить) | — | число_ходов += 1", "| 1 | сигнал(разрешить { автор }) | — | число_ходов += 1")
     assert(is_clean(text))
-    assert(json_of(text).contains("{\"name\":\"allow\",\"fields\":[{\"name\":\"author\",\"type\":\"str\"}]}"))
+    assert(json_of(text).contains("{\"name\":\"allow\",\"fields\":[{\"name\":\"author\",\"type\":\"text\"}]}"))
     assert(json_of(text).contains("\"event\":{\"kind\":\"signal\",\"name\":\"allow\",\"bind\":{\"author\":\"author\"}}"))
 }
 
@@ -228,7 +228,7 @@ test "v213 signal gets the name of the dictionary" {
 
 test "v213 signal field gets its name by itself" {
     ro text = ru13("разрешить, отказать", "разрешить { автор строка }, отказать")
-    assert(json_of(text).contains("{\"name\":\"allow\",\"fields\":[{\"name\":\"author\",\"type\":\"str\"}]}"))
+    assert(json_of(text).contains("{\"name\":\"allow\",\"fields\":[{\"name\":\"author\",\"type\":\"text\"}]}"))
 }
 
 test "v213 signal latin needs no json name" {
