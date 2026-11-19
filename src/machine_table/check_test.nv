@@ -232,7 +232,7 @@ test "data checks" {
     ro with_input = tiny_with(",{\"name\":\"m\",\"type\":\"int\",\"initial\":{\"from_input\":\"k\"}}", "", tiny_wait_rows(), tiny_ends_rows()).replace("\"data\":[", "\"input\":{\"fields\":[{\"name\":\"k\",\"type\":\"int\"}]},\"data\":[")
     assert(ok_text(with_input))
     assert(says(with_input.replace("\"name\":\"k\"", "\"name\":\"q\""), "the input has no field k"))
-    assert(says(tiny_with(",{\"name\":\"t\",\"type\":\"text\",\"initial\":{\"expr\":${jl(jstr(""))}},\"monotonic\":true}", "", tiny_wait_rows(), tiny_ends_rows()), "only a number does not decrease"))
+    assert(says(tiny_with(",{\"name\":\"t\",\"type\":\"str\",\"initial\":{\"expr\":${jl(jstr(""))}},\"monotonic\":true}", "", tiny_wait_rows(), tiny_ends_rows()), "only a number does not decrease"))
     assert(says(tiny_with(",{\"name\":\"p[*].q\",\"type\":\"int\",\"initial\":{\"expr\":${jl("1")}}}", "", tiny_wait_rows(), tiny_ends_rows()), "a path datum has no initial value"))
     assert(says(tiny_with(",{\"name\":\"ghost[*].q\",\"type\":\"int\"}", "", tiny_wait_rows(), tiny_ends_rows()), "names a datum that is not declared"))
 }

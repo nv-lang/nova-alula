@@ -67,6 +67,12 @@ def migrated(text, origin):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     out = mod.migrate_md(os.path.join(ROOT, origin), text, mod.Run(True))
+    text = text if out is None else out
+    # then 0.31 -> 0.32 (AL-160): the header `alula_version: 0.32`, the tree type words str/f64
+    spec = importlib.util.spec_from_file_location("migrate_alula_232", os.path.join(ROOT, "tools", "migrate-alula-232.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    out = mod.migrate_md(os.path.join(ROOT, origin), text, mod.Run(True))
     return text if out is None else out
 
 LINK = re.compile(r'\[(?:[^\[\]]|\[[^\]]*\])*\]\([^)\s]*(?:\s+"[^"]*")?\)')

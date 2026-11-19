@@ -241,9 +241,9 @@ fn lib_header(lines []str, mut cx TxCx) -> TxLibHead {
         }
     }
     if library == "" { note(cx, struct_error(1, 1, "в шапке библиотеки нет строки `- library: <латинское_имя>`")) }
-    if format != "0.31" && !old {
+    if format != "0.32" && !old {
         ro shown = if format == "" { "не указана" } else { format }
-        note(cx, struct_error(1, 1, "версия языка библиотеки ${shown}: библиотека пишется на Алуле 0.31 (строка `- alula_version: 0.31`)"))
+        note(cx, struct_error(1, 1, "версия языка библиотеки ${shown}: библиотека пишется на Алуле 0.32 (строка `- alula_version: 0.32`)"))
     }
     TxLibHead { title, library, format }
 }
@@ -318,7 +318,7 @@ fn lib_is_text(v str) -> bool => v.byte_len() >= 2 && v.starts_with("\"") && v.e
 // What is wrong with a value for the type of a parameter (empty when it fits): the literal of a text, a value of a set, a list, a number, a truth value; another type takes any expression.
 fn lib_value_wrong(type_json str, text str, w TxWords) -> str {
     ro v = text.trim_ascii()
-    if type_json == "text" {
+    if type_json == "str" || type_json == "text" {
         if !lib_is_text(v) {
             ro why = "значение — текст в кавычках"
             return why
@@ -1144,7 +1144,7 @@ fn libs_protocol_json(wanted []str, mut cx TxCx) -> []TxJ {
         jn_declare_fixed(cx, 0, 0, proto_word(cx, s.en), "сигнала машины", "сигналы машины", [s.en], s.en)
         mut fields = []TxJ.new()
         for f in s.fields {
-            fields.push(jobj([kv("name", js(f)), kv("type", js("text"))]))
+            fields.push(jobj([kv("name", js(f)), kv("type", js("str"))]))
             ro f_word = proto_field_word(cx, f)
             if !pair_has(cx.env.fields, f_word) { pair_add(cx.env.fields, f_word, f) }
         }
@@ -1250,7 +1250,7 @@ fn libs_requires(runs []TxLibRun, blocks []TxBlock, data []TxJ, mut cx TxCx) -> 
 fn lib_type_takes(have str, want str) -> bool {
     if have == want { return true }
     if want.starts_with("\"") {
-        if have == "text" { return true }
+        if have == "str" || have == "text" { return true }
         if !have.starts_with("\"") { return false }
         ro mine = lib_set_values(have)
         for v in lib_set_values(want) {
@@ -1375,9 +1375,10 @@ fn contract_register(mut cx TxCx) -> () {
 /// The data of the engine of the library `контракт`: the JSON name, the type and the initial value of the tree. The machine reads them by name; only the engine writes them.
 fn contract_data_names() -> []str => ["call_request_id", "open_requests"]
 
-fn contract_datum_json(en str) -> TxJ {
-    if en == "open_requests" { return jobj([kv("name", js(en)), kv("type", js("[]text")), kv("initial", jobj([kv("expr", x_list([]TxJ.new()))])), kv("engine", TxBool(true))]) }
-    jobj([kv("name", js(en)), kv("type", js("text")), kv("initial", jobj([kv("expr", x_lit(js("")))])), kv("engine", TxBool(true))])
+fn contract_datum_json(en str, v226 bool) -> TxJ {
+    ro word = if v226 { "str" } else { "text" }
+    if en == "open_requests" { return jobj([kv("name", js(en)), kv("type", js(if v226 { "[]str" } else { "[]text" })), kv("initial", jobj([kv("expr", x_list([]TxJ.new()))])), kv("engine", TxBool(true))]) }
+    jobj([kv("name", js(en)), kv("type", js(word)), kv("initial", jobj([kv("expr", x_lit(js("")))])), kv("engine", TxBool(true))])
 }
 
 /// A row of `## Данные` (of the machine or of a library) that declares a datum of the engine of the contract is an error: the contract declares it (section 7а).
@@ -1437,10 +1438,10 @@ fn lib_types_contract(entries []TxEntry, sec TxSection, mut cx TxCx) -> () {
 }
 
 /// The data of the engine that the tree of a machine of 2.26 holds: those that the machine or its libraries read (by name; `открытые_запросы` also by `передать` and `отменить_открытые`).
-fn contract_data_used(text str) -> []TxJ {
+fn contract_data_used(text str, v226 bool) -> []TxJ {
     mut out = []TxJ.new()
-    if text.contains("\"op\":\"name\",\"name\":\"call_request_id\"") { out.push(contract_datum_json("call_request_id")) }
-    if text.contains("\"op\":\"name\",\"name\":\"open_requests\"") || text.contains("\"do\":\"pass\"") || text.contains("\"do\":\"cancel_open\"") { out.push(contract_datum_json("open_requests")) }
+    if text.contains("\"op\":\"name\",\"name\":\"call_request_id\"") { out.push(contract_datum_json("call_request_id", v226)) }
+    if text.contains("\"op\":\"name\",\"name\":\"open_requests\"") || text.contains("\"do\":\"pass\"") || text.contains("\"do\":\"cancel_open\"") { out.push(contract_datum_json("open_requests", v226)) }
     out
 }
 

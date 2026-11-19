@@ -233,8 +233,8 @@ fn rn_ty_read(cx RnCx, mut t RnTy) -> str {
         }
         return rn_kw(cx, "type", "int")
     }
-    if name == "float" { return rn_kw(cx, "type", "f64") }
-    if name == "text" { return rn_kw(cx, "type", "str") }
+    if name == "float" || name == "f64" { return rn_kw(cx, "type", "f64") }
+    if name == "text" || name == "str" { return rn_kw(cx, "type", "str") }
     if name == "bool" || name == "id" || name == "JournalEvent" || name == "State" || name == "Signal" { return rn_kw(cx, "type", name) }
     if name == "" {
         // a sign that no type starts with: it is stepped over, the whole char

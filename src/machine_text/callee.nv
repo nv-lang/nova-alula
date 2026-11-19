@@ -199,12 +199,12 @@ fn literal_misfit(row TxJ, want_in str) -> str {
     match el_get(row, "value") {
         Some(v) => {
             if el_str(v, "op") != "lit" { return "" }
-            ro texty = want == "text" || want == "id" || want.starts_with("\"")
-            ro numeric = want.starts_with("int") || want == "float"
+            ro texty = want == "str" || want == "text" || want == "id" || want.starts_with("\"")
+            ro numeric = want.starts_with("int") || want == "f64" || want == "float"
             match el_get(v, "value") {
                 Some(x) => {
                     match x {
-                        TxStr(t) => { if numeric || want == "bool" { return "text" } }
+                        TxStr(t) => { if numeric || want == "bool" { return "str" } }
                         TxRaw(t) => { if texty || want == "bool" { return "number" } }
                         TxBool(b) => { if texty || numeric { return "bool" } }
                         _ => ()

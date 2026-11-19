@@ -14,7 +14,7 @@ fn lib_fenced(text str) -> str => text.replace("~~~", "```")
 fn cycle_lib_text() -> str => lib_fenced(`# Библиотека: арифметика_цикла
 
 - library: cycle_arithmetic
-- alula_version: 0.31
+- alula_version: 0.32
 
 ## Функции
 
@@ -28,7 +28,7 @@ fn cycle_lib_text() -> str => lib_fenced(`# Библиотека: арифмет
 fn pause_lib_text() -> str => `# Библиотека: Пауза
 
 - library: pause
-- alula_version: 0.31
+- alula_version: 0.32
 
 ## Параметры
 
@@ -128,7 +128,7 @@ fn lib226_text() -> str {
 
 - machine: Lib
 - revision: 1
-- alula_version: 0.31
+- alula_version: 0.32
 
 ## Имена
 
@@ -338,7 +338,7 @@ test "v226 lib a library declares no external functions" {
     ro bad = lib_fenced(`# Библиотека: арифметика_цикла
 
 - library: cycle_arithmetic
-- alula_version: 0.31
+- alula_version: 0.32
 
 ## Инструменты
 
@@ -388,7 +388,7 @@ test "v226 contract a datum of the engine is read by its name and enters the tre
     ro text = t226_with("| число_ходов >= 4 |  | КОНЕЦ |", "| число_ходов >= 4 и запрос_вызова != \"\" |  | КОНЕЦ |")
     assert(first226(text) == "ok")
     ro j = json226(text)
-    assert(j.contains("{\"name\":\"call_request_id\",\"type\":\"text\",\"initial\":{\"expr\":{\"op\":\"lit\",\"value\":\"\"}},\"engine\":true}") || j.contains("\"name\":\"call_request_id\",\"type\":\"text\",\"initial\":{\"op\":\"lit\",\"value\":\"\"},\"engine\":true"))
+    assert(j.contains("{\"name\":\"call_request_id\",\"type\":\"str\",\"initial\":{\"expr\":{\"op\":\"lit\",\"value\":\"\"}},\"engine\":true}") || j.contains("\"name\":\"call_request_id\",\"type\":\"str\",\"initial\":{\"op\":\"lit\",\"value\":\"\"},\"engine\":true"))
 }
 
 test "v226 contract the term is an event of the party" {
@@ -403,7 +403,7 @@ fn parts226_text() -> str => lib_fenced(`# Машина: Parts
 
 - machine: Parts
 - revision: 1
-- alula_version: 0.31
+- alula_version: 0.32
 
 ## Типы
 

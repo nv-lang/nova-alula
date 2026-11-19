@@ -553,9 +553,10 @@ fn ty_parse(mut p TxP, mut cx TxCx) -> Result[str, TranslateError] {
         }
         return Ok("int")
     }
-    // the types of the file are `вещественное`/`f64` and `строка`/`str`; the tree names them `float` and `text` (AL-94 ... AL-96)
-    if p_eat_kw(p, words, "type", "f64") { return Ok("float") }
-    if p_eat_kw(p, words, "type", "str") { return Ok("text") }
+    // the types of the file are `вещественное`/`f64` and `строка`/`str`; the tree of 0.32 names them `f64` and `str`,
+    // the tree of the 2.25 seam keeps the former words `float` and `text` (the seam texts render byte-equal)
+    if p_eat_kw(p, words, "type", "f64") { return Ok(if cx.v226 { "f64" } else { "float" }) }
+    if p_eat_kw(p, words, "type", "str") { return Ok(if cx.v226 { "str" } else { "text" }) }
     if p_eat_kw(p, words, "type", "id") { return Ok("id") }
     if p_eat_kw(p, words, "type", "State") { return Ok("State") }
     if p_eat_kw(p, words, "type", "Signal") { return Ok("Signal") }
