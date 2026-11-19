@@ -1,5 +1,5 @@
 // build.nv - a machine that is data made ready to run: the constants and the parameters evaluated, the definitions with the type
-// names, the registry that checks the primitives, the initial data.
+// names, the registry that checks the tools, the initial data.
 module alula.machine_run
 
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
@@ -227,7 +227,7 @@ export fn load_alula_machine_with(text str, registry Registry, overrides []Proje
     }
 }
 
-/// The same machine with the answers of the primitives of its default host (`ScriptedHost`).
+/// The same machine with the answers of the tools of its default host (`ScriptedHost`).
 export fn with_replies(machine AlulaMachine, replies []ScriptedReply) -> AlulaMachine {
     AlulaMachine {
         def: machine.def, table: machine.table, initial_data: machine.initial_data, quiet_start: machine.quiet_start, replies, limit: machine.limit

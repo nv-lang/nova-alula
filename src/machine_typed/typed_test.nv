@@ -377,7 +377,7 @@ test "tv recursive declarations" {
 test "tv validation negatives" {
     // the descriptor and the declarations are checked BEFORE the value (an empty list and none included)
     ro decls = th_decls()
-    assert(th_bytes(Int(1), Text("i64x"), decls) == "ERR: unknown primitive")
+    assert(th_bytes(Int(1), Text("i64x"), decls) == "ERR: unknown tool")
     assert(th_bytes(Int(1), one_entry("nope", Text("i64")), decls) == "ERR: unknown schema constructor")
     assert(th_bytes(List([]Value.new()), one_entry("tuple", Text("i64")), decls) == "ERR: malformed schema descriptor")
     mut one = []Value.new()
@@ -394,7 +394,7 @@ test "tv validation negatives" {
     assert(th_bytes(Null, fullmap_schema("pkg.V1", Text("str")), decls) == "ERR: full_map key type must be a non-empty fieldless variant")
     assert(th_bytes(Null, fullmap_schema("pkg.A", Text("str")), decls) == "ERR: full_map key type must be a non-empty fieldless variant")
     // a value is read only after the schema passes: an empty optional of a BAD schema is still refused
-    assert(th_bytes(Null, opt_schema(Text("i64x")), decls) == "ERR: unknown primitive")
+    assert(th_bytes(Null, opt_schema(Text("i64x")), decls) == "ERR: unknown tool")
 }
 
 test "tv json roundtrip compound" {

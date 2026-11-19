@@ -12,7 +12,7 @@
 //   {"op":"index","of":E,"index":E}             a list by position, a dict by key (absent key: none)
 //   {"op":"call","fn":"filter","args":[E,...]}  a function or a list function of the language; a lambda is an argument
 //   {"op":"lambda","params":["x"],"body":E}     only as an argument of a list function (the draft form {"lambda":["x"],"body":E} is read too)
-//   {"op":"primitive_call","name":"p","args":[E,...]}    a primitive of the host, by name (registry.nv)
+//   {"op":"primitive_call","name":"p","args":[E,...]}    a tool of the host, by name (registry.nv)
 //   {"op":"match","on":E,"arms":[{"patterns":[P,...],"guard":E,"body":E},...]}   exhaustive; "guard" is optional
 //   {"op":"let","name":"x","value":E,"body":E}
 //   {"op":"if","cond":E,"then":E,"else":E}
@@ -76,7 +76,7 @@ export type Expr enum
     | IndexOf { target Expr, index Expr }
     | CallFn { name str, args []Expr }
     | Lambda { params []str, body Expr }
-    | CallPrimitive { name str, args []Expr, named []FieldExpr }
+    | CallTool { name str, args []Expr, named []FieldExpr }
     | MatchOn { subject Expr, arms []MatchArm }
     | LetIn { name str, value Expr, body Expr }
     | IfElse { cond Expr, then_branch Expr, else_branch Expr }
@@ -106,10 +106,10 @@ export fn name_ref(name str) -> Expr => Name(name)
 export fn field_of(target Expr, name str) -> Expr => FieldOf { target, name }
 export fn index_of(target Expr, index Expr) -> Expr => IndexOf { target, index }
 export fn call(name str, args []Expr) -> Expr => CallFn { name, args }
-export fn call_primitive(name str, args []Expr) -> Expr => CallPrimitive { name, args, named: []FieldExpr.new() }
+export fn call_tool(name str, args []Expr) -> Expr => CallTool { name, args, named: []FieldExpr.new() }
 
 /// A call of an external function with the pairs `ключ: значение` of its named tail (AL-129), in the order of the writing.
-export fn call_primitive_named(name str, args []Expr, named []FieldExpr) -> Expr => CallPrimitive { name, args, named }
+export fn call_tool_named(name str, args []Expr, named []FieldExpr) -> Expr => CallTool { name, args, named }
 export fn lambda1(p str, body Expr) -> Expr => Lambda { params: [p], body }
 export fn lambda2(first str, second str, body Expr) -> Expr => Lambda { params: [first, second], body }
 export fn bin(op BinOp, left Expr, right Expr) -> Expr => Binary { op, left, right }
@@ -158,7 +158,7 @@ export fn expr_depth(e Expr) -> int {
         IndexOf { target, index } => 1 + max_of(expr_depth(target), expr_depth(index))
         CallFn { name, args } => 1 + deepest(args)
         Lambda { params, body } => 1 + expr_depth(body)
-        CallPrimitive { name, args, named } => 1 + max_of(deepest(args), deepest_fields(named))
+        CallTool { name, args, named } => 1 + max_of(deepest(args), deepest_fields(named))
         MatchOn { subject, arms } => {
             mut best = expr_depth(subject)
             for a in arms {
@@ -220,7 +220,7 @@ fn children(e Expr) -> []ExprChild {
         IndexOf { target, index } => [kid("of", target), kid("index", index)]
         CallFn { name, args } => kids_of_list("args", args)
         Lambda { params, body } => [kid("body", body)]
-        CallPrimitive { name, args, named } => {
+        CallTool { name, args, named } => {
             mut out = kids_of_list("args", args)
             for f in named { out.push(ExprChild { seg: "named.${f.name}", expr: f.value }) }
             out
@@ -397,7 +397,7 @@ export fn expr_to_json(e Expr) -> JsonValue {
             put(o, "body", expr_to_json(body))
             JsonValue.object(o)
         }
-        CallPrimitive { name, args, named } => {
+        CallTool { name, args, named } => {
             mut o = node("primitive_call")
             put(o, "name", JsonValue.str(name))
             put(o, "args", items_json(args))
@@ -744,7 +744,7 @@ fn dec_op(op str, o JsonObject, path str, depth int) -> Result[Expr, ExprError] 
             ro listed = need_array(o, "args", path)?
             ro args = dec_list(listed, "${path}.args", depth)?
             ro named = dec_named(o, path, depth)?
-            Ok(CallPrimitive { name, args, named })
+            Ok(CallTool { name, args, named })
         }
         "match" => dec_match(o, path, depth)
         "let" => {

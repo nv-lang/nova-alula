@@ -1,8 +1,8 @@
 // registry_test.nv - the registry: registration, the class in the position of a call, the registry of the language, the check of the arguments and of the results against a registry (a fixture of this file). The registry of a host is data (task 158): its tests are with its owner.
 module alula.machine
 
-fn rprim(name str, params []ParamSpec, result TypeSpec, class PrimitiveClass) -> Primitive {
-    Primitive { name, params, result, class, reads: []str.new(), writes: []str.new() }
+fn rprim(name str, params []ParamSpec, result TypeSpec, class ToolClass) -> Tool {
+    Tool { name, params, result, class, reads: []str.new(), writes: []str.new() }
 }
 
 fn rall_positions() -> []Position {
@@ -25,7 +25,7 @@ fn rpos_path(registry Registry, e Expr, position Position) -> str {
 
 fn rtext(s str) -> Value => Text(s)
 
-// The registry of the tests: the language and primitives of the three classes (`finish_turn` is acting with no result, the other acting ones give a value); the types of their signatures.
+// The registry of the tests: the language and tools of the three classes (`finish_turn` is acting with no result, the other acting ones give a value); the types of their signatures.
 fn rfixture() -> Registry {
     mut reg = language_registry()
     for p in [
@@ -93,28 +93,28 @@ test "rg register" {
         Ok(u) => assert(true)
         Err(x) => assert(false)
     }
-    match find_primitive(reg, "read_clock") {
+    match find_tool(reg, "read_clock") {
         Some(found) => assert(found.name == "read_clock" && class_word(found.class) == "volatile")
         None => assert(false)
     }
-    match find_primitive(reg, "other") {
+    match find_tool(reg, "other") {
         Some(found) => assert(false)
         None => assert(true)
     }
-    assert(reg.primitives.len() == 1)
+    assert(reg.tools.len() == 1)
 }
 
 test "rg bad" {
     mut reg = new_registry()
     ro p = rprim("p", [param("a", IntType)], NothingType, Acting)
     match register(reg, p) { Ok(u) => assert(true), Err(x) => assert(false) }
-    match register(reg, p) { Ok(u) => assert(false), Err(x) => assert(x.message == "the primitive p is registered already") }
-    match register(reg, rprim("", []ParamSpec.new(), NothingType, Pure)) { Ok(u) => assert(false), Err(x) => assert(x.message == "the name of a primitive is empty") }
+    match register(reg, p) { Ok(u) => assert(false), Err(x) => assert(x.message == "the tool p is registered already") }
+    match register(reg, rprim("", []ParamSpec.new(), NothingType, Pure)) { Ok(u) => assert(false), Err(x) => assert(x.message == "the name of a tool is empty") }
     match register(reg, rprim("q", [param("a", IntType), param("a", TextType)], NothingType, Pure)) {
         Ok(u) => assert(false)
-        Err(x) => assert(x.message == "the primitive q has the parameter a twice")
+        Err(x) => assert(x.message == "the tool q has the parameter a twice")
     }
-    assert(reg.primitives.len() == 1)
+    assert(reg.tools.len() == 1)
 }
 
 test "rg words" {
@@ -154,23 +154,23 @@ test "cs acting" {
 
 test "ps call" {
     ro reg = rfixture()
-    assert(rpos_ok(reg, call_primitive("read_note", []Expr.new()), ForkEntryPos))
-    assert(!rpos_ok(reg, call_primitive("read_note", []Expr.new()), ConditionPos))
-    assert(rpos_ok(reg, call_primitive("commit_turn", []Expr.new()), EndEntryPos))
-    assert(!rpos_ok(reg, call_primitive("commit_turn", []Expr.new()), ForkEntryPos))
+    assert(rpos_ok(reg, call_tool("read_note", []Expr.new()), ForkEntryPos))
+    assert(!rpos_ok(reg, call_tool("read_note", []Expr.new()), ConditionPos))
+    assert(rpos_ok(reg, call_tool("commit_turn", []Expr.new()), EndEntryPos))
+    assert(!rpos_ok(reg, call_tool("commit_turn", []Expr.new()), ForkEntryPos))
     match check_call_position(reg, "commit_turn", InputPos) {
         Ok(u) => assert(false)
-        Err(x) => assert(x.message == "the acting primitive commit_turn may not stand in input")
+        Err(x) => assert(x.message == "the acting tool commit_turn may not stand in input")
     }
     match check_call_position(reg, "no_such", ActionPos) {
         Ok(u) => assert(false)
-        Err(x) => assert(x.message == "the primitive no_such is not registered" && x.primitive == "no_such")
+        Err(x) => assert(x.message == "the tool no_such is not registered" && x.tool == "no_such")
     }
 }
 
 test "ps walk" {
     ro reg = rfixture()
-    ro cond = en(And, call_primitive("read_note", []Expr.new()), lit_bool(true))
+    ro cond = en(And, call_tool("read_note", []Expr.new()), lit_bool(true))
     assert(!rpos_ok(reg, cond, ConditionPos))
     assert(rpos_path(reg, cond, ConditionPos) == "$.left")
     assert(rpos_ok(reg, cond, ForkEntryPos))
@@ -179,68 +179,68 @@ test "ps walk" {
 
 test "ps inside" {
     ro reg = rfixture()
-    ro in_lambda = call("map", [name_ref("xs"), lambda1("x", call_primitive("seal", [name_ref("x")]))])
+    ro in_lambda = call("map", [name_ref("xs"), lambda1("x", call_tool("seal", [name_ref("x")]))])
     assert(rpos_ok(reg, in_lambda, ActionPos))
     assert(rpos_ok(reg, in_lambda, OperationEntryPos))
     assert(rpos_path(reg, in_lambda, ForkEntryPos) == "$.args[1].body")
-    ro in_arm = MatchOn { subject: name_ref("r"), arms: [arm([AnyPattern], Some(call_primitive("read_note", []Expr.new())), call_primitive("step_number", []Expr.new()))] }
+    ro in_arm = MatchOn { subject: name_ref("r"), arms: [arm([AnyPattern], Some(call_tool("read_note", []Expr.new())), call_tool("step_number", []Expr.new()))] }
     assert(rpos_path(reg, in_arm, ConditionPos) == "$.arms[0].guard")
     assert(rpos_ok(reg, in_arm, EndEntryPos))
-    ro in_let = let_in("a", lit_int(1), if_else(lit_bool(true), call_primitive("log_all", []Expr.new()), lit_int(0)))
+    ro in_let = let_in("a", lit_int(1), if_else(lit_bool(true), call_tool("log_all", []Expr.new()), lit_int(0)))
     assert(rpos_path(reg, in_let, InputPos) == "$.body.then")
 }
 
 test "ps unknown" {
     ro reg = rfixture()
-    match check_expr_positions(reg, bin(Add, lit_int(1), call_primitive("nope", []Expr.new())), ActionPos) {
+    match check_expr_positions(reg, bin(Add, lit_int(1), call_tool("nope", []Expr.new())), ActionPos) {
         Ok(u) => assert(false)
-        Err(x) => assert(x.path == "$.right" && x.primitive == "nope")
+        Err(x) => assert(x.path == "$.right" && x.tool == "nope")
     }
 }
 
 test "ps language" {
-    // the primitive of the language (spec 7a) is always there: of the class volatile, no parameters
+    // the tool of the language (spec 7a) is always there: of the class volatile, no parameters
     ro reg = language_registry()
-    assert(reg.primitives.len() == 1)
-    assert(rpos_ok(reg, call_primitive("new_id", []Expr.new()), OperationEntryPos))
+    assert(reg.tools.len() == 1)
+    assert(rpos_ok(reg, call_tool("new_id", []Expr.new()), OperationEntryPos))
     // new_id in the actions of a row is allowed by the class (volatile, AL-116, AL-117); its own rule (a binding of the entry of an operation) is a check of the table
-    assert(rpos_ok(reg, call_primitive("new_id", []Expr.new()), ActionPos))
-    assert(!rpos_ok(reg, call_primitive("new_id", []Expr.new()), ConditionPos))
-    assert(!rpos_ok(reg, call_primitive("party_profile", []Expr.new()), OperationEntryPos))
+    assert(rpos_ok(reg, call_tool("new_id", []Expr.new()), ActionPos))
+    assert(!rpos_ok(reg, call_tool("new_id", []Expr.new()), ConditionPos))
+    assert(!rpos_ok(reg, call_tool("party_profile", []Expr.new()), OperationEntryPos))
 }
 
 test "ps acting without a result" {
-    // AL-116: an acting primitive without a result is not a value: its call is an action, not an expression and not the value of a binding
+    // AL-116: an acting tool without a result is not a value: its call is an action, not an expression and not the value of a binding
     ro reg = rfixture()
-    assert(rpos_ok(reg, call_primitive("commit_turn", []Expr.new()), ActionPos))
+    assert(rpos_ok(reg, call_tool("commit_turn", []Expr.new()), ActionPos))
     match check_call_position(reg, "finish_turn", ActionPos) {
         Ok(u) => assert(true)
         Err(x) => assert(false)
     }
-    match check_expr_positions(reg, call_primitive("finish_turn", []Expr.new()), ActionPos) {
+    match check_expr_positions(reg, call_tool("finish_turn", []Expr.new()), ActionPos) {
         Ok(u) => assert(false)
         Err(x) => {
-            assert(x.primitive == "finish_turn")
-            assert(x.message.contains("the acting primitive finish_turn has no result"))
+            assert(x.tool == "finish_turn")
+            assert(x.message.contains("the acting tool finish_turn has no result"))
         }
     }
-    ro inside = bin(Add, lit_int(1), call("max", [lit_int(2), call_primitive("finish_turn", []Expr.new())]))
+    ro inside = bin(Add, lit_int(1), call("max", [lit_int(2), call_tool("finish_turn", []Expr.new())]))
     assert(rpos_path(reg, inside, OperationEntryPos) == "$.right.args[1]")
-    // an acting primitive that gives a value stands in an expression
-    assert(rpos_ok(reg, call_primitive("seal", [lit_text("x")]), EndEntryPos))
+    // an acting tool that gives a value stands in an expression
+    assert(rpos_ok(reg, call_tool("seal", [lit_text("x")]), EndEntryPos))
 }
 
 test "rg pure reads its arguments only" {
     mut reg = new_registry()
-    ro with_reads = Primitive { name: "p", params: []ParamSpec.new(), result: IntType, class: Pure, reads: ["a"], writes: []str.new() }
+    ro with_reads = Tool { name: "p", params: []ParamSpec.new(), result: IntType, class: Pure, reads: ["a"], writes: []str.new() }
     match register(reg, with_reads) {
         Ok(u) => assert(false)
-        Err(x) => assert(x.message.contains("the pure primitive p reads its arguments only"))
+        Err(x) => assert(x.message.contains("the pure tool p reads its arguments only"))
     }
-    ro with_writes = Primitive { name: "p", params: []ParamSpec.new(), result: IntType, class: Pure, reads: []str.new(), writes: ["b"] }
+    ro with_writes = Tool { name: "p", params: []ParamSpec.new(), result: IntType, class: Pure, reads: []str.new(), writes: ["b"] }
     match register(reg, with_writes) { Ok(u) => assert(false), Err(x) => assert(true) }
     match register(reg, rprim("p", []ParamSpec.new(), IntType, Pure)) { Ok(u) => assert(true), Err(x) => assert(false) }
-    ro volatile = Primitive { name: "v", params: []ParamSpec.new(), result: IntType, class: Volatile, reads: ["a"], writes: []str.new() }
+    ro volatile = Tool { name: "v", params: []ParamSpec.new(), result: IntType, class: Volatile, reads: ["a"], writes: []str.new() }
     match register(reg, volatile) { Ok(u) => assert(true), Err(x) => assert(false) }
 }
 
@@ -250,7 +250,7 @@ test "ag count types" {
     assert(rargs("profile_of", [rtext("a"), rtext("b")]) == "$: wrong argument count for profile_of: expected 1, got 2")
     assert(rargs("profile_of", [Int(1)]) == "$.party: expected text, got int")
     assert(rargs("read_note", []Value.new()) == "ok")
-    assert(rargs("no_such", []Value.new()) == "$: the primitive no_such is not registered")
+    assert(rargs("no_such", []Value.new()) == "$: the tool no_such is not registered")
 }
 
 test "ag records" {
@@ -281,7 +281,7 @@ test "rs checked" {
 }
 
 test "ps names" {
-    ro e = bin(Add, call_primitive("a", [call_primitive("b", []Expr.new())]), bin(Add, call_primitive("b", []Expr.new()), call_primitive("c", []Expr.new())))
+    ro e = bin(Add, call_tool("a", [call_tool("b", []Expr.new())]), bin(Add, call_tool("b", []Expr.new()), call_tool("c", []Expr.new())))
     ro names = primitive_names(e)
     assert(names.len() == 3)
     assert(names[0] == "a" && names[1] == "b" && names[2] == "c")

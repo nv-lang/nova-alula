@@ -1,4 +1,4 @@
-// machine.nv - the machine for the engine: the protocol `Machine[AlulaState]` over `alula_step`, the default host of the primitives, the text of
+// machine.nv - the machine for the engine: the protocol `Machine[AlulaState]` over `alula_step`, the default host of the tools, the text of
 // the state for the snapshot.
 module alula.machine_run
 
@@ -6,14 +6,14 @@ import std.encoding.json.{Json, JsonValue, JsonObject}
 import std.identifiers.uuid.{Uuid}
 import std.testing.handlers as th
 import alula.engine.{Incoming, Environment, Transition}
-import alula.machine.{Value, Null, Text, EvalError, PrimitiveFailed, FieldDef, value_to_json, value_from_json, normalize_record_fields}
+import alula.machine.{Value, Null, Text, EvalError, ToolFailed, FieldDef, value_to_json, value_from_json, normalize_record_fields}
 import alula.machine_table.{find_state}
 
-/// ScriptedHost: the default host of the primitives of a machine (`PrimitiveHost`). The stamp `at` of the event it was made for is the seed of `new_id` (the time itself is read as `event.at`, AL-134,
-/// not through the host): a step reads the world through its event only; any other primitive answers what the script says, or fails. `new_id` (format 2.5)
+/// ScriptedHost: the default host of the tools of a machine (`ToolHost`). The stamp `at` of the event it was made for is the seed of `new_id` (the time itself is read as `event.at`, AL-134,
+/// not through the host): a step reads the world through its event only; any other tool answers what the script says, or fails. `new_id` (format 2.5)
 /// is a UUID v7 made by `Uuid.v7()` under the clock `at` and a random source seeded with the stamp and the number of the call in the step (`ids`):
 /// a step is a function of the state and the event, and the same step gives the same ids. A host of the product that reads files and writes
-/// buffers is another `PrimitiveHost`, passed to `alula_step`, and gives real random ids.
+/// buffers is another `ToolHost`, passed to `alula_step`, and gives real random ids.
 export type ScriptedHost { at int, replies []ScriptedReply, ids int }
 
 // The UUID v7 of the n-th call of a step made at the stamp `at`.
@@ -22,7 +22,7 @@ fn scripted_id(at int, n int) -> str {
     with Time = th.fixed_ms(at as u64), Random = th.seeded(seed) { Uuid.v7().to_str() }
 }
 
-export fn ScriptedHost mut @call_primitive(name str, args []Value) -> Result[Value, EvalError] {
+export fn ScriptedHost mut @call_tool(name str, args []Value) -> Result[Value, EvalError] {
     for r in @replies {
         if r.name == name { return Ok(r.value) }
     }
@@ -31,7 +31,7 @@ export fn ScriptedHost mut @call_primitive(name str, args []Value) -> Result[Val
         @ids = @ids + 1
         return Ok(Text(id))
     }
-    Err(EvalError { kind: PrimitiveFailed, message: "the host has no answer for the primitive ${name}", path: "" })
+    Err(EvalError { kind: ToolFailed, message: "the host has no answer for the tool ${name}", path: "" })
 }
 
 /// The name of the machine for the journal.
@@ -43,7 +43,7 @@ export fn AlulaMachine @initial() -> AlulaState => { name: @def.initial, started
 /// The name of a state for the journal line.
 export fn AlulaMachine @state_name(state AlulaState) -> str => state.name
 
-/// One step: the protocol `Machine`. The primitives go to the default host with the clock of the event.
+/// One step: the protocol `Machine`. The tools go to the default host with the clock of the event.
 export fn AlulaMachine @step(current AlulaState, event Incoming, mut environment Environment) -> Transition[AlulaState] {
     // ORACLE-WORKAROUND(45): a copy of a `ro` list (`@replies`) built by hand in a loop; write `mut replies = @replies` when item 45 is fixed
     mut replies = []ScriptedReply.new()

@@ -568,12 +568,12 @@ The marks AL-115 ... AL-122 (the changelog is [spec/alula-changelog.md](../../sp
 
 # Alula 2.24 (task 181, version 0.6.0)
 
-The marks AL-123, AL-128 ... AL-132 (the changelog is [spec/alula-changelog.md](../../spec/alula-changelog.md)); the external functions are described in [src/host/README.md](../host/README.md) (task 179) and in [src/machine_text/README.md](../machine_text/README.md) (tasks 175 and 181).
+The marks AL-123, AL-128 ... AL-132 (the changelog is [spec/alula-changelog.md](../../spec/alula-changelog.md)); the tools are described in [src/host/README.md](../host/README.md) (task 179) and in [src/machine_text/README.md](../machine_text/README.md) (tasks 175 and 181).
 
 - **The version.** `alula_versions()` is `["2.24"]`, `ALULA_VERSION` is `"2.24"`; the schema lists only `2.24`; the package and the program are `0.6.0` (`alula version` prints `alula 0.6.0 (Alula 2.24, machine/2)`). There is no transition period: a tree of 2.23 and a table with `format: 2.23` are refused with the version named.
 - **The parse by role (AL-131).** `ParseDef { primitive, result }`: the tree holds no literal of a role (the key `role` is not in the schema); `Registry` is `{ primitives, journal }`, `RoleRow`, `find_role`, `has_roles`, `add_role` are gone, a table by role in `registry.md` is an error; the executor calls the function of the parse with the answer only (`apply_parse` in `machine_run/chain.nv`).
 - **The hashes.** The line `format` is a part of the hash of a file of functions, so the hashes of the samples became the Russian `818a4aaeef4f`, the English `431e7018e2bb`, the functions of the meeting in the tests `cf2a79073e96`; the hash of the dictionary is `35c571ccda17` (the dictionary of the version 13, 1270 pairs; the one of the version 11 went with the format 2.23).
-- **The data.** The examples, the samples of the methodology (the agent step in both languages, the machine "Meeting"), the cases, the files of functions and the Pause say `format: 2.24`; the machine "Meeting" names the three parse functions by role in `разбор:` and declares them in `## Внешние функции`.
+- **The data.** The examples, the samples of the methodology (the agent step in both languages, the machine "Meeting"), the cases, the files of functions and the Pause say `format: 2.24`; the machine "Meeting" names the three parse functions by role in `разбор:` and declares them in `## Инструменты`.
 
 # Alula 2.25 (task 225, version 0.7.0)
 

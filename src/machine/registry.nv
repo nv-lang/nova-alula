@@ -1,30 +1,30 @@
-// registry.nv - the registry of the primitives of the host and the classes of the positions of a call.
+// registry.nv - the registry of the tools of the host and the classes of the positions of a call.
 //
-// A primitive is what a machine may ask of the host that the language cannot do: read an object, write a file, close a turn of
+// A tool is what a machine may ask of the host that the language cannot do: read an object, write a file, close a turn of
 // an agent. The registry is a table of records "name, parameters with types, result, class" (draft-format-v1.md, section 7).
-// The core only keeps the table and checks it: nothing is called here; a call goes through the `PrimitiveHost` of eval.nv.
+// The core only keeps the table and checks it: nothing is called here; a call goes through the `ToolHost` of eval.nv.
 //
-// Classes and where a call of each is allowed (format 2.23, section 7; the class is of a primitive of the host, a function of the author has no class, it is always pure):
+// Classes and where a call of each is allowed (format 2.23, section 7; the class is of a tool of the host, a function of the author has no class, it is always pure):
 //   Pure      everywhere (conditions, expressions, the table "Input", actions, "On entry"); it reads its arguments only, so its columns `reads` and `writes` are `—`;
 //   Volatile  (its result depends on the world: the clock, a file, a store) in "Input" of an appeal, in the "profile" of a party, in "On entry" (an operation, a fork, an end),
 //             in "On accept" and in the actions of a row (the actions of the chosen row run once); not in conditions;
 //   Acting    (it changes the world) in "On entry" of an operation and of an end and in the actions of a row; not in conditions, not in "Input", not in the "profile",
-//             not in "On entry" of a fork, not in "On accept". An acting primitive without a result is not a value: its call is an action, it does not stand in an expression
+//             not in "On entry" of a fork, not in "On accept". An acting tool without a result is not a value: its call is an action, it does not stand in an expression
 //             or on the right of a binding (`check_expr_positions`). The format says the host runs it as the last stage of a commit and that it may be repeated without harm;
-//             in this implementation a call of any class is made at once, in its place in the actions, BEFORE the step is written (`PrimitiveHost`
+//             in this implementation a call of any class is made at once, in its place in the actions, BEFORE the step is written (`ToolHost`
 //             is called from `run_actions`), so repeatability is the host's duty: a step that fails after the call is rolled back and the call has been made.
 //             A queue run after the write is not built; it comes with a real host with files and processes, or with the first case of a double call.
 // The positions are `Position`: ConditionPos (a condition of a row, an expression of the data and of the definitions), InputPos,
 // ProfilePos, ForkEntryPos, OperationEntryPos, EndEntryPos, AcceptPos, ActionPos.
-// A primitive also names what it reads without an argument (`reads`: they join the "Input" of the state of the call, rule 11)
+// A tool also names what it reads without an argument (`reads`: they join the "Input" of the state of the call, rule 11)
 // and what it writes (`writes`: the data of the machine of an acting one, the service records of a volatile one).
 //
-// `language_registry()` holds the one primitive that the language itself names (`new_id`; spec section 7a, AL-113; since 2.25 the time is the stamp of the event `event.at`, AL-134, and the former function of the time is gone) and the table of the codes of the language; the other primitives are the
+// `language_registry()` holds the one tool that the language itself names (`new_id`; spec section 7a, AL-113; since 2.25 the time is the stamp of the event `event.at`, AL-134, and the former function of the time is gone) and the table of the codes of the language; the other tools are the
 // data of the host (a file `registry.md` in the form of the section 7, read by `parse_registry_table` of `alula.machine_table`): the bodies are the host's, the registry keeps a name, the types and the class.
 module alula.machine
 
-/// PrimitiveClass: what a primitive of the host does to the world: Pure reads its arguments only, Volatile reads the world (its result depends on it), Acting changes the world.
-export type PrimitiveClass enum
+/// ToolClass: what a tool of the host does to the world: Pure reads its arguments only, Volatile reads the world (its result depends on it), Acting changes the world.
+export type ToolClass enum
     | Pure
     | Volatile
     | Acting
@@ -40,30 +40,30 @@ export type Position enum
     | AcceptPos
     | ActionPos
 
-/// ParamSpec: a parameter of a primitive. The named tail `...имя: Тип` (AL-129) is the last parameter with `tail`: `spec` is the type of its values, the host gets the pairs `[](name, value)` as the last argument.
+/// ParamSpec: a parameter of a tool. The named tail `...имя: Тип` (AL-129) is the last parameter with `tail`: `spec` is the type of its values, the host gets the pairs `[](name, value)` as the last argument.
 export type ParamSpec { name str, spec TypeSpec, tail bool }
 
-/// Primitive: the signature and the class of a primitive of the host.
-export type Primitive { name str, params []ParamSpec, result TypeSpec, class PrimitiveClass, reads []str, writes []str }
+/// Tool: the signature and the class of a tool of the host.
+export type Tool { name str, params []ParamSpec, result TypeSpec, class ToolClass, reads []str, writes []str }
 
-/// Registry: the primitives, in the order of registration; the codes of the journal that a machine may write (the table of the language and the table of the host, format 5, 2.12, AL-31;
+/// Registry: the tools, in the order of registration; the codes of the journal that a machine may write (the table of the language and the table of the host, format 5, 2.12, AL-31;
 /// empty means that the codes are not checked against a table). There is no table "by role" since 2.24 (AL-131): a parse is one function per role.
-export type Registry { primitives []Primitive, journal []JournalCode }
+export type Registry { tools []Tool, journal []JournalCode }
 
-/// RegistryError: a primitive cannot be registered.
+/// RegistryError: a tool cannot be registered.
 export type RegistryError { message str }
 
-/// PositionError: a call of a primitive in a place where its class is not allowed (or a primitive that is not registered).
-export type PositionError { path str, primitive str, message str }
+/// PositionError: a call of a tool in a place where its class is not allowed (or a tool that is not registered).
+export type PositionError { path str, tool str, message str }
 
 /// A parameter.
 export fn param(name str, spec TypeSpec) -> ParamSpec => { name, spec, tail: false }
 
-/// The named tail of a primitive (AL-129): the last parameter, `spec` is the type of the values of the pairs.
+/// The named tail of a tool (AL-129): the last parameter, `spec` is the type of the values of the pairs.
 export fn tail_param(name str, spec TypeSpec) -> ParamSpec => { name, spec, tail: true }
 
 /// An empty registry.
-export fn new_registry() -> Registry => { primitives: []Primitive.new(), journal: []JournalCode.new() }
+export fn new_registry() -> Registry => { tools: []Tool.new(), journal: []JournalCode.new() }
 
 /// Put the table of the codes of the journal into the registry (the union of the table of the language and of the table of the host).
 export fn with_journal(mut registry Registry, codes []JournalCode) -> () {
@@ -71,20 +71,20 @@ export fn with_journal(mut registry Registry, codes []JournalCode) -> () {
 }
 
 /// The same registry with no table of the journal: the codes of a machine are not checked against a table (a host that names no table, the samples of the specification).
-export fn without_journal(registry Registry) -> Registry => { primitives: registry.primitives, journal: []JournalCode.new() }
+export fn without_journal(registry Registry) -> Registry => { tools: registry.tools, journal: []JournalCode.new() }
 
-/// Register a primitive; a second one with the same name, a repeated parameter name, an empty name are errors.
-export fn register(mut registry Registry, primitive Primitive) -> Result[(), RegistryError] {
-    if primitive.name.byte_len() == 0 { return Err(RegistryError { message: "the name of a primitive is empty" }) }
-    for p in registry.primitives {
-        if p.name == primitive.name { return Err(RegistryError { message: "the primitive ${primitive.name} is registered already" }) }
+/// Register a tool; a second one with the same name, a repeated parameter name, an empty name are errors.
+export fn register(mut registry Registry, tool Tool) -> Result[(), RegistryError] {
+    if tool.name.byte_len() == 0 { return Err(RegistryError { message: "the name of a tool is empty" }) }
+    for p in registry.tools {
+        if p.name == tool.name { return Err(RegistryError { message: "the tool ${tool.name} is registered already" }) }
     }
     mut i = 0
-    while i < primitive.params.len() {
+    while i < tool.params.len() {
         mut j = i + 1
-        while j < primitive.params.len() {
-            if primitive.params[i].name == primitive.params[j].name {
-                return Err(RegistryError { message: "the primitive ${primitive.name} has the parameter ${primitive.params[i].name} twice" })
+        while j < tool.params.len() {
+            if tool.params[i].name == tool.params[j].name {
+                return Err(RegistryError { message: "the tool ${tool.name} has the parameter ${tool.params[i].name} twice" })
             }
             j += 1
         }
@@ -92,30 +92,30 @@ export fn register(mut registry Registry, primitive Primitive) -> Result[(), Reg
     }
     // the named tail is the last parameter, and only one (AL-129)
     mut at = 0
-    while at < primitive.params.len() {
-        if primitive.params[at].tail && at + 1 != primitive.params.len() {
-            return Err(RegistryError { message: "the primitive ${primitive.name} has the named tail ${primitive.params[at].name} not last (AL-129)" })
+    while at < tool.params.len() {
+        if tool.params[at].tail && at + 1 != tool.params.len() {
+            return Err(RegistryError { message: "the tool ${tool.name} has the named tail ${tool.params[at].name} not last (AL-129)" })
         }
         at += 1
     }
-    // a pure primitive reads its arguments only (format 2.23): it has nothing to say in `reads` and `writes`
-    if primitive.class == Pure && (primitive.reads.len() > 0 || primitive.writes.len() > 0) {
-        return Err(RegistryError { message: "the pure primitive ${primitive.name} reads its arguments only: its columns reads and writes are `—`" })
+    // a pure tool reads its arguments only (format 2.23): it has nothing to say in `reads` and `writes`
+    if tool.class == Pure && (tool.reads.len() > 0 || tool.writes.len() > 0) {
+        return Err(RegistryError { message: "the pure tool ${tool.name} reads its arguments only: its columns reads and writes are `—`" })
     }
-    registry.primitives.push(primitive)
+    registry.tools.push(tool)
     Ok(())
 }
 
-/// The primitive with the name.
-export fn find_primitive(registry Registry, name str) -> Option[Primitive] {
-    for p in registry.primitives {
+/// The tool with the name.
+export fn find_tool(registry Registry, name str) -> Option[Tool] {
+    for p in registry.tools {
         if p.name == name { return Some(p) }
     }
     None
 }
 
 /// The word of a class: pure, volatile, acting.
-export fn class_word(class PrimitiveClass) -> str {
+export fn class_word(class ToolClass) -> str {
     match class {
         Pure => "pure"
         Volatile => "volatile"
@@ -138,7 +138,7 @@ export fn position_word(position Position) -> str {
 }
 
 /// May a call of this class stand in this position?
-export fn class_allowed(class PrimitiveClass, position Position) -> bool {
+export fn class_allowed(class ToolClass, position Position) -> bool {
     match class {
         Pure => true
         Volatile => match position {
@@ -154,14 +154,14 @@ export fn class_allowed(class PrimitiveClass, position Position) -> bool {
     }
 }
 
-/// May the primitive be called in this position? An unknown primitive is an error.
+/// May the tool be called in this position? An unknown tool is an error.
 export fn check_call_position(registry Registry, name str, position Position) -> Result[(), PositionError] {
-    match find_primitive(registry, name) {
+    match find_tool(registry, name) {
         Some(p) => {
             if class_allowed(p.class, position) { return Ok(()) }
-            Err(PositionError { path: "$", primitive: name, message: "the ${class_word(p.class)} primitive ${name} may not stand in ${position_word(position)}" })
+            Err(PositionError { path: "$", tool: name, message: "the ${class_word(p.class)} tool ${name} may not stand in ${position_word(position)}" })
         }
-        None => Err(PositionError { path: "$", primitive: name, message: "the primitive ${name} is not registered" })
+        None => Err(PositionError { path: "$", tool: name, message: "the tool ${name} is not registered" })
     }
 }
 
@@ -174,23 +174,23 @@ fn is_nothing_spec(spec TypeSpec) -> bool {
 
 fn walk_positions(registry Registry, e Expr, position Position, path str) -> Result[(), PositionError] {
     match e {
-        CallPrimitive { name, args, named } => {
+        CallTool { name, args, named } => {
             match check_call_position(registry, name, position) {
                 Ok(u) => ()
-                Err(x) => return Err(PositionError { path, primitive: x.primitive, message: x.message })
+                Err(x) => return Err(PositionError { path, tool: x.tool, message: x.message })
             }
-            match find_primitive(registry, name) {
+            match find_tool(registry, name) {
                 Some(p) => {
                     if p.class == Acting && is_nothing_spec(p.result) {
-                        return Err(PositionError { path, primitive: name, message: "the acting primitive ${name} has no result: its call is an action, it does not stand in an expression or on the right of a binding" })
+                        return Err(PositionError { path, tool: name, message: "the acting tool ${name} has no result: its call is an action, it does not stand in an expression or on the right of a binding" })
                     }
                     ro tail = p.params.len() > 0 && p.params[p.params.len() - 1].tail
                     ro wanted = if tail { p.params.len() - 1 } else { p.params.len() }
                     if args.len() != wanted {
-                        return Err(PositionError { path, primitive: name, message: "${name} takes ${wanted} arguments, got ${args.len()}" })
+                        return Err(PositionError { path, tool: name, message: "${name} takes ${wanted} arguments, got ${args.len()}" })
                     }
                     if named.len() > 0 && !tail {
-                        return Err(PositionError { path, primitive: name, message: "${name} has no named tail: the pairs `имя: значение` are for an external function with `...имя: Тип` (AL-129)" })
+                        return Err(PositionError { path, tool: name, message: "${name} has no named tail: the pairs `имя: значение` are for an external function with `...имя: Тип` (AL-129)" })
                     }
                 }
                 None => ()
@@ -207,14 +207,14 @@ fn walk_positions(registry Registry, e Expr, position Position, path str) -> Res
     Ok(())
 }
 
-/// Walk a tree and check every call of a primitive in it for the position. The error has the path of the call in the tree.
+/// Walk a tree and check every call of a tool in it for the position. The error has the path of the call in the tree.
 export fn check_expr_positions(registry Registry, expr Expr, position Position) -> Result[(), PositionError] {
     walk_positions(registry, expr, position, "$")
 }
 
 fn collect_names(e Expr, mut out []str) -> () {
     match e {
-        CallPrimitive { name, args, named } => {
+        CallTool { name, args, named } => {
             mut known = false
             for n in out {
                 if n == name { known = true }
@@ -226,22 +226,22 @@ fn collect_names(e Expr, mut out []str) -> () {
     for c in children(e) { collect_names(c.expr, out) }
 }
 
-/// The names of the primitives a tree calls, in the order of the walk, each once.
+/// The names of the tools a tree calls, in the order of the walk, each once.
 export fn primitive_names(expr Expr) -> []str {
     mut out = []str.new()
     collect_names(expr, out)
     out
 }
 
-/// Does the primitive end its parameters with a named tail (AL-129)?
+/// Does the tool end its parameters with a named tail (AL-129)?
 export fn has_tail(registry Registry, name str) -> bool {
-    match find_primitive(registry, name) {
+    match find_tool(registry, name) {
         Some(p) => p.params.len() > 0 && p.params[p.params.len() - 1].tail
         None => false
     }
 }
 
-// The last argument of a call of a primitive with a tail: the list of the pairs `(name, value)`, each value of the type of the tail.
+// The last argument of a call of a tool with a tail: the list of the pairs `(name, value)`, each value of the type of the tail.
 fn check_tail_pairs(q ParamSpec, v Value, defs TypeDefs) -> Result[(), TypeCheckError] {
     match v {
         List(items) => {
@@ -269,9 +269,9 @@ fn check_tail_pairs(q ParamSpec, v Value, defs TypeDefs) -> Result[(), TypeCheck
     }
 }
 
-/// Check the arguments of a call against the parameters of the primitive (the count and the types).
+/// Check the arguments of a call against the parameters of the tool (the count and the types).
 export fn check_call_args(registry Registry, defs TypeDefs, name str, args []Value) -> Result[(), TypeCheckError] {
-    match find_primitive(registry, name) {
+    match find_tool(registry, name) {
         Some(p) => {
             if args.len() != p.params.len() {
                 return Err(TypeCheckError { path: "$", message: "wrong argument count for ${name}: expected ${p.params.len()}, got ${args.len()}" })
@@ -293,30 +293,30 @@ export fn check_call_args(registry Registry, defs TypeDefs, name str, args []Val
             }
             Ok(())
         }
-        None => Err(TypeCheckError { path: "$", message: "the primitive ${name} is not registered" })
+        None => Err(TypeCheckError { path: "$", message: "the tool ${name} is not registered" })
     }
 }
 
-/// Check the result of a primitive against its declared type.
+/// Check the result of a tool against its declared type.
 export fn check_call_result(registry Registry, defs TypeDefs, name str, result Value) -> Result[(), TypeCheckError] {
-    match find_primitive(registry, name) {
+    match find_tool(registry, name) {
         Some(p) => check_value(p.result, result, defs)
-        None => Err(TypeCheckError { path: "$", message: "the primitive ${name} is not registered" })
+        None => Err(TypeCheckError { path: "$", message: "the tool ${name} is not registered" })
     }
 }
 
-// ---- the primitives of the language ---------------------------------------------------------------------------------------
+// ---- the tools of the language ---------------------------------------------------------------------------------------
 
 fn nothing() -> []str => []str.new()
 fn no_params() -> []ParamSpec => []ParamSpec.new()
 
-/// The registry of the language (spec section 7a, AL-113, AL-134): the one standard primitive that every host and every executor must give, `new_id` (a new identifier, format 2.5) of the class `volatile`,
-/// and the table of the 35 codes of the language. There is no function of the time since 2.25: the time is the stamp of the event, `event.at`. A host adds its own primitives and codes (`host_registry` of `alula.machine_table`):
+/// The registry of the language (spec section 7a, AL-113, AL-134): the one standard tool that every host and every executor must give, `new_id` (a new identifier, format 2.5) of the class `volatile`,
+/// and the table of the 35 codes of the language. There is no function of the time since 2.25: the time is the stamp of the event, `event.at`. A host adds its own tools and codes (`host_registry` of `alula.machine_table`):
 /// the registry of a host is this one and the data of the host.
 export fn language_registry() -> Registry {
     mut reg = new_registry()
-    // format 2.5, section 7: a built-in primitive; a new identifier (UUID v7), fixed in the event `now` of an operation
-    ro fresh = Primitive { name: "new_id", params: no_params(), result: IdType, class: Volatile, reads: nothing(), writes: nothing() }
+    // format 2.5, section 7: a built-in tool; a new identifier (UUID v7), fixed in the event `now` of an operation
+    ro fresh = Tool { name: "new_id", params: no_params(), result: IdType, class: Volatile, reads: nothing(), writes: nothing() }
     for p in [fresh] {
         match register(reg, p) {
             Ok(u) => ()

@@ -18,7 +18,7 @@ export const MACHINE_FORMAT = "machine/2"
 
 /// The version of the language Alula of the methodology that the tree follows (the key `alula_version`; the translator writes it in every tree). The key was named `table_format`
 /// before task 113 and `alula_version` before task 148; neither old name is accepted (the language is called Alula, there is no transition period).
-export const ALULA_VERSION = "0.29"
+export const ALULA_VERSION = "0.30"
 
 /// The version of a tree without the key `alula_version` in the form of the seam (`format` and `version`): 2.25. A tree with `kind` and without the key is of 0.28 (spec 6: the version that
 /// the program reads).
@@ -32,11 +32,11 @@ const FORMER_VERSION_KEY = "portolan_version" // guard-allow(legacy-name): the f
 
 /// The versions of the language that this package writes and names (`alula version`): one, 0.28. There is no transition period (the word of the owner, 2026-10-20): the files of 0.27
 /// are migrated by the script `tools/migrate-alula-229.py`, a tree of 0.28 or of an older version is refused.
-export fn alula_versions() -> []str => ["0.29"]
+export fn alula_versions() -> []str => ["0.30"]
 
 /// The versions whose tree the decoder takes: 0.28 and 2.25. The tree of 2.25 (with the old keys `format` and `version`) is read for the texts of the tests of the package that keep the
 /// form of 2.25 (the seam of 2.25, task 239); the files of the users and the samples are of 0.28.
-export fn alula_versions_read() -> []str => ["2.25", "0.29"]
+export fn alula_versions_read() -> []str => ["2.25", "0.30"]
 
 fn le(path str, message str) -> LoadError => { path, message }
 
@@ -726,18 +726,18 @@ fn dec_signals_or_empty(o JsonObject, key str, defs TypeDefs, path str) -> Resul
 }
 
 // The `разбор` of a party of 0.28: {"primitive": "name"} (a key `role` is not in the tree since 2.24: one function per role, AL-131; the type of the result comes from the declaration
-// of the function, the tree holds it not — 0.28). A tree of the seam of 2.25 keeps the type after `->`: {"primitive": "name", "type": "T"}.
+// of the function, the tree holds it not — 0.28). A tree of the seam of 2.25 keeps the type after `->`: {"tool": "name", "type": "T"}.
 fn dec_parse(o JsonObject, defs TypeDefs, path str, modern bool) -> Result[ParseDef, LoadError] {
     if modern && j_has(o, "type") { return Err(le("${path}.type", "0.28: the parse holds no type; the type of the result comes from the declaration of the function (the column `разбор` names the function only)")) }
     if !modern {
         j_only(o, ["primitive", "type"], path)?
         ro primitive225 = j_need_str(o, "primitive", path)?
         ro result225 = j_type(o, "type", defs, path)?
-        return Ok(ParseDef { primitive: primitive225, result: Some(result225) })
+        return Ok(ParseDef { tool: primitive225, result: Some(result225) })
     }
     j_only(o, ["primitive"], path)?
-    ro primitive = j_need_str(o, "primitive", path)?
-    Ok(ParseDef { primitive, result: None })
+    ro tool = j_need_str(o, "primitive", path)?
+    Ok(ParseDef { tool, result: None })
 }
 
 fn dec_parties(root JsonObject, defs TypeDefs, modern bool) -> Result[[]PartyDef, LoadError] {
@@ -1204,16 +1204,16 @@ fn dec_machine(root JsonObject) -> Result[MachineDef, LoadError] {
     ro common = dec_rows(root, "common_events", "$")?
     ro states = dec_states(root)?
     ro ends = dec_ends(root, types)?
-    ro primitives = dec_primitives(root)?
+    ro tools = dec_primitives(root)?
     Ok(MachineDef {
         name, version, alula_version: language_version, types, constants, params, input, data, parties, request_limit, signals,
         definitions, includes, initial, error_end, common, states,
-        result_spec: [ends.spec], end_rows: ends.rows, primitives
+        result_spec: [ends.spec], end_rows: ends.rows, tools
     })
 }
 
 /// The machine from a parsed JSON tree: the structure of the schema is checked, the expressions are read. The checks of the TABLE
-/// (reads, writes, reachability, the ends, the classes of the primitives) are `check_machine`.
+/// (reads, writes, reachability, the ends, the classes of the tools) are `check_machine`.
 export fn machine_from_json(root JsonValue) -> Result[MachineDef, LoadError] {
     ro o = j_obj(root, "$")?
     dec_machine(o)

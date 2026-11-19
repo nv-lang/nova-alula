@@ -485,7 +485,7 @@ fn line_silence(kvl TxKv, mut cx TxCx, sc TxScope) -> Result[Option[TxJ], Transl
     Ok(Some(e))
 }
 
-// `Правит: данное` -> the datum (Latin) and, in a file of 2.25, the primitive of the check of the same item (`Правит: данное; проверка: примитив`; 0.28: the check is its own item
+// `Правит: данное` -> the datum (Latin) and, in a file of 2.25, the tool of the check of the same item (`Правит: данное; проверка: примитив`; 0.28: the check is its own item
 // `- Проверка: примитив`, `; проверка: …` is an error with a hint, section 10; the word `проверка` of 2.25 is of the layer `keywords_225.tsv`).
 type TxEdits { datum str, check str }
 fn line_edits(kvl TxKv, mut cx TxCx) -> Result[TxEdits, TranslateError] {
@@ -515,7 +515,7 @@ fn line_edits(kvl TxKv, mut cx TxCx) -> Result[TxEdits, TranslateError] {
     Ok(TxEdits { datum, check })
 }
 
-// `Проверка: примитив` of an appeal (0.28: a key of its own item of the list, written together with `Правит`) -> the Latin name of the primitive.
+// `Проверка: примитив` of an appeal (0.28: a key of its own item of the list, written together with `Правит`) -> the Latin name of the tool.
 fn line_check(kvl TxKv, mut cx TxCx) -> Result[str, TranslateError] {
     mut p = lex_segs(kvl.segs)?
     ro f = p_tok(p)

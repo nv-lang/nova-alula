@@ -44,7 +44,7 @@ fn envelope(kind str, name str, request str, input str, producer str) -> str {
 // ---- contract.get --------------------------------------------------------------------------------------
 
 test "hc contract.get returns the manifest and both identities" {
-    ro answer = contract_get(echo_tree(), example_registry(), "", "", "alula 0.29.0")
+    ro answer = contract_get(echo_tree(), example_registry(), "", "", "alula 0.30.0")
     assert(answer.kind == OkAnswer)
     assert(answer.payload.contains("\"contract_id\":\"sha256:"))
     assert(answer.payload.contains("\"artifact_id\":\"sha256:"))
@@ -53,7 +53,7 @@ test "hc contract.get returns the manifest and both identities" {
 }
 
 test "hc contract.get refuses a broken tree as a schema error" {
-    ro answer = contract_get("no json here", example_registry(), "", "", "alula 0.29.0")
+    ro answer = contract_get("no json here", example_registry(), "", "", "alula 0.30.0")
     assert(answer.kind == SchemaError)
     // THE DISTINCTION: a schema error carries NO receipt
     assert(!answer.payload.contains("receipt"))

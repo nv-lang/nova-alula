@@ -1,10 +1,10 @@
-// v25_test.nv - format 2.5 on the interpreter side: the set of literals `"a" | "b"`, the built-in type `id`, the primitive `new_id`,
+// v25_test.nv - format 2.5 on the interpreter side: the set of literals `"a" | "b"`, the built-in type `id`, the tool `new_id`,
 // the tuple fields from zero, the key `alula_version`. Every check is red on the broken table and green on the good one.
 // ORACLE-WORKAROUND(20): these tests live in this unit because the unit of the core is near the limit of 4 KB of output (a test binary blocks on a stdout that nobody reads); join them to the tests of the core when item 20 is fixed
 module alula.machine_table
 
 import alula.machine.{Value, IdType, IntType, TextType, TextSet, OptionalType, ListType, DictType, FullDictType, TupleType, Text, Int, Null}
-import alula.machine.{spec_text, check_value, empty_type_defs, make_tuple, parse_spec, find_primitive, Volatile, record_get, Record, text_of_file}
+import alula.machine.{spec_text, check_value, empty_type_defs, make_tuple, parse_spec, find_tool, Volatile, record_get, Record, text_of_file}
 import std.text
 import alula.examples.{machine_files_225, sample_registry}
 
@@ -87,7 +87,7 @@ test "v25 set value" {
 }
 
 test "v25 new_id reg" {
-    match find_primitive(sample_registry(), "new_id") {
+    match find_tool(sample_registry(), "new_id") {
         Some(p) => {
             assert(p.class == Volatile)
             assert(p.params.len() == 0)
@@ -200,7 +200,7 @@ test "v25 id literal" {
 test "v25 table format" {
     ro text = tiny().replace("\"machine\":\"Tiny\"", "\"alula_version\":\"2.25\",\"machine\":\"Tiny\"")
     assert(ok_text(text))
-    assert(says(tiny().replace("\"machine\":\"Tiny\"", "\"alula_version\":\"2.5\",\"machine\":\"Tiny\""), "must be 0.29"))
+    assert(says(tiny().replace("\"machine\":\"Tiny\"", "\"alula_version\":\"2.5\",\"machine\":\"Tiny\""), "must be 0.30"))
     ro old = tiny().replace("\"machine\":\"Tiny\"", "\"alula_version\":\"2.2\",\"machine\":\"Tiny\"")
     assert(says(old, "alula_version"))
     ro number = tiny().replace("\"machine\":\"Tiny\"", "\"alula_version\":2.5,\"machine\":\"Tiny\"")

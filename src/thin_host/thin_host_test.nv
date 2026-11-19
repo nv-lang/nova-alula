@@ -9,7 +9,8 @@
 
 module alula.thin_host
 
-import std.fs.{Path, MemFs, mock_fs, create_dir_all}
+import std.fs.{Path, MemFs, mock_fs, create_dir_all, canonicalize, symlink, write_text}
+import std.os.{host_os, Command}
 import alula.machine.{Value, Text, Int, Bool, Null, List, Registry, load_host, Pure, Acting, Volatile, value_json}
 import alula.machine_run.{alula_step}
 import alula.machine_run.{AlulaMachine, AlulaState, load_alula_machine, Incoming, EventKind}
@@ -50,7 +51,7 @@ fn th_command_answer(mut h ScriptedThinHost, command str, dir str, code int, std
     ]))
 }
 
-fn run(mut h ScriptedThinHost, name str, args []Value) Fs -> Result[Value, StepFailure] => run_thin_primitive(h, name, args)
+fn run(mut h ScriptedThinHost, name str, args []Value) Fs -> Result[Value, StepFailure] => run_thin_tool(h, name, args)
 
 fn is_failure(r Result[Value, StepFailure]) -> bool {
     match r {
@@ -177,7 +178,7 @@ test "tf a missing folder is a failure" {
     }
 }
 
-// ---- the scripted scenario primitives ------------------------------------------------------------------
+// ---- the scripted scenario tools ------------------------------------------------------------------
 
 test "tf a missing scripted key is a failure" {
     mut h = th()
@@ -194,8 +195,9 @@ test "tf start_process gives the scripted pid through the outbox; the receipt is
         Ok(Int(pid)) => assert(pid == 7)
         _ => panic("start_process did not give the scripted pid")
     }
-    // the acting went through the outbox: the receipt is held (applied)
-    match h.effects.receipt_of_effect("", "local", "e:start_process:cc|/d|log.txt") {
+    // the acting went through the outbox: the receipt is held (applied); the path argument of the
+    // identity is the canonical path inside the tree (П-2а)
+    match h.effects.receipt_of_effect("", "local", "e:start_process:cc|/d|/tree/log.txt") {
         Some(rec) => assert(rec.outcome == EffectOutcome.Applied)
         None => panic("no receipt of the acting")
     }
@@ -209,8 +211,13 @@ test "tf write_file through the dispatcher on the real tree" {
     mut h = new_scripted_host(root, "local")
     ro r = run(h, "write_file", [Text("probe.txt"), Text("via outbox")])
     assert(r.is_ok())
-    // the receipt is held (applied), the file holds the content
-    match h.effects.receipt_of_effect("", "local", "e:write_file:probe.txt|via outbox") {
+    // the receipt is held (applied), the file holds the content; the identity carries the canonical
+    // path of the tree (П-2а)
+    ro expected = match h.tree.canonical_path("probe.txt") {
+        Ok(p) => p
+        Err(e) => panic(e.message)
+    }
+    match h.effects.receipt_of_effect("", "local", "e:write_file:${expected}|via outbox") {
         Some(rec) => assert(rec.outcome == EffectOutcome.Applied)
         None => panic("no receipt of the acting")
     }
@@ -345,7 +352,7 @@ fn parse_machine() -> str => `{
 
 // The AC-5 scenario: the machine calls parse_agent (volatile) inside the AL-153 decode of its
 // text. A valid scripted answer: the decode accepts the JSON, `got` holds the value of the type.
-// An invalid one: the primitive FAILS (the step failure of host-spec) — the machine sees a machine
+// An invalid one: the tool FAILS (the step failure of host-spec) — the machine sees a machine
 // error and gets no value (REQ-6: невалидный = сбой шага).
 
 test "ac5 parse_agent valid: the decode accepts the JSON into the type" {
@@ -359,7 +366,7 @@ test "ac5 parse_agent valid: the decode accepts the JSON into the type" {
             Err(e) => panic("the parse machine does not load: ${e}")
             Ok(m) => {
                 mut env = StepEnvironment.new()
-                mut host = new_thin_primitive_host(h)
+                mut host = new_thin_tool_host(h)
                 ro t = alula_step(m, m.initial(), Incoming.incoming(EventKind.Input, "start", None, ""), env, host)
                 match t.state_value() {
                     Some(st) => {
@@ -386,7 +393,7 @@ test "ac5 parse_agent invalid: a step failure, no value" {
             Err(e) => panic("the parse machine does not load: ${e}")
             Ok(m) => {
                 mut env = StepEnvironment.new()
-                mut host = new_thin_primitive_host(h)
+                mut host = new_thin_tool_host(h)
                 ro t = alula_step(m, m.initial(), Incoming.incoming(EventKind.Input, "start", None, ""), env, host)
                 // the machine error: no value of the type reached the data (got stays empty)
                     match t.state_value() {
@@ -434,18 +441,18 @@ test "tr the registry holds the 13 rows verbatim (AC-1)" {
     assert(!text.contains("| verify_token |"))
     assert(!text.contains("| journal_write |"))
     assert(!text.contains("| release_lock |"))
-    // the registry parses and gives 13 primitives with the classes of the host-spec
+    // the registry parses and gives 13 tools with the classes of the host-spec
     match load_host(text, "") {
         Err(lines) => panic("the registry does not parse: ${lines.join("; ")}")
         Ok(reg) => {
             mut n = 0
-            for p in reg.primitives {
+            for p in reg.tools {
                 if p.name == "new_id" { continue }
                 n += 1
             }
             assert(n == 13)
             mut saw_pure = false
-            for p in reg.primitives {
+            for p in reg.tools {
                 if p.name == "sha256" {
                     assert(p.class == Pure)
                     saw_pure = true
@@ -476,4 +483,280 @@ test "tf the reference host over the real filesystem" {
     }
     ro out = h.write_file("../escape.txt", "v")
     assert(is_failure(out))
+}
+
+// ---- П-2а: the mounting points (several INDEPENDENT roots) ---------------------------------------------
+
+fn p2a_host() Fs -> ScriptedThinHost {
+    match new_scripted_host_mounts([Root { name: "a", path: "/m1" }, Root { name: "b", path: "/m2" }], "local") {
+        Ok(h) => h
+        Err(e) => panic(e.message)
+    }
+}
+
+test "tf p2a: two independent points — the roundtrip inside each" {
+    mut fs = MemFs.new()
+    with Fs = mock_fs(fs) {
+        ro m1 = create_dir_all(Path.posix("/m1"))
+        ro m2 = create_dir_all(Path.posix("/m2"))
+        mut h = p2a_host()
+        assert(h.tree.multi)
+        ro w1 = h.tree.write_file("a/notes/1.txt", "one")
+        assert(w1.is_ok())
+        ro w2 = h.tree.write_file("b/notes/1.txt", "two")
+        assert(w2.is_ok())
+        match h.tree.read_file("a/notes/1.txt") {
+            Ok(Text(t)) => assert(t == "one")
+            _ => panic("the point a lost its text")
+        }
+        match h.tree.read_file("b/notes/1.txt") {
+            Ok(Text(t)) => assert(t == "two")
+            _ => panic("the point b lost its text")
+        }
+        match h.tree.list_dir("b/notes") {
+            Ok(List(items)) => assert(items.len() == 1)
+            _ => panic("the list_dir in a point failed")
+        }
+        match h.tree.acquire_lock("b/lock", "tok") {
+            Ok(Bool(true)) => ()
+            _ => panic("the lock in a point is not taken")
+        }
+    }
+}
+
+test "tf p2a: a bare path and an unknown point are refused with the list" {
+    mut fs = MemFs.new()
+    with Fs = mock_fs(fs) {
+        ro m1 = create_dir_all(Path.posix("/m1"))
+        ro m2 = create_dir_all(Path.posix("/m2"))
+        mut h = p2a_host()
+        ro bare = h.tree.read_file("notes/1.txt")
+        assert(failure_message(bare).contains("does not name a mounting point"))
+        assert(failure_message(bare).contains("(the points: a, b)"))
+        ro ghost = h.tree.read_file("zzz/1.txt")
+        assert(failure_message(ghost).contains("does not name a mounting point"))
+    }
+}
+
+test "tf p2a: .. at the point root and across points are refused" {
+    mut fs = MemFs.new()
+    with Fs = mock_fs(fs) {
+        ro m1 = create_dir_all(Path.posix("/m1"))
+        ro m2 = create_dir_all(Path.posix("/m2"))
+        mut h = p2a_host()
+        ro at_root = h.tree.read_file("a/../x.txt")
+        assert(failure_message(at_root).contains("leaves the mounting point a"))
+        ro cross = h.tree.read_file("a/../../x.txt")
+        assert(failure_message(cross).contains("leaves the mounting point a"))
+        ro inside = h.tree.write_file("a/sub/../x.txt", "ok")
+        assert(inside.is_ok())
+    }
+}
+
+test "tf p2a: windows forms and an absolute path are refused" {
+    mut fs = MemFs.new()
+    with Fs = mock_fs(fs) {
+        ro m1 = create_dir_all(Path.posix("/m1"))
+        ro m2 = create_dir_all(Path.posix("/m2"))
+        mut h = p2a_host()
+        ro abs = h.tree.read_file("/etc/x")
+        assert(failure_message(abs).contains("an absolute path is not inside the mounting points"))
+        ro drive = h.tree.read_file("C:foo")
+        assert(failure_message(drive).contains("a windows form path"))
+        ro ads = h.tree.read_file("a/x:b")
+        assert(failure_message(ads).contains("a windows form path"))
+        ro bs = h.tree.read_file("a\\x")
+        assert(failure_message(bs).contains("a windows form path"))
+        ro unc = h.tree.read_file("\\\\srv\\share\\x")
+        assert(is_failure(unc))
+        ro device = h.tree.read_file("\\\\?\\x")
+        assert(is_failure(device))
+    }
+}
+
+test "tf p2a: a move between points is refused; inside one point it works" {
+    mut fs = MemFs.new()
+    with Fs = mock_fs(fs) {
+        ro m1 = create_dir_all(Path.posix("/m1"))
+        ro m2 = create_dir_all(Path.posix("/m2"))
+        mut h = p2a_host()
+        ro w = h.tree.write_file("a/x.txt", "v")
+        assert(w.is_ok())
+        ro cross = h.tree.move_file("a/x.txt", "b/x.txt")
+        assert(failure_message(cross).contains("between mounting points"))
+        match h.tree.read_file("a/x.txt") {
+            Ok(Text(t)) => assert(t == "v")
+            _ => panic("the source disappeared after a refused move")
+        }
+        ro same = h.tree.move_file("a/x.txt", "a/y.txt")
+        assert(same.is_ok())
+        match h.tree.read_file("a/y.txt") {
+            Ok(Text(t)) => assert(t == "v")
+            _ => panic("the move inside a point failed")
+        }
+    }
+}
+
+test "tf p2a: one relative path in two points — two acting identities" {
+    mut fs = MemFs.new()
+    with Fs = mock_fs(fs) {
+        ro m1 = create_dir_all(Path.posix("/m1"))
+        ro m2 = create_dir_all(Path.posix("/m2"))
+        mut h = p2a_host()
+        ro one = run(h, "write_file", [Text("a/shared.txt"), Text("same")])
+        assert(one.is_ok())
+        ro two = run(h, "write_file", [Text("b/shared.txt"), Text("same")])
+        assert(two.is_ok())
+        ro ida = match h.tree.canonical_path("a/shared.txt") {
+            Ok(p) => p
+            Err(e) => panic(e.message)
+        }
+        ro idb = match h.tree.canonical_path("b/shared.txt") {
+            Ok(p) => p
+            Err(e) => panic(e.message)
+        }
+        assert(ida != idb)
+        match h.effects.receipt_of_effect("", "local", "e:write_file:${ida}|same") {
+            Some(_) => ()
+            None => panic("no receipt of the acting in the point a")
+        }
+        match h.effects.receipt_of_effect("", "local", "e:write_file:${idb}|same") {
+            Some(_) => ()
+            None => panic("no receipt of the acting in the point b")
+        }
+    }
+}
+
+test "tf p2a: a missing point, bad names and duplicates are start errors" {
+    mut fs = MemFs.new()
+    with Fs = mock_fs(fs) {
+        ro m1 = create_dir_all(Path.posix("/m1"))
+        ro missing = new_tree_mounts([Root { name: "a", path: "/m1" }, Root { name: "b", path: "/nope" }])
+        match missing {
+            Err(e) => assert(e.message.contains("does not exist"))
+            Ok(_) => panic("a missing point started")
+        }
+        ro empty = new_tree_mounts([Root { name: "", path: "/m1" }, Root { name: "b", path: "/m1" }])
+        match empty {
+            Err(e) => assert(e.message.contains("is empty"))
+            Ok(_) => panic("an empty name started")
+        }
+        ro bad = new_tree_mounts([Root { name: "a:b", path: "/m1" }, Root { name: "b", path: "/m1" }])
+        match bad {
+            Err(e) => assert(e.message.contains("contains ':'"))
+            Ok(_) => panic("a bad name started")
+        }
+        ro dup = new_tree_mounts([Root { name: "a", path: "/m1" }, Root { name: "a", path: "/m1" }])
+        match dup {
+            Err(e) => assert(e.message.contains("declared twice"))
+            Ok(_) => panic("a duplicate started")
+        }
+        ro one = new_tree_mounts([Root { name: "a", path: "/m1" }])
+        match one {
+            Err(e) => assert(e.message.contains("at least two"))
+            Ok(_) => panic("one point started")
+        }
+    }
+}
+
+// The symlink edge (П-2а, DoD 4) on the REAL fs: a file link inside is allowed; a link outside, a
+// dangling link and a folder link's own path are refused; traversal THROUGH an inside folder link
+// works; a write to a new path under an existing ancestor passes.
+test "tf p2a: the symlink edge on the real fs" {
+    ro root = "target/thin-host-p2a-links"
+    ro outside = "target/thin-host-p2a-outside"
+    ro made1 = create_dir_all(Path.posix(root))
+    ro made2 = create_dir_all(Path.posix(outside))
+    mut h = new_scripted_host(root, "local")
+    ro w = h.tree.write_file("real/f.txt", "inside")
+    ro wo = write_text(Path.posix("${outside}/o.txt"), "outside")
+    ro abs_real = match canonicalize(Path.posix("${root}/real")) { Ok(p) => p.display(), Err(_) => panic("no canonical real") }
+    ro abs_file = match canonicalize(Path.posix("${root}/real/f.txt")) { Ok(p) => p.display(), Err(_) => panic("no canonical file") }
+    ro abs_out = match canonicalize(Path.posix(outside)) { Ok(p) => p.display(), Err(_) => panic("no canonical outside") }
+    ro abs_out_file = match canonicalize(Path.posix("${outside}/o.txt")) { Ok(p) => p.display(), Err(_) => panic("no canonical outside file") }
+    ro l1 = symlink(Path.posix(abs_file), Path.posix("${root}/flink"))
+    match h.tree.read_file("flink") {
+        Ok(Text(t)) => assert(t == "inside")
+        _ => panic("the inside file link is refused")
+    }
+    ro l2 = symlink(Path.posix(abs_out_file), Path.posix("${root}/olink"))
+    ro r2 = h.tree.read_file("olink")
+    assert(failure_message(r2).contains("leaves the tree"))
+    ro l3 = symlink(Path.posix("${abs_real}\\nope.txt"), Path.posix("${root}/dang"))
+    ro r3 = h.tree.read_file("dang")
+    assert(failure_message(r3).contains("dangling link"))
+    ro l4 = symlink(Path.posix(abs_real), Path.posix("${root}/dlink"))
+    match h.tree.read_file("dlink/f.txt") {
+        Ok(Text(t)) => assert(t == "inside")
+        _ => panic("the traversal through an inside folder link is refused")
+    }
+    ro r5 = h.tree.list_dir("dlink")
+    assert(failure_message(r5).contains("not verifiable"))
+    ro l5 = symlink(Path.posix(abs_out), Path.posix("${root}/jump"))
+    ro r6 = h.tree.list_dir("jump")
+    assert(failure_message(r6).contains("not verifiable") || failure_message(r6).contains("leaves the tree"))
+    ro wnew = h.tree.write_file("real/sub/new.txt", "new")
+    assert(wnew.is_ok())
+    match h.tree.read_file("real/sub/new.txt") {
+        Ok(Text(t)) => assert(t == "new")
+        _ => panic("a write to a new path under an existing ancestor failed")
+    }
+}
+
+const BACKSLASH = "\\"
+
+fn windows_path(s str) -> str {
+    mut out = ""
+    for c in s.chars() {
+        if c == '/' { out = "${out}${BACKSLASH}" } else { out = "${out}${c}" }
+    }
+    out
+}
+
+// A junction is canonicalized by the OS (unlike a directory symlink on 0.1.6): an inside junction is
+// allowed through its children, an outside junction is a step failure.
+fn mk_junction(link str, target str) Fs -> int {
+    mut cmd = Command.new("cmd")
+    cmd.arg("/c")
+    cmd.arg("mklink")
+    cmd.arg("/J")
+    cmd.arg(windows_path(link))
+    cmd.arg(windows_path(target))
+    match cmd.run() { Ok(out) => out.code, Err(_) => -1 }
+}
+
+test "tf p2a: a junction inside the tree is allowed; outside is refused" {
+    ro root = "target/thin-host-p2a-junc"
+    ro outside = "target/thin-host-p2a-junc-out"
+    ro made1 = create_dir_all(Path.posix(root))
+    ro made2 = create_dir_all(Path.posix(outside))
+    mut h = new_scripted_host(root, "local")
+    ro w = h.tree.write_file("real/f.txt", "inside")
+    ro wo = write_text(Path.posix("${outside}/o.txt"), "outside")
+    ro abs_real = match canonicalize(Path.posix("${root}/real")) { Ok(p) => p.display(), Err(_) => panic("no canonical real") }
+    ro abs_out = match canonicalize(Path.posix(outside)) { Ok(p) => p.display(), Err(_) => panic("no canonical outside") }
+    ro made_j1 = mk_junction("${root}/jin", abs_real)
+    ro made_j2 = mk_junction("${root}/jout", abs_out)
+    match h.tree.read_file("jin/f.txt") {
+        Ok(Text(t)) => assert(t == "inside")
+        _ => panic("the junction inside the tree is refused")
+    }
+    ro r = h.tree.read_file("jout/o.txt")
+    assert(failure_message(r).contains("leaves the tree"))
+}
+
+// On Windows the canonical paths are compared case-insensitively: a root written in another case does
+// not refuse a legitimate path (the on-disk case is normalized by canonicalize, the fold guards the
+// rest). On POSIX the comparison stays exact; the test is Windows-only.
+test "tf p2a: on windows the case of the root does not refuse a legitimate path" {
+    if host_os() != "windows" { return }
+    ro root = "target/thin-host-p2a-case"
+    ro made = create_dir_all(Path.posix(root))
+    mut h = new_scripted_host("TARGET/THIN-HOST-P2A-CASE", "local")
+    ro w = h.tree.write_file("x.txt", "case")
+    assert(w.is_ok())
+    match h.tree.read_file("x.txt") {
+        Ok(Text(t)) => assert(t == "case")
+        _ => panic("a read under a differently cased root failed")
+    }
 }

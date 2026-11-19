@@ -335,11 +335,11 @@ bytes; они не вычисляются проверяемым encoder. Наб
 | `f64 +Infinity` | `460000000000000008496e66696e697479` | `sha256:d611988263ab0d000d5648b694c66436b82edd3e6e31d8fae810a408a6142be5` |
 | `f64 -Infinity` | `4600000000000000092d496e66696e697479` | `sha256:f3f40eaf25087768bf640b3970c98daad123b3db2ea24c509df6876d835fd19b` |
 
-Manifest vector: projection с `alula_version="0.29"`, `machine="Example"`, `revision=1`, пустыми
+Manifest vector: projection с `alula_version="0.30"`, `machine="Example"`, `revision=1`, пустыми
 `aliases/records/variants/parties/signals/queries` и точными `codec`/`event_envelope` projections,
 заданными выше;
 после сортировки object keys её canonical JSON bytes захешированы как
-`sha256:0f1ff7f8cfcb7541b8c3a72074ca2d1aea0b3fdeeb5d52dc81067947015f8792`. Полные ожидаемые
+`sha256:4f1c2bb4117bc1b49f5c1604997df2b742fb6e704dee2fb813ec70981c12e43a`. Полные ожидаемые
 байты и SHA хранятся литералами в `tools/test_value_codec_contract.py`; проверяемый код их
 не порождает.
 

@@ -4,7 +4,7 @@
 module alula.machine_run
 
 import std.text
-import alula.machine.{Value, Null, Bool, Text, RecordField, make_record, enum_value, value_json, Registry, Primitive, ParamSpec, RecordType, Volatile, BoolType, TextType, register}
+import alula.machine.{Value, Null, Bool, Text, RecordField, make_record, enum_value, value_json, Registry, Tool, ParamSpec, RecordType, Volatile, BoolType, TextType, register}
 import alula.engine.{Incoming, EventKind}
 import alula.examples.{sample_registry}
 
@@ -306,12 +306,12 @@ fn fixer() -> str => `{"format":"machine/2","machine":"Fixer","version":"1",
 {"name":"Done","kind":"end","reads":["got"]}],
 "ends":{"result":"text","rows":[{"state":"Done","n":1,"when":{"op":"lit","value":true},"answer":{"kind":"answer","value":{"op":"name","name":"got"}}}]}}`
 
-// The standard registry and the two primitives of the fixer: the parse takes the answer and gives the parsed one, the check says whether the object changed.
+// The standard registry and the two tools of the fixer: the parse takes the answer and gives the parsed one, the check says whether the object changed.
 fn fixer_registry() -> Registry {
     mut reg = sample_registry()
     ro out = ParamSpec { name: "out", spec: RecordType("Out"), tail: false }
-    ro parse = Primitive { name: "parse_out", params: [out], result: RecordType("Out"), class: Volatile, reads: []str.new(), writes: []str.new() }
-    ro changed = Primitive { name: "changed", params: []ParamSpec.new(), result: BoolType, class: Volatile, reads: []str.new(), writes: []str.new() }
+    ro parse = Tool { name: "parse_out", params: [out], result: RecordType("Out"), class: Volatile, reads: []str.new(), writes: []str.new() }
+    ro changed = Tool { name: "changed", params: []ParamSpec.new(), result: BoolType, class: Volatile, reads: []str.new(), writes: []str.new() }
     ro first = register(reg, parse)
     ro second = register(reg, changed)
     reg
@@ -416,7 +416,7 @@ fn asker() -> str => `{"format":"machine/2","machine":"Asker","version":"1","typ
 fn asker_registry() -> Registry {
     mut reg = sample_registry()
     ro reply = ParamSpec { name: "reply", spec: TextType, tail: false }
-    ro parse = Primitive { name: "parse_reply", params: [reply], result: RecordType("Out"), class: Volatile, reads: []str.new(), writes: []str.new() }
+    ro parse = Tool { name: "parse_reply", params: [reply], result: RecordType("Out"), class: Volatile, reads: []str.new(), writes: []str.new() }
     ro _first = register(reg, parse)
     reg
 }

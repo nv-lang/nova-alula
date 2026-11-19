@@ -1,23 +1,26 @@
-// thin_host.nv - the universal primitives of the thin host in the package (the epic «Тонкий хозяин
+// thin_host.nv - the universal tools of the thin host in the package (the epic «Тонкий хозяин
 // в пакете», methodology task 118, П-1; REQ-1/REQ-4/REQ-5). The reference of the semantics is the
 // methodology's ScriptedHost (doc/tasks/111-.../scripted_host.py, host-spec.md of the same task):
-// the same scenarios give the same outcomes (AC-4). The primitive registry of the module is
+// the same scenarios give the same outcomes (AC-4). The tool registry of the module is
 // registry.md beside this file (13 rows verbatim from the methodology registry, minus the core-4).
 //
 // Three layers:
 //   - StepFailure: the step failure (a path outside the tree, an unavailability, a foreign token,
 //     no scripted answer) — never a stub value in the machine data;
 //   - HostTree: the real filesystem inside the tree of the host: the path is resolved inside the
-//     tree (`..` and absolute escapes are refused), unavailability is a failure; it knows nothing
-//     of the runner (no document names, no gates, no pids of the runner);
-//   - ScriptedThinHost: the tree + scripted answers for the scenario primitives (processes,
+//     tree (`..` and absolute escapes are refused), the containment is checked after `canonicalize`
+//     (symlink/junction escapes are refused, П-2а), unavailability is a failure; since П-2а the
+//     tree may be a forest of INDEPENDENT mounting points (one point — the previous grammar, several
+//     — the point name is the first path segment; see the doc of HostTree); it knows nothing of the
+//     runner (no document names, no gates, no pids of the runner);
+//   - ScriptedThinHost: the tree + scripted answers for the scenario tools (processes,
 //     parse_agent): the answer is looked up by the key, a missing key is a failure.
 //
 // sha256 is pure and really computed by std.crypto (64 lower case hex). acquire_lock is atomic by
 // create-or-open: free — true and the token recorded; busy — the value owner == token (a foreign
 // token is a VALUE false, not a failure); the repeated call with the own token — true.
 //
-// acting primitives go ONLY through the outbox (the effect host of the result E): the handler
+// acting tools go ONLY through the outbox (the effect host of the result E): the handler
 // executes the tree operation and stores the result value in the effects world, the receipt is held
 // together with the intent; a repeat of the same identity reads the held result (idempotent), an
 // unknown outcome is never a success.
@@ -25,11 +28,12 @@
 module alula.thin_host
 
 import std.encoding.json.{Json}
-import std.fs.{Path, Fs, read_text, write_text, remove_file, read_dir, create_dir_all, try_exists, DirEntry}
+import std.fs.{Path, Fs, read_text, write_text, remove_file, read_dir, create_dir_all, try_exists, DirEntry, canonicalize, metadata, symlink_metadata}
+import std.os.{host_os}
 import std.crypto.sha256.{Sha256}
 import std.fs.{real_fs}
 import std.text
-import alula.machine.{Value, Text, Bool, Null, List, Dict, DictEntry, EvalError, PrimitiveFailed}
+import alula.machine.{Value, Text, Bool, Null, List, Dict, DictEntry, EvalError, ToolFailed}
 import alula.host.{Intent, TrustedContext, EffectOutcome, EffectHost, new_effect_host}
 
 
@@ -45,21 +49,107 @@ fn fail(message str) -> Result[Value, StepFailure] => Err(StepFailure { message 
 
 // ---- the tree of the host (the real filesystem) ---------------------------------------------------------
 
-/// HostTree: the real filesystem inside `root`. `resolve` refuses everything outside the tree: an
-/// absolute path, `..`, a symlink escape is not resolved (the lexical rule of the package; the
-/// methodology reference uses realpath — for the tests of the package the lexical rule is the
-/// documented behaviour).
-export type HostTree { root str }
+/// Root: one mounting point of the tree of the host — a name and a folder. The folders are INDEPENDENT
+/// (П-2а): no common ancestor is required — different drives, shares, the home folder.
+export type Root { name str, path str }
+
+/// HostTree: the real filesystem inside the tree of the host. One mounting point (`new_tree`, the
+/// legacy constructors) — the PREVIOUS grammar, byte for byte: the paths are relative to the root,
+/// `.`/`..` are normalized, `..` at the root, an absolute path and a path that leaves the tree are
+/// refused. Several mounting points (`new_tree_mounts`, П-2а) — every path names its point in the
+/// FIRST segment (`"src/notes/a.txt"`); a bare path is refused with the list of the points; `move`
+/// between points is refused. The containment is checked after `canonicalize` (std.fs, 0.1.6): a
+/// symlink/junction escape is a step failure; a missing target is checked by the nearest existing
+/// ancestor; a dangling link is refused; a link whose target the OS cannot canonicalize (a directory
+/// symlink on 0.1.6 is EPERM through std) is refused as unverifiable. The canonical paths are
+/// compared by the semantics of the OS (Windows — case-insensitive, POSIX — exact); the names of the
+/// points are compared exactly. The host is the environment of a cooperative agent, not a sandbox
+/// against a hostile parallel process: `canonicalize` and the open are not atomic (TOCTOU).
+export type HostTree { roots []Root, multi bool }
 
 /// The normalized path inside the tree — exported for the sibling hosts (the battle host resolves
 /// the log path in the same tree).
-export fn HostTree @resolve_path(path str) -> Result[str, StepFailure] => resolve(@, path)
+export fn HostTree @resolve_path(path str) Fs -> Result[str, StepFailure] => resolve(@, path)
 
-export fn new_tree(root str) -> HostTree => { root }
+/// The canonical absolute path for the identity of an acting intent: the path inside its mounting
+/// point with the symlinks resolved as far as the OS resolves them; the lexical full path when nothing
+/// of the target exists yet. Two mounting points with one relative path get DIFFERENT identities.
+export fn HostTree @canonical_path(path str) Fs -> Result[str, StepFailure] {
+    ro full = resolve(@, path)?
+    Ok(canonical_or_full(full))
+}
 
-// The normalized path inside the tree, or the failure.
-fn resolve(t HostTree, path str) -> Result[str, StepFailure] {
-    if path.starts_with("/") || path.starts_with("\\") { return fail("an absolute path is not inside the tree of the host: ${path}") }
+export fn new_tree(root str) -> HostTree =>
+    { roots: [Root { name: "root", path: normalize_root(root) }], multi: false }
+
+/// A tree of several INDEPENDENT mounting points (П-2а): at least two; the names are unique, non-empty
+/// and carry no `/`, `\`, `:`, `.`, `..`; the folders must exist (a missing point is a start error).
+export fn new_tree_mounts(roots []Root) Fs -> Result[HostTree, StepFailure] {
+    if roots.len() < 2 {
+        return fail_tree("a tree of mounting points needs at least two points; one point is new_tree")
+    }
+    mut out = []Root.new()
+    for r in roots {
+        ro bad = name_problem(r.name)
+        if bad != "" { return fail_tree("the name of a mounting point ${bad}") }
+        for seen in out {
+            if seen.name == r.name { return fail_tree("the mounting point ${r.name} is declared twice") }
+        }
+        ro path = normalize_root(r.path)
+        match try_exists(Path.posix(path)) {
+            Ok(true) => ()
+            Ok(false) => return fail_tree("the mounting point ${r.name} does not exist: ${r.path}")
+            Err(_) => return fail_tree("the mounting point ${r.name} cannot be checked: ${r.path}")
+        }
+        out.push(Root { name: r.name, path })
+    }
+    Ok({ roots: out, multi: true })
+}
+
+// The typed failure of a constructor: `fail` returns Result[Value, ...], which 0.1.6 does not coerce
+// to another generic argument (E7301).
+fn fail_tree(message str) -> Result[HostTree, StepFailure] => Err(StepFailure { message })
+
+// The root path is host configuration, not a machine path: backslashes are accepted here and
+// normalized to '/', so the machine grammar has one separator.
+fn normalize_root(root str) -> str {
+    mut out = ""
+    for c in root.chars() {
+        if c == '\\' { out = "${out}/" } else { out = "${out}${c}" }
+    }
+    out
+}
+
+fn name_problem(name str) -> str {
+    if name == "" { return "is empty" }
+    if name == "." || name == ".." { return "is a path step: ${name}" }
+    if name.contains("/") { return "contains '/': ${name}" }
+    if name.contains("\\") { return "contains '\\': ${name}" }
+    if name.contains(":") { return "contains ':': ${name}" }
+    ""
+}
+
+// A Windows form of a path (a colon, a backslash, a NUL byte) is refused in both grammars: a drive
+// letter, an ADS `a:b`, a `\\?\` prefix and a UNC share are not inside the tree of the host.
+fn form_problem(path str, where str) -> str {
+    for c in path.chars() {
+        if c as int == 0 { return "the path has a NUL byte: a path inside ${where} is a text path" }
+        if c == '\\' || c == ':' { return "a windows form path is not inside ${where}: ${path}" }
+    }
+    ""
+}
+
+fn resolve(t HostTree, path str) Fs -> Result[str, StepFailure] {
+    if !t.multi { return resolve_single(t.roots[0], path) }
+    resolve_mounts(t, path)
+}
+
+fn resolve_single(root Root, path str) Fs -> Result[str, StepFailure] {
+    if path.starts_with("/") || path.starts_with("\\") {
+        return fail("an absolute path is not inside the tree of the host: ${path}")
+    }
+    ro form = form_problem(path, "the tree of the host")
+    if form != "" { return fail(form) }
     mut parts = []str.new()
     for seg in path.split("/") {
         if seg == "" || seg == "." { () }
@@ -69,8 +159,207 @@ fn resolve(t HostTree, path str) -> Result[str, StepFailure] {
         }
         else { parts.push(seg) }
     }
-    if parts.len() == 0 { return Ok(t.root) }
-    Ok("${t.root}/${parts.join("/")}")
+    ro full = if parts.len() == 0 { root.path } else { "${root.path}/${parts.join("/")}" }
+    match contained(root.path, full, "the tree of the host", false) {
+        Err(e) => return Err(e)
+        Ok(_) => ()
+    }
+    Ok(full)
+}
+
+fn resolve_mounts(t HostTree, path str) Fs -> Result[str, StepFailure] {
+    if path.starts_with("/") || path.starts_with("\\") {
+        return fail("an absolute path is not inside the mounting points: ${path}")
+    }
+    ro form = form_problem(path, "the mounting points")
+    if form != "" { return fail(form) }
+    mut segs = []str.new()
+    for seg in path.split("/") {
+        if seg == "" || seg == "." { () } else { segs.push(seg) }
+    }
+    if segs.len() == 0 { return fail(bare_mount_message(t, path)) }
+    ro name = segs[0]
+    ro at = point_index(t, name)
+    if at < 0 { return fail(bare_mount_message(t, path)) }
+    ro root = t.roots[at]
+    mut parts = []str.new()
+    mut i = 1
+    while i < segs.len() {
+        ro seg = segs[i]
+        if seg == ".." {
+            if parts.len() == 0 { return fail("the path leaves the mounting point ${root.name}: ${path}") }
+            parts.pop()
+        }
+        else { parts.push(seg) }
+        i += 1
+    }
+    ro full = if parts.len() == 0 { root.path } else { "${root.path}/${parts.join("/")}" }
+    match contained(root.path, full, "the mounting point ${root.name}", true) {
+        Err(e) => return Err(e)
+        Ok(_) => ()
+    }
+    Ok(full)
+}
+
+fn point_index(t HostTree, name str) -> int {
+    mut i = 0
+    while i < t.roots.len() {
+        if t.roots[i].name == name { return i }
+        i += 1
+    }
+    -1
+}
+
+fn point_names(t HostTree) -> str {
+    mut names = []str.new()
+    for r in t.roots { names.push(r.name) }
+    names.join(", ")
+}
+
+fn bare_mount_message(t HostTree, path str) -> str =>
+    "the path does not name a mounting point: ${path} (the points: ${point_names(t)})"
+
+// The name of the point a resolved path belongs to (the first segment of the machine path); "" for
+// the legacy single point.
+fn mount_of(t HostTree, path str) -> str {
+    if !t.multi { return "" }
+    mut first = ""
+    for seg in path.split("/") {
+        if seg != "" && seg != "." { first = seg } 
+        if first != "" { break }
+    }
+    first
+}
+
+// The containment after `canonicalize`: the deepest existing ancestor of `full` is canonicalized and
+// must stay inside the canonical root; the rest of the path is plain names by construction. A node
+// that exists as a link but cannot be canonicalized is either dangling or unverifiable — both are
+// refused (a link that IS resolvable was checked by the containment of its target above).
+fn contained(root str, full str, where str, strict bool) Fs -> Result[(), StepFailure] {
+    ro canon_root = match canonicalize(Path.posix(root)) {
+        Ok(p) => slash_path(p.display())
+        Err(_) => {
+            if strict { return fail("the root of ${where} is missing: ${root}") }
+            // the legacy single point: the access itself fails with its own message
+            return Ok(())
+        }
+    }
+    mut cur = full
+    loop {
+        match canonicalize(Path.posix(cur)) {
+            Ok(p) => {
+                if within(canon_root, slash_path(p.display())) { return Ok(()) }
+                return fail("the path leaves ${where}: ${full}")
+            }
+            Err(e) => {
+                match e.kind {
+                    NotFound => {
+                        if is_link(cur) {
+                            match metadata(Path.posix(cur)) {
+                                Err(e2) => match e2.kind {
+                                    NotFound => return fail("the path goes through a dangling link inside ${where}: ${full}")
+                                    _ => return fail("the target of the link is not verifiable inside ${where}: ${full}")
+                                }
+                                Ok(_) => return fail("the target of the link is not verifiable inside ${where}: ${full}")
+                            }
+                        }
+                        if cur == root {
+                            return fail("the path cannot be checked inside ${where}: ${full}")
+                        }
+                        ro parent = dirname_of(cur)
+                        if parent == "" || parent == cur {
+                            return fail("the path cannot be checked inside ${where}: ${full}")
+                        }
+                        cur = parent
+                    }
+                    _ => {
+                        // a directory symlink on 0.1.6: stat and realpath are EPERM through std
+                        if is_link(cur) {
+                            return fail("the target of the link is not verifiable inside ${where}: ${full}")
+                        }
+                        return fail("the path cannot be checked inside ${where}: ${full}")
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn is_link(full str) Fs -> bool {
+    match symlink_metadata(Path.posix(full)) {
+        Ok(m) => m.is_symlink()
+        Err(_) => false
+    }
+}
+
+// The canonical absolute path of `full`, or the nearest existing ancestor + the rest, or the lexical
+// full path when nothing exists (the identity of an acting intent must still be unique per point).
+fn canonical_or_full(full str) Fs -> str {
+    match canonicalize(Path.posix(full)) {
+        Ok(p) => return slash_path(p.display())
+        Err(_) => ()
+    }
+    mut cur = full
+    mut rest = ""
+    loop {
+        match canonicalize(Path.posix(cur)) {
+            Ok(p) => {
+                ro base = slash_path(p.display())
+                if rest == "" { return base }
+                return "${base}/${rest}"
+            }
+            Err(_) => {
+                ro seg = base_name(cur)
+                rest = if rest == "" { seg } else { "${seg}/${rest}" }
+                ro parent = dirname_of(cur)
+                if parent == "" || parent == cur { return full }
+                cur = parent
+            }
+        }
+    }
+}
+
+fn base_name(path str) -> str {
+    match path.rfind("/") {
+        Some(at) => path[at + 1..]
+        None => path
+    }
+}
+
+// The canonical paths of the OS come with backslashes on Windows; the tree speaks one separator.
+fn slash_path(path str) -> str {
+    mut out = ""
+    for c in path.chars() {
+        if c == '\\' { out = "${out}/" } else { out = "${out}${c}" }
+    }
+    out
+}
+
+// The containment is compared by the semantics of the OS: case-insensitive on Windows, exact on
+// POSIX. The ASCII fold is enough for the paths of the host: the existing components are already
+// normalized to their on-disk case by canonicalize.
+fn within(canon_root str, canon_path str) -> bool {
+    ro win = host_os() == "windows"
+    ro a = if win { fold_ascii(canon_root) } else { canon_root }
+    ro b = if win { fold_ascii(canon_path) } else { canon_path }
+    if a == b { return true }
+    b.starts_with("${a}/")
+}
+
+const LOWER = "abcdefghijklmnopqrstuvwxyz"
+
+fn fold_ascii(s str) -> str {
+    mut out = ""
+    for c in s.chars() {
+        ro n = c as int
+        if n >= 65 && n <= 90 {
+            ro at = n - 65
+            out = "${out}${LOWER[at..at + 1]}"
+        } else {
+            out = "${out}${c}"
+        }
+    }
+    out
 }
 
 fn ensure_parent(full str) Fs -> () {
@@ -86,13 +375,6 @@ fn dirname_of(path str) -> str {
         Some(at) => path[..at]
         None => ""
     }
-}
-
-// The split of a path into segments (the tree form) for the checks of the prefix.
-fn inside_tree(t HostTree, full str) -> bool {
-    ro root = t.root
-    if full == root { return true }
-    full.starts_with("${root}/")
 }
 
 export fn HostTree @read_file(path str) Fs -> Result[Value, StepFailure] {
@@ -126,6 +408,15 @@ export fn HostTree mut @move_file(frm str, to str) Fs -> Result[Value, StepFailu
     ro dst = match resolve(@, to) {
         Ok(f) => f
         Err(e) => return Err(e)
+    }
+    // a copy across points would silently change the meaning of the paths (П-2а): refused; the
+    // copy+delete across points is a separate decision
+    if @multi {
+        ro from_point = mount_of(@, frm)
+        ro to_point = mount_of(@, to)
+        if from_point != to_point {
+            return fail("a move between mounting points is refused: ${frm} -> ${to}")
+        }
     }
     match read_text(Path.posix(src)) {
         Err(_) => return fail("no file: ${frm}")
@@ -238,7 +529,7 @@ fn sort_strs(mut items []str) -> () {
 
 // ---- ScriptedThinHost -----------------------------------------------------------------------------------
 
-/// ScriptedThinHost: the tree + the scripted answers of the scenario primitives (the processes, the
+/// ScriptedThinHost: the tree + the scripted answers of the scenario tools (the processes, the
 /// parse by the cheap agent). The answers are a dict by the keys of the methodology reference:
 ///   "process:<command>:<dir>" -> int>=1 (the scripted pid),
 ///   "running:<pid>"           -> bool,
@@ -265,6 +556,19 @@ export fn new_scripted_host(root str, producer str) -> ScriptedThinHost {
     }
 }
 
+/// A scripted host over several INDEPENDENT mounting points (П-2а): the same host, the multi-point
+/// grammar; the points must exist (a start error otherwise).
+export fn new_scripted_host_mounts(roots []Root, producer str) Fs -> Result[ScriptedThinHost, StepFailure] {
+    ro tree = new_tree_mounts(roots)?
+    mut answers = []DictEntry.new()
+    Ok(ScriptedThinHost {
+        tree,
+        answers: Dict(answers),
+        effects: new_effect_host(),
+        producer,
+    })
+}
+
 fn answer_key(mut h ScriptedThinHost, key str) -> Result[Value, StepFailure] {
     match h.answers {
         Dict(entries) => {
@@ -289,8 +593,8 @@ fn int_of(v Value) -> Result[int, StepFailure] {
     }
 }
 
-// The execution of one primitive by name (the semantics of host-spec); the acting primitives are
-// NOT here — they go through the outbox (run_thin_primitive).
+// The execution of one tool by name (the semantics of host-spec); the acting tools are
+// NOT here — they go through the outbox (run_thin_tool).
 fn run_direct(mut h ScriptedThinHost, name str, args []Value) Fs -> Result[Value, StepFailure] {
     if name == "read_file" { return read_file_args(h, args) }
     if name == "file_exists" { return file_exists_args(h, args) }
@@ -298,7 +602,7 @@ fn run_direct(mut h ScriptedThinHost, name str, args []Value) Fs -> Result[Value
     if name == "process_running" { return process_running_args(h, args) }
     if name == "sha256" { return sha256_args(h, args) }
     if name == "parse_agent" { return parse_agent_args(h, args) }
-    fail("the primitive ${name} is not a direct call (acting goes through the outbox; the name is not among the 13)")
+    fail("the tool ${name} is not a direct call (acting goes through the outbox; the name is not among the 13)")
 }
 
 fn arg_text(args []Value, i int) -> Result[str, StepFailure] {
@@ -389,7 +693,7 @@ fn hex_char(n int) -> str {
     "f"
 }
 
-// ---- the outbox execution of the acting primitives ------------------------------------------------------
+// ---- the outbox execution of the acting tools ------------------------------------------------------
 
 fn intent_arg(i Intent, n int) -> str {
     // the arguments travel in the payload as "a|b|c" (the simple encoding of П-1)
@@ -415,20 +719,20 @@ fn parse_int_text(text str) -> Result[int, StepFailure] {
     Ok(n)
 }
 
-// ---- the PrimitiveHost adapter (the door of the machines) -----------------------------------------------
+// ---- the ToolHost adapter (the door of the machines) -----------------------------------------------
 
-/// ThinPrimitiveHost: the `PrimitiveHost` of the machines over the thin host. The direct primitives
-/// (volatile, pure) run immediately; the acting primitives go through the outbox (REQ-1): the
+/// ThinToolHost: the `ToolHost` of the machines over the thin host. The direct tools
+/// (volatile, pure) run immediately; the acting tools go through the outbox (REQ-1): the
 /// intent carries the identity "<producer>:<name>:<args>", the handler executes the tree operation,
 /// the result value is stored in the effects world and read back (a repeat of the same identity is
 /// idempotent — the held result). An unbound name is a failure.
-export type ThinPrimitiveHost {
+export type ThinToolHost {
     mut scripted ScriptedThinHost,
 }
 
-/// A thin primitive host over a scripted thin host; the acting rights are granted to the producer.
-export fn new_thin_primitive_host(mut scripted ScriptedThinHost) -> ThinPrimitiveHost {
-    ThinPrimitiveHost { scripted }
+/// A thin tool host over a scripted thin host; the acting rights are granted to the producer.
+export fn new_thin_tool_host(mut scripted ScriptedThinHost) -> ThinToolHost {
+    ThinToolHost { scripted }
 }
 
 fn is_acting(name str) -> bool {
@@ -442,42 +746,66 @@ fn is_acting(name str) -> bool {
     false
 }
 
-fn args_payload(args []Value) -> Result[str, StepFailure] {
+// The payload of the acting identity: the path arguments are the CANONICAL absolute paths of their
+// mounting points (two points with one relative path must not share the identity of the effect); the
+// other arguments travel verbatim. A path outside the tree keeps its raw text — the execution itself
+// refuses it and the refusal is recorded as before.
+fn identity_payload(t HostTree, name str, args []Value) Fs -> Result[str, StepFailure] {
     mut parts = []str.new()
+    mut i = 0
     for a in args {
         match a {
-            Text(t) => parts.push(t)
+            Text(x) => parts.push(if path_arg(name, i) { identity_text(t, x) } else { x })
             Int(n) => parts.push("${n}")
             _ => return fail("an acting argument is neither a text nor an int")
         }
+        i += 1
     }
     Ok(parts.join("|"))
 }
 
-export fn ThinPrimitiveHost mut @call_primitive(name str, args []Value) -> Result[Value, EvalError] {
-    // the PrimitiveHost protocol declares no effects, so the transitive `Fs` of run_thin_primitive
+fn identity_text(t HostTree, raw str) Fs -> str {
+    match t.canonical_path(raw) {
+        Ok(p) => p
+        Err(_) => raw
+    }
+}
+
+// The positions of the path arguments the SCRIPTED host resolves as paths: write/delete/lock — the
+// first; move — both; start_process — log_path (its dir is a scripted key; the battle host resolves
+// the dir itself). run_command's dir is a scripted key here too.
+fn path_arg(name str, i int) -> bool {
+    if name == "write_file" || name == "delete_file" || name == "acquire_lock" { return i == 0 }
+    if name == "move_file" { return i == 0 || i == 1 }
+    if name == "start_process" { return i == 2 }
+    false
+}
+
+export fn ThinToolHost mut @call_tool(name str, args []Value) -> Result[Value, EvalError] {
+    // the ToolHost protocol declares no effects, so the transitive `Fs` of run_thin_tool
     // is handled HERE, at the boundary, by an explicit `with` (D62 strict-effects: the default
     // handler auto-construction does not exempt an undeclared transitive effect; everywhere else
     // the convention holds — no per-call `with real_fs()`, production relies on #default_handler)
     with Fs = real_fs() {
-        match run_thin_primitive(@scripted, name, args) {
+        match run_thin_tool(@scripted, name, args) {
             Ok(v) => Ok(v)
-            Err(e) => Err(EvalError { kind: PrimitiveFailed, message: e.message, path: "" })
+            Err(e) => Err(EvalError { kind: ToolFailed, message: e.message, path: "" })
         }
     }
 }
 
-/// `run_thin_primitive`: one call of a thin primitive by name (the free form for the local contract
-/// and the probes). The volatile and pure primitives run directly on the tree; the acting ones go
+/// `run_thin_tool`: one call of a thin tool by name (the free form for the local contract
+/// and the probes). The volatile and pure tools run directly on the tree; the acting ones go
 /// through the outbox of the effects host (REQ-1): the rights of the trusted context are checked
 /// first, the identity is stable by the call content (a repeat of an APPLIED effect returns the
 /// held result — idempotent), the intent and the receipt are fixed together, an unknown outcome is
 /// never a success.
-export fn run_thin_primitive(mut h ScriptedThinHost, name str, args []Value) Fs -> Result[Value, StepFailure] {
-    if name == "new_id" { return fail("new_id is a primitive of the language, not of the thin host") }
+export fn run_thin_tool(mut h ScriptedThinHost, name str, args []Value) Fs -> Result[Value, StepFailure] {
+    if name == "new_id" { return fail("new_id is a tool of the language, not of the thin host") }
     if !is_acting(name) { return run_direct(h, name, args) }
-    // the arguments of the acting call, carried in the payload of the intent
-    ro payload = match args_payload(args) {
+    // the arguments of the acting call, carried in the payload of the intent (the path arguments —
+    // as the canonical absolute paths of their mounting points, П-2а)
+    ro payload = match identity_payload(h.tree, name, args) {
         Err(e) => return Err(e)
         Ok(p) => p
     }
@@ -491,7 +819,7 @@ export fn run_thin_primitive(mut h ScriptedThinHost, name str, args []Value) Fs 
         return fail("acting ${name} without rights: ${h.producer} cannot submit the intent")
     }
     // 2. the dedup: an APPLIED identity never re-runs (no blind repeat of an irreversible effect):
-    //    the held result is returned when the primitive has one; a value-less primitive returns Null
+    //    the held result is returned when the tool has one; a value-less tool returns Null
     match h.effects.held_outcome("", h.producer, effect_id) {
         Some(Applied) => match h.effects.result_of_effect("", h.producer, effect_id) {
             Some(v) => return Ok(v)
@@ -504,7 +832,7 @@ export fn run_thin_primitive(mut h ScriptedThinHost, name str, args []Value) Fs 
     match executed.outcome {
         Applied => {
             h.effects.record_exec(Intent { tenant: "", producer: h.producer, effect_id, action: name, payload }, ctx, EffectOutcome.Applied, executed.value, "by ${h.producer}")
-            // a no-result primitive (stop_process) returns Null — the execution succeeded
+            // a no-result tool (stop_process) returns Null — the execution succeeded
             match executed.value {
                 Some(v) => Ok(v)
                 None => Ok(Null)
@@ -597,9 +925,9 @@ fn execute_acting(mut h ScriptedThinHost, name str, args []Value) Fs -> ActingRe
             Err(e) => refused_result(e.message)
         }
     } else {
-        refused_result("no executor: an unknown acting primitive (no value is given)")
+        refused_result("no executor: an unknown acting tool (no value is given)")
     }
 }
 
 // The resolve of the tree for the drivers outside the tree methods.
-fn resolve_tree(t HostTree, path str) -> Result[str, StepFailure] => resolve(t, path)
+fn resolve_tree(t HostTree, path str) Fs -> Result[str, StepFailure] => resolve(t, path)

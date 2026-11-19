@@ -120,7 +120,7 @@ fn dash_line(mut cx TxCx, e TxEntry) -> () {
 
 /// The keys of the sections of a file of a machine, in the order of format section 1 (the English words of the table of words; `Signals` and `Response parts` are the product's).
 fn section_keys() -> []str => [
-    "Types", "Names", "Constants", "Parameters", "Input", "Data", "Parties", "Signals", "Response parts", "Functions", "Includes", "Common events", "States", "Ends", "External functions"
+    "Types", "Names", "Constants", "Parameters", "Input", "Data", "Parties", "Signals", "Response parts", "Functions", "Includes", "Common events", "States", "Ends", "Tools"
 ]
 
 /// The words of the sections in the language of the file, for a message.
@@ -147,6 +147,13 @@ fn sections_in(entries []TxEntry, mut cx TxCx, keys []str) -> []TxSection {
             match kw_key(cx.words, "section", title) {
                 Some(k) => { key = k }
                 None => ()
+            }
+            // the seam of 2.25 (AL-158): the former section word is the `Tools` section; a file of 0.30 gets the former hint below
+            if key == "" && !cx.v226 {
+                match former_find(cx.words.lang, "section", title) {
+                    Some(f) => { if f.instead == "## ${kw(cx.words, "section", "Tools")}" && f.was == "0.29" { key = "Tools" } }
+                    None => ()
+                }
             }
             // the seam of 2.26 (AL-137): `## Выход` is the section of the ends of a file of 2.26, `## Концы` of a file of 2.25; the key of the section stays `Ends`
             if key == "Output" {

@@ -1,4 +1,4 @@
-// host_test.nv - task 158: the registry and the journal of a host are data (spec 7a, AL-113). The language knows two primitives and 35 journal codes; a host gives the rest in `registry.md` and `journal.md`
+// host_test.nv - task 158: the registry and the journal of a host are data (spec 7a, AL-113). The language knows two tools and 35 journal codes; a host gives the rest in `registry.md` and `journal.md`
 // (`parse_registry_table`, `host_registry`, `load_host`): the check of a table runs against the union "language + host".
 module alula.machine
 
@@ -53,14 +53,14 @@ fn hst_errors(registry_text str, journal_text str) -> str {
 
 fn hst_names(registry Registry) -> []str {
     mut out = []str.new()
-    for p in registry.primitives { out.push(p.name) }
+    for p in registry.tools { out.push(p.name) }
     out
 }
 
-test "host the language names one primitive and 35 codes" {
+test "host the language names one tool and 35 codes" {
     ro reg = language_registry()
     assert(hst_names(reg) == ["new_id"])
-    for p in reg.primitives { assert(class_word(p.class) == "volatile") }
+    for p in reg.tools { assert(class_word(p.class) == "volatile") }
     assert(language_journal().len() == 35)
     assert(reg.journal.len() == 35)
 }
@@ -112,9 +112,9 @@ test "host the registry of a host is the language and its data" {
     assert(journal_find(reg.journal, "agent_usage").is_none())
 }
 
-test "host the signature of a primitive" {
+test "host the signature of a tool" {
     ro reg = hst_host()
-    match find_primitive(reg, "ship") {
+    match find_tool(reg, "ship") {
         Some(p) => {
             assert(class_word(p.class) == "acting")
             assert(p.params.len() == 1)
@@ -126,7 +126,7 @@ test "host the signature of a primitive" {
         }
         None => assert(false)
     }
-    match find_primitive(reg, "reserve") {
+    match find_tool(reg, "reserve") {
         Some(p) => {
             assert(spec_text(p.params[1].spec) == "int>=1")
             assert(spec_text(p.result) == "nothing")
@@ -138,7 +138,7 @@ test "host the signature of a primitive" {
 
 test "host a bar in a cell is written with a backslash" {
     ro reg = hst_host()
-    match find_primitive(reg, "pick") {
+    match find_tool(reg, "pick") {
         Some(p) => {
             assert(spec_text(p.params[0].spec) == "\"fast\" | \"slow\"")
             assert(class_word(p.class) == "pure")
@@ -148,12 +148,12 @@ test "host a bar in a cell is written with a backslash" {
 }
 
 test "host the table by role is gone: one function per role (AL-131)" {
-    ro said = hst_errors("${hst_registry_text()}\n## Roles\n\n| primitive | role | result | reads |\n|---|---|---|---|\n| parse_note | plain | text | — |\n", "")
+    ro said = hst_errors("${hst_registry_text()}\n## Roles\n\n| tool | role | result | reads |\n|---|---|---|---|\n| parse_note | plain | text | — |\n", "")
     assert(said.contains("the table by role"))
     assert(said.contains("AL-131"))
     assert(said.contains("registry.md:"))
     ro reg = hst_host()
-    match find_primitive(reg, "parse_note") {
+    match find_tool(reg, "parse_note") {
         Some(p) => {
             assert(p.params.len() == 1)
             assert(p.reads == ["objects: the note"])
@@ -183,7 +183,7 @@ test "host the sets of types" {
     assert(host_types(data, "elsewhere").records.len() == 0)
 }
 
-test "host the class of a primitive decides the places of its call" {
+test "host the class of a tool decides the places of its call" {
     ro reg = hst_host()
     assert(check_call_position(reg, "stock_level", ActionPos).is_ok())
     assert(check_call_position(reg, "stock_level", ConditionPos).is_err())
@@ -226,13 +226,13 @@ test "host the former classes are refused with the new word" {
     assert(hst_errors("${head}| v | — | int | volatile | — | — |\n| a | — | — | acting | — | — |\n| p | — | int | pure | — | — |\n", "") == "ok")
 }
 
-// AL-116: a pure primitive reads its arguments only: its columns `reads` and `writes` are `—`
-test "host a pure primitive with reads or writes is refused" {
+// AL-116: a pure tool reads its arguments only: its columns `reads` and `writes` are `—`
+test "host a pure tool with reads or writes is refused" {
     ro head = "| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n"
     ro reads = hst_errors("${head}| p | x: int | int | pure | objects: the stock | — |\n", "")
-    assert(reads.contains("registry.md:3: the pure primitive p reads its arguments only"))
+    assert(reads.contains("registry.md:3: the pure tool p reads its arguments only"))
     ro writes = hst_errors("${head}| p | x: int | int | pure | — | objects: the log |\n", "")
-    assert(writes.contains("the pure primitive p reads its arguments only"))
+    assert(writes.contains("the pure tool p reads its arguments only"))
     assert(hst_errors("${head}| p | x: int | int | volatile | objects: the stock | — |\n", "") == "ok")
 }
 
@@ -247,7 +247,7 @@ test "host a row with a wrong number of cells is refused" {
     assert(said.contains("six cells"))
 }
 
-test "host a primitive of the host with a name of the language is refused" {
+test "host a tool of the host with a name of the language is refused" {
     ro said = hst_errors("| name | parameters | result | class | reads | writes |\n|---|---|---|---|---|---|\n| new_id | — | int | volatile | — | — |\n", "")
     assert(said.contains("new_id"))
     assert(said.contains("registered already"))
@@ -260,8 +260,8 @@ test "host the same name twice and the same parameter twice are refused" {
     assert(hst_errors(same, "").contains("twice"))
 }
 
-test "host a row of the table by role is refused whatever the primitive (AL-131)" {
-    ro text = "| primitive | role | result | reads |\n|---|---|---|---|\n| ghost | r | text | — |\n"
+test "host a row of the table by role is refused whatever the tool (AL-131)" {
+    ro text = "| tool | role | result | reads |\n|---|---|---|---|\n| ghost | r | text | — |\n"
     assert(hst_errors(text, "").contains("the table by role"))
 }
 
@@ -280,7 +280,7 @@ test "host the faults of a table of codes: a bad word, a repeat, the language" {
 
 // A parse function by role (AL-131): volatile, one parameter `AgentReply`, the result of the role.
 fn hst_parse_function(reg Registry, name str, result str) {
-    match find_primitive(reg, name) {
+    match find_tool(reg, name) {
         Some(p) => {
             assert(p.class == Volatile)
             assert(p.params.len() == 1 && spec_text(p.params[0].spec) == "AgentReply")
@@ -293,9 +293,9 @@ fn hst_parse_function(reg Registry, name str, result str) {
 test "host the samples of the specification have a registry that loads" {
     match load_host(embed_str("../../spec/samples/registry.md"), "") {
         Ok(reg) => {
-            assert(reg.primitives.len() == 23)
+            assert(reg.tools.len() == 23)
             // AL-131: one function per role, no `parse_agent_reply`
-            assert(find_primitive(reg, "parse_agent_reply").is_none())
+            assert(find_tool(reg, "parse_agent_reply").is_none())
             hst_parse_function(reg, "parse_witness_reply", "[]WitnessAnswer")
             hst_parse_function(reg, "parse_author_reply", "EditResult")
             hst_parse_function(reg, "parse_lens_reply", "LensResult")
@@ -307,8 +307,8 @@ test "host the samples of the specification have a registry that loads" {
 test "host the registry of the examples loads and the table of its codes does not repeat the language" {
     match load_host(embed_str("../../examples/registry.md"), embed_str("../../examples/journal.md")) {
         Ok(reg) => {
-            assert(find_primitive(reg, "close_agent_turn").is_some())
-            assert(find_primitive(reg, "new_id").is_some())
+            assert(find_tool(reg, "close_agent_turn").is_some())
+            assert(find_tool(reg, "new_id").is_some())
             assert(reg.journal.len() == 35 + parse_journal(embed_str("../../examples/journal.md")).len())
         }
         Err(errors) => panic(errors.join(" | "))
@@ -347,7 +347,7 @@ fn hst_section_names_exactly_the_language(section str) -> bool {
     listed >= 35
 }
 
-test "host the section 7a of the specification names the primitives and the codes of the package" {
+test "host the section 7a of the specification names the tools and the codes of the package" {
     ro ru = hst_section_7a(embed_str("../../spec/alula-spec.md"), "### 7а.", "## 8.")
     assert(hst_section_names_exactly_the_language(ru))
     ro en = hst_section_7a(embed_str("../../spec/alula-spec.en.md"), "### 7a.", "## 8.")

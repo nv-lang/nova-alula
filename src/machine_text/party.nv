@@ -1,4 +1,4 @@
-// party.nv - the parties (format section 1, `## Стороны`), the signals and the parts of an answer, the definitions (section 8), the primitives (section 7).
+// party.nv - the parties (format section 1, `## Стороны`), the signals and the parts of an answer, the definitions (section 8), the tools (section 7).
 module alula.machine_text
 
 // ORACLE-WORKAROUND(32): `import std.text` is needed in `nova build` for `[]str.join` (a `nova test` build has it already); drop the import when item 32 is fixed
@@ -561,11 +561,11 @@ fn def_segs(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxSeg {
     segs
 }
 
-/// AL-81: the name of a definition or of a primitive is no word of the catalog in either language and is not `range` (the name of the call of a range in the tree); the JSON name is checked too.
+/// AL-81: the name of a definition or of a tool is no word of the catalog in either language and is not `range` (the name of the call of a range in the tree); the JSON name is checked too.
 fn call_clash(mut cx TxCx, n TxTok, json str) -> () {
     ro ru_words = words_load("ru")
     ro en_words = words_load("en")
-    // AL-107: `new_id` (`новый_ид`) is the built-in primitive of the host; it stands in the table of words under the kind `catalog` (section 12) but is no function of the catalog, so the name, as written and as JSON, is not checked
+    // AL-107: `new_id` (`новый_ид`) is the built-in tool of the host; it stands in the table of words under the kind `catalog` (section 12) but is no function of the catalog, so the name, as written and as JSON, is not checked
     ro ru_new_id = kw(ru_words, "catalog", "new_id")
     for cand in [n.text, json] {
         if cand == "new_id" || cand == ru_new_id { continue }
@@ -663,9 +663,9 @@ fn decl_definitions(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
                         Some(f) => note(cx, tx_err(head.line, head.col, "syntax", former_message(f)))
                         None => {
                             if t_is_kw(head, cx.words, "decl", "external") && cx.env.in_defs_file {
-                                note(cx, tx_err(head.line, head.col, "syntax", "в файле функций внешних функций нет (AL-123): внешняя функция объявляется в машине, в разделе `## ${kw(cx.words, "section", "External functions")}`; файл функций — чистые типы, константы и функции"))
+                                note(cx, tx_err(head.line, head.col, "syntax", "в файле функций внешних функций нет (AL-123): внешняя функция объявляется в машине, в разделе `## ${kw(cx.words, "section", "Tools")}`; файл функций — чистые типы, константы и функции"))
                             } else if t_is_kw(head, cx.words, "decl", "external") {
-                                note(cx, tx_err(head.line, head.col, "syntax", "внешняя функция объявляется в разделе `## ${kw(cx.words, "section", "External functions")}`, в `## ${kw(cx.words, "section", "Functions")}` пишутся функции с телом (AL-123)"))
+                                note(cx, tx_err(head.line, head.col, "syntax", "внешняя функция объявляется в разделе `## ${kw(cx.words, "section", "Tools")}`, в `## ${kw(cx.words, "section", "Functions")}` пишутся функции с телом (AL-123)"))
                             } else {
                                 note(cx, tx_err(head.line, head.col, "syntax", "ожидается `${kw(cx.words, "decl", "fn")}`, найдено: ${t_shown(head)}"))
                             }
@@ -737,7 +737,7 @@ fn ext_one(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
             return Err(tx_err(head.line, head.col, "syntax", "с 2.26 внешняя функция пишется без слов `${kw(cx.words, "decl", "external")} ${kw(cx.words, "decl", "fn")}`: `имя(арг тип, …) [класс] [-> тип]` (AL-142); переходного периода нет"))
         }
         if t_is_kw(head, cx.words, "decl", "fn") {
-            return Err(tx_err(head.line, head.col, "syntax", "в разделе `## ${kw(cx.words, "section", "External functions")}` объявление — `имя(арг тип, …) [класс] [-> тип]` без слова `${kw(cx.words, "decl", "fn")}` (AL-142)"))
+            return Err(tx_err(head.line, head.col, "syntax", "в разделе `## ${kw(cx.words, "section", "Tools")}` объявление — `имя(арг тип, …) [класс] [-> тип]` без слова `${kw(cx.words, "decl", "fn")}` (AL-142)"))
         }
     } else if !t_is_kw(head, cx.words, "decl", "external") {
         match former_find(cx.words.lang, "decl", head.text) {
@@ -745,7 +745,7 @@ fn ext_one(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
             None => ()
         }
         if t_is_kw(head, cx.words, "decl", "fn") {
-            return Err(tx_err(head.line, head.col, "syntax", "в разделе `## ${kw(cx.words, "section", "External functions")}` объявление начинается со слова `${kw(cx.words, "decl", "external")}`: `${kw(cx.words, "decl", "external")} ${kw(cx.words, "decl", "fn")} имя(арг тип, …) [класс] [-> тип]` (AL-123)"))
+            return Err(tx_err(head.line, head.col, "syntax", "в разделе `## ${kw(cx.words, "section", "Tools")}` объявление начинается со слова `${kw(cx.words, "decl", "external")}`: `${kw(cx.words, "decl", "external")} ${kw(cx.words, "decl", "fn")} имя(арг тип, …) [класс] [-> тип]` (AL-123)"))
         }
         return Err(tx_err(head.line, head.col, "syntax", "ожидается `${kw(cx.words, "decl", "external")} ${kw(cx.words, "decl", "fn")}`, найдено: ${t_shown(head)}"))
     }
@@ -770,7 +770,7 @@ fn ext_one(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
         None => ()
     }
     if standard_call(cx, n.text) || json == "new_id" {
-        return Err(tx_err(n.line, n.col, "syntax", "`${n.text}` — стандартная внешняя функция языка (7а): она заранее объявлена и в разделе `## ${kw(cx.words, "section", "External functions")}` не пишется (AL-123)"))
+        return Err(tx_err(n.line, n.col, "syntax", "`${n.text}` — стандартная внешняя функция языка (7а): она заранее объявлена и в разделе `## ${kw(cx.words, "section", "Tools")}` не пишется (AL-123)"))
     }
     if pair_has(cx.env.prims, n.text) { cx_error(cx, n, "name", "внешняя функция `${n.text}` объявлена повторно (AL-123)") }
     call_clash(cx, n, json)
@@ -825,7 +825,7 @@ fn ext_one(mut p TxP, mut cx TxCx) -> Result[TxJ, TranslateError] {
     Ok(jobj(pairs))
 }
 
-/// The section `## Внешние функции`: the declarations of the external functions of the host that the machine calls, in the order of the file (AL-123). The section is a block of code, as `## Функции` is.
+/// The section `## Инструменты`: the declarations of the external functions of the host that the machine calls, in the order of the file (AL-123). The section is a block of code, as `## Функции` is.
 fn decl_externals(entries []TxEntry, sec TxSection, mut cx TxCx) -> []TxJ {
     mut out = []TxJ.new()
     ro segs = def_segs(entries, sec, cx)

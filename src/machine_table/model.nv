@@ -103,10 +103,10 @@ export type InputField { field str, value Expr, to_party bool }
 /// SignalDef: a signal of a party or of the machine, with its fields; a part of an answer (`progress`) has the same shape and is kept in the same type.
 export type SignalDef { name str, fields []FieldDef }
 
-/// ParseDef: the `разбор` of a party of the kind `machine` (format section 1, the column `разбор` since 0.28): the volatile primitive that turns the answer into the value of the
+/// ParseDef: the `разбор` of a party of the kind `machine` (format section 1, the column `разбор` since 0.28): the volatile tool that turns the answer into the value of the
 /// answer (one function per role, AL-131: it takes the answer only, the tree holds no literal of a role). 0.28: the tree holds no type of the result — the type is the result of the
 /// declaration of the function, the check and the runner take it from the registry of the host; a tree of the seam of 2.25 keeps the type after `->` (`result` is of it).
-export type ParseDef { primitive str, result Option[TypeSpec] }
+export type ParseDef { tool str, result Option[TypeSpec] }
 
 /// PartyDef: a party (format section 1); `profile` is zero or one expression. A party of the kind `machine` names the nested machine (`nested`, a name of the registry of the caller)
 /// and may have `parse` (zero or one). Since 0.27 (AL-146) the types come from the called machine: `input_fields` are the fields of its `## Вход` (the key `input` of the party), `result_spec`
@@ -164,7 +164,7 @@ export type MachineDef {
     parties []PartyDef, request_limit []Expr, signals []SignalDef,
     definitions []DefFn, includes []IncludeDef,
     initial str, error_end str, common []TableRow, states []StateDef,
-    result_spec []TypeSpec, end_rows []EndRow, primitives []PrimDecl
+    result_spec []TypeSpec, end_rows []EndRow, tools []PrimDecl
 }
 
 /// The built-in names of the machine (what the executor provides, format 3.1): not data, not constants.

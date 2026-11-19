@@ -5,7 +5,7 @@ import std.text
 import alula.machine_table.{alula_versions}
 
 /// The version of the program.
-export const PROGRAM_VERSION = "0.29.0"
+export const PROGRAM_VERSION = "0.30.0"
 
 /// The line of `alula version`: the program and the version of the language it writes (0.28: there is no transition period); no version of a machine and no schema after a slash (AL-147).
 export fn version_text() -> str {
@@ -41,7 +41,7 @@ Commands:
   alula version
       the version of the program and of the languages it reads.
 
-The host: the language names one primitive (new_id) and 35 journal codes; the rest is the data of the host, the files registry.md (primitives, types) and journal.md (codes) beside the machines, or --registry <file> and --journal <file> (every command that reads a machine takes them).
+The host: the language names one tool (new_id) and 35 journal codes; the rest is the data of the host, the files registry.md (tools, types) and journal.md (codes) beside the machines, or --registry <file> and --journal <file> (every command that reads a machine takes them).
 
 Files:
   *.alula.md            a machine written in Alula (Russian or English; the header says which), or a library (# Библиотека:, 2.26)
@@ -64,7 +64,7 @@ The errors and the warnings go to the standard error as "file:line:column: kind:
   -o, --output <file>   write the JSON to the file
   --force               overwrite the file of -o
   --lenient             print the JSON of what could be translated even when there are errors (the code is still 1)
-  --no-check            do not check the table against the primitives of the host
+  --no-check            do not check the table against the tools of the host
   --registry <file>     the registry of the host (default: registry.md beside the file)
   --journal <file>      the table of the journal codes of the host (default: journal.md beside the file)
   --lib <folder>        the folder of the libraries (2.26): the file of a library that is not beside the machine is looked for there
@@ -100,7 +100,7 @@ A library without a twin is an error that lists them all (the code 1).
   --language ru|en      the language of the result (needed)
   -o, --output <file>   write the file (an existing file is not overwritten without --force)
   --force               overwrite the file of -o
-  --no-check            do not check the table against the primitives of the host
+  --no-check            do not check the table against the tools of the host
   --lenient             go on when there are errors
   --registry <file>     the registry of the host (default: registry.md beside the file)
   --journal <file>      the table of the journal codes of the host (default: journal.md beside the file)
@@ -113,7 +113,7 @@ A library without a twin is an error that lists them all (the code 1).
 A file of Alula: the translation, the checks of the table, the warnings. A file *.json: the decoding of the tree and the checks of the table.
 Prints "ok" and the code 0 when there are no errors; the errors and the warnings go to the standard error.
 
-  --no-check            do not check the table against the primitives of the host
+  --no-check            do not check the table against the tools of the host
   --registry <file>     the registry of the host (default: registry.md beside the file)
   --journal <file>      the table of the journal codes of the host (default: journal.md beside the file)
   --lib <folder>        the folder of the libraries (2.26): the file of a library that is not beside the machine is looked for there
@@ -124,7 +124,7 @@ Prints "ok" and the code 0 when there are no errors; the errors and the warnings
 
 The summary of a machine: the states, the rows, the actions, the data, the parties; one line per state.
 
-  --no-check            do not check the table against the primitives of the host
+  --no-check            do not check the table against the tools of the host
   --registry <file>     the registry of the host (default: registry.md beside the file)
   --journal <file>      the table of the journal codes of the host (default: journal.md beside the file)
   --lib <folder>        the folder of the libraries (2.26): the file of a library that is not beside the machine is looked for there

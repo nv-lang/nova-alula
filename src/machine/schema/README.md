@@ -35,7 +35,7 @@ Who is the authority for what:
 
 One package version reads exactly one language version: there is no transition period (the owner's word, 2026-10-20). A file with
 `format` other than 2.25 and a tree with another `alula_version` are refused with a message that names the version. The versions 2.15–2.23
-added **no node** to the tree (spec, section 6); 2.24 changed the list `primitives` (a record for each external function, AL-123) and removed the key `role` of `parse` (one function per role, AL-131); the key changes of the whole line are those of 2.13 (`values`, signals) and the optional
+added **no node** to the tree (spec, section 6); 2.24 changed the list `primitives` (a record for each tool, AL-123) and removed the key `role` of `parse` (one function per role, AL-131); the key changes of the whole line are those of 2.13 (`values`, signals) and the optional
 party `counter` of 2.15 (see "Answered and open points"). 2.25 changed no node either: the readable name `event.at` (a field of the event, AL-134) is an ordinary field node, and the functions `time_to_text` and `text_to_time` (AL-133) are ordinary call nodes; the former standard function of the time is gone (`new_id` is the only standard one).
 
 ## The tree does not depend on the language of the file
@@ -113,7 +113,7 @@ file says `map[K, V]`/`словарь[K, V]`), `full {K: V}`, `(T1, T2)`, or the
 | `common_events` | `[]row` | no | `## Common events` of the machine and of its libraries (tried before the rows of a state) |
 | `states` | `[]state` (min 1) | yes | `## States` |
 | `ends` | object `{result, rows}` | yes | `## Ends`: `result` (req.) the type of `- Result:`; `rows` (req.) `[]end_row` |
-| `primitives` | `[]external_function` | no | `## External functions` (AL-123): one record `{name, params: [{name, type, tail?}], result?, class}` for each external function the machine declares; the standard `new_id` is the language's and is not here. The record is checked against the registry of the host at the load |
+| `primitives` | `[]external_function` | no | `## Tools` (AL-123): one record `{name, params: [{name, type, tail?}], result?, class}` for each tool the machine declares; the standard `new_id` is the language's and is not here. The record is checked against the registry of the host at the load |
 
 ### Types: `types.records[]`, `types.variants[]`, `field`
 
@@ -227,7 +227,7 @@ declaration `s` or `s { field T, … }`.
 | `let` | **`name`**, **`value`**, **`body`** (actions) | a binding with a scope: `{ let x = e; actions }` (verified: an action block with `let` gives this node, as the former `let … in` did) |
 | `bind` | **`name`**, **`value`** | `let x = e` in "On entry" / "On accept" (outside a block) |
 | `if` | **`cond`**, **`then`**, `else` (actions) | `if e then { … } else { … }` |
-| `call` | **`primitive`**, `args` `[]E`, `named` `[{name, value}]` | `name(args);` as an action (a call of an external function; `named`: the pairs of the named tail, AL-129) |
+| `call` | **`primitive`**, `args` `[]E`, `named` `[{name, value}]` | `name(args);` as an action (a call of an tool; `named`: the pairs of the named tail, AL-129) |
 | `machine_error` | **`code`**, `params` | `machine_error(code, name: e)` |
 | `cancel_open` | `party`, `except` `[]E` | `cancel_open`, `cancel_open(except: nested)`; `party` is a product key |
 | `pass` | **`nested`** (E), **`signal`** | `pass(nested, signal)` |
@@ -253,7 +253,7 @@ One object per node with the key `op` (the list is the top of `src/machine/expr.
 | `index` | `of`, `index` | `e[k]` |
 | `call` | `fn`, `args` | a catalog function or list function (English name), an author function (as written); a lambda is an argument |
 | `lambda` | `params`, `body` | only as a list function argument |
-| `primitive_call` | `name`, `args`, `named` `[{name, value}]` | `name(args)` of an external function in an expression (`named`: the pairs `key: value` of the named tail `...name: Type`, AL-129) |
+| `primitive_call` | `name`, `args`, `named` `[{name, value}]` | `name(args)` of an tool in an expression (`named`: the pairs `key: value` of the named tail `...name: Type`, AL-129) |
 | `match` | `on`, `arms: [{patterns, guard?, body}]` | patterns: `{"kind":"any"}` (`else`), `{"kind":"lit","value":V}`, `{"kind":"case","type"?,"name","bind"?:{field: name}}` |
 | `let` | `name`, `value`, `body` | a binding of a block expression |
 | `if` | `cond`, `then`, `else` | |
@@ -281,7 +281,7 @@ One object per node with the key `op` (the list is the top of `src/machine/expr.
 | name `x` | `{"op":"name","name":"x"}` (JSON name for data, as written for internal names) |
 | `f(a)` — catalog function | `{"op":"call","fn":"<en>","args":[…]}`: `строка(x)`/`text(x)` → `fn: "text"`, `вещественное(x)`/`float(x)` → `"float"`, `число(x)`/`int(x)` → `"int"` (the call names did not change, AL-94…AL-96) |
 | `f(a)` — author function | `{"op":"call","fn":"<name as written>","args":[…]}` |
-| `p(a)` — external function declared in `## External functions` | `{"op":"primitive_call","name":"p","args":[…]}`; with pairs `p(a, k: v)` also `"named":[{"name":"k","value":V}]` (AL-129) |
+| `p(a)` — tool declared in `## Tools` | `{"op":"primitive_call","name":"p","args":[…]}`; with pairs `p(a, k: v)` also `"named":[{"name":"k","value":V}]` (AL-129) |
 | method `xs.filter(x => e)` (the 8 list functions) | `{"op":"call","fn":"filter","args":[xs, {"op":"lambda","params":["x"],"body":e}]}` — the receiver is the first argument (AL-78) |
 | `xs.fold(s, (m, x) => e)` | `call fn=fold args=[xs, s, lambda params ["m","x"]]` |
 | range `a..b` | `{"op":"call","fn":"range","args":[a, b]}` (AL-76) |

@@ -2,7 +2,7 @@
 module alula.machine_run
 
 import std.text
-import alula.machine.{Value, PrimitiveHost, EvalError, Null, enum_value, text_of_file, record_get, value_json}
+import alula.machine.{Value, ToolHost, EvalError, Null, enum_value, text_of_file, record_get, value_json}
 import alula.engine.{Incoming, EventKind, Order, StepEnvironment, JournalEvent, SignalOrder}
 import alula.examples.{machine_files_225, sample_registry}
 
@@ -48,8 +48,8 @@ fn run1(m AlulaMachine, st AlulaState, event Incoming) -> Out {
     }
 }
 
-// The same with a host of the test (to see the calls of the primitives).
-fn run_with(m AlulaMachine, st AlulaState, event Incoming, mut host PrimitiveHost) -> Out {
+// The same with a host of the test (to see the calls of the tools).
+fn run_with(m AlulaMachine, st AlulaState, event Incoming, mut host ToolHost) -> Out {
     mut environment = StepEnvironment.new()
     ro transition = alula_step(m, st, event, environment, host)
     match transition {
@@ -61,7 +61,7 @@ fn run_with(m AlulaMachine, st AlulaState, event Incoming, mut host PrimitiveHos
 // A host that remembers the names of the calls.
 type RecHost { calls []str }
 
-fn RecHost mut @call_primitive(name str, args []Value) -> Result[Value, EvalError] {
+fn RecHost mut @call_tool(name str, args []Value) -> Result[Value, EvalError] {
     @calls.push("${name}/${args.len()}")
     Ok(Null)
 }

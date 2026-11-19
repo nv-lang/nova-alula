@@ -37,10 +37,10 @@ fn AlulaState @datum_value(name str) -> Value {
     }
 }
 
-/// ScriptedReply: the answer of a scripted primitive of the default host.
+/// ScriptedReply: the answer of a scripted tool of the default host.
 export type ScriptedReply { name str, value Value }
 
 /// AlulaMachine: a machine that is data, ready to run: the decoded table, the definitions with the constants and the parameters
-/// evaluated, the initial data. `replies` are the answers of the primitives of the default host (`ScriptedHost`); `limit` is the value of the line
+/// evaluated, the initial data. `replies` are the answers of the tools of the default host (`ScriptedHost`); `limit` is the value of the line
 /// "Request limit" (format 1, rule 21), 0 when the line is not written.
 export type AlulaMachine { def MachineDef, table DefTable, initial_data Value, quiet_start bool, replies []ScriptedReply, limit int }

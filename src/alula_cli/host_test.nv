@@ -1,5 +1,5 @@
 // host_test.nv - task 158: the program takes the registry and the journal of the host as data (spec 7 and 7a, AL-113): `registry.md` and `journal.md` beside the file (in the folder, for `test`), or the files of
-// `--registry` and `--journal`. Without them the host is the language: one primitive (`new_id`) and the 35 codes of the language.
+// `--registry` and `--journal`. Without them the host is the language: one tool (`new_id`) and the 35 codes of the language.
 module alula.alula_cli
 
 import alula.machine.{NamedText}
@@ -8,9 +8,9 @@ fn hc_tick() -> str => "\u{60}"
 // The text with the sign ' read as a backtick (a table of the journal writes its codes between backticks).
 fn hc_ticked(text str) -> str => text.replace("'", hc_tick())
 
-// A machine of a shop: its action calls the acting primitive `reserve` of the host and journals the code `item_reserved` of the host.
+// A machine of a shop: its action calls the acting tool `reserve` of the host and journals the code `item_reserved` of the host.
 fn hc_shop() -> str {
-    ro table = "\n## External functions\n\n```\nexternal fn reserve(item str, count int>=1) acting\n```\n"
+    ro table = "\n## Tools\n\n```\nexternal fn reserve(item str, count int>=1) acting\n```\n"
     ro machine = tiny_en().replace("turn_count += 1", "turn_count += 1; reserve(\"tea\", 1); journal(\"item_reserved\", item: \"tea\")").replace("Machine: Малая", "Machine: Shop").replace("- machine: Tiny", "- machine: Shop")
     "${machine}${table}"
 }
@@ -35,7 +35,7 @@ test "host cli the files beside the machine are its host" {
     assert(ran.err == "")
 }
 
-test "host cli without a registry the primitive of the host is not registered" {
+test "host cli without a registry the tool of the host is not registered" {
     ro ran = run_with(["check", "/work/shop.alula.md"], hc_files(false, true))
     assert(ran.code == 1)
     assert(ran.err.contains("reserve"))

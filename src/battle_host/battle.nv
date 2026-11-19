@@ -1,6 +1,6 @@
-// battle.nv - the battle (real) host of the thin host primitives (П-2 of the epic «Тонкий хозяин
-// в пакете», methodology task 118; REQ-8, AC-7 of the epic card). The same 13 primitives as П-1,
-// but the scenario primitives are REAL:
+// battle.nv - the battle (real) host of the thin host tools (П-2 of the epic «Тонкий хозяин
+// в пакете», methodology task 118; REQ-8, AC-7 of the epic card). The same 13 tools as П-1,
+// but the scenario tools are REAL:
 //   - run_command: a REAL run to completion over `Os` (std/os/os.nv, D453: spawn + wait + exit
 //     code; that wave captures no stdout — ExecResult.stdout carries "" in the battle host v1,
 //     documented honestly);
@@ -13,6 +13,13 @@
 //   - FS/sha256: as in П-1 (HostTree over the real Fs, std.crypto);
 //   - parse_agent stays scripted: the cheap agent is an EXTERNAL service — the battle host has no
 //     one to call (documented; host-spec 111 keeps it scripted too).
+//
+// П-2а: the tree of the host may be a FOREST of independent mounting points
+// (`new_battle_host_mounts(roots, producer)`): the machine paths name their point in the first
+// segment, the child's dir and log may be in different points, both are made ABSOLUTE canonical
+// paths (the child's cwd would otherwise reinterpret a relative path). The log redirect is a plain
+// `cmd` line without quotes (libuv quotes the whole argument; quotes around the target break cmd's
+// parsing — probed on 0.1.6): a log path with spaces is not supported by the battle host v1.
 //
 // The battle host OWNS the processes it started: their handles live in its registry, so
 //   - `process_running` is a `try_wait` on the held child (deterministic, no tasklist race),
@@ -27,7 +34,7 @@
 // repeated identical calls are NEW executions (the machine-level dedup is the engine's job).
 // The FS effects are declared on the free functions (the tree is real); no per-call `with real_*()`
 // anywhere — the std convention is `#default_handler` auto-construction; `with` stays at protocol
-// boundaries only (see thin_host @call_primitive).
+// boundaries only (see thin_host @call_tool).
 
 module alula.battle_host
 
@@ -35,15 +42,15 @@ import std.fs.{Path, Fs, read_text, write_text, remove_file, read_dir, create_di
 import std.os.{Command, Proc, Child, Signal, Tree}
 import std.encoding.json.{Json}
 import std.crypto.sha256.{Sha256}
-import alula.machine.{Value, Text, Bool, Int, Null, List, Dict, DictEntry, RecordField, EvalError, PrimitiveFailed, make_record}
+import alula.machine.{Value, Text, Bool, Int, Null, List, Dict, DictEntry, RecordField, EvalError, ToolFailed, make_record}
 import alula.host.{Intent, TrustedContext, EffectOutcome, EffectHost, new_effect_host}
-import alula.thin_host.{HostTree, StepFailure, new_tree}
+import alula.thin_host.{HostTree, StepFailure, new_tree, new_tree_mounts, Root}
 
 // ---- BattleThinHost ------------------------------------------------------------------------------------
 
-/// BattleThinHost: the real executor of the thin host primitives. The FS runs over the real
+/// BattleThinHost: the real executor of the thin host tools. The FS runs over the real
 /// handler inside the host (`real_fs`), the processes over `real_proc` (std/os/proc.nv: spawn
-/// with `Tree.Group`, kill, try_wait, `Command.run()` for run_command). The acting primitives are
+/// with `Tree.Group`, kill, try_wait, `Command.run()` for run_command). The acting tools are
 /// recorded in the outbox of the effects host (the rights are checked, every execution holds its
 /// receipt). parse_agent is scripted through the answers dict (the cheap agent is external).
 export type BattleThinHost consume {
@@ -66,6 +73,24 @@ export fn new_battle_host(root str, producer str) Fs -> BattleThinHost {
     { tree: new_tree(root), effects, producer, procs: []Child.new() }
 }
 
+/// A battle host over several INDEPENDENT mounting points (П-2а): the folders are created (as the
+/// legacy host creates its single root); a folder that cannot be created is a start error.
+export fn new_battle_host_mounts(roots []Root, producer str) Fs -> Result[BattleThinHost, StepFailure] {
+    for r in roots {
+        match create_dir_all(Path.posix(r.path)) {
+            Ok(_) => ()
+            Err(_) => return Err(StepFailure { message: "the mounting point ${r.name} cannot be created: ${r.path}" })
+        }
+    }
+    ro tree = match new_tree_mounts(roots) {
+        Ok(t) => t
+        Err(e) => return Err(e)
+    }
+    mut effects = new_effect_host()
+    effects.grant("", producer)
+    Ok({ tree, effects, producer, procs: []Child.new() })
+}
+
 // The unique identity per acting call: a counter in the effects world (shared through copies).
 fn next_battle_id(mut h BattleThinHost, name str) -> str {
     ro n = match h.effects.state_get("battle:next") {
@@ -79,8 +104,11 @@ fn next_battle_id(mut h BattleThinHost, name str) -> str {
 // ---- process helpers over the Proc effect --------------------------------------------------------------
 
 // The full shell line with the log redirect (Windows `cmd /c`; the battle host v1 is
-// Windows-first — the methodology runs on Windows).
-fn shell_line(command str, log_abs str) -> str => "${command} > \"${log_abs}\" 2>&1"
+// Windows-first — the methodology runs on Windows). The path is NOT quoted: libuv passes the whole
+// line as one quoted argument, and quotes around the redirect target break cmd's parsing (probed on
+// 0.1.6). Consequence of v1: a log path with spaces or cmd-special characters is not supported —
+// the redirect is a plain cmd line.
+fn shell_line(command str, log_abs str) -> str => "${command} > ${log_abs} 2>&1"
 
 fn fail(message str) -> Result[Value, StepFailure] => Err(StepFailure { message })
 
@@ -137,13 +165,15 @@ fn spawn_child(mut procs []Child, command str, dir_abs str, log_abs str) Proc ->
 }
 
 fn battle_start_process(mut h BattleThinHost, command str, dir str, log_path str) Fs Proc -> Result[Value, StepFailure] {
-    ro dir_abs = match h.tree.resolve_path(dir) {
+    // the child's dir and log are ABSOLUTE canonical paths: the child's cwd is its dir, so a
+    // relative target path would be created under that dir (П-2а; the points are independent)
+    ro dir_abs = match h.tree.canonical_path(dir) {
         Ok(f) => f
         Err(e) => return Err(e)
     }
     mut log_abs = ""
     if log_path != "" {
-        log_abs = match h.tree.resolve_path(log_path) {
+        log_abs = match h.tree.canonical_path(log_path) {
             Ok(f) => f
             Err(e) => return Err(e)
         }
@@ -186,8 +216,9 @@ fn battle_process_running(mut h BattleThinHost, pid int) Proc -> Result[Value, S
 fn battle_run_command(h BattleThinHost, command str, dir str) Fs -> Result[Value, StepFailure] {
     // the REAL run to completion over `Os` (std/os/os.nv — D453: spawn + wait + exit code; the
     // stdout capture is deferred in that wave, so ExecResult.stdout carries "" in the v1).
-    // The working dir is resolved INSIDE the tree (the tree is the world — REQ-5).
-    ro dir_abs = match h.tree.resolve_path(dir) {
+    // The working dir is resolved INSIDE the tree (the tree is the world — REQ-5) and made absolute:
+    // the child's cwd would otherwise reinterpret a relative path.
+    ro dir_abs = match h.tree.canonical_path(dir) {
         Ok(f) => f
         Err(e) => return Err(e)
     }
@@ -291,20 +322,20 @@ fn execute_acting_battle(mut h BattleThinHost, name str, args []Value) Fs Proc -
         ro dir = match arg_text(args, 1) { Ok(s) => s, Err(e) => return Err(e) }
         battle_run_command(h, command, dir)
     } else {
-        fail("no executor: an unknown acting primitive ${name}")
+        fail("no executor: an unknown acting tool ${name}")
     }
 }
 
-// ---- run_battle_primitive ------------------------------------------------------------------------------
+// ---- run_battle_tool ------------------------------------------------------------------------------
 
-/// `run_battle_primitive`: one call of a thin primitive on the battle host (the free form).
+/// `run_battle_tool`: one call of a thin tool on the battle host (the free form).
 ///   - volatile/pure: read_file, file_exists, list_dir, process_running (a real `try_wait`
 ///     on the held child), parse_agent (scripted: the agent is external), sha256;
 ///   - acting: write_file, move_file, delete_file, start_process, stop_process, run_command,
 ///     acquire_lock — the rights are checked, the execution is real, the intent+receipt are fixed
 ///     together with a unique identity `b:<name>:<counter>`.
-export fn run_battle_primitive(mut h BattleThinHost, name str, args []Value) Fs Proc -> Result[Value, StepFailure] {
-    if name == "new_id" { return fail("new_id is a primitive of the language, not of the thin host") }
+export fn run_battle_tool(mut h BattleThinHost, name str, args []Value) Fs Proc -> Result[Value, StepFailure] {
+    if name == "new_id" { return fail("new_id is a tool of the language, not of the thin host") }
     // volatile/pure — direct
     if name == "read_file" { return h.tree.read_file(arg_text(args, 0)?) }
     if name == "file_exists" { return h.tree.file_exists(arg_text(args, 0)?) }
@@ -313,7 +344,7 @@ export fn run_battle_primitive(mut h BattleThinHost, name str, args []Value) Fs 
     if name == "parse_agent" { return battle_parse_agent(h, args) }
     if name == "process_running" { return battle_process_running(h, arg_int(args, 0)?) }
     // acting — the rights first, then the real execution, then the record
-    if !is_acting(name) { return fail("an unknown primitive: ${name}") }
+    if !is_acting(name) { return fail("an unknown tool: ${name}") }
     mut ctx = TrustedContext { tenant: "", producer: h.producer, principal: h.producer, role: "submit" }
     if !h.effects.may_submit(ctx) {
         return fail("acting ${name} without rights: ${h.producer} cannot submit the intent")

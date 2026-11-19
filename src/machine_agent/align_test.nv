@@ -1,5 +1,5 @@
 // align_test.nv - task 154: the samples of the methodology at the commit 87f59cb of the specification (Alula 2.22 with the clarifications AL-104 ... AL-110): the label of a form with fields is "формы" (the reference
-// script says so since AL-110), the record of the machine "Meeting" has plain defaults in the table `## Параметры` (no note in brackets), the primitive `новый_ид` is out of the check of the names of the calls (AL-107).
+// script says so since AL-110), the record of the machine "Meeting" has plain defaults in the table `## Параметры` (no note in brackets), the tool `новый_ид` is out of the check of the names of the calls (AL-107).
 module alula.machine_agent
 
 import std.text
@@ -129,14 +129,14 @@ test "a154 the meeting keeps its numbers" {
         assert(translate_names(meeting17s()).len() == 221)
 }
 
-// The fingerprint of a sample is the hash of its text by the rule of the hash of a file of functions (section 8): the samples are the files of the commit 87f59cb of the methodology with the classes of the primitives and the words of the column `пишет` migrated by task 170 (AL-116: `reading` is `volatile`, `writing` and `irreversible` are `acting`; AL-122: `строки` is `действия`); the fingerprints of the files as they came were a2812af20cde, 9652269ab7b7 and 126641e835c7 (these are fingerprints of the whole text, not the hashes of the files of functions of section 8, which the migration does not touch).
+// The fingerprint of a sample is the hash of its text by the rule of the hash of a file of functions (section 8): the samples are the files of the commit 87f59cb of the methodology with the classes of the tools and the words of the column `пишет` migrated by task 170 (AL-116: `reading` is `volatile`, `writing` and `irreversible` are `acting`; AL-122: `строки` is `действия`); the fingerprints of the files as they came were a2812af20cde, 9652269ab7b7 and 126641e835c7 (these are fingerprints of the whole text, not the hashes of the files of functions of section 8, which the migration does not touch).
 test "a154 the samples are the files of the methodology" {
     assert(definitions_hash(lf17(methodology_file())) == "e05d933e3c17")
     assert(definitions_hash(lf17(methodology_en_file())) == "b80871f84db0")
     assert(definitions_hash(lf17(meeting_file())) == "83b01ea3dd7d")
 }
 
-// ---- the primitive new_id and the names of the calls (AL-107) ---------------------------------------------------------------------------------
+// ---- the tool new_id and the names of the calls (AL-107) ---------------------------------------------------------------------------------
 
 fn ru_new_id154() -> str => ru17s().replace("внешняя функция reply_validation() изменчивая -> ПроверкаОтвета", "внешняя функция reply_validation() изменчивая -> ПроверкаОтвета\nвнешняя функция новый_ид() изменчивая -> ид")
 
@@ -149,12 +149,12 @@ fn clash154(text str) -> bool {
     false
 }
 
-test "a154 the primitive новый_ид in the registry of a machine is no clash with the catalog" {
+test "a154 the tool новый_ид in the registry of a machine is no clash with the catalog" {
     assert(ru_new_id154() != ru17s())
     assert(!clash154(ru_new_id154()))
 }
 
-test "a154 the primitive new_id in the registry of an English machine is no clash" {
+test "a154 the tool new_id in the registry of an English machine is no clash" {
     assert(en_new_id154() != en17s())
     assert(!clash154(en_new_id154()))
 }
@@ -171,7 +171,7 @@ test "a154 a function named as a function of the catalog is still a clash" {
     assert(clash154(text))
 }
 
-test "a154 a primitive named as a function of the catalog is still a clash" {
+test "a154 a tool named as a function of the catalog is still a clash" {
     ro text = ru17s().replace("внешняя функция reply_validation() изменчивая -> ПроверкаОтвета", "внешняя функция reply_validation() изменчивая -> ПроверкаОтвета\nвнешняя функция склеить() изменчивая -> число")
     assert(text != ru17s())
     assert(clash154(text))

@@ -209,11 +209,11 @@ test "scripted host" {
     ro r = run_with(m, m.initial(), start_with("{\"start\":9,\"label\":\"t\"}"), host)
     assert(datum_json(r.state, "began") == "1000")  // the time is the stamp of the event (1000), not the clock of the host (AL-134)
     mut scripted = ScriptedHost { at: 1, replies: [ScriptedReply { name: "other", value: Int(5) }], ids: 0 }
-    match scripted.call_primitive("other", []Value.new()) {
+    match scripted.call_tool("other", []Value.new()) {
         Ok(v) => assert(value_equal(v, Int(5)))
         Err(e) => assert(false)
     }
-    match scripted.call_primitive("missing", []Value.new()) {
+    match scripted.call_tool("missing", []Value.new()) {
         Ok(v) => assert(false)
         Err(e) => assert(e.message.contains("missing"))
     }

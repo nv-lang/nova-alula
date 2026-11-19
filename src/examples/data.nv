@@ -175,7 +175,7 @@ fn only_ending(names []str, suffixes []str) -> []str {
     out
 }
 
-/// The registry of the host "examples": the language and the primitives of `examples/registry.md`, the codes of `examples/journal.md`.
+/// The registry of the host "examples": the language and the tools of `examples/registry.md`, the codes of `examples/journal.md`.
 export fn example_registry_text() -> str => embed_str("../../examples/registry.md")
 
 /// The table of the codes of the host "examples" (`examples/journal.md`).
@@ -184,7 +184,7 @@ export fn example_journal_text() -> str => embed_str("../../examples/journal.md"
 /// The registry of the samples of the specification (`spec/samples/registry.md`).
 export fn sample_registry_text() -> str => embed_str("../../spec/samples/registry.md")
 
-/// The registry of the host "examples" (the language, the example primitives, the codes of the language and of the examples).
+/// The registry of the host "examples" (the language, the example tools, the codes of the language and of the examples).
 export fn example_registry() -> Registry {
     match load_host(example_registry_text(), example_journal_text()) {
         Ok(reg) => reg
@@ -192,7 +192,7 @@ export fn example_registry() -> Registry {
     }
 }
 
-/// The registry of the samples: the language and the primitives of the pilots (`spec/samples/registry.md`); the codes of the journal are not checked (the samples come with no table of a host).
+/// The registry of the samples: the language and the tools of the pilots (`spec/samples/registry.md`); the codes of the journal are not checked (the samples come with no table of a host).
 export fn sample_registry() -> Registry {
     match load_host(sample_registry_text(), "") {
         Ok(reg) => without_journal(reg)
