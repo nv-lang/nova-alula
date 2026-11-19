@@ -5,9 +5,10 @@
 
 module alula.battle_host
 
-import std.fs.{Path, real_fs, try_exists, remove_dir_all}
+import std.fs.{Path, real_fs, try_exists, remove_dir_all, create_dir_all}
 import std.os.{Proc}
 import alula.machine.{Value, Text, Bool, Int, Null, List, Record}
+import alula.thin_host.{Root}
 
 // ---- the fixtures --------------------------------------------------------------------------------------
 
@@ -260,6 +261,79 @@ test "bf acting without rights is refused; the receipt is held on a grant" {
     match h.effects.state_get("battle:next") {
         Int(n) => assert(n >= 1)
         _ => panic("no acting identity was issued")
+    }
+}
+
+// ---- П-2а: the mounting points (several INDEPENDENT roots) ---------------------------------------------
+
+fn bm() Fs -> BattleThinHost {
+    ro base = "target/battle-host-p2a"
+    ro made = create_dir_all(Path.posix(base))
+    match new_battle_host_mounts([
+        Root { name: "src", path: "${base}/src" },
+        Root { name: "run", path: "${base}/run" },
+    ], "battle-runner") {
+        Ok(consume h) => h
+        Err(e) => panic(e.message)
+    }
+}
+
+test "bf p2a: two independent roots — the FS and a live child across the points" {
+    consume h = bm()
+    must(h, "write_file", [Text("src/a.txt"), Text("a")])
+    must(h, "write_file", [Text("run/b.txt"), Text("b")])
+    match run_battle_tool(h, "read_file", [Text("src/a.txt")]) {
+        Ok(Text(t)) => assert(t == "a")
+        _ => panic("the src point lost its text")
+    }
+    match run_battle_tool(h, "run_command", [Text("exit 4"), Text("src/.")]) {
+        Ok(rec) => match field_of(rec, "code") {
+            Int(4) => ()
+            _ => panic("the exit code is not 4")
+        }
+        Err(e) => panic(e.message)
+    }
+    // the child runs with its dir in src, its log in run: both points are absolute and independent
+    ro started = must(h, "start_process", [Text("ping -n 30 127.0.0.1"), Text("src/."), Text("run/child.log")])
+    ro pid = match started {
+        Int(n) => n
+        _ => panic("the start did not return a pid")
+    }
+    assert(pid > 0)
+    match run(h, "process_running", [Int(pid)]) {
+        Ok(Bool(b)) => assert(b)
+        _ => panic("process_running of the live child is not a value true")
+    }
+    // a blocking short command gives the child the time to open its log (cmd sets the redirect up
+    // asynchronously; no sleep exists in std)
+    match run_battle_tool(h, "run_command", [Text("ping -n 2 127.0.0.1 >nul"), Text("src/.")]) {
+        Ok(_) => ()
+        Err(e) => panic(e.message)
+    }
+    match run(h, "stop_process", [Int(pid)]) {
+        Ok(Null) => ()
+        _ => panic("the stop failed")
+    }
+    match h.tree.file_exists("run/child.log") {
+        Ok(Bool(true)) => ()
+        _ => panic("the log is not in the run point")
+    }
+}
+
+test "bf p2a: a bare path and a cross-point move are refused" {
+    consume h = bm()
+    match run_battle_tool(h, "write_file", [Text("a.txt"), Text("x")]) {
+        Err(e) => assert(e.message.contains("does not name a mounting point"))
+        Ok(_) => panic("a bare path was accepted")
+    }
+    must(h, "write_file", [Text("src/x.txt"), Text("v")])
+    match run_battle_tool(h, "move_file", [Text("src/x.txt"), Text("run/x.txt")]) {
+        Err(e) => assert(e.message.contains("between mounting points"))
+        Ok(_) => panic("a cross-point move was accepted")
+    }
+    match run_battle_tool(h, "start_process", [Text("exit 0"), Text("../outside"), Text("run/x.log")]) {
+        Err(_) => ()
+        Ok(_) => panic("a dir outside the points was accepted")
     }
 }
 

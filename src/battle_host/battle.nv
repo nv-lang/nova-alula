@@ -14,6 +14,13 @@
 //   - parse_agent stays scripted: the cheap agent is an EXTERNAL service — the battle host has no
 //     one to call (documented; host-spec 111 keeps it scripted too).
 //
+// П-2а: the tree of the host may be a FOREST of independent mounting points
+// (`new_battle_host_mounts(roots, producer)`): the machine paths name their point in the first
+// segment, the child's dir and log may be in different points, both are made ABSOLUTE canonical
+// paths (the child's cwd would otherwise reinterpret a relative path). The log redirect is a plain
+// `cmd` line without quotes (libuv quotes the whole argument; quotes around the target break cmd's
+// parsing — probed on 0.1.6): a log path with spaces is not supported by the battle host v1.
+//
 // The battle host OWNS the processes it started: their handles live in its registry, so
 //   - `process_running` is a `try_wait` on the held child (deterministic, no tasklist race),
 //   - `stop_process` kills the held child and waits for it; an unknown pid is a step
@@ -37,7 +44,7 @@ import std.encoding.json.{Json}
 import std.crypto.sha256.{Sha256}
 import alula.machine.{Value, Text, Bool, Int, Null, List, Dict, DictEntry, RecordField, EvalError, ToolFailed, make_record}
 import alula.host.{Intent, TrustedContext, EffectOutcome, EffectHost, new_effect_host}
-import alula.thin_host.{HostTree, StepFailure, new_tree}
+import alula.thin_host.{HostTree, StepFailure, new_tree, new_tree_mounts, Root}
 
 // ---- BattleThinHost ------------------------------------------------------------------------------------
 
@@ -66,6 +73,24 @@ export fn new_battle_host(root str, producer str) Fs -> BattleThinHost {
     { tree: new_tree(root), effects, producer, procs: []Child.new() }
 }
 
+/// A battle host over several INDEPENDENT mounting points (П-2а): the folders are created (as the
+/// legacy host creates its single root); a folder that cannot be created is a start error.
+export fn new_battle_host_mounts(roots []Root, producer str) Fs -> Result[BattleThinHost, StepFailure] {
+    for r in roots {
+        match create_dir_all(Path.posix(r.path)) {
+            Ok(_) => ()
+            Err(_) => return Err(StepFailure { message: "the mounting point ${r.name} cannot be created: ${r.path}" })
+        }
+    }
+    ro tree = match new_tree_mounts(roots) {
+        Ok(t) => t
+        Err(e) => return Err(e)
+    }
+    mut effects = new_effect_host()
+    effects.grant("", producer)
+    Ok({ tree, effects, producer, procs: []Child.new() })
+}
+
 // The unique identity per acting call: a counter in the effects world (shared through copies).
 fn next_battle_id(mut h BattleThinHost, name str) -> str {
     ro n = match h.effects.state_get("battle:next") {
@@ -79,8 +104,11 @@ fn next_battle_id(mut h BattleThinHost, name str) -> str {
 // ---- process helpers over the Proc effect --------------------------------------------------------------
 
 // The full shell line with the log redirect (Windows `cmd /c`; the battle host v1 is
-// Windows-first — the methodology runs on Windows).
-fn shell_line(command str, log_abs str) -> str => "${command} > \"${log_abs}\" 2>&1"
+// Windows-first — the methodology runs on Windows). The path is NOT quoted: libuv passes the whole
+// line as one quoted argument, and quotes around the redirect target break cmd's parsing (probed on
+// 0.1.6). Consequence of v1: a log path with spaces or cmd-special characters is not supported —
+// the redirect is a plain cmd line.
+fn shell_line(command str, log_abs str) -> str => "${command} > ${log_abs} 2>&1"
 
 fn fail(message str) -> Result[Value, StepFailure] => Err(StepFailure { message })
 
@@ -137,13 +165,15 @@ fn spawn_child(mut procs []Child, command str, dir_abs str, log_abs str) Proc ->
 }
 
 fn battle_start_process(mut h BattleThinHost, command str, dir str, log_path str) Fs Proc -> Result[Value, StepFailure] {
-    ro dir_abs = match h.tree.resolve_path(dir) {
+    // the child's dir and log are ABSOLUTE canonical paths: the child's cwd is its dir, so a
+    // relative target path would be created under that dir (П-2а; the points are independent)
+    ro dir_abs = match h.tree.canonical_path(dir) {
         Ok(f) => f
         Err(e) => return Err(e)
     }
     mut log_abs = ""
     if log_path != "" {
-        log_abs = match h.tree.resolve_path(log_path) {
+        log_abs = match h.tree.canonical_path(log_path) {
             Ok(f) => f
             Err(e) => return Err(e)
         }
@@ -186,8 +216,9 @@ fn battle_process_running(mut h BattleThinHost, pid int) Proc -> Result[Value, S
 fn battle_run_command(h BattleThinHost, command str, dir str) Fs -> Result[Value, StepFailure] {
     // the REAL run to completion over `Os` (std/os/os.nv — D453: spawn + wait + exit code; the
     // stdout capture is deferred in that wave, so ExecResult.stdout carries "" in the v1).
-    // The working dir is resolved INSIDE the tree (the tree is the world — REQ-5).
-    ro dir_abs = match h.tree.resolve_path(dir) {
+    // The working dir is resolved INSIDE the tree (the tree is the world — REQ-5) and made absolute:
+    // the child's cwd would otherwise reinterpret a relative path.
+    ro dir_abs = match h.tree.canonical_path(dir) {
         Ok(f) => f
         Err(e) => return Err(e)
     }

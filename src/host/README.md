@@ -68,6 +68,28 @@ dedup, the identity split by producer.
 
 The module `alula.host_impls` (`impls.nv`) holds the bodies as named `export fn`, not closures: the standard `new_id` (it reads the key `next_id` of the world; since 2.25 the time is the stamp of the event, `event.at`, not a function) and a few small ones, one per class (`advance_clock` moves the key `clock` of the world and `lookup` reads it: a host may keep a clock for other things than the time of a machine). The rules for a body are in the head of the file. `bind_reference(host)` binds them all.
 
+## The tree of the host tools (П-2а)
+
+The thin hosts (`alula.thin_host`, `alula.battle_host`) resolve the path arguments of their tools
+inside the tree of the host. Since П-2а the tree may be a FOREST of independent mounting points
+(`Root { name, path }`, `new_tree_mounts`, `new_scripted_host_mounts`, `new_battle_host_mounts`):
+the folders need no common ancestor (different drives, shares, the home folder). With one point the
+grammar is the previous one, byte for byte (the paths are relative to the root; a first segment that
+equals the point name is a plain folder); with two or more every path names its point in the first
+segment, and a bare path is a step failure listing the points; `move` across points is refused.
+
+The containment is checked after `canonicalize` (std.fs): a symlink/junction escape is a step
+failure; a missing target is checked by the nearest existing ancestor; a dangling link is refused; a
+link whose target the OS cannot canonicalize (a directory symlink on Oracle 0.1.6 is EPERM through
+std) is refused as unverifiable. The canonical paths are compared by the semantics of the OS
+(Windows — case-insensitive, POSIX — exact); the point names are compared exactly. The acting
+identity of the thin host carries the canonical absolute paths, so one relative path in two points
+gets two identities and no dedup collision.
+
+This is the environment of a COOPERATIVE agent, not a sandbox against a hostile parallel process:
+`canonicalize` and the open are not atomic (TOCTOU), and the battle host's process log is a plain
+`cmd` redirect (a log path with spaces is not supported by the battle host v1).
+
 ## Not here (task 181)
 
 The check of the bindings against the declarations of a machine FILE (the section `## Tools` of the file, the name, the class and the signature agree with the registry; a mismatch is an error naming the function) is made when a file is loaded and belongs to the integration of the release (task 181, with the tools of task 175). Here `check_bindings(registry)` checks the bindings against the registry of the host: every registered function is bound, by the class of the registry; the signature (parameters and result) is not compared, an implementation takes `[]Value`.
