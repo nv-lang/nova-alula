@@ -19,7 +19,9 @@ fn sp(text str) -> str {
 fn sp_err(text str) -> bool => sp(text).starts_with("ERR")
 
 test "spec base" {
-    for t in ["int", "int>=0", "int>=-5", "float", "text", "bool", "nothing"] { assert(sp(t) == t) }
+    for t in ["int", "int>=0", "int>=-5", "f64", "str", "bool", "nothing"] { assert(sp(t) == t) }
+    assert(sp("text") == "str")
+    assert(sp("float") == "f64")
 }
 
 test "spec sets" {
@@ -30,10 +32,10 @@ test "spec sets" {
 }
 
 test "spec compound" {
-    for t in ["?text", "[]Finding", "{text: int}", "full {Severity: text}", "(text, int)", "[]?{text: []int}", "?(int, text)"] { assert(sp(t) == t) }
+    for t in ["?str", "[]Finding", "{str: int}", "full {Severity: str}", "(str, int)", "[]?{str: []int}", "?(int, str)"] { assert(sp(t) == t) }
     assert(sp("[]  Finding") == "[]Finding")
-    assert(sp("{ text : int }") == "{text: int}")
-    assert(sp("(int,text,bool)") == "(int, text, bool)")
+    assert(sp("{ text : int }") == "{str: int}")
+    assert(sp("(int,text,bool)") == "(int, str, bool)")
 }
 
 test "spec names" {

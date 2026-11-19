@@ -8,6 +8,12 @@ Before 0.27 the numbers were written with a leading two: 2.26 is the previous re
 
 Change labels: the prefix AL- (Alula); before 2.17 the labels were written as Я-NN, the number is the same (the owner's word, 2026-10-22: «AL- — ОК»).
 
+**Against version 0.31.** The label of version 0.32 is **AL-160**: the owner's decision of 2026-11-19 (methodology chat, after the question about the inconsistency: the file writes `str`/`f64`, the tree `text`/`float`). The format changes 0.31 → 0.32 (a breaking version, there is no transition period); the files are migrated by `tools/migrate-alula-232.py`. The file texts do not change; the nodes and the wire keys do not change; the 13 signatures are the former ones.
+
+| № | Edit | Where |
+|---|---|---|
+| AL-160 | **the type words of the tree are the words of Nova**: in the tree `machine/2` the string type is `str`, the float one is `f64` (was `text`/`float`); `int`, `bool`, `id`, `map`, `full_map` are the former ones; the file already wrote `str`/`f64`, now the tree coincides with the file and with Nova; the former words `text`/`float` are read only in the trees of the 2.25 seam; the nodes and the wire keys do not change | sections 1a, 2, 6, 7, 12 |
+
 **Against version 0.30.** The label of version 0.31 is **AL-159**: the owner's decision of 2026-11-19 (methodology chat, after an audit of the reasons: «лямбду Алулы свести к форме Новы `|…|`»). The format changes 0.30 → 0.31 (a breaking version, there is no transition period); the files are migrated by `tools/migrate-alula-231.py`. The tree nodes `lambda` and the wire do not change; the 13 tool signatures do not change.
 
 | № | Edit | Where |

@@ -75,14 +75,14 @@ test "ty optional" {
 test "ty decode outcome" {
     // the built-in `DecodeOutcome(T)` (AL-155, section 7a): the serialization, the parse and the check of both cases
     assert(spec_text(DecodeOutcomeType(IntType)) == "DecodeOutcome(int)")
-    assert(spec_text(DecodeOutcomeType(OptionalType(TextType))) == "DecodeOutcome(?text)")
+    assert(spec_text(DecodeOutcomeType(OptionalType(TextType))) == "DecodeOutcome(?str)")
     assert(spec_text(DecodeOutcomeType(DecodeOutcomeType(BoolType))) == "DecodeOutcome(DecodeOutcome(bool))")
     match parse_spec("DecodeOutcome(int)", empty_type_defs()) {
         Ok(s) => assert(spec_text(s) == "DecodeOutcome(int)")
         Err(m) => panic("the type does not parse: ${m}")
     }
-    match parse_spec("DecodeOutcome(?text)", empty_type_defs()) {
-        Ok(s) => assert(spec_text(s) == "DecodeOutcome(?text)")
+    match parse_spec("DecodeOutcome(?str)", empty_type_defs()) {
+        Ok(s) => assert(spec_text(s) == "DecodeOutcome(?str)")
         Err(m) => panic("the optional inner type does not parse: ${m}")
     }
     match parse_spec("DecodeOutcome(no_such_type)", empty_type_defs()) {
@@ -92,7 +92,7 @@ test "ty decode outcome" {
     // the accepted case: the value of the field `value` is checked against T; the refused case takes any T
     assert(tok(DecodeOutcomeType(IntType), make_decode_ok(Int(5))))
     assert(!tok(DecodeOutcomeType(IntType), make_decode_ok(Text("5"))))
-    assert(tmsg(DecodeOutcomeType(IntType), make_decode_ok(Text("5"))).contains("expected int, got text"))
+    assert(tmsg(DecodeOutcomeType(IntType), make_decode_ok(Text("5"))).contains("expected int, got str"))
     assert(tok(DecodeOutcomeType(IntType), make_decode_reject("$.a[1]", "expected an int, got a boolean")))
     assert(!tok(DecodeOutcomeType(IntType), enum_value("DecodeOutcome", "Nope")))
     assert(tmsg(DecodeOutcomeType(IntType), enum_value("Severity", "Critical")).contains("expected DecodeOutcome(int)"))
@@ -173,11 +173,11 @@ test "ty nested" {
 test "ty spec text" {
     assert(spec_text(IntType) == "int")
     assert(spec_text(IntMin(0)) == "int>=0")
-    assert(spec_text(OptionalType(TextType)) == "?text")
+    assert(spec_text(OptionalType(TextType)) == "?str")
     assert(spec_text(ListType(RecordType("Finding"))) == "[]Finding")
-    assert(spec_text(DictType { key: TextType, value: IntType }) == "{text: int}")
+    assert(spec_text(DictType { key: TextType, value: IntType }) == "{str: int}")
     assert(spec_text(FullDictType { key: VariantType("K"), value: IntType }) == "full {K: int}")
-    assert(spec_text(TupleType([TextType, IntType])) == "(text, int)")
+    assert(spec_text(TupleType([TextType, IntType])) == "(str, int)")
     assert(spec_text(TextSet(["a", "b"])) == "\"a\" | \"b\"")
     assert(spec_text(NothingType) == "nothing")
 }

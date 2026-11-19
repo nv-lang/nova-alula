@@ -30,7 +30,7 @@ test "v25 id type" {
     assert(sp5("id") == "id")
     assert(sp5("?id") == "?id")
     assert(sp5("[]id") == "[]id")
-    assert(sp5("{text: id}") == "{text: id}")
+    assert(sp5("{text: id}") == "{str: id}")
     assert(sp5("(id, int)") == "(id, int)")
 }
 
@@ -54,8 +54,8 @@ test "v25 set spec" {
     assert(sp5("\"\" | \"no_result\" | \"max_tokens\"") == "\"\" | \"no_result\" | \"max_tokens\"")
     assert(sp5("?(\"allow\" | \"deny\")") == "?(\"allow\" | \"deny\")")
     assert(sp5("[](\"a\" | \"b\")") == "[](\"a\" | \"b\")")
-    assert(sp5("{text: \"a\" | \"b\"}") == "{text: \"a\" | \"b\"}")
-    assert(sp5("full {text: \"a\" | \"b\"}") == "full {text: \"a\" | \"b\"}")
+    assert(sp5("{text: \"a\" | \"b\"}") == "{str: \"a\" | \"b\"}")
+    assert(sp5("full {text: \"a\" | \"b\"}") == "full {str: \"a\" | \"b\"}")
     assert(sp5("(\"a\" | \"b\", int)") == "(\"a\" | \"b\", int)")
     assert(sp5("(\"a\" | \"b\")") == "\"a\" | \"b\"")
     assert(sp5("\"слово\" | \"другое\"") == "\"слово\" | \"другое\"")
@@ -73,8 +73,8 @@ test "v25 set value" {
     assert(spec_text(spec) == "\"a\" | \"b\"")
     assert(spec_text(OptionalType(spec)) == "?(\"a\" | \"b\")")
     assert(spec_text(ListType(spec)) == "[](\"a\" | \"b\")")
-    assert(spec_text(DictType { key: TextType, value: spec }) == "{text: \"a\" | \"b\"}")
-    assert(spec_text(FullDictType { key: TextType, value: spec }) == "full {text: \"a\" | \"b\"}")
+    assert(spec_text(DictType { key: TextType, value: spec }) == "{str: \"a\" | \"b\"}")
+    assert(spec_text(FullDictType { key: TextType, value: spec }) == "full {str: \"a\" | \"b\"}")
     assert(spec_text(TupleType([spec, IntType])) == "(\"a\" | \"b\", int)")
     match check_value(spec, Text("c"), empty_type_defs()) {
         Ok(u) => assert(false)
@@ -200,7 +200,7 @@ test "v25 id literal" {
 test "v25 table format" {
     ro text = tiny().replace("\"machine\":\"Tiny\"", "\"alula_version\":\"2.25\",\"machine\":\"Tiny\"")
     assert(ok_text(text))
-    assert(says(tiny().replace("\"machine\":\"Tiny\"", "\"alula_version\":\"2.5\",\"machine\":\"Tiny\""), "must be 0.31"))
+    assert(says(tiny().replace("\"machine\":\"Tiny\"", "\"alula_version\":\"2.5\",\"machine\":\"Tiny\""), "must be 0.32"))
     ro old = tiny().replace("\"machine\":\"Tiny\"", "\"alula_version\":\"2.2\",\"machine\":\"Tiny\"")
     assert(says(old, "alula_version"))
     ro number = tiny().replace("\"machine\":\"Tiny\"", "\"alula_version\":2.5,\"machine\":\"Tiny\"")

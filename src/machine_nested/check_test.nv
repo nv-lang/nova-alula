@@ -59,7 +59,7 @@ test "ck field executor" {
 
 test "ck input type" {
     // the type of the input of a nested machine is a record of the machine
-    ro json = b_with("\"input_type\":\"CallInput\"", "\"input_type\":\"text\"")
+    ro json = b_with("\"input_type\":\"CallInput\"", "\"input_type\":\"str\"")
     assert(issue_says(json, "record"))
     ro unknown = b_with("\"input_type\":\"CallInput\"", "\"input_type\":\"Nowhere\"")
     assert(issue_count(unknown) >= 1)

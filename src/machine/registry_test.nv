@@ -248,7 +248,7 @@ test "ag count types" {
     assert(rargs("profile_of", [rtext("witness")]) == "ok")
     assert(rargs("profile_of", []Value.new()) == "$: wrong argument count for profile_of: expected 1, got 0")
     assert(rargs("profile_of", [rtext("a"), rtext("b")]) == "$: wrong argument count for profile_of: expected 1, got 2")
-    assert(rargs("profile_of", [Int(1)]) == "$.party: expected text, got int")
+    assert(rargs("profile_of", [Int(1)]) == "$.party: expected str, got int")
     assert(rargs("read_note", []Value.new()) == "ok")
     assert(rargs("no_such", []Value.new()) == "$: the tool no_such is not registered")
 }
@@ -264,7 +264,7 @@ test "ag records" {
 test "ag variant" {
     ro ctx = make_variant("Context", "Plain", [RecordField { name: "proposal", value: Text("p") }])
     assert(rargs("context_of", [ctx]) == "ok")
-    assert(rargs("context_of", [Text("p")]) == "$.context: expected Context, got text")
+    assert(rargs("context_of", [Text("p")]) == "$.context: expected Context, got str")
 }
 
 test "rs checked" {

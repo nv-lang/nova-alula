@@ -194,10 +194,10 @@ fn sr_type(mut r SpecReader, defs TypeDefs) -> Result[TypeSpec, str] {
         }
         return Ok(IntType)
     }
-    if name == "float" { return Ok(FloatType) }
+    if name == "float" || name == "f64" { return Ok(FloatType) }
     if name == "bool" { return Ok(BoolType) }
     if name == "nothing" { return Ok(NothingType) }
-    if name == "text" { return Ok(TextType) }
+    if name == "text" || name == "str" { return Ok(TextType) }
     if name == "id" { return Ok(IdType) }
     sr_named(name, defs, r)
 }

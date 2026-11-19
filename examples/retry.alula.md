@@ -2,7 +2,7 @@
 
 - machine: Retry
 - revision: 1
-- alula_version: 0.31
+- alula_version: 0.32
 - language: en
 
 The destination `same` and the column `rerun` (spec 4.1, AL-111, AL-150). The agent that is silent is asked again by the row `same` with `yes` in the column `rerun` of its appeal: the state is entered anew, the open request is cancelled and a new one is sent

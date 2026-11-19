@@ -200,8 +200,8 @@ fn el_type_of(ty ElTypes, j TxJ, locals []TxPair) -> str {
         match el_get(j, "value") {
             Some(v) => {
                 match v {
-                    TxRaw(r) => return if r.contains(".") || r.contains("e") || r.contains("E") { "float" } else { "int" }
-                    TxStr(s) => return "text"
+                    TxRaw(r) => return if r.contains(".") || r.contains("e") || r.contains("E") { "f64" } else { "int" }
+                    TxStr(s) => return "str"
                     TxBool(b) => return "bool"
                     _ => return ""
                 }
@@ -249,11 +249,11 @@ fn el_type_of(ty ElTypes, j TxJ, locals []TxPair) -> str {
             ro inner = el_type_of(ty, args[0], locals)
             return if inner.starts_with("?") { inner[1..] } else { inner }
         }
-        if f == "text" || f == "concat" { return "text" }
+        if f == "text" || f == "concat" { return "str" }
         if f == "int" || f == "length" { return "int" }
-        if f == "time_to_text" { return "text" }
+        if f == "time_to_text" { return "str" }
         if f == "text_to_time" { return "?int" }
-        if f == "float" { return "float" }
+        if f == "float" { return "f64" }
         if f == "has" || f == "any" || f == "all" { return "bool" }
         // the calls that give back their first argument as it is (a list or a map with fewer elements)
         if (f == "filter" || f == "remove" || f == "without_key") && args.len() > 0 {

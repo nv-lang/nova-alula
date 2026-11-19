@@ -55,11 +55,11 @@ fn rec_record(params str, result str, class str) -> str {
 
 fn p_int() -> str => "{\"name\":\"code\",\"type\":\"int\"}"
 
-fn p_text() -> str => "{\"name\":\"label\",\"type\":\"text\"}"
+fn p_text() -> str => "{\"name\":\"label\",\"type\":\"str\"}"
 
 test "v224 the declaration of the registry is clean, the names of the parameters are free" {
     assert(ok224(with_declared(rec_record("${p_int()},${p_text()}", "", "acting"))))
-    assert(ok224(with_declared(rec_record("{\"name\":\"номер\",\"type\":\"int\"},{\"name\":\"метка\",\"type\":\"text\"}", "", "acting"))))
+    assert(ok224(with_declared(rec_record("{\"name\":\"номер\",\"type\":\"int\"},{\"name\":\"метка\",\"type\":\"str\"}", "", "acting"))))
     // a function of the registry that the file does not declare is allowed
     assert(ok224(tiny()))
 }
@@ -82,12 +82,12 @@ test "v224 seven kinds of the difference with the registry" {
 }
 
 test "v224 the named tail is compared with the tail of the registry" {
-    ro tail = "{\"name\":\"fields\",\"type\":\"text\",\"tail\":true}"
+    ro tail = "{\"name\":\"fields\",\"type\":\"str\",\"tail\":true}"
     assert(ok224(with_declared("{\"name\":\"note\",\"params\":[${p_int()},${tail}],\"class\":\"acting\"}")))
-    assert(says224(with_declared("{\"name\":\"note\",\"params\":[${p_int()},{\"name\":\"fields\",\"type\":\"text\"}],\"class\":\"acting\"}"), "функция note: параметр 2 в файле обычный, в реестре именованный хвост"))
+    assert(says224(with_declared("{\"name\":\"note\",\"params\":[${p_int()},{\"name\":\"fields\",\"type\":\"str\"}],\"class\":\"acting\"}"), "функция note: параметр 2 в файле обычный, в реестре именованный хвост"))
     assert(says224(with_declared("{\"name\":\"note\",\"params\":[${p_int()},{\"name\":\"fields\",\"type\":\"int\",\"tail\":true}],\"class\":\"acting\"}"), "функция note: параметр 2 в файле число, в реестре строка"))
     // the tail is the last parameter
-    assert(says(with_declared("{\"name\":\"note\",\"params\":[{\"name\":\"fields\",\"type\":\"text\",\"tail\":true},${p_int()}],\"class\":\"acting\"}"), "the named tail is the last parameter"))
+    assert(says(with_declared("{\"name\":\"note\",\"params\":[{\"name\":\"fields\",\"type\":\"str\",\"tail\":true},${p_int()}],\"class\":\"acting\"}"), "the named tail is the last parameter"))
 }
 
 test "v224 the standard functions are not declared and a call of an undeclared function is refused" {
@@ -99,7 +99,7 @@ test "v224 the standard functions are not declared and a call of an undeclared f
 }
 
 test "v224 the pairs of the call are in the tree and only for a function with a tail" {
-    ro tail = "{\"name\":\"fields\",\"type\":\"text\",\"tail\":true}"
+    ro tail = "{\"name\":\"fields\",\"type\":\"str\",\"tail\":true}"
     ro decl = "\"primitives\":[{\"name\":\"note\",\"params\":[${p_int()},${tail}],\"class\":\"acting\"}],\"parties\":"
     ro pairs = "\"named\":[{\"name\":\"k\",\"value\":{\"op\":\"lit\",\"value\":\"a\"}},{\"name\":\"m\",\"value\":{\"op\":\"lit\",\"value\":\"b\"}}]"
     ro call = "{\"do\":\"call\",\"primitive\":\"note\",\"args\":[{\"op\":\"lit\",\"value\":7}],${pairs}}"

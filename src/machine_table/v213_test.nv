@@ -53,7 +53,7 @@ test "v213 signal of the party is used" {
 }
 
 test "v213 signal with a field is bound" {
-    ro text = tiny13().replace("{\"name\":\"go\"}", "{\"name\":\"go\",\"fields\":[{\"name\":\"author\",\"type\":\"text\"}]}").replace("{\"kind\":\"signal\",\"name\":\"go\"}", "{\"kind\":\"signal\",\"name\":\"go\",\"bind\":{\"author\":\"a\"}}")
+    ro text = tiny13().replace("{\"name\":\"go\"}", "{\"name\":\"go\",\"fields\":[{\"name\":\"author\",\"type\":\"str\"}]}").replace("{\"kind\":\"signal\",\"name\":\"go\"}", "{\"kind\":\"signal\",\"name\":\"go\",\"bind\":{\"author\":\"a\"}}")
     assert(ok_text(text))
     ro bad = text.replace("\"bind\":{\"author\":\"a\"}", "\"bind\":{\"nobody\":\"a\"}")
     assert(says(bad, "nobody"))
