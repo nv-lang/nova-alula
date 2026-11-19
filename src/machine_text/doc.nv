@@ -148,6 +148,8 @@ fn sections_in(entries []TxEntry, mut cx TxCx, keys []str) -> []TxSection {
                 Some(k) => { key = k }
                 None => ()
             }
+            // the seam of 2.25 (AL-158): the old section word is the `Tools` section; a file of 0.30 gets the former hint below
+            if key == "" && !cx.v226 && (title == "Внешние функции" || title == "External functions") { key = "Tools" }
             // the seam of 2.26 (AL-137): `## Выход` is the section of the ends of a file of 2.26, `## Концы` of a file of 2.25; the key of the section stays `Ends`
             if key == "Output" {
                 key = if cx.v226 { "Ends" } else { "" }
