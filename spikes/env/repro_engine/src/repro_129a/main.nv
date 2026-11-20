@@ -1,0 +1,16 @@
+module repro_engine.repro_129a
+
+// Oracle 0.1.6, item 129a: the small merged unit does NOT reproduce: a three-file module folder
+// (defs.nv, engine.nv, main.nv) with a generic receiver, a constructor of a foreign type handed
+// straight into a method and the equal-arity method pair builds green and the method resolves
+// correctly. This is the A side of the A/B pair for the report: the reproducible witness is the
+// test unit of the package (`nova test src/host_contract` -> CC-FAIL `passing 'void *' ... 'nova_str'`);
+// the small unit is kept to show that the class needs the bigger merged unit (NOT REDUCED, survey 129).
+
+fn main() {
+    mut e Engine[int] = { last: 0, count: 0 }
+    ro a = e.submit_event(Incoming.incoming("hello", "p"), "p")
+    println("a=${a}")
+    ro s = e.submit_json("env")
+    println("s=${s}")
+}

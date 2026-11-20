@@ -1,0 +1,14 @@
+module repro_engine.repro_129a
+
+/// The generic receiver: the methods with equal arity and one text parameter (`submit_json` and
+/// `describe_json`) are the second half of the probe (the wrong-method resolution).
+export type Engine[T] { last T, count int }
+
+export fn Engine[T] mut @submit_event(raw Incoming, producer str) -> int {
+    @count = @count + raw.what.byte_len() + producer.byte_len()
+    @count
+}
+
+export fn Engine[T] @describe_json(x str) -> str => "desc:${x}"
+
+export fn Engine[T] mut @submit_json(x str) -> str => "sub:${x}"
